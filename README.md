@@ -156,6 +156,7 @@ default_zone = "Living Room"         # Zone for unknown clients (accept only)
 
 [mqtt]
 broker = "192.168.1.10:1883"
+# client_id = "snapdog"              # Must be unique per broker
 # username = "user"
 # password = "pass"
 base_topic = "snapdog/"

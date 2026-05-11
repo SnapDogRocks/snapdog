@@ -107,6 +107,7 @@ password = "admin"
 # Remove this section entirely to disable MQTT.
 [mqtt]
 broker = "192.168.1.10:1883"
+# client_id = "snapdog"            # MQTT client ID (must be unique per broker)
 # username = "snapdog"
 # password = "snapdog"
 # Base topic prefix. All topics are published/subscribed under this prefix.

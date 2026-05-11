@@ -515,6 +515,9 @@ pub struct SubsonicConfig {
 pub struct MqttConfig {
     /// Broker address (host:port).
     pub broker: String,
+    /// MQTT client ID. Defaults to "snapdog".
+    #[serde(default = "default_mqtt_client_id")]
+    pub client_id: String,
     /// MQTT username (empty for anonymous).
     #[serde(default)]
     pub username: String,
@@ -524,6 +527,10 @@ pub struct MqttConfig {
     /// Base topic prefix (e.g., "snapdog/").
     #[serde(default = "default_mqtt_base_topic")]
     pub base_topic: String,
+}
+
+fn default_mqtt_client_id() -> String {
+    "snapdog".into()
 }
 
 /// KNX/IP integration settings.
