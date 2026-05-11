@@ -455,6 +455,13 @@ async fn main() -> Result<()> {
     }
 
     // ── Shutdown ──────────────────────────────────────────────
+    // Second Ctrl+C during graceful shutdown → force exit immediately
+    tokio::spawn(async {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::warn!("Forced exit");
+        std::process::exit(1);
+    });
+
     let _ = backend.stop().await;
     if let Err(e) = store.write().await.persist() {
         tracing::warn!(error = %e, "Failed to persist state");
