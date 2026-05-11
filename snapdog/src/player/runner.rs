@@ -370,7 +370,8 @@ async fn run(
                     let hash = cache.get(zone_index).map(|e| e.hash.clone());
                     drop(cache);
                     if let Some(h) = hash {
-                        let url = format!("/api/v1/zones/{zone_index}/cover?h={h}");
+                        let base = config.system.base_url.trim_end_matches('/');
+                        let url = format!("{base}/api/v1/zones/{zone_index}/cover?h={h}");
                         update_and_notify(store, zone_index, notify, |z| {
                             z.cover_url = Some(url.clone());
                         })

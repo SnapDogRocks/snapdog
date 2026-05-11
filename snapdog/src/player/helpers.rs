@@ -40,10 +40,12 @@ pub fn spawn_cover_fetch(
     zone_index: usize,
     notify: &NotifySender,
     url: String,
+    base_url: &str,
 ) {
     let covers = covers.clone();
     let store = store.clone();
     let notify = notify.clone();
+    let base_url = base_url.trim_end_matches('/').to_owned();
     tokio::spawn(async move {
         if let Some((bytes, mime)) = state::cover::fetch_cover(&url).await {
             let mut cache = covers.write().await;
@@ -51,7 +53,8 @@ pub fn spawn_cover_fetch(
             let hash = cache.get(zone_index).map(|e| e.hash.clone());
             drop(cache);
             if let Some(h) = hash {
-                let cover_url = format!("/api/v1/zones/{zone_index}/cover?h={h}");
+                let cover_url =
+                    format!("{base_url}/api/v1/zones/{zone_index}/cover?h={h}");
                 update_and_notify(&store, zone_index, &notify, |z| {
                     z.cover_url = Some(cover_url.clone());
                 })
@@ -71,7 +74,7 @@ pub async fn start_subsonic_track_decode(
     *ds.decode_rx = Some(rx);
     if let Some(ref cover_id) = track.cover_art {
         let cover_url = sub.cover_art_fetch_url(cover_id);
-        spawn_cover_fetch(ctx.covers, ctx.store, ctx.zone_index, ctx.notify, cover_url);
+        spawn_cover_fetch(ctx.covers, ctx.store, ctx.zone_index, ctx.notify, cover_url, &ctx.config.system.base_url);
     }
     let ac = ctx.config.audio.clone();
     *ds.current_decode = Some(tokio::spawn(async move {
@@ -134,6 +137,7 @@ pub async fn start_radio_decode(
     let icy_covers = ctx.covers.clone();
     let zone_index = ctx.zone_index;
     let fallback_cover = radio.cover.clone();
+    let icy_base_url = ctx.config.system.base_url.clone();
     tokio::spawn(async move {
         while let Some(meta) = icy_rx.recv().await {
             if let Some(raw_title) = meta.title {
@@ -153,7 +157,7 @@ pub async fn start_radio_decode(
                 _ => fallback_cover.clone(),
             };
             if let Some(url) = cover_url {
-                spawn_cover_fetch(&icy_covers, &icy_store, zone_index, &icy_notify, url);
+                spawn_cover_fetch(&icy_covers, &icy_store, zone_index, &icy_notify, url, &icy_base_url);
             }
         }
     });
@@ -164,6 +168,7 @@ pub async fn start_radio_decode(
             ctx.zone_index,
             ctx.notify,
             cover_url.clone(),
+            &ctx.config.system.base_url,
         );
     }
     let url = radio.url.clone();

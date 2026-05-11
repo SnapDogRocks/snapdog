@@ -34,7 +34,7 @@ impl MqttBridge {
     #[tracing::instrument(skip_all, fields(broker = %config.broker))]
     pub async fn connect(config: &MqttConfig) -> Result<Self> {
         let mut opts = MqttOptions::new(
-            "snapdog",
+            &config.client_id,
             parse_host(&config.broker),
             parse_port(&config.broker)?,
         );
@@ -112,7 +112,6 @@ impl MqttBridge {
         &self,
         index: usize,
         zone: &state::ZoneState,
-        base_url: &str,
     ) -> Result<()> {
         let base = format!("zones/{index}");
         self.publish(&format!("{base}/volume"), &zone.volume.to_string())
@@ -140,11 +139,10 @@ impl MqttBridge {
                 &track.position_ms.to_string(),
             )
             .await?;
-            self.publish(
-                &format!("{base}/track/cover"),
-                &format!("{base_url}/api/v1/zones/{index}/cover"),
-            )
-            .await?;
+            if let Some(ref cover_url) = zone.cover_url {
+                self.publish(&format!("{base}/track/cover"), cover_url)
+                    .await?;
+            }
         }
         self.publish(&format!("{base}/presence"), &zone.presence.to_string())
             .await?;
