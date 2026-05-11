@@ -1,28 +1,21 @@
-/target/
+# Note: webui/ has its own .gitignore for Node/Next.js artifacts
 
+# Rust
+/target/
+.cargo/
+
+# Editor / OS
 *.swp
 *.swo
 *~
 .DS_Store
 .idea/
 .vscode/
+
+# Runtime config & state (user-specific)
 snapdog.toml
+snapdog.dev.toml
 state.json
+snapcast-state.json
 *.log
 .env.test
-
-# WebUI
-webui/out/
-webui/node_modules/
-webui/.next/
-snapdog.dev.toml
-snapcast-state.json
-.cargo/
-
-# OpenKNXproducer
-tools/
-knx/*.knxprod
-knx/*.xml
-knx/*.debug.xml
-include/eq.json
-/eq.json/snapdog.toml
