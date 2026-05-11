@@ -433,6 +433,8 @@ fn run_cpal(
     };
 
     let channels = format.channels() as usize;
+    let was_silent = Arc::new(AtomicBool::new(true));
+    let signal_flag = was_silent.clone();
 
     let cpal_stream = device.build_output_stream(
         &config,
@@ -492,6 +494,14 @@ fn run_cpal(
             // Apply EQ after PCM decode
             if let Ok(mut eq) = eq.try_lock() {
                 eq.process(data);
+            }
+
+            // Detect silence → signal transition
+            let has_signal = data.iter().any(|&s| s.abs() > SILENCE_THRESHOLD);
+            if has_signal && signal_flag.swap(false, Ordering::Relaxed) {
+                tracing::debug!("Audio signal detected");
+            } else if !has_signal && !signal_flag.load(Ordering::Relaxed) {
+                signal_flag.store(true, Ordering::Relaxed);
             }
 
             // Apply speaker correction after music EQ
