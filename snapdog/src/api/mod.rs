@@ -120,8 +120,9 @@ pub async fn serve(
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());
 
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    tracing::info!(port, "Listening");
+    let addr = format!("0.0.0.0:{port}");
+    let listener = TcpListener::bind(&addr).await?;
+    tracing::info!("REST API listening on http://{addr}");
     axum::serve(listener, app).await?;
     Ok(())
 }
