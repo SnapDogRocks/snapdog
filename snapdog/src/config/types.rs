@@ -32,6 +32,8 @@ impl KnxRole {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioCodec {
+    /// Uncompressed PCM (WAV header passthrough).
+    Pcm,
     /// FLAC lossless compression.
     #[default]
     Flac,
@@ -45,6 +47,7 @@ impl AudioCodec {
     /// String representation for Snapcast protocol.
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Pcm => "pcm",
             Self::Flac => "flac",
             Self::F32lz4 => "f32lz4",
             Self::F32lz4e => "f32lz4e",

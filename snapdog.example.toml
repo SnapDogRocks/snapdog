@@ -22,7 +22,7 @@ sample_rate = 48000
 bit_depth = 16
 # Number of channels (2 = stereo)
 channels = 2
-# Snapcast streaming codec: "flac", "f32lz4", "f32lz4e" (encrypted)
+# Snapcast streaming codec: "pcm", "flac", "f32lz4", "f32lz4e" (encrypted)
 codec = "flac"
 # Pre-shared key for f32lz4e encryption (both server and client must match)
 # encryption_psk = "my-secret-key"

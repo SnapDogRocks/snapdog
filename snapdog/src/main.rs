@@ -45,7 +45,7 @@ struct Cli {
     #[arg(short, long)]
     port: Option<u16>,
 
-    /// Audio codec: flac, f32lz4, f32lz4e
+    /// Audio codec: pcm, flac, f32lz4, f32lz4e
     #[arg(long)]
     codec: Option<String>,
 
@@ -165,10 +165,11 @@ async fn main() -> Result<()> {
     }
     if let Some(ref codec) = cli.codec {
         app_config.audio.codec = match codec.as_str() {
+            "pcm" => config::AudioCodec::Pcm,
             "flac" => config::AudioCodec::Flac,
             "f32lz4" => config::AudioCodec::F32lz4,
             "f32lz4e" => config::AudioCodec::F32lz4e,
-            other => anyhow::bail!("Unknown codec '{other}' — use flac, f32lz4, or f32lz4e"),
+            other => anyhow::bail!("Unknown codec '{other}' — use pcm, flac, f32lz4, or f32lz4e"),
         };
     }
     if let Some(rate) = cli.sample_rate {
