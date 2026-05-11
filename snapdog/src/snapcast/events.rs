@@ -474,6 +474,11 @@ async fn sync_group_ids(
                         tracing::debug!(zone = zone_cfg.index, new = %gid, "Zone group ID updated");
                         zone.snapcast_group_id = Some(gid.to_string());
                     }
+                    let group_muted = group.get("muted").and_then(|m| m.as_bool()).unwrap_or(false);
+                    if zone.muted != group_muted {
+                        tracing::debug!(zone = zone_cfg.index, muted = group_muted, "Zone mute synced from Snapcast group");
+                        zone.muted = group_muted;
+                    }
                 }
             }
         }

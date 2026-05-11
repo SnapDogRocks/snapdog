@@ -329,6 +329,10 @@ mod process_impl {
                         tracing::debug!(zone = zone_cfg.index, new = %group.id, "Zone group ID updated");
                         zone.snapcast_group_id = Some(group.id.clone());
                     }
+                    if zone.muted != group.muted {
+                        tracing::debug!(zone = zone_cfg.index, muted = group.muted, "Zone mute synced from Snapcast group");
+                        zone.muted = group.muted;
+                    }
                 }
                 for snap_client in &group.clients {
                     if let Some(client) = s
