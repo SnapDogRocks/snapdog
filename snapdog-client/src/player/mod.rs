@@ -515,7 +515,7 @@ fn run_cpal(
     )?;
 
     cpal_stream.play()?;
-    tracing::info!("Audio playback started");
+    tracing::info!("Audio output stream started");
 
     // Park the thread indefinitely — cpal callback runs on its own thread.
     // The thread will be cleaned up when the process exits.
