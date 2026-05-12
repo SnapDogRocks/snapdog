@@ -115,7 +115,7 @@ export default function Home() {
           updateZoneTrack(n.zone, { ...n, cover_url: n.cover_url });
           break;
         case "zone_progress":
-          updateZoneProgress(n.zone, n.position_ms, n.duration_ms);
+          updateZoneProgress(n.zone, n.position_ms, n.duration_ms, n.buffered_ms ?? null);
           break;
         case "client_state_changed":
           updateClient(n.client, {

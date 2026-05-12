@@ -34,6 +34,7 @@ export interface ZoneState extends ZoneInfo {
   track: TrackMetadata | null;
   presenceEnabled: boolean;
   presenceTimerActive: boolean;
+  buffered_ms: number | null;
 }
 
 // ── Store shape ───────────────────────────────────────────────
@@ -59,7 +60,7 @@ interface AppState {
     id: number,
     track: Pick<TrackMetadata, "title" | "artist" | "album" | "duration_ms" | "position_ms" | "seekable" | "cover_url">,
   ) => void;
-  updateZoneProgress: (id: number, position_ms: number, duration_ms: number) => void;
+  updateZoneProgress: (id: number, position_ms: number, duration_ms: number, buffered_ms: number | null) => void;
   updateZonePresence: (id: number, presence: boolean, enabled: boolean, timerActive: boolean) => void;
 
   // Client updates
@@ -92,7 +93,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const zones = new Map<number, ZoneState>();
       for (const z of zoneList) {
-        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled ?? true, presenceTimerActive: z.presence_timer_active ?? false });
+        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled ?? true, presenceTimerActive: z.presence_timer_active ?? false, buffered_ms: null });
       }
 
       // Fetch track metadata for each zone in parallel
@@ -128,6 +129,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         track: existing?.track ?? null,
         presenceEnabled: existing?.presenceEnabled ?? true,
         presenceTimerActive: existing?.presenceTimerActive ?? false,
+        buffered_ms: existing?.buffered_ms ?? null,
       });
     }
     set({ zones });
@@ -152,11 +154,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ zones });
   },
 
-  updateZoneProgress: (id, position_ms, duration_ms) => {
+  updateZoneProgress: (id, position_ms, duration_ms, buffered_ms) => {
     const zones = new Map(get().zones);
     const z = zones.get(id);
     if (z?.track) {
-      zones.set(id, { ...z, track: { ...z.track, position_ms, duration_ms } });
+      zones.set(id, { ...z, track: { ...z.track, position_ms, duration_ms }, buffered_ms });
     }
     set({ zones });
   },

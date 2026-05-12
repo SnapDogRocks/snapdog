@@ -19,6 +19,7 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
   const isPlaying = zone.playback === "playing";
   const isIdle = zone.source === "idle" || !track;
   const canSeek = track?.seekable ?? false;
+  const bufferedMs = zone.buffered_ms ?? null;
 
   const [localPosition, setLocalPosition] = useState(serverPosition);
   const [dragging, setDragging] = useState(false);
@@ -81,16 +82,25 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
 
   return (
     <div className="w-full sm:max-w-xs space-y-1">
-      <Slider
-        value={isEndless ? [0] : [localPosition]}
-        max={isEndless ? 1 : (duration || 1)}
-        step={SEEK_STEP_MS}
-        onValueChange={handleSeek}
-        onValueCommit={handleSeekCommit}
-        disabled={!canSeek}
-        className="w-full"
-        aria-label={t("label")}
-      />
+      <div className="relative">
+        {/* Buffer progress bar — behind the slider */}
+        {bufferedMs != null && duration > 0 && bufferedMs < duration && (
+          <div
+            className="absolute top-1/2 -translate-y-1/2 left-0 h-3 rounded-4xl bg-primary/20 pointer-events-none"
+            style={{ width: `${Math.min((bufferedMs / duration) * 100, 100)}%` }}
+          />
+        )}
+        <Slider
+          value={isEndless ? [0] : [localPosition]}
+          max={isEndless ? 1 : (duration || 1)}
+          step={SEEK_STEP_MS}
+          onValueChange={handleSeek}
+          onValueCommit={handleSeekCommit}
+          disabled={!canSeek}
+          className="w-full relative"
+          aria-label={t("label")}
+        />
+      </div>
       <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums">
         <span>{formatTime(localPosition)}</span>
         <span>{duration > 0 ? formatTime(duration) : "∞"}</span>

@@ -144,6 +144,7 @@ export interface WsZoneProgress {
   zone: number;
   position_ms: number;
   duration_ms: number;
+  buffered_ms?: number;
 }
 
 export interface WsClientStateChanged {
