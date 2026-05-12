@@ -78,7 +78,9 @@ impl EmbeddedBackend {
             sample_format: config.audio.sample_format(),
             encryption_psk,
             client_filter,
-            state_file: Some("snapcast-state.json".into()),
+            state_file: Some(
+                std::path::PathBuf::from(&config.system.state_dir).join("snapcast.json"),
+            ),
             mdns_service_type: config.snapcast.mdns_service_type.clone(),
             mdns_name: config.snapcast.mdns_name.clone(),
             ..ServerConfig::default()

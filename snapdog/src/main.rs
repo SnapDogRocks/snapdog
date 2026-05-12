@@ -13,7 +13,7 @@ compile_error!("Either `snapcast-embedded` or `snapcast-process` feature must be
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
@@ -81,9 +81,8 @@ const SNAPCAST_CMD_CHANNEL_SIZE: usize = 64;
 /// Delay after starting snapserver before connecting.
 #[cfg(feature = "snapcast-process")]
 const SNAPSERVER_STARTUP_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
-/// Path for persisted zone/client state.
-const STATE_FILE: &str = "state.json";
-/// Path for persisted EQ configuration.
+/// State file names (relative to config.system.state_dir).
+const STATE_FILE: &str = "zones.json";
 const EQ_FILE: &str = "eq.json";
 
 /// Coalesces rapid volume changes per client within a time window.
@@ -224,7 +223,12 @@ async fn main() -> Result<()> {
     );
 
     // ── Initialize subsystems ─────────────────────────────────
-    let store = state::init(&config, Some(&PathBuf::from(STATE_FILE)))?;
+    let state_dir = PathBuf::from(&config.system.state_dir);
+    std::fs::create_dir_all(&state_dir)
+        .with_context(|| format!("Failed to create state directory: {}", state_dir.display()))?;
+    tracing::info!(path = %state_dir.display(), "State directory");
+
+    let store = state::init(&config, Some(&state_dir.join(STATE_FILE)))?;
     let covers = state::cover::new_cache();
     let (notify_tx, _) = api::ws::notification_channel();
 
@@ -247,7 +251,7 @@ async fn main() -> Result<()> {
 
     // EQ store (needed by event handler + zone players + API)
     let eq_store = Arc::new(std::sync::Mutex::new(audio::eq::EqStore::load(
-        std::path::Path::new(EQ_FILE),
+        &state_dir.join(EQ_FILE),
     )));
 
     #[cfg(feature = "snapcast-embedded")]

@@ -13,6 +13,9 @@ log_level = "info"
 # External base URL for absolute links (MQTT cover art, etc.)
 # Required if behind a reverse proxy or accessed from other hosts.
 base_url = "http://192.168.1.10:5555"
+# Directory for persistent state files (zones.json, eq.json, snapcast.json).
+# Default: platform-appropriate (Linux: ~/.local/state/snapdog, macOS: ~/Library/Application Support/snapdog)
+# state_dir = "/var/lib/snapdog"
 
 # ── Audio ──────────────────────────────────────────────────────────────────
 [audio]

@@ -161,7 +161,7 @@ pub struct RawConfig {
 }
 
 /// System-level settings.
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct SystemConfig {
     /// Tracing log level: trace, debug, info, warn, error.
     #[serde(default)]
@@ -172,10 +172,61 @@ pub struct SystemConfig {
     /// Used for absolute URLs in MQTT cover art. Defaults to `http://localhost:3000`.
     #[serde(default = "default_base_url")]
     pub base_url: String,
+    /// Directory for persistent state files (state.json, eq.json, snapcast-state.json).
+    /// Defaults to platform-appropriate path.
+    #[serde(default = "default_state_dir")]
+    pub state_dir: String,
+}
+
+impl Default for SystemConfig {
+    fn default() -> Self {
+        Self {
+            log_level: LogLevel::default(),
+            log_file: None,
+            base_url: default_base_url(),
+            state_dir: default_state_dir(),
+        }
+    }
 }
 
 fn default_base_url() -> String {
     "http://localhost:3000".into()
+}
+
+fn default_state_dir() -> String {
+    // Running as systemd service → /var/lib/snapdog
+    if std::env::var("INVOCATION_ID").is_ok() {
+        return "/var/lib/snapdog".into();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::env::var("HOME").map_or_else(
+            |_| "/tmp/snapdog".into(),
+            |h| format!("{h}/Library/Application Support/snapdog"),
+        )
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("XDG_STATE_HOME")
+            .map(|p| format!("{p}/snapdog"))
+            .unwrap_or_else(|_| {
+                std::env::var("HOME").map_or_else(
+                    |_| "/tmp/snapdog".into(),
+                    |h| format!("{h}/.local/state/snapdog"),
+                )
+            })
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("APPDATA")
+            .map(|p| format!("{p}\\snapdog"))
+            .unwrap_or_else(|_| "C:\\ProgramData\\snapdog".into())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        "/tmp/snapdog".into()
+    }
 }
 
 /// How zone (group) volume changes affect individual client volumes.
