@@ -480,6 +480,13 @@ async fn sync_group_ids(
     };
 
     let mut s = store.write().await;
+
+    // Clear all group IDs first — stale references to deleted groups are the
+    // primary cause of zone-switch failures. Re-assign from current server state below.
+    for zone in s.zones.values_mut() {
+        zone.snapcast_group_id = None;
+    }
+
     for zone_cfg in &config.zones {
         // Find the group whose stream matches this zone, prefer the one with most clients
         let best_group = groups
