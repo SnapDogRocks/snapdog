@@ -38,6 +38,7 @@ SnapDog turns a Linux box (or Mac) into a synchronized multi-room audio system w
 | 📡 **WebSocket** | Real-time state push notifications |
 | 🖥️ **WebUI** | Responsive SPA, drag-and-drop, tabbed EQ overlay, i18n (5 languages) |
 | 🎨 **Cover Art** | Content-addressed caching, ICY StreamUrl fallback, unified per-zone endpoint |
+| 💾 **Track Cache** | Disk-backed LRU cache for Subsonic tracks — instant seek, replay, and look-ahead prefetch |
 
 ## Quick Start
 
@@ -147,7 +148,8 @@ zone_switch_fade_ms = 300            # Client zone switch fade (0 to disable)
 source_switch_fade_ms = 300          # Source change fade within a zone (0 to disable)
 
 [system]
-base_url = "http://192.168.1.10:5555"  # For absolute URLs in MQTT cover art
+base_url = "http://192.168.1.10:5555"  # For absolute URLs in API responses
+# state_dir = "/var/lib/snapdog"       # Persistent state (default: platform-appropriate)
 
 [snapcast]
 streaming_port = 1704
@@ -165,6 +167,11 @@ base_topic = "snapdog/"
 url = "https://music.example.com"
 username = "user"
 password = "pass"
+# format = "raw"                      # raw | flac | mp3 | opus
+# [subsonic.cache]
+# enabled = true                      # Disk cache for instant seek/replay
+# max_size_mb = 2048                  # LRU eviction
+# lookahead = 2                       # Pre-fetch next N playlist tracks
 
 [knx]
 enabled = true
