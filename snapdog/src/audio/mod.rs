@@ -6,6 +6,7 @@
 //! Fetches HTTP audio streams, decodes via symphonia to interleaved f32 samples,
 //! and sends them to a consumer (ZonePlayer) for resampling, EQ, and output.
 
+pub mod cache;
 pub mod eq;
 pub mod icy;
 pub mod resample;
