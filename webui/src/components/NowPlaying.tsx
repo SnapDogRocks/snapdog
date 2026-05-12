@@ -18,8 +18,8 @@ export function NowPlaying({ zone }: { zone: ZoneState }) {
 
   const fallback = (
     <div className="flex flex-col items-center justify-center size-full bg-gradient-to-br from-muted to-muted/60">
-      <span className="text-6xl sm:text-4xl mb-2 drop-shadow-md">{zone.icon || "🎵"}</span>
-      <span className="text-xs font-medium text-muted-foreground/60 tracking-wider uppercase">{zone.name}</span>
+      <img src="/snapdog-icon.svg" alt="SnapDog" className="size-24 sm:size-16 opacity-30" />
+      <span className="text-xs font-medium text-muted-foreground/60 tracking-wider uppercase mt-2">{zone.name}</span>
     </div>
   );
 
