@@ -533,25 +533,25 @@ pub struct SubsonicCacheConfig {
     pub lookahead: usize,
 }
 
-fn default_cache_enabled() -> bool {
+const fn default_cache_enabled() -> bool {
     true
 }
 
 fn default_cache_path() -> String {
-    std::env::var("XDG_CACHE_HOME")
-        .map(|p| format!("{p}/snapdog/tracks"))
-        .unwrap_or_else(|_| {
+    std::env::var("XDG_CACHE_HOME").map_or_else(
+        |_| {
             std::env::var("HOME")
-                .map(|h| format!("{h}/.cache/snapdog/tracks"))
-                .unwrap_or_else(|_| "/tmp/snapdog/tracks".into())
-        })
+                .map_or_else(|_| "/tmp/snapdog/tracks".into(), |h| format!("{h}/.cache/snapdog/tracks"))
+        },
+        |p| format!("{p}/snapdog/tracks"),
+    )
 }
 
-fn default_cache_max_size_mb() -> u64 {
+const fn default_cache_max_size_mb() -> u64 {
     2048
 }
 
-fn default_cache_lookahead() -> usize {
+const fn default_cache_lookahead() -> usize {
     2
 }
 

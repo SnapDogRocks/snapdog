@@ -145,8 +145,7 @@ async fn handle_event(
                     let s = store.read().await;
                     s.clients
                         .get(&client_index)
-                        .map(|c| (c.base_volume, c.muted))
-                        .unwrap_or((crate::state::DEFAULT_VOLUME, false))
+                        .map_or((crate::state::DEFAULT_VOLUME, false), |c| (c.base_volume, c.muted))
                 };
                 let _ = backend
                     .execute(SnapcastCmd::Client {

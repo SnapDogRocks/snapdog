@@ -434,9 +434,9 @@ fn run_cpal(
 
     let channels = format.channels() as usize;
     let was_silent = Arc::new(AtomicBool::new(true));
-    let signal_flag = was_silent.clone();
+    let signal_flag = was_silent;
     let first_data_log = Arc::new(AtomicBool::new(true));
-    let first_data_flag = first_data_log.clone();
+    let first_data_flag = first_data_log;
 
     let cpal_stream = device.build_output_stream(
         &config,
@@ -556,7 +556,7 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
         host.default_output_device()
     } else {
         host.output_devices()?
-            .find(|d| d.description().map_or(false, |n| format!("{n}").contains(device_name)))
+            .find(|d| d.description().is_ok_and(|n| format!("{n}").contains(device_name)))
     }
     .ok_or_else(|| anyhow::anyhow!("no output device '{device_name}'"))?;
 

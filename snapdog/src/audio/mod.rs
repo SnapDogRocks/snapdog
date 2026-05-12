@@ -233,11 +233,10 @@ pub async fn decode_http_stream(
 ///
 /// On completion, finalizes the cache entry. On abort (consumer dropped), the partial
 /// file remains for potential future resume.
-#[tracing::instrument(skip(tx, audio_config, cache))]
+#[tracing::instrument(skip(tx, cache))]
 pub async fn decode_http_stream_cached(
     url: String,
     tx: PcmSender,
-    audio_config: AudioConfig,
     cache: &cache::TrackCache,
     track_id: &str,
 ) -> Result<()> {
@@ -527,7 +526,8 @@ fn decode_to_pcm(
         .make(&track.codec_params, &DecoderOptions::default())
         .context("Failed to create decoder")?;
 
-    run_decode_loop(&mut format, &mut decoder, track_id, tx)
+    run_decode_loop(&mut format, &mut decoder, track_id, tx);
+    Ok(())
 }
 
 /// Decode a cached file on disk with optional seek to a position.
@@ -585,7 +585,8 @@ pub fn decode_cached_file(
         }
     }
 
-    run_decode_loop(&mut format, &mut decoder, track_id, tx)
+    run_decode_loop(&mut format, &mut decoder, track_id, tx);
+    Ok(())
 }
 
 /// Build a symphonia hint from an HTTP content-type string.
@@ -608,7 +609,7 @@ fn run_decode_loop(
     decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
     track_id: u32,
     tx: &PcmSender,
-) -> Result<()> {
+) {
     let time_base = format
         .default_track()
         .and_then(|t| t.codec_params.time_base);
@@ -674,8 +675,6 @@ fn run_decode_loop(
             }
         }
     }
-
-    Ok(())
 }
 
 /// Bridge from async tokio DuplexStream to sync Read for symphonia.

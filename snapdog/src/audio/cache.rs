@@ -28,14 +28,20 @@ const INDEX_FILE: &str = "index.json";
 pub enum CacheEntry {
     /// File fully downloaded — ready for instant seekable playback.
     Complete {
+        /// Path to the cached file on disk.
         path: PathBuf,
+        /// MIME content type (e.g., "audio/flac").
         content_type: String,
     },
     /// Download in progress — partial file available.
     Partial {
+        /// Path to the partial file on disk.
         path: PathBuf,
+        /// MIME content type (may be empty if unknown).
         content_type: String,
+        /// Bytes downloaded so far.
         bytes_written: u64,
+        /// Total expected bytes, if known.
         total_bytes: Option<u64>,
     },
     /// Not in cache.
@@ -67,12 +73,12 @@ impl CacheWriter {
     }
 
     /// Current number of bytes written.
-    pub fn bytes_written(&self) -> u64 {
+    pub const fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
 
     /// Total expected bytes (from Content-Length), if known.
-    pub fn total_bytes(&self) -> Option<u64> {
+    pub const fn total_bytes(&self) -> Option<u64> {
         self.total_bytes
     }
 
@@ -160,7 +166,7 @@ impl TrackCache {
         // Check for partial file
         let partial = Path::new(&self.config.path).join(format!("{track_id}.{PARTIAL_EXT}"));
         if partial.exists() {
-            let bytes_written = partial.metadata().map(|m| m.len()).unwrap_or(0);
+            let bytes_written = partial.metadata().map_or(0, |m| m.len());
             return CacheEntry::Partial {
                 path: partial,
                 content_type: String::new(), // unknown for partial without index

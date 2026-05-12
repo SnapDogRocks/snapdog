@@ -235,8 +235,7 @@ async fn set_zone(
             let s = state.store.read().await;
             s.clients
                 .get(&idx)
-                .map(|c| (c.is_snapdog, c.snapcast_id.clone()))
-                .unwrap_or((false, None))
+                .map_or((false, None), |c| (c.is_snapdog, c.snapcast_id.clone()))
         };
         if is_sd {
             if let Some(snap_id) = snap_id {

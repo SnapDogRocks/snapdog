@@ -98,13 +98,12 @@ pub async fn start_subsonic_track_decode(
 
     // Cache miss — stream and cache simultaneously
     let url = sub.stream_url(&track.id);
-    let ac = ctx.config.audio.clone();
 
     if let Some(cache) = ctx.track_cache {
         let cache = cache.clone();
         let tid = track.id.clone();
         *ds.current_decode = Some(tokio::spawn(async move {
-            if let Err(e) = audio::decode_http_stream_cached(url, tx, ac, &cache, &tid).await {
+            if let Err(e) = audio::decode_http_stream_cached(url, tx, &cache, &tid).await {
                 tracing::error!(error = %e, "Subsonic cached decode failed");
             }
         }));
@@ -112,6 +111,7 @@ pub async fn start_subsonic_track_decode(
     }
 
     // Fallback — no cache, stream directly
+    let ac = ctx.config.audio.clone();
     *ds.current_decode = Some(tokio::spawn(async move {
         if let Err(e) = audio::decode_http_stream(url, tx, ac, None).await {
             tracing::error!(error = %e, "Subsonic decode failed");
