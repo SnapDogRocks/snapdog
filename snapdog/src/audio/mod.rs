@@ -228,6 +228,113 @@ pub async fn decode_http_stream(
     Ok(())
 }
 
+/// Like [`decode_http_stream`] but tees downloaded bytes through a [`cache::CacheWriter`]
+/// for disk caching. Sends [`PcmMessage::BufferProgress`] as bytes arrive.
+///
+/// On completion, finalizes the cache entry. On abort (consumer dropped), the partial
+/// file remains for potential future resume.
+#[tracing::instrument(skip(tx, audio_config, cache_writer))]
+pub async fn decode_http_stream_cached(
+    url: String,
+    tx: PcmSender,
+    audio_config: AudioConfig,
+    mut cache_writer: cache::CacheWriter,
+) -> Result<()> {
+    let client = icy::icy_client();
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .with_context(|| format!("Failed to fetch {url}"))?
+        .error_for_status()
+        .with_context(|| format!("HTTP error for {url}"))?;
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    tracing::info!(content_type = %content_type, "Cached stream connected");
+
+    // MP4/M4A: buffer entirely, write to cache, then decode
+    let needs_seek = content_type.contains("mp4") || content_type.contains("m4a");
+    if needs_seek {
+        let bytes = response
+            .bytes()
+            .await
+            .context("Failed to read stream body")?;
+        cache_writer.write(&bytes)?;
+        let _ = tx.send(PcmMessage::BufferProgress {
+            buffered_bytes: bytes.len() as u64,
+            total_bytes: Some(bytes.len() as u64),
+        }).await;
+        let path = cache_writer.complete()?;
+        let ct = content_type.clone();
+        tokio::task::spawn_blocking(move || {
+            decode_cached_file(&path, &ct, None, &tx)
+        })
+        .await
+        .context("Decoder task panicked")??;
+        return Ok(());
+    }
+
+    // Streaming path: pipe to decoder + tee to cache
+    let (mut pipe_tx, pipe_rx) = tokio::io::duplex(PIPE_BUFFER_SIZE);
+    let progress_tx = tx.clone();
+    let total_bytes = cache_writer.total_bytes();
+
+    let url_clone = url.clone();
+    let http_task = tokio::spawn(async move {
+        use futures_util::StreamExt;
+        use tokio::io::AsyncWriteExt;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    // Tee to cache
+                    if let Err(e) = cache_writer.write(&bytes) {
+                        tracing::warn!(error = %e, "Cache write failed, continuing without cache");
+                    }
+                    // Send buffer progress
+                    let _ = progress_tx.send(PcmMessage::BufferProgress {
+                        buffered_bytes: cache_writer.bytes_written(),
+                        total_bytes,
+                    }).await;
+                    // Write to decode pipe
+                    if pipe_tx.write_all(&bytes).await.is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, url = %url_clone, "Stream read error");
+                    break;
+                }
+            }
+        }
+        let _ = pipe_tx.shutdown().await;
+        // Finalize cache entry
+        if let Err(e) = cache_writer.complete() {
+            tracing::warn!(error = %e, "Failed to finalize cache entry");
+        }
+    });
+
+    let decode_task = tokio::task::spawn_blocking(move || {
+        let reader = SyncReader(tokio::runtime::Handle::current(), pipe_rx);
+        decode_to_pcm(reader, &content_type, &tx)
+    });
+
+    tokio::select! {
+        _ = http_task => tracing::debug!("Cached HTTP stream ended"),
+        result = decode_task => {
+            result.context("Decoder task panicked")??;
+        }
+    }
+
+    Ok(())
+}
+
 /// Decode an HLS media playlist by downloading segments sequentially and feeding them to symphonia.
 ///
 /// HLS segments (.ts, .aac) are designed to be concatenated, so we download them one by one
