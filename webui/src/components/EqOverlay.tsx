@@ -289,11 +289,23 @@ function SpeakerTab({ clientId, enabled, setEnabled, abBypass }: { clientId: num
     }).catch(() => setLoading(false));
   }, [clientId]);
 
+  const [visibleCount, setVisibleCount] = useState(MAX_SPEAKER_RESULTS);
+
   const filtered = useMemo(() => {
-    if (!search) return speakers.slice(0, MAX_SPEAKER_RESULTS);
+    setVisibleCount(MAX_SPEAKER_RESULTS); // reset on search change
+    if (!search) return speakers;
     const q = search.toLowerCase();
-    return speakers.filter((s) => s.toLowerCase().includes(q)).slice(0, MAX_SPEAKER_RESULTS);
+    return speakers.filter((s) => s.toLowerCase().includes(q));
   }, [speakers, search]);
+
+  const visibleSpeakers = filtered.slice(0, visibleCount);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40) {
+      setVisibleCount((prev) => Math.min(prev + MAX_SPEAKER_RESULTS, filtered.length));
+    }
+  }, [filtered.length]);
 
   const applySpeaker = (name: string) => {
     api.speakers.apply(clientId, name).then((config) => {
@@ -378,11 +390,11 @@ function SpeakerTab({ clientId, enabled, setEnabled, abBypass }: { clientId: num
       />
 
       {/* Results list */}
-      <div className="max-h-48 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-        {filtered.length === 0 ? (
+      <div className="max-h-48 overflow-y-auto rounded-lg border border-border divide-y divide-border" onScroll={handleScroll}>
+        {visibleSpeakers.length === 0 ? (
           <div className="px-3 py-4 text-sm text-muted-foreground text-center">No speakers found</div>
         ) : (
-          filtered.map((name) => (
+          visibleSpeakers.map((name) => (
             <button
               key={name}
               onClick={() => applySpeaker(name)}
