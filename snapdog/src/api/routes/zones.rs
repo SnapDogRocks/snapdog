@@ -14,6 +14,9 @@ use crate::api::error::ApiError;
 use crate::player::ZoneCommand;
 use crate::state;
 
+/// Embedded SnapDog icon SVG used as placeholder when no cover art is available.
+const PLACEHOLDER_COVER: &str = include_str!("../../../../assets/snapdog-icon.svg");
+
 /// Volume value: absolute (e.g. `75`) or relative (e.g. `"+5"`, `"-3"`).
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -394,18 +397,24 @@ async fn get_zone_cover(
     Path(idx): Path<usize>,
 ) -> impl IntoResponse {
     let cache = state.covers.read().await;
-    cache
-        .get(idx)
-        .map_or(Err(ApiError::NotFound("zone")), |entry| {
-            Ok((
-                [
-                    ("content-type", entry.mime.clone()),
-                    ("cache-control", "public, max-age=86400, immutable".into()),
-                    ("etag", format!("\"{}\"", entry.hash)),
-                ],
-                entry.bytes.clone(),
-            ))
-        })
+    match cache.get(idx) {
+        Some(entry) => (
+            [
+                ("content-type", entry.mime.clone()),
+                ("cache-control", "public, max-age=86400, immutable".into()),
+                ("etag", format!("\"{}\"", entry.hash)),
+            ],
+            entry.bytes.clone(),
+        ),
+        None => (
+            [
+                ("content-type", "image/svg+xml".to_string()),
+                ("cache-control", "public, max-age=604800".to_string()),
+                ("etag", "\"snapdog-placeholder\"".to_string()),
+            ],
+            PLACEHOLDER_COVER.as_bytes().to_vec(),
+        ),
+    }
 }
 async fn get_track_title(
     State(state): State<SharedState>,
