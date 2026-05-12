@@ -121,7 +121,7 @@ impl SubsonicFormat {
 
 /// Root of the TOML config file. Optional fields use defaults.
 #[derive(Debug, Default, Deserialize)]
-pub struct RawConfig {
+pub struct FileConfig {
     /// System settings (log level, log file).
     #[serde(default)]
     pub system: SystemConfig,
@@ -168,11 +168,7 @@ pub struct SystemConfig {
     pub log_level: LogLevel,
     /// Optional log file path (daily rotation).
     pub log_file: Option<String>,
-    /// External base URL (e.g., `http://192.168.2.20:3000` or `https://music.example.com`).
-    /// Used for absolute URLs in MQTT cover art. Defaults to `http://localhost:3000`.
-    #[serde(default = "default_base_url")]
-    pub base_url: String,
-    /// Directory for persistent state files (state.json, eq.json, snapcast-state.json).
+    /// Directory for persistent state files (zones.json, eq.json, snapcast.json).
     /// Defaults to platform-appropriate path.
     #[serde(default = "default_state_dir")]
     pub state_dir: String,
@@ -183,14 +179,13 @@ impl Default for SystemConfig {
         Self {
             log_level: LogLevel::default(),
             log_file: None,
-            base_url: default_base_url(),
             state_dir: default_state_dir(),
         }
     }
 }
 
 fn default_base_url() -> String {
-    "http://localhost:3000".into()
+    "http://localhost:5555".into()
 }
 
 fn default_state_dir() -> String {
@@ -362,15 +357,6 @@ pub struct AudioConfig {
     /// Number of audio channels (typically 2 for stereo).
     #[serde(default = "default_channels")]
     pub channels: u16,
-    /// Snapcast codec: flac, f32lz4, f32lz4e.
-    #[serde(default)]
-    pub codec: AudioCodec,
-    /// Pre-shared key for f32lz4e encryption (default: built-in key).
-    #[serde(default)]
-    pub encryption_psk: Option<String>,
-    /// Default group volume mode for all zones.
-    #[serde(default)]
-    pub group_volume_mode: GroupVolumeMode,
     /// How to resolve conflicts when AirPlay/Spotify is active and local
     /// playback (radio/subsonic) is requested.
     #[serde(default)]
@@ -406,9 +392,6 @@ impl Default for AudioConfig {
             sample_rate: default_sample_rate(),
             bit_depth: default_bit_depth(),
             channels: default_channels(),
-            codec: AudioCodec::default(),
-            encryption_psk: None,
-            group_volume_mode: GroupVolumeMode::default(),
             source_conflict: SourceConflict::default(),
             zone_switch_fade_ms: default_zone_switch_fade_ms(),
             source_switch_fade_ms: default_zone_switch_fade_ms(),
@@ -429,6 +412,10 @@ pub struct HttpConfig {
     /// Port for the REST API, WebSocket, and embedded WebUI.
     #[serde(default = "default_http_port")]
     pub port: u16,
+    /// External base URL (e.g., `http://192.168.2.20:5555` or `https://music.example.com`).
+    /// Used for absolute URLs in API responses. Defaults to `http://localhost:<port>`.
+    #[serde(default = "default_base_url")]
+    pub base_url: String,
     /// Optional API keys. If set, all API endpoints require `Authorization: Bearer <key>`.
     #[serde(default)]
     pub api_keys: Vec<String>,
@@ -438,6 +425,7 @@ impl Default for HttpConfig {
     fn default() -> Self {
         Self {
             port: default_http_port(),
+            base_url: default_base_url(),
             api_keys: vec![],
         }
     }
@@ -486,6 +474,15 @@ pub struct SnapcastConfig {
     /// mDNS advertised name (default: "SnapDog").
     #[serde(default = "default_mdns_name")]
     pub mdns_name: String,
+    /// Streaming codec: pcm, flac, f32lz4, f32lz4e.
+    #[serde(default)]
+    pub codec: AudioCodec,
+    /// Pre-shared key for f32lz4e encryption (default: built-in key).
+    #[serde(default)]
+    pub encryption_psk: Option<String>,
+    /// Default group volume mode for all zones.
+    #[serde(default)]
+    pub group_volume_mode: GroupVolumeMode,
 }
 
 impl Default for SnapcastConfig {
@@ -500,6 +497,9 @@ impl Default for SnapcastConfig {
             default_zone: None,
             mdns_service_type: default_mdns_service_type(),
             mdns_name: default_mdns_name(),
+            codec: AudioCodec::default(),
+            encryption_psk: None,
+            group_volume_mode: GroupVolumeMode::default(),
         }
     }
 }

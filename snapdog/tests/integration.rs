@@ -17,7 +17,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use snapdog::config::{self, AppConfig, RawConfig};
+use snapdog::config::{self, AppConfig, FileConfig};
 use snapdog::player::{self, ZoneCommand, ZoneCommandSender, ZonePlayerContext};
 use snapdog::process::SnapserverHandle;
 use snapdog::snapcast::SnapcastClient;
@@ -71,7 +71,7 @@ async fn test_config() -> (Arc<AppConfig>, u16, u16, u16) {
     "#
     );
 
-    let mut config = config::load_raw(toml::from_str::<RawConfig>(&toml).unwrap()).unwrap();
+    let mut config = config::load_raw(toml::from_str::<FileConfig>(&toml).unwrap()).unwrap();
     config.zones[0].tcp_source_port = tcp_source_port_1;
     config.zones[1].tcp_source_port = tcp_source_port_2;
 
@@ -230,7 +230,7 @@ mod broken_tests {
             config.snapcast.streaming_port, config.snapcast.jsonrpc_port,
         );
         let mut managed_config =
-            config::load_raw(toml::from_str::<RawConfig>(&toml_str).unwrap()).unwrap();
+            config::load_raw(toml::from_str::<FileConfig>(&toml_str).unwrap()).unwrap();
         managed_config.zones[0].tcp_source_port = config.zones[0].tcp_source_port;
         managed_config.zones[1].tcp_source_port = config.zones[1].tcp_source_port;
         managed_config.snapcast.managed = true;
@@ -503,7 +503,7 @@ mod broken_tests {
             config.snapcast.streaming_port, config.snapcast.jsonrpc_port,
         );
         let mut api_config =
-            config::load_raw(toml::from_str::<RawConfig>(&toml_str).unwrap()).unwrap();
+            config::load_raw(toml::from_str::<FileConfig>(&toml_str).unwrap()).unwrap();
         api_config.zones[0].tcp_source_port = config.zones[0].tcp_source_port;
         api_config.zones[1].tcp_source_port = config.zones[1].tcp_source_port;
         api_config.snapcast.managed = true;
@@ -523,7 +523,7 @@ mod broken_tests {
         let zone_commands = player::spawn_zone_players(ZonePlayerContext {
             config: Arc::new({
                 let mut c =
-                    config::load_raw(toml::from_str::<RawConfig>(&toml_str).unwrap()).unwrap();
+                    config::load_raw(toml::from_str::<FileConfig>(&toml_str).unwrap()).unwrap();
                 c.zones[0].tcp_source_port = config.zones[0].tcp_source_port;
                 c.zones[1].tcp_source_port = config.zones[1].tcp_source_port;
                 c.snapcast.managed = true;

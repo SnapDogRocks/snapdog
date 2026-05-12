@@ -19,13 +19,13 @@ use anyhow::{Context, Result};
 pub fn load(path: &Path) -> Result<AppConfig> {
     let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
         .with_context(|| format!("Failed to read {}", path.display()))?;
-    let raw: RawConfig =
+    let raw: FileConfig =
         toml::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
     load_raw(raw)
 }
 
 /// Resolve raw TOML config into fully populated AppConfig with conventions applied.
-pub fn load_raw(raw: RawConfig) -> Result<AppConfig> {
+pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
     anyhow::ensure!(
         !raw.zone.is_empty(),
         "At least one [[zone]] must be configured"
@@ -39,7 +39,7 @@ pub fn load_raw(raw: RawConfig) -> Result<AppConfig> {
         .zone
         .into_iter()
         .enumerate()
-        .map(|(i, z)| convention::resolve_zone(i + 1, z, &raw.audio))
+        .map(|(i, z)| convention::resolve_zone(i + 1, z, &raw.audio, &raw.snapcast))
         .collect::<Vec<_>>();
 
     let zone_names: Vec<&str> = zones.iter().map(|z| z.name.as_str()).collect();
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn parses_minimal_config() {
-        let raw: RawConfig = toml::from_str(minimal_toml()).unwrap();
+        let raw: FileConfig = toml::from_str(minimal_toml()).unwrap();
         let config = load_raw(raw).unwrap();
         assert_eq!(config.zones.len(), 1);
         assert_eq!(config.clients.len(), 1);
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn zone_conventions_applied() {
-        let raw: RawConfig = toml::from_str(minimal_toml()).unwrap();
+        let raw: FileConfig = toml::from_str(minimal_toml()).unwrap();
         let config = load_raw(raw).unwrap();
         let zone = &config.zones[0];
         assert_eq!(zone.index, 1);
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn knx_zone_no_defaults() {
-        let raw: RawConfig = toml::from_str(minimal_toml()).unwrap();
+        let raw: FileConfig = toml::from_str(minimal_toml()).unwrap();
         let config = load_raw(raw).unwrap();
         let knx = &config.zones[0].knx;
         // No convention defaults — all None unless explicitly configured
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn knx_client_no_defaults() {
-        let raw: RawConfig = toml::from_str(minimal_toml()).unwrap();
+        let raw: FileConfig = toml::from_str(minimal_toml()).unwrap();
         let config = load_raw(raw).unwrap();
         let knx = &config.clients[0].knx;
         assert!(knx.volume.is_none());
@@ -203,14 +203,14 @@ mod tests {
 
     #[test]
     fn client_zone_resolved_by_name() {
-        let raw: RawConfig = toml::from_str(minimal_toml()).unwrap();
+        let raw: FileConfig = toml::from_str(minimal_toml()).unwrap();
         let config = load_raw(raw).unwrap();
         assert_eq!(config.clients[0].zone_index, 1);
     }
 
     #[test]
     fn rejects_empty_zones() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[client]]
             name = "X"
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_zone_reference() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "Ground Floor"
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn zone_sink_override() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "Custom"
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn second_zone_gets_correct_indices() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "A"
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn knx_client_mode_requires_url() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [knx]
             enabled = true
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn knx_device_mode_requires_individual_address() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [knx]
             enabled = true
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn knx_rejects_unknown_mode() {
-        let result: Result<RawConfig, _> = toml::from_str(
+        let result: Result<FileConfig, _> = toml::from_str(
             r#"
             [knx]
             enabled = true
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn knx_disabled_skips_validation() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [knx]
             enabled = false
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn presence_valid_schedule() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "A"
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn presence_rejects_invalid_time() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "A"
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn presence_rejects_from_after_to() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "A"
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn presence_rejects_overlapping_schedule() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "A"
@@ -476,7 +476,7 @@ mod tests {
 
     #[test]
     fn presence_rejects_invalid_radio_index() {
-        let raw: RawConfig = toml::from_str(
+        let raw: FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "A"
@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn presence_rejects_invalid_source_format() {
-        let result: Result<RawConfig, _> = toml::from_str(
+        let result: Result<FileConfig, _> = toml::from_str(
             r#"
             [[zone]]
             name = "A"

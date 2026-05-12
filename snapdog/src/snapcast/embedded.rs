@@ -38,17 +38,18 @@ impl EmbeddedBackend {
         store: state::SharedState,
     ) -> Result<(Self, EmbeddedEventReceiver)> {
         // Resolve f32lz4e → f32lz4 + encryption
-        let (codec, encryption_psk) = if config.audio.codec == crate::config::AudioCodec::F32lz4e {
+        let (codec, encryption_psk) = if config.snapcast.codec == crate::config::AudioCodec::F32lz4e
+        {
             let psk = config
-                .audio
+                .snapcast
                 .encryption_psk
                 .clone()
                 .unwrap_or_else(|| snapcast_server::DEFAULT_ENCRYPTION_PSK.into());
             ("f32lz4".into(), Some(psk))
         } else {
             (
-                config.audio.codec.as_str().to_string(),
-                config.audio.encryption_psk.clone(),
+                config.snapcast.codec.as_str().to_string(),
+                config.snapcast.encryption_psk.clone(),
             )
         };
 

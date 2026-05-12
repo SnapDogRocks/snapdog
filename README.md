@@ -17,28 +17,28 @@ One binary. AirPlay + Snapcast + MQTT + KNX.
 
 ---
 
-SnapDog turns a Linux box (or Mac) into a synchronized multi-room audio system with deep smart home integration. It embeds a [Snapcast](https://github.com/badaix/snapcast) server, runs AirPlay receivers per zone, streams from Navidrome/Subsonic, plays internet radio — and bridges everything to MQTT and KNX.
+SnapDog turns a Linux box (or Mac) into a synchronized multi-room audio system with deep smart home integration. It embeds a [Snapcast](https://github.com/badaix/snapcast) compatible server completly reimplemented in pure Rust (see [snapcast-rs](https://github.com/metaneutrons/snapcast-rs)), runs AirPlay and Spotify Connect receivers per zone, streams from subsonic-compatible media servers like [Navidrome](https://www.navidrome.org), plays internet radio — and bridges everything tightly to MQTT and KNX.
 
 ## Features
 
 | | |
 |---|---|
+| 🔊 **Snapcast** | Synchronized playback, embedded server [snapcast-rs](https://github.com/metaneutrons/snapcast-rs) or external snapcast process |
 | 🎵 **AirPlay 1 + 2** | Per-zone receivers, stream from iPhone/Mac |
 | 🎧 **Spotify Connect** | Per-zone receivers via librespot |
-| 🔊 **Snapcast** | Synchronized playback, embedded server or external process |
-| 📚 **Subsonic/Navidrome** | Personal music library with playlist navigation and seek |
 | 📻 **Internet Radio** | Station list with live ICY metadata (artist/title parsing, dynamic cover art) |
-| 🏠 **MQTT** | Bidirectional smart home integration (initial state on connect) |
-| 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 460 group objects, presence detection) |
-| 🎛️ **Parametric EQ** | Per-zone and per-client, genre presets, real-time via custom protocol |
-| 🔊 **Speaker Correction** | Per-client Spinorama profiles (1000+ speakers from spinorama.org) |
-| 🔀 **Audio Fade** | Smooth transitions: zone switch (client-side) and source switch (server-side) |
+| 📚 **Subsonic/Navidrome** | Personal music library with playlist navigation and seek |
+| 💾 **Track Cache** | Disk-backed LRU cache for Subsonic tracks — instant seek, replay, and look-ahead prefetch |
 | ⚡ **Source Conflict** | Configurable priority: `last_wins` or `receiver_wins` (AirPlay/Spotify vs local) |
+| 🎨 **Cover Art** | Content-addressed caching, ICY StreamUrl fallback, unified per-zone endpoint |
+| 🎛️ **Multiband Parametric EQ** | Per-zone and per-client, genre presets, real-time via custom protocol |
+| 🔊 **Speaker Correction** | Per-client Spinorama profiles (1000+ speakers from (https://spinorama.org)) |
+| 🔀 **Audio Fade** | Smooth transitions: zone switch (client-side) and source switch (server-side) |
+| 🏠 **MQTT** | Bidirectional smart home integration (initial state on connect) |
+| 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 35 group objects per zone, 11 group objects per client, presence detection mode) |
 | 🌐 **REST API** | ~90 endpoints, full zone/client/media control |
 | 📡 **WebSocket** | Real-time state push notifications |
 | 🖥️ **WebUI** | Responsive SPA, drag-and-drop, tabbed EQ overlay, i18n (5 languages) |
-| 🎨 **Cover Art** | Content-addressed caching, ICY StreamUrl fallback, unified per-zone endpoint |
-| 💾 **Track Cache** | Disk-backed LRU cache for Subsonic tracks — instant seek, replay, and look-ahead prefetch |
 
 ## Quick Start
 

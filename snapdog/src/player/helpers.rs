@@ -79,7 +79,7 @@ pub async fn start_subsonic_track_decode(
             ctx.zone_index,
             ctx.notify,
             cover_url,
-            &ctx.config.system.base_url,
+            &ctx.config.http.base_url,
         );
     }
 
@@ -181,7 +181,7 @@ pub async fn start_radio_decode(
     let icy_covers = ctx.covers.clone();
     let zone_index = ctx.zone_index;
     let fallback_cover = radio.cover.clone();
-    let icy_base_url = ctx.config.system.base_url.clone();
+    let icy_base_url = ctx.config.http.base_url.clone();
     tokio::spawn(async move {
         while let Some(meta) = icy_rx.recv().await {
             if let Some(raw_title) = meta.title {
@@ -219,7 +219,7 @@ pub async fn start_radio_decode(
             ctx.zone_index,
             ctx.notify,
             cover_url.clone(),
-            &ctx.config.system.base_url,
+            &ctx.config.http.base_url,
         );
     }
     let url = radio.url.clone();

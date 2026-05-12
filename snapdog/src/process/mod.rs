@@ -135,7 +135,7 @@ mod tests {
     use crate::config;
 
     fn test_config() -> AppConfig {
-        let raw: config::RawConfig = toml::from_str(
+        let raw: config::FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "Ground Floor"

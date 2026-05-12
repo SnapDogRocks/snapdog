@@ -10,9 +10,6 @@
 log_level = "info"
 # Optional: log to file with daily rotation (in addition to stdout)
 # log_file = "/var/log/snapdog/snapdog.log"
-# External base URL for absolute links (MQTT cover art, etc.)
-# Required if behind a reverse proxy or accessed from other hosts.
-base_url = "http://192.168.1.10:5555"
 # Directory for persistent state files (zones.json, eq.json, snapcast.json).
 # Default: platform-appropriate (Linux: ~/.local/state/snapdog, macOS: ~/Library/Application Support/snapdog)
 # state_dir = "/var/lib/snapdog"
@@ -25,14 +22,6 @@ sample_rate = 48000
 bit_depth = 16
 # Number of channels (2 = stereo)
 channels = 2
-# Snapcast streaming codec: "pcm", "flac", "f32lz4", "f32lz4e" (encrypted)
-codec = "flac"
-# Pre-shared key for f32lz4e encryption (both server and client must match)
-# encryption_psk = "my-secret-key"
-# How zone volume changes affect individual client volumes:
-#   "absolute" = set all clients to the zone volume
-#   "relative" = scale proportionally: client_volume * zone_volume / 100
-group_volume_mode = "relative"
 # How to resolve conflicts when AirPlay/Spotify is active and local
 # playback (radio/subsonic) is requested:
 #   "last_wins" = most recent source takes over (default)
@@ -49,6 +38,9 @@ source_switch_fade_ms = 300
 [http]
 # WebUI + REST API port
 port = 5555
+# External base URL for absolute links in API responses.
+# Required if behind a reverse proxy or accessed from other hosts.
+base_url = "http://192.168.1.10:5555"
 # Optional: restrict API access with bearer tokens.
 # If empty, all endpoints are open. WebUI and /health are always accessible.
 # api_keys = ["my-secret-token"]
@@ -61,6 +53,14 @@ address = "127.0.0.1"
 jsonrpc_port = 1780
 # Audio streaming port (clients connect here)
 streaming_port = 1704
+# Streaming codec: "pcm", "flac", "f32lz4", "f32lz4e" (encrypted)
+codec = "flac"
+# Pre-shared key for f32lz4e encryption (both server and client must match)
+# encryption_psk = "my-secret-key"
+# How zone volume changes affect individual client volumes:
+#   "absolute" = set all clients to the zone volume
+#   "relative" = scale proportionally: client_volume * zone_volume / 100
+group_volume_mode = "relative"
 # Whether SnapDog manages (starts/stops) the snapserver process.
 # Set to false if using an external snapserver.
 managed = true

@@ -766,7 +766,7 @@ mod tests {
 
     #[test]
     fn build_tables_from_minimal_config() {
-        let raw: crate::config::RawConfig = toml::from_str(
+        let raw: crate::config::FileConfig = toml::from_str(
             r#"
             [[zone]]
             name = "Test"

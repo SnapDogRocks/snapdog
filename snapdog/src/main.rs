@@ -142,7 +142,7 @@ async fn main() -> Result<()> {
         config::load(config_path)?
     } else {
         // --knx-device without --config: start with defaults, ETS provides config
-        config::load_raw(config::RawConfig::default())?
+        config::load_raw(config::FileConfig::default())?
     };
 
     // --knx-device enables device mode
@@ -163,7 +163,7 @@ async fn main() -> Result<()> {
         app_config.http.port = port;
     }
     if let Some(ref codec) = cli.codec {
-        app_config.audio.codec = match codec.as_str() {
+        app_config.snapcast.codec = match codec.as_str() {
             "pcm" => config::AudioCodec::Pcm,
             "flac" => config::AudioCodec::Flac,
             "f32lz4" => config::AudioCodec::F32lz4,

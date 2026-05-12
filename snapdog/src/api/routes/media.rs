@@ -78,7 +78,7 @@ async fn cached_playlists(state: &SharedState) -> Vec<PlaylistEntry> {
 async fn get_playlists(State(state): State<SharedState>) -> impl IntoResponse {
     let mut result: Vec<PlaylistInfo> = Vec::new();
     let mut idx: usize = 0;
-    let base_url = state.config.system.base_url.trim_end_matches('/');
+    let base_url = state.config.http.base_url.trim_end_matches('/');
 
     // Playlist 0: Radio stations (from config)
     if !state.config.radios.is_empty() {
@@ -210,7 +210,7 @@ async fn get_playlist_tracks(
         ResolvedPlaylist::Subsonic(_) => {
             let id = resolve_subsonic_id(&state, index).await?;
             let sub = subsonic(&state)?;
-            let base_url = state.config.system.base_url.trim_end_matches('/');
+            let base_url = state.config.http.base_url.trim_end_matches('/');
             match sub.get_playlist(&id).await {
                 Ok(playlist) => Ok(Json(
                     playlist
