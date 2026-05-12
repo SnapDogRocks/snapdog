@@ -84,6 +84,9 @@ pub struct ZoneState {
     pub source: SourceType,
     /// URL for the current cover art image.
     pub cover_url: Option<String>,
+    /// Buffered position in milliseconds (stream-and-cache progress). Transient, not persisted.
+    #[serde(skip)]
+    pub buffered_ms: Option<i64>,
     /// Snapcast group ID for this zone (set after Snapcast sync).
     pub snapcast_group_id: Option<String>,
     /// Whether presence is currently detected.
@@ -264,6 +267,7 @@ impl Store {
                         playlist_track_count: None,
                         source: SourceType::Idle,
                         cover_url: None,
+                        buffered_ms: None,
                         snapcast_group_id: None,
                         presence: false,
                         presence_enabled: true,

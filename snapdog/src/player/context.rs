@@ -171,6 +171,7 @@ pub async fn update_and_notify(
                     zone: zone_index,
                     position_ms: t.position_ms,
                     duration_ms: t.duration_ms,
+                    buffered_ms: zone.buffered_ms,
                 });
             }
         }

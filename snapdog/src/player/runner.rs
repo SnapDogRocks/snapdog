@@ -931,8 +931,18 @@ async fn run(
                             if let Some(ref mut t) = z.track { t.position_ms = ms + position_offset_ms; }
                         }).await;
                     }
-                    Some(audio::PcmMessage::BufferProgress { .. }) => {
-                        // TODO: forward to WebSocket as buffered_ms
+                    Some(audio::PcmMessage::BufferProgress { buffered_bytes, total_bytes }) => {
+                        if let Some(total) = total_bytes {
+                            let duration = store.read().await.zones.get(&zone_index)
+                                .and_then(|z| z.track.as_ref().map(|t| t.duration_ms))
+                                .unwrap_or(0);
+                            let buffered_ms = if total > 0 {
+                                (buffered_bytes as f64 / total as f64 * duration as f64) as i64
+                            } else { 0 };
+                            update_and_notify(store, zone_index, notify, |z| {
+                                z.buffered_ms = Some(buffered_ms);
+                            }).await;
+                        }
                     }
                     None => {
                         current_decode = None;

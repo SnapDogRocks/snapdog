@@ -73,6 +73,9 @@ pub enum Notification {
         position_ms: i64,
         /// Total track duration in milliseconds.
         duration_ms: i64,
+        /// Buffered position in milliseconds (for stream-and-cache progress).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        buffered_ms: Option<i64>,
     },
     /// Client connection or volume state changed.
     ClientStateChanged {
