@@ -199,7 +199,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
         )}
 
         {/* Tab content — crossfade, both mounted to avoid flash */}
-        <div className={`${tab === "eq" ? 'opacity-100' : 'opacity-0 pointer-events-none h-0 overflow-hidden'} transition-opacity duration-150`}>
+        <div className={`${tab === "eq" ? '' : 'hidden'}`}>
           <>
             {config.enabled ? (
               <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
@@ -244,7 +244,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
           </>
         </div>
         {showTabs && (
-          <div className={`${tab === "speaker" ? 'opacity-100' : 'opacity-0 pointer-events-none h-0 overflow-hidden'} transition-opacity duration-150`}>
+          <div className={`${tab === "speaker" ? '' : 'hidden'}`}>
             <SpeakerTab clientId={clientId!} enabled={speakerEnabled} setEnabled={setSpeakerEnabled} abBypass={speakerAbBypass} />
           </div>
         )}
