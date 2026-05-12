@@ -210,12 +210,17 @@ async fn get_playlist_tracks(
         ResolvedPlaylist::Subsonic(_) => {
             let id = resolve_subsonic_id(&state, index).await?;
             let sub = subsonic(&state)?;
+            let base_url = state.config.system.base_url.trim_end_matches('/');
             match sub.get_playlist(&id).await {
                 Ok(playlist) => Ok(Json(
                     playlist
                         .entry
                         .iter()
-                        .map(|t| {
+                        .enumerate()
+                        .map(|(i, t)| {
+                            let cover = t.cover_art.as_ref().map(|_| {
+                                format!("{base_url}/api/v1/media/playlists/{index}/tracks/{i}/cover")
+                            });
                             serde_json::json!({
                                 "id": t.id,
                                 "title": t.title,
@@ -223,7 +228,7 @@ async fn get_playlist_tracks(
                                 "album": t.album,
                                 "duration": t.duration,
                                 "track": t.track,
-                                "cover_art": t.cover_art,
+                                "cover_art": cover,
                             })
                         })
                         .collect::<Vec<_>>(),
