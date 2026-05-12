@@ -40,8 +40,8 @@ function seekReducer(state: SeekState, action: SeekAction): SeekState {
         case "dragging":
           return state; // ignore server while dragging
         case "seeking":
-          // Server confirmed: position is at or past the target
-          if (action.position >= state.target - SEEK_CONFIRM_TOLERANCE_MS) {
+          // Server confirmed: position is close to the seek target
+          if (Math.abs(action.position - state.target) <= SEEK_CONFIRM_TOLERANCE_MS) {
             return { type: "synced", position: action.position };
           }
           return state; // still waiting
