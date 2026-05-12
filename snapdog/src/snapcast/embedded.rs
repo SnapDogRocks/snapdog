@@ -354,14 +354,15 @@ impl SnapcastBackend for EmbeddedBackend {
                     }]
                 }
                 SnapcastCmd::ReconcileZones => {
-                    // Ensure each client is in a group playing its zone's stream.
-                    //
-                    // Strategy: for each zone with clients, issue SetGroupClients on
-                    // that zone's group. If the zone has no group, find ANY known group
-                    // and set its stream — the client will be moved there by SetGroupClients,
-                    // and sync_group_ids (triggered by ServerUpdated) will adopt the group.
+                    // Move clients to their zone's group. Issue SetGroupClients for
+                    // ALL zones that have a known group — including zones losing clients
+                    // (empty list removes the client from that group, snapcast-server
+                    // creates a new group for evicted clients automatically).
+                    // The ServerUpdated event then triggers sync_group_ids which
+                    // picks up new groups and fixes stream assignments.
                     let s = self.store.read().await;
 
+                    // Build zone_index → [snapcast_ids] for zones with clients
                     let mut zone_clients: HashMap<usize, Vec<String>> = HashMap::new();
                     for c in s.clients.values() {
                         if let Some(ref sid) = c.snapcast_id {
@@ -372,34 +373,13 @@ impl SnapcastBackend for EmbeddedBackend {
                         }
                     }
 
-                    // Collect all known group IDs for fallback
-                    let all_group_ids: Vec<String> = s
-                        .zones
-                        .values()
-                        .filter_map(|z| z.snapcast_group_id.clone())
-                        .collect();
-
                     let mut cmds = vec![];
-                    for (&zi, clients) in &zone_clients {
-                        let group_id = s.zones.get(&zi).and_then(|z| z.snapcast_group_id.clone());
-                        let stream_name = format!("Zone{zi}");
-
-                        if let Some(gid) = group_id {
+                    for (&zi, zone) in &s.zones {
+                        if let Some(ref gid) = zone.snapcast_group_id {
+                            let clients = zone_clients.remove(&zi).unwrap_or_default();
                             cmds.push(ServerCommand::SetGroupClients {
-                                group_id: gid,
-                                clients: clients.clone(),
-                            });
-                        } else if let Some(fallback_gid) = all_group_ids.first() {
-                            // No group for this zone — use any existing group.
-                            // SetGroupClients moves the client there, then SetGroupStream
-                            // switches what it plays. ServerUpdated will sync group IDs.
-                            cmds.push(ServerCommand::SetGroupClients {
-                                group_id: fallback_gid.clone(),
-                                clients: clients.clone(),
-                            });
-                            cmds.push(ServerCommand::SetGroupStream {
-                                group_id: fallback_gid.clone(),
-                                stream_id: stream_name,
+                                group_id: gid.clone(),
+                                clients,
                             });
                         }
                     }

@@ -514,6 +514,68 @@ async fn sync_group_ids(
             }
         }
     }
+
+    // Second pass: find groups with clients assigned to a zone but wrong stream.
+    for zone_cfg in &config.zones {
+        // Skip zones that already matched a group above
+        if s.zones
+            .get(&zone_cfg.index)
+            .and_then(|z| z.snapcast_group_id.as_ref())
+            .is_some()
+        {
+            continue;
+        }
+        // Find groups containing clients assigned to this zone
+        let zone_snap_ids: Vec<&str> = s
+            .clients
+            .values()
+            .filter(|c| c.zone_index == zone_cfg.index)
+            .filter_map(|c| c.snapcast_id.as_deref())
+            .collect();
+        if zone_snap_ids.is_empty() {
+            continue;
+        }
+        for group in groups {
+            let group_clients: Vec<&str> = group
+                .get("clients")
+                .and_then(|c| c.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|c| c.get("id").and_then(|id| id.as_str()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let has_our_client = zone_snap_ids.iter().any(|id| group_clients.contains(id));
+            if !has_our_client {
+                continue;
+            }
+            let group_stream = group
+                .get("stream_id")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
+            if group_stream == zone_cfg.stream_name {
+                // Stream already correct — adopt this group
+                if let Some(gid) = group.get("id").and_then(|id| id.as_str()) {
+                    if let Some(zone) = s.zones.get_mut(&zone_cfg.index) {
+                        tracing::debug!(zone = zone_cfg.index, group = %gid, "Adopted group for zone");
+                        zone.snapcast_group_id = Some(gid.to_string());
+                    }
+                }
+            } else if let Some(gid) = group.get("id").and_then(|id| id.as_str()) {
+                // Wrong stream — fix it
+                tracing::info!(zone = zone_cfg.index, group = %gid, stream = %zone_cfg.stream_name, "Fixing group stream for zone");
+                drop(s);
+                let _ = backend
+                    .execute(SnapcastCmd::Group {
+                        group_id: gid.to_string(),
+                        action: GroupAction::Stream(zone_cfg.stream_name.clone()),
+                    })
+                    .await;
+                return; // Re-sync will happen via the next ServerUpdated
+            }
+            break;
+        }
+    }
 }
 
 const fn client_notification(idx: usize, client: &state::ClientState) -> api::ws::Notification {
