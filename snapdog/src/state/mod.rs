@@ -475,6 +475,7 @@ mod tests {
                 playlist_track_count: None,
                 source: SourceType::Idle,
                 cover_url: None,
+                buffered_ms: None,
                 snapcast_group_id: None,
                 presence: false,
                 presence_enabled: true,
