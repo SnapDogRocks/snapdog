@@ -581,7 +581,7 @@ pub fn decode_cached_file(
                 frac: (ms % 1000) as f64 / 1000.0,
             };
             match format.seek(
-                SeekMode::Accurate,
+                SeekMode::Coarse,
                 SeekTo::Time {
                     time: seek_time,
                     track_id: Some(track_id),
