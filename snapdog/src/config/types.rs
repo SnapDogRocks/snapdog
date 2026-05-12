@@ -511,6 +511,59 @@ pub struct SubsonicConfig {
     /// Skip TLS certificate verification (for self-signed certs).
     #[serde(default)]
     pub tls_skip_verify: bool,
+    /// Track cache configuration.
+    #[serde(default)]
+    pub cache: SubsonicCacheConfig,
+}
+
+/// Subsonic track cache configuration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct SubsonicCacheConfig {
+    /// Enable disk-backed track cache for instant seek and replay.
+    #[serde(default = "default_cache_enabled")]
+    pub enabled: bool,
+    /// Cache directory path. Defaults to `$XDG_CACHE_HOME/snapdog/tracks` or `/tmp/snapdog/tracks`.
+    #[serde(default = "default_cache_path")]
+    pub path: String,
+    /// Maximum cache size in megabytes. Oldest entries evicted when exceeded.
+    #[serde(default = "default_cache_max_size_mb")]
+    pub max_size_mb: u64,
+    /// Number of upcoming playlist tracks to pre-fetch.
+    #[serde(default = "default_cache_lookahead")]
+    pub lookahead: usize,
+}
+
+fn default_cache_enabled() -> bool {
+    true
+}
+
+fn default_cache_path() -> String {
+    std::env::var("XDG_CACHE_HOME")
+        .map(|p| format!("{p}/snapdog/tracks"))
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|h| format!("{h}/.cache/snapdog/tracks"))
+                .unwrap_or_else(|_| "/tmp/snapdog/tracks".into())
+        })
+}
+
+fn default_cache_max_size_mb() -> u64 {
+    2048
+}
+
+fn default_cache_lookahead() -> usize {
+    2
+}
+
+impl Default for SubsonicCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_cache_enabled(),
+            path: default_cache_path(),
+            max_size_mb: default_cache_max_size_mb(),
+            lookahead: default_cache_lookahead(),
+        }
+    }
 }
 
 /// MQTT bridge configuration.
