@@ -320,3 +320,9 @@ cargo clippy -- -D warnings                   # Lint
 ## License
 
 [GPL-3.0-only](LICENSE)
+
+---
+
+<p align="center">
+If SnapDog is useful to you, consider <a href="https://www.paypal.com/donate/?hosted_button_id=DQ77WMXPGY3XJ">buying me a coffee</a> ☕
+</p>
