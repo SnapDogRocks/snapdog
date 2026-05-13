@@ -31,7 +31,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="About SnapDog" onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}>
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} role="presentation" />
       <div className="relative z-10 w-full max-w-sm mx-4 rounded-2xl border border-border bg-card p-6 shadow-xl space-y-4 text-center">
-        <img src="/snapdog-icon.svg" alt="SnapDog" className="size-16 mx-auto opacity-80" />
+        <img src="/assets/snapdog-icon.svg" alt="SnapDog" className="size-16 mx-auto opacity-80" />
         <h2 className="text-lg font-semibold">SnapDog</h2>
         <p className="text-sm text-muted-foreground">Multi-zone audio system with smart home integration</p>
         {version && (

@@ -18,7 +18,7 @@ export function NowPlaying({ zone }: { zone: ZoneState }) {
 
   const fallback = (
     <div className="flex flex-col items-center justify-center size-full bg-gradient-to-br from-muted to-muted/60">
-      <img src="/snapdog-icon.svg" alt="SnapDog" className="size-48 sm:size-32 opacity-30" />
+      <img src="/assets/snapdog-icon.svg" alt="SnapDog" className="size-48 sm:size-32 opacity-30" />
       <span className="text-xs font-medium text-muted-foreground/60 tracking-wider uppercase mt-2">{zone.name}</span>
     </div>
   );

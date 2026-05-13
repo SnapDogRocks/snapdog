@@ -87,7 +87,7 @@ async fn get_playlists(State(state): State<SharedState>) -> impl IntoResponse {
             name: "Radio".into(),
             song_count: state.config.radios.len() as u32,
             duration: 0,
-            cover_art: Some(format!("{base_url}/radio-cover.svg")),
+            cover_art: Some(format!("{base_url}/assets/radio-cover.svg")),
         });
         idx += 1;
     }
