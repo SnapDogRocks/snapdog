@@ -71,6 +71,9 @@ impl MqttBridge {
             "zones/+/volume/set",
             "zones/+/mute/set",
             "zones/+/control/set",
+            "zones/+/shuffle/set",
+            "zones/+/repeat/set",
+            "zones/+/position/set",
             "zones/+/track/set",
             "zones/+/track/position/set",
             "zones/+/playlist/set",
@@ -94,6 +97,79 @@ impl MqttBridge {
         Ok(())
     }
 
+    /// Publish Home Assistant MQTT Discovery messages for all zones.
+    pub async fn publish_ha_discovery(&self, zones: &[crate::config::ZoneConfig]) -> Result<()> {
+        for zone in zones {
+            let idx = zone.index;
+            let unique_id = format!("snapdog_zone_{idx}");
+            let base = &self.base_topic;
+
+            let discovery = serde_json::json!({
+                "name": zone.name,
+                "unique_id": &unique_id,
+                "object_id": &unique_id,
+                "icon": "mdi:speaker-group",
+                "state_topic": format!("{base}/zones/{idx}/state"),
+                "volume_command_topic": format!("{base}/zones/{idx}/volume/set"),
+                "mute_command_topic": format!("{base}/zones/{idx}/mute/set"),
+                "media_position_command_topic": format!("{base}/zones/{idx}/position/set"),
+                "payload_play": "play",
+                "payload_pause": "pause",
+                "payload_stop": "stop",
+                "payload_next": "next",
+                "payload_previous": "previous",
+                "command_topic": format!("{base}/zones/{idx}/control/set"),
+                "shuffle_command_topic": format!("{base}/zones/{idx}/shuffle/set"),
+                "repeat_command_topic": format!("{base}/zones/{idx}/repeat/set"),
+                "volume_level_template": "{{ value_json.volume_level }}",
+                "is_volume_muted_template": "{{ value_json.is_volume_muted }}",
+                "state_template": "{{ value_json.state }}",
+                "media_title_template": "{{ value_json.media_title | default('') }}",
+                "media_artist_template": "{{ value_json.media_artist | default('') }}",
+                "media_album_name_template": "{{ value_json.media_album_name | default('') }}",
+                "media_duration_template": "{{ value_json.media_duration | default(0) }}",
+                "media_position_template": "{{ value_json.media_position | default(0) }}",
+                "media_image_url_template": "{{ value_json.media_image_url | default('') }}",
+                "shuffle_state_template": "{{ value_json.shuffle }}",
+                "repeat_state_template": "{{ value_json.repeat }}",
+                "supported_features": ["play", "pause", "stop", "next_track", "previous_track", "volume_set", "volume_mute", "shuffle_set", "repeat_set", "seek"],
+                "device": {
+                    "identifiers": ["snapdog"],
+                    "name": "SnapDog",
+                    "manufacturer": "metaneutrons",
+                    "model": "Multi-zone Audio Controller",
+                    "sw_version": env!("CARGO_PKG_VERSION"),
+                },
+                "availability_topic": format!("{base}/status"),
+                "payload_available": "online",
+                "payload_not_available": "offline",
+            });
+
+            self.client
+                .publish(
+                    format!("homeassistant/media_player/{unique_id}/config"),
+                    QoS::AtLeastOnce,
+                    true,
+                    discovery.to_string().as_bytes(),
+                )
+                .await
+                .with_context(|| format!("Failed to publish HA discovery for zone {idx}"))?;
+        }
+
+        // Publish availability
+        self.client
+            .publish(
+                format!("{}/status", self.base_topic),
+                QoS::AtLeastOnce,
+                true,
+                b"online",
+            )
+            .await?;
+
+        tracing::info!(zones = zones.len(), "HA MQTT Discovery published");
+        Ok(())
+    }
+
     /// Publish a status value (retained).
     pub async fn publish(&self, topic: &str, payload: &str) -> Result<()> {
         self.client
@@ -107,77 +183,62 @@ impl MqttBridge {
             .with_context(|| format!("Failed to publish to {topic}"))
     }
 
-    /// Publish zone status updates.
+    /// Publish zone state as a single retained JSON object.
     pub async fn publish_zone_state(&self, index: usize, zone: &state::ZoneState) -> Result<()> {
-        let base = format!("zones/{index}");
-        self.publish(&format!("{base}/volume"), &zone.volume.to_string())
-            .await?;
-        self.publish(&format!("{base}/mute"), &zone.muted.to_string())
-            .await?;
-        self.publish(&format!("{base}/shuffle"), &zone.shuffle.to_string())
-            .await?;
-        self.publish(&format!("{base}/repeat"), &zone.repeat.to_string())
-            .await?;
-        if let Some(track) = &zone.track {
-            self.publish(&format!("{base}/track/title"), &track.title)
-                .await?;
-            self.publish(&format!("{base}/track/artist"), &track.artist)
-                .await?;
-            self.publish(&format!("{base}/track/album"), &track.album)
-                .await?;
-            self.publish(
-                &format!("{base}/track/duration"),
-                &track.duration_ms.to_string(),
-            )
-            .await?;
-            self.publish(
-                &format!("{base}/track/position"),
-                &track.position_ms.to_string(),
-            )
-            .await?;
-            if let Some(ref cover_url) = zone.cover_url {
-                self.publish(&format!("{base}/track/cover"), cover_url)
-                    .await?;
+        let state_str = match zone.playback {
+            state::PlaybackState::Playing => "playing",
+            state::PlaybackState::Paused => "paused",
+            state::PlaybackState::Stopped => {
+                if zone.source == state::SourceType::Idle {
+                    "idle"
+                } else {
+                    "stopped"
+                }
             }
+        };
+
+        let mut payload = serde_json::json!({
+            "state": state_str,
+            "volume_level": zone.volume as f64 / 100.0,
+            "is_volume_muted": zone.muted,
+            "shuffle": zone.shuffle,
+            "repeat": if zone.track_repeat { "one" } else if zone.repeat { "all" } else { "off" },
+            "source": zone.source.to_string(),
+            "presence": zone.presence,
+        });
+
+        if let Some(track) = &zone.track {
+            payload["media_title"] = serde_json::json!(track.title);
+            payload["media_artist"] = serde_json::json!(track.artist);
+            payload["media_album_name"] = serde_json::json!(track.album);
+            payload["media_duration"] = serde_json::json!(track.duration_ms / 1000);
+            payload["media_position"] = serde_json::json!(track.position_ms / 1000);
+            payload["media_content_type"] = serde_json::json!("music");
         }
-        self.publish(&format!("{base}/presence"), &zone.presence.to_string())
-            .await?;
-        self.publish(
-            &format!("{base}/presence/enable"),
-            &zone.presence_enabled.to_string(),
-        )
-        .await?;
-        self.publish(
-            &format!("{base}/presence/timeout"),
-            &zone.auto_off_delay.to_string(),
-        )
-        .await?;
-        self.publish(
-            &format!("{base}/presence/timer"),
-            &zone.auto_off_active.to_string(),
-        )
-        .await?;
-        Ok(())
+
+        if let Some(ref cover_url) = zone.cover_url {
+            payload["media_image_url"] = serde_json::json!(cover_url);
+        }
+
+        self.publish(&format!("zones/{index}/state"), &payload.to_string())
+            .await
     }
 
-    /// Publish client status updates.
+    /// Publish client state as a single retained JSON object.
     pub async fn publish_client_state(
         &self,
         index: usize,
         client: &state::ClientState,
     ) -> Result<()> {
-        let base = format!("clients/{index}");
-        self.publish(&format!("{base}/volume"), &client.base_volume.to_string())
-            .await?;
-        self.publish(&format!("{base}/mute"), &client.muted.to_string())
-            .await?;
-        self.publish(&format!("{base}/latency"), &client.latency_ms.to_string())
-            .await?;
-        self.publish(&format!("{base}/zone"), &client.zone_index.to_string())
-            .await?;
-        self.publish(&format!("{base}/connected"), &client.connected.to_string())
-            .await?;
-        Ok(())
+        let payload = serde_json::json!({
+            "volume": client.base_volume,
+            "muted": client.muted,
+            "connected": client.connected,
+            "zone": client.zone_index,
+            "latency": client.latency_ms,
+        });
+        self.publish(&format!("clients/{index}/state"), &payload.to_string())
+            .await
     }
 
     /// Run the event loop, dispatching incoming commands via ZonePlayer channels.
@@ -238,12 +299,23 @@ impl MqttBridge {
             // Zone commands → routed through ZonePlayer
             ["zones", idx, "volume", "set"] => {
                 let index: usize = idx.parse()?;
-                let volume: i32 = payload.parse()?;
-                send_zone_cmd(zone_commands, index, ZoneCommand::SetVolume(volume)).await;
+                let volume: f64 = payload.parse()?;
+                // Accept both 0.0-1.0 (HA) and 0-100 (legacy)
+                let volume_int = if volume <= 1.0 {
+                    (volume * 100.0).round() as i32
+                } else {
+                    volume as i32
+                };
+                send_zone_cmd(
+                    zone_commands,
+                    index,
+                    ZoneCommand::SetVolume(volume_int.clamp(0, 100)),
+                )
+                .await;
             }
             ["zones", idx, "mute", "set"] => {
                 let index: usize = idx.parse()?;
-                let muted: bool = payload.parse()?;
+                let muted = matches!(payload.trim(), "true" | "1" | "on");
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetMute(muted)).await;
             }
             ["zones", idx, "control", "set"] => {
@@ -273,10 +345,36 @@ impl MqttBridge {
                 let track: usize = payload.parse()?;
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetTrack(track)).await;
             }
-            ["zones", idx, "track", "position", "set"] => {
+            ["zones", idx, "position", "set"] | ["zones", idx, "track", "position", "set"] => {
                 let index: usize = idx.parse()?;
-                let pos: i64 = payload.parse()?;
-                send_zone_cmd(zone_commands, index, ZoneCommand::Seek(pos)).await;
+                let pos_secs: f64 = payload.parse()?;
+                let pos_ms = (pos_secs * 1000.0) as i64;
+                send_zone_cmd(zone_commands, index, ZoneCommand::Seek(pos_ms)).await;
+            }
+            ["zones", idx, "shuffle", "set"] => {
+                let index: usize = idx.parse()?;
+                let shuffle = matches!(payload.trim(), "true" | "1" | "on");
+                send_zone_cmd(zone_commands, index, ZoneCommand::SetShuffle(shuffle)).await;
+            }
+            ["zones", idx, "repeat", "set"] => {
+                let index: usize = idx.parse()?;
+                match payload.trim() {
+                    "off" => {
+                        send_zone_cmd(zone_commands, index, ZoneCommand::SetRepeat(false)).await;
+                        send_zone_cmd(zone_commands, index, ZoneCommand::SetTrackRepeat(false))
+                            .await;
+                    }
+                    "one" => {
+                        send_zone_cmd(zone_commands, index, ZoneCommand::SetTrackRepeat(true))
+                            .await;
+                    }
+                    "all" => {
+                        send_zone_cmd(zone_commands, index, ZoneCommand::SetTrackRepeat(false))
+                            .await;
+                        send_zone_cmd(zone_commands, index, ZoneCommand::SetRepeat(true)).await;
+                    }
+                    _ => {}
+                }
             }
             ["zones", idx, "presence", "set"] => {
                 let index: usize = idx.parse()?;
@@ -525,7 +623,7 @@ mod tests {
         bridge
             .handle_command(
                 "snapdog/zones/1/track/position/set",
-                "30000",
+                "30",
                 &cmds,
                 &state,
                 &snap_tx,

@@ -381,6 +381,10 @@ pub async fn run_app() -> Result<()> {
                 if let Err(e) = bridge.subscribe_commands().await {
                     tracing::warn!(error = %e, "MQTT subscribe failed");
                 }
+                // Publish HA MQTT Discovery
+                if let Err(e) = bridge.publish_ha_discovery(&config.zones).await {
+                    tracing::warn!(error = %e, "HA MQTT Discovery publish failed");
+                }
                 // Publish initial state for all zones and clients
                 let (zones, clients) = {
                     let s = store.read().await;
