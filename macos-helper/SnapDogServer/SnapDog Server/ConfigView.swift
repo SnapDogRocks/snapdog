@@ -95,11 +95,10 @@ final class ConfigModel {
 struct ConfigView: View {
     @Bindable var serverManager: ServerManager
     @State private var config = ConfigModel()
-    @State private var selectedSection: Section = .system
+    @State private var selectedSection: Section = .http
     @State private var saveTask: Task<Void, Never>?
 
     enum Section: String, CaseIterable, Identifiable {
-        case system = "System"
         case http = "HTTP"
         case audio = "Audio"
         case snapcast = "Snapcast"
@@ -113,7 +112,6 @@ struct ConfigView: View {
         var id: String { rawValue }
         var icon: String {
             switch self {
-            case .system: "gearshape"
             case .http: "network"
             case .audio: "waveform"
             case .snapcast: "hifispeaker.2"
@@ -129,9 +127,6 @@ struct ConfigView: View {
 
     var body: some View {
         TabView(selection: $selectedSection) {
-            Tab("System", systemImage: "gearshape", value: Section.system) {
-                Form { systemForm }.formStyle(.grouped)
-            }
             Tab("HTTP", systemImage: "network", value: Section.http) {
                 Form { httpForm }.formStyle(.grouped)
             }
@@ -163,7 +158,6 @@ struct ConfigView: View {
         .tabViewStyle(.sidebarAdaptable)
         .frame(minWidth: 580, minHeight: 420)
         .onAppear { load() }
-        .onChange(of: config.system) { _, _ in debounceSave() }
         .onChange(of: config.http) { _, _ in debounceSave() }
         .onChange(of: config.audio) { _, _ in debounceSave() }
         .onChange(of: config.snapcast) { _, _ in debounceSave() }
@@ -202,22 +196,6 @@ struct ConfigView: View {
     // MARK: - Section Forms
 
     @ViewBuilder
-    private var systemForm: some View {
-        SwiftUI.Section("Logging") {
-            Picker("Log Level", selection: $config.system.logLevel) {
-                ForEach(["trace", "debug", "info", "warn", "error"], id: \.self) { Text($0) }
-            }
-            .pickerStyle(.menu)
-            TextField("Log File", text: $config.system.logFile, prompt: Text("stdout"))
-                .help("Optional file path for daily-rotated log output")
-        }
-        SwiftUI.Section("Storage") {
-            TextField("State Directory", text: $config.system.stateDir, prompt: Text("Platform default"))
-                .help("Directory for persistent state files")
-        }
-    }
-
-    @ViewBuilder
     private var httpForm: some View {
         SwiftUI.Section("Server") {
             TextField("Port", value: $config.http.port, format: .number)
@@ -229,14 +207,19 @@ struct ConfigView: View {
     @ViewBuilder
     private var audioForm: some View {
         SwiftUI.Section("Output Format") {
-            TextField("Sample Rate (Hz)", value: $config.audio.sampleRate, format: .number)
+            Picker("Sample Rate", selection: $config.audio.sampleRate) {
+                Text("44.1 kHz").tag(44100)
+                Text("48 kHz").tag(48000)
+                Text("88.2 kHz").tag(88200)
+                Text("96 kHz").tag(96000)
+            }
+            .pickerStyle(.menu)
             Picker("Bit Depth", selection: $config.audio.bitDepth) {
                 Text("16-bit").tag(16)
                 Text("24-bit").tag(24)
                 Text("32-bit").tag(32)
             }
             .pickerStyle(.menu)
-            Stepper("Channels: \(config.audio.channels)", value: $config.audio.channels, in: 1...8)
         }
         SwiftUI.Section("Transitions") {
             Picker("Source Conflict", selection: $config.audio.sourceConflict) {

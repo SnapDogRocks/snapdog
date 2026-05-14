@@ -32,7 +32,7 @@ final class ServerManager {
 
         let proc = Process()
         proc.executableURL = binary
-        proc.arguments = ["--config", configPath.path]
+        proc.arguments = ["--config", configPath.path, "--log-level", "info"]
 
         let pipe = Pipe()
         proc.standardOutput = pipe
@@ -86,7 +86,6 @@ final class ServerManager {
 
     func ensureConfigExists() {
         guard !FileManager.default.fileExists(atPath: configPath.path) else { return }
-        // Create a minimal default config
         let defaultConfig = """
         [http]
         port = 5555
@@ -95,11 +94,15 @@ final class ServerManager {
         [audio]
         sample_rate = 48000
         bit_depth = 16
-        channels = 2
+        source_conflict = "last_wins"
+        zone_switch_fade_ms = 300
+        source_switch_fade_ms = 300
 
         [snapcast]
-        codec = "flac"
         streaming_port = 1704
+        codec = "flac"
+        group_volume_mode = "relative"
+        unknown_clients = "accept"
         """
         try? defaultConfig.write(to: configPath, atomically: true, encoding: .utf8)
     }
