@@ -117,12 +117,10 @@ struct ConfigView: View {
         SwiftUI.Section {
             ForEach($config.radios) { $radio in
                 VStack(alignment: .leading, spacing: 4) {
-                    TextField("Station Name", text: $radio.name)
+                    TextField("Station Name", text: $radio.name, prompt: Text("Station Name"))
                     TextField("Stream URL", text: $radio.url, prompt: Text("https://..."))
                         .font(.callout)
                     TextField("Cover Image URL", text: $radio.cover, prompt: Text("Optional"))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 2)
             }
