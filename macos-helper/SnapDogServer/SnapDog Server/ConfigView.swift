@@ -242,7 +242,7 @@ struct ConfigView: View {
             Group {
                 TextField("Broker", text: $config.mqtt.broker, prompt: Text("host:port"))
                 TextField("Client ID", text: $config.mqtt.clientId)
-                TextField("Username", text: $config.mqtt.username, prompt: Text("Optional"))
+                TextField("Username", text: $config.mqtt.username)
                 SecureField("Password", text: $config.mqtt.password)
                 TextField("Base Topic", text: $config.mqtt.baseTopic)
             }
