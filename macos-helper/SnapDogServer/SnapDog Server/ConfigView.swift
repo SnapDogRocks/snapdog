@@ -24,7 +24,6 @@ final class ConfigModel {
     struct HttpSection {
         var port = 5555
         var baseUrl = "http://localhost:5555"
-        var apiKeys: [String] = []
     }
 
     struct AudioSection {
@@ -91,13 +90,13 @@ final class ConfigModel {
     }
 }
 
-// MARK: - Config View
+// MARK: - Config View (Apple Settings pattern: auto-save on change)
 
 struct ConfigView: View {
     @Bindable var serverManager: ServerManager
     @State private var config = ConfigModel()
     @State private var selectedSection: Section = .system
-    @State private var hasChanges = false
+    @State private var saveTask: Task<Void, Never>?
 
     enum Section: String, CaseIterable, Identifiable {
         case system = "System"
@@ -134,7 +133,7 @@ struct ConfigView: View {
                 Label(section.rawValue, systemImage: section.icon)
             }
             .listStyle(.sidebar)
-            .frame(minWidth: 160)
+            .frame(minWidth: 170)
         } detail: {
             Form {
                 switch selectedSection {
@@ -151,23 +150,45 @@ struct ConfigView: View {
                 }
             }
             .formStyle(.grouped)
-            .frame(minWidth: 400)
+            .frame(minWidth: 420)
+            .onChange(of: config.system) { _, _ in debounceSave() }
+            .onChange(of: config.http) { _, _ in debounceSave() }
+            .onChange(of: config.audio) { _, _ in debounceSave() }
+            .onChange(of: config.snapcast) { _, _ in debounceSave() }
+            .onChange(of: config.airplay) { _, _ in debounceSave() }
+            .onChange(of: config.subsonic) { _, _ in debounceSave() }
+            .onChange(of: config.mqtt) { _, _ in debounceSave() }
+            .onChange(of: config.zones.count) { _, _ in debounceSave() }
+            .onChange(of: config.clients.count) { _, _ in debounceSave() }
+            .onChange(of: config.radios.count) { _, _ in debounceSave() }
         }
-        .frame(minWidth: 620, minHeight: 450)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
-                    .disabled(!hasChanges)
-                    .keyboardShortcut("s", modifiers: .command)
-            }
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Revert") { load() }
-                    .disabled(!hasChanges)
-            }
-        }
+        .frame(minWidth: 640, minHeight: 480)
         .onAppear { load() }
-        .onChange(of: config.system.logLevel) { _, _ in hasChanges = true }
-        .navigationTitle("SnapDog Server Configuration")
+        .navigationTitle("Configuration")
+    }
+
+    // MARK: - Auto-save (debounced, Apple pattern)
+
+    private func debounceSave() {
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            save()
+        }
+    }
+
+    private func load() {
+        serverManager.ensureConfigExists()
+        do {
+            config = try TOMLConfigParser.load(from: serverManager.configPath)
+        } catch {
+            config = ConfigModel()
+        }
+    }
+
+    private func save() {
+        try? TOMLConfigParser.save(config, to: serverManager.configPath)
     }
 
     // MARK: - Section Forms
@@ -178,10 +199,13 @@ struct ConfigView: View {
             Picker("Log Level", selection: $config.system.logLevel) {
                 ForEach(["trace", "debug", "info", "warn", "error"], id: \.self) { Text($0) }
             }
-            TextField("Log File", text: $config.system.logFile, prompt: Text("Optional path"))
+            .pickerStyle(.menu)
+            TextField("Log File", text: $config.system.logFile, prompt: Text("stdout"))
+                .help("Optional file path for daily-rotated log output")
         }
         SwiftUI.Section("Storage") {
             TextField("State Directory", text: $config.system.stateDir, prompt: Text("Platform default"))
+                .help("Directory for persistent state files")
         }
     }
 
@@ -190,27 +214,31 @@ struct ConfigView: View {
         SwiftUI.Section("Server") {
             TextField("Port", value: $config.http.port, format: .number)
             TextField("Base URL", text: $config.http.baseUrl)
+                .help("External URL for absolute links in API responses")
         }
     }
 
     @ViewBuilder
     private var audioForm: some View {
         SwiftUI.Section("Output Format") {
-            TextField("Sample Rate", value: $config.audio.sampleRate, format: .number)
+            TextField("Sample Rate (Hz)", value: $config.audio.sampleRate, format: .number)
             Picker("Bit Depth", selection: $config.audio.bitDepth) {
-                Text("16").tag(16)
-                Text("24").tag(24)
-                Text("32").tag(32)
+                Text("16-bit").tag(16)
+                Text("24-bit").tag(24)
+                Text("32-bit").tag(32)
             }
-            TextField("Channels", value: $config.audio.channels, format: .number)
+            .pickerStyle(.menu)
+            Stepper("Channels: \(config.audio.channels)", value: $config.audio.channels, in: 1...8)
         }
-        SwiftUI.Section("Behavior") {
+        SwiftUI.Section("Transitions") {
             Picker("Source Conflict", selection: $config.audio.sourceConflict) {
                 Text("Last Wins").tag("last_wins")
                 Text("Receiver Wins").tag("receiver_wins")
             }
-            TextField("Zone Switch Fade (ms)", value: $config.audio.zoneSwitch, format: .number)
-            TextField("Source Switch Fade (ms)", value: $config.audio.sourceSwitch, format: .number)
+            .pickerStyle(.menu)
+            .help("How to resolve when AirPlay/Spotify is active and local playback starts")
+            Stepper("Zone Switch Fade: \(config.audio.zoneSwitch) ms", value: $config.audio.zoneSwitch, in: 0...2000, step: 50)
+            Stepper("Source Switch Fade: \(config.audio.sourceSwitch) ms", value: $config.audio.sourceSwitch, in: 0...2000, step: 50)
         }
     }
 
@@ -221,164 +249,197 @@ struct ConfigView: View {
         }
         SwiftUI.Section("Codec") {
             Picker("Codec", selection: $config.snapcast.codec) {
-                ForEach(["pcm", "flac", "f32lz4", "f32lz4e"], id: \.self) { Text($0) }
+                Text("PCM (uncompressed)").tag("pcm")
+                Text("FLAC (lossless)").tag("flac")
+                Text("F32+LZ4 (low latency)").tag("f32lz4")
+                Text("F32+LZ4 encrypted").tag("f32lz4e")
             }
-            TextField("Encryption PSK", text: $config.snapcast.encryptionPsk, prompt: Text("Optional"))
+            .pickerStyle(.menu)
+            if config.snapcast.codec == "f32lz4e" {
+                SecureField("Encryption Key", text: $config.snapcast.encryptionPsk, prompt: Text("Pre-shared key"))
+            }
         }
-        SwiftUI.Section("Clients") {
-            Picker("Volume Mode", selection: $config.snapcast.groupVolumeMode) {
-                Text("Relative").tag("relative")
-                Text("Absolute").tag("absolute")
+        SwiftUI.Section("Client Management") {
+            Picker("Group Volume Mode", selection: $config.snapcast.groupVolumeMode) {
+                Text("Relative (proportional)").tag("relative")
+                Text("Absolute (override)").tag("absolute")
             }
+            .pickerStyle(.menu)
             Picker("Unknown Clients", selection: $config.snapcast.unknownClients) {
                 Text("Accept").tag("accept")
                 Text("Ignore").tag("ignore")
                 Text("Reject").tag("reject")
             }
-            TextField("Default Zone", text: $config.snapcast.defaultZone, prompt: Text("First zone"))
+            .pickerStyle(.menu)
+            if config.snapcast.unknownClients == "accept" {
+                TextField("Default Zone", text: $config.snapcast.defaultZone, prompt: Text("First zone"))
+            }
         }
     }
 
     @ViewBuilder
     private var airplayForm: some View {
-        SwiftUI.Section("AirPlay") {
-            TextField("Password", text: $config.airplay.password, prompt: Text("Optional"))
+        SwiftUI.Section("AirPlay Receivers") {
+            SecureField("Password", text: $config.airplay.password, prompt: Text("No password"))
+                .help("Optional password required for AirPlay connections")
         }
     }
 
     @ViewBuilder
     private var subsonicForm: some View {
         SwiftUI.Section("Connection") {
-            Toggle("Enabled", isOn: $config.subsonic.enabled)
-            TextField("URL", text: $config.subsonic.url, prompt: Text("http://navidrome:4533"))
-            TextField("Username", text: $config.subsonic.username)
-            SecureField("Password", text: $config.subsonic.password)
-            Picker("Format", selection: $config.subsonic.format) {
-                ForEach(["raw", "flac", "mp3", "opus"], id: \.self) { Text($0) }
+            Toggle("Enable Subsonic", isOn: $config.subsonic.enabled)
+            Group {
+                TextField("Server URL", text: $config.subsonic.url, prompt: Text("http://navidrome:4533"))
+                TextField("Username", text: $config.subsonic.username)
+                SecureField("Password", text: $config.subsonic.password)
+                Picker("Format", selection: $config.subsonic.format) {
+                    Text("Raw (original)").tag("raw")
+                    Text("FLAC").tag("flac")
+                    Text("MP3").tag("mp3")
+                    Text("Opus").tag("opus")
+                }
+                .pickerStyle(.menu)
             }
+            .disabled(!config.subsonic.enabled)
         }
-        SwiftUI.Section("Cache") {
-            Toggle("Enabled", isOn: $config.subsonic.cacheEnabled)
-            TextField("Max Size (MB)", value: $config.subsonic.cacheMaxSizeMb, format: .number)
-            TextField("Lookahead Tracks", value: $config.subsonic.cacheLookahead, format: .number)
+        SwiftUI.Section("Track Cache") {
+            Toggle("Enable Cache", isOn: $config.subsonic.cacheEnabled)
+                .disabled(!config.subsonic.enabled)
+            Group {
+                Stepper("Max Size: \(config.subsonic.cacheMaxSizeMb) MB", value: $config.subsonic.cacheMaxSizeMb, in: 256...16384, step: 256)
+                Stepper("Lookahead: \(config.subsonic.cacheLookahead) tracks", value: $config.subsonic.cacheLookahead, in: 0...10)
+            }
+            .disabled(!config.subsonic.enabled || !config.subsonic.cacheEnabled)
         }
     }
 
     @ViewBuilder
     private var mqttForm: some View {
         SwiftUI.Section("Connection") {
-            Toggle("Enabled", isOn: $config.mqtt.enabled)
-            TextField("Broker", text: $config.mqtt.broker, prompt: Text("192.168.1.10:1883"))
-            TextField("Client ID", text: $config.mqtt.clientId)
-            TextField("Username", text: $config.mqtt.username)
-            SecureField("Password", text: $config.mqtt.password)
-            TextField("Base Topic", text: $config.mqtt.baseTopic)
+            Toggle("Enable MQTT", isOn: $config.mqtt.enabled)
+            Group {
+                TextField("Broker", text: $config.mqtt.broker, prompt: Text("host:port"))
+                TextField("Client ID", text: $config.mqtt.clientId)
+                TextField("Username", text: $config.mqtt.username, prompt: Text("Optional"))
+                SecureField("Password", text: $config.mqtt.password)
+                TextField("Base Topic", text: $config.mqtt.baseTopic)
+            }
+            .disabled(!config.mqtt.enabled)
         }
     }
 
     @ViewBuilder
     private var zonesForm: some View {
         SwiftUI.Section {
-            ForEach($config.zones) { $zone in
-                HStack {
-                    TextField("Icon", text: $zone.icon)
-                        .frame(width: 40)
-                    TextField("Name", text: $zone.name)
+            List {
+                ForEach($config.zones) { $zone in
+                    HStack {
+                        TextField("", text: $zone.icon)
+                            .frame(width: 36)
+                            .multilineTextAlignment(.center)
+                        TextField("Zone Name", text: $zone.name)
+                    }
                 }
+                .onDelete { config.zones.remove(atOffsets: $0) }
+                .onMove { config.zones.move(fromOffsets: $0, toOffset: $1) }
             }
-            .onDelete { config.zones.remove(atOffsets: $0) }
-            .onMove { config.zones.move(fromOffsets: $0, toOffset: $1) }
-        } header: {
+            .frame(minHeight: 120)
+        } footer: {
             HStack {
-                Text("Zones")
-                Spacer()
-                Button("Add Zone", systemImage: "plus") {
+                Button("", systemImage: "plus") {
                     config.zones.append(.init(name: "New Zone"))
-                    hasChanges = true
                 }
-                .labelStyle(.iconOnly)
+                Button("", systemImage: "minus") {
+                    // Remove last if no selection
+                    if !config.zones.isEmpty { config.zones.removeLast() }
+                }
+                .disabled(config.zones.isEmpty)
+                Spacer()
             }
+            .buttonStyle(.borderless)
         }
     }
 
     @ViewBuilder
     private var clientsForm: some View {
         SwiftUI.Section {
-            ForEach($config.clients) { $client in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        TextField("Icon", text: $client.icon)
-                            .frame(width: 40)
-                        TextField("Name", text: $client.name)
+            List {
+                ForEach($config.clients) { $client in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            TextField("", text: $client.icon)
+                                .frame(width: 36)
+                                .multilineTextAlignment(.center)
+                            TextField("Name", text: $client.name)
+                        }
+                        HStack {
+                            TextField("MAC Address", text: $client.mac, prompt: Text("aa:bb:cc:dd:ee:ff"))
+                            TextField("Zone", text: $client.zone)
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                     }
-                    HStack {
-                        TextField("MAC", text: $client.mac, prompt: Text("aa:bb:cc:dd:ee:ff"))
-                        TextField("Zone", text: $client.zone, prompt: Text("Zone name"))
-                    }
-                    .font(.caption)
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
+                .onDelete { config.clients.remove(atOffsets: $0) }
+                .onMove { config.clients.move(fromOffsets: $0, toOffset: $1) }
             }
-            .onDelete { config.clients.remove(atOffsets: $0) }
-            .onMove { config.clients.move(fromOffsets: $0, toOffset: $1) }
-        } header: {
+            .frame(minHeight: 150)
+        } footer: {
             HStack {
-                Text("Clients")
-                Spacer()
-                Button("Add Client", systemImage: "plus") {
+                Button("", systemImage: "plus") {
                     config.clients.append(.init())
-                    hasChanges = true
                 }
-                .labelStyle(.iconOnly)
+                Button("", systemImage: "minus") {
+                    if !config.clients.isEmpty { config.clients.removeLast() }
+                }
+                .disabled(config.clients.isEmpty)
+                Spacer()
             }
+            .buttonStyle(.borderless)
         }
     }
 
     @ViewBuilder
     private var radiosForm: some View {
         SwiftUI.Section {
-            ForEach($config.radios) { $radio in
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("Name", text: $radio.name)
-                    TextField("Stream URL", text: $radio.url, prompt: Text("https://..."))
-                    TextField("Cover URL", text: $radio.cover, prompt: Text("Optional"))
+            List {
+                ForEach($config.radios) { $radio in
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("Station Name", text: $radio.name)
+                        TextField("Stream URL", text: $radio.url, prompt: Text("https://..."))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
+                .onDelete { config.radios.remove(atOffsets: $0) }
+                .onMove { config.radios.move(fromOffsets: $0, toOffset: $1) }
             }
-            .onDelete { config.radios.remove(atOffsets: $0) }
-            .onMove { config.radios.move(fromOffsets: $0, toOffset: $1) }
-        } header: {
+            .frame(minHeight: 120)
+        } footer: {
             HStack {
-                Text("Radio Stations")
-                Spacer()
-                Button("Add Station", systemImage: "plus") {
+                Button("", systemImage: "plus") {
                     config.radios.append(.init())
-                    hasChanges = true
                 }
-                .labelStyle(.iconOnly)
+                Button("", systemImage: "minus") {
+                    if !config.radios.isEmpty { config.radios.removeLast() }
+                }
+                .disabled(config.radios.isEmpty)
+                Spacer()
             }
-        }
-    }
-
-    // MARK: - Load / Save
-
-    private func load() {
-        serverManager.ensureConfigExists()
-        do {
-            config = try TOMLConfigParser.load(from: serverManager.configPath)
-        } catch {
-            // If parsing fails, start with defaults
-            config = ConfigModel()
-        }
-        hasChanges = false
-    }
-
-    private func save() {
-        do {
-            try TOMLConfigParser.save(config, to: serverManager.configPath)
-            hasChanges = false
-        } catch {
-            // TODO: show alert
+            .buttonStyle(.borderless)
         }
     }
 }
+
+// MARK: - Equatable conformances for onChange detection
+
+extension ConfigModel.SystemSection: Equatable {}
+extension ConfigModel.HttpSection: Equatable {}
+extension ConfigModel.AudioSection: Equatable {}
+extension ConfigModel.SnapcastSection: Equatable {}
+extension ConfigModel.AirplaySection: Equatable {}
+extension ConfigModel.SubsonicSection: Equatable {}
+extension ConfigModel.MqttSection: Equatable {}
