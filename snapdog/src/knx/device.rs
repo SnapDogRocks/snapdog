@@ -315,7 +315,8 @@ pub(crate) async fn start_device_transport(
         .await
         .context("Failed to start KNX device server")?;
 
-    let persist = config.knx.persist_ets_config.unwrap_or(true);
+    let knx = config.knx.as_ref().expect("KNX config required");
+    let persist = knx.persist_ets_config.unwrap_or(true);
     let persist_path = if persist {
         Some(PathBuf::from(ETS_MEMORY_PATH))
     } else {
@@ -369,7 +370,7 @@ pub(crate) async fn start_device_transport(
     let (update_tx, update_rx) = mpsc::channel(BAU_CHANNEL_CAPACITY);
 
     // Activate programming mode if requested via CLI
-    if config.knx.start_prog_mode {
+    if config.knx.as_ref().is_some_and(|k| k.start_prog_mode) {
         knx_rs_device::device_object::set_prog_mode(bau.device_mut(), true);
         tracing::info!("KNX programming mode active (--knx-prog-mode)");
     }

@@ -219,14 +219,11 @@ async fn run(
     let subsonic = config.subsonic.as_ref().map(SubsonicClient::new);
 
     // Track cache (if subsonic + cache enabled)
-    let track_cache = config
-        .subsonic
-        .as_ref()
-        .and_then(|s| {
-            crate::audio::cache::TrackCache::new(&s.cache)
-                .map_err(|e| tracing::warn!(error = %e, "Failed to initialize track cache"))
-                .ok()
-        });
+    let track_cache = config.subsonic.as_ref().and_then(|s| {
+        crate::audio::cache::TrackCache::new(&s.cache)
+            .map_err(|e| tracing::warn!(error = %e, "Failed to initialize track cache"))
+            .ok()
+    });
 
     // AirPlay: F32 audio channel + event channel + receiver instance
     let (airplay_audio_tx, mut airplay_audio_rx) =

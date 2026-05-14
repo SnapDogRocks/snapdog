@@ -54,17 +54,17 @@ pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
     let radios: Vec<RadioConfig> = raw.radio.into_iter().map(Into::into).collect();
 
     // ── KNX mode validation ───────────────────────────────────
-    if raw.knx.enabled {
-        match raw.knx.role {
+    if let Some(ref knx) = raw.knx {
+        match knx.role {
             KnxRole::Client => {
                 anyhow::ensure!(
-                    raw.knx.url.is_some(),
+                    knx.url.is_some(),
                     "KNX client mode requires 'url' (e.g. udp://192.168.1.50:3671)"
                 );
             }
             KnxRole::Device => {
                 anyhow::ensure!(
-                    raw.knx.individual_address.is_some(),
+                    knx.individual_address.is_some(),
                     "KNX device mode requires 'individual_address' (e.g. 1.1.100)"
                 );
             }
@@ -351,9 +351,6 @@ mod tests {
     fn knx_disabled_skips_validation() {
         let raw: FileConfig = toml::from_str(
             r#"
-            [knx]
-            enabled = false
-
             [[zone]]
             name = "A"
             [[client]]

@@ -172,15 +172,16 @@ pub async fn run_app() -> Result<()> {
 
     // --knx-device enables device mode
     if cli.knx_device {
-        app_config.knx.enabled = true;
-        app_config.knx.role = config::KnxRole::Device;
-        app_config.knx.individual_address =
-            Some(cli.knx_address.unwrap_or_else(|| "15.15.255".into()));
+        let knx = app_config.knx.get_or_insert(config::KnxConfig::default());
+        knx.role = config::KnxRole::Device;
+        knx.individual_address = Some(cli.knx_address.unwrap_or_else(|| "15.15.255".into()));
     }
 
     // --knx-prog-mode: set flag for BAU task to activate on start
     if cli.knx_prog_mode {
-        app_config.knx.start_prog_mode = true;
+        if let Some(ref mut knx) = app_config.knx {
+            knx.start_prog_mode = true;
+        }
     }
 
     // CLI overrides
@@ -330,7 +331,7 @@ pub async fn run_app() -> Result<()> {
 
     // ── KNX bridge ────────────────────────────────────────────
     let mut knx_device_control: Option<knx::DeviceControlHandle> = None;
-    if config.knx.enabled {
+    if config.knx.is_some() {
         let knx_notifications = notify_tx.subscribe();
         match knx::start(
             &config,

@@ -147,8 +147,7 @@ pub struct FileConfig {
     #[serde(default)]
     pub mqtt: Option<MqttConfig>,
     /// KNX/IP integration settings.
-    #[serde(default)]
-    pub knx: KnxConfig,
+    pub knx: Option<KnxConfig>,
     /// Zone definitions.
     #[serde(default)]
     pub zone: Vec<RawZoneConfig>,
@@ -632,9 +631,6 @@ fn default_mqtt_client_id() -> String {
 /// KNX/IP integration settings.
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct KnxConfig {
-    /// Enable KNX integration.
-    #[serde(default)]
-    pub enabled: bool,
     /// Device role: `client` (default) or `device` (ETS-programmable).
     #[serde(default, alias = "mode")]
     pub role: KnxRole,
@@ -837,7 +833,7 @@ pub struct AppConfig {
     /// MQTT bridge (if configured).
     pub mqtt: Option<MqttConfig>,
     /// KNX settings.
-    pub knx: KnxConfig,
+    pub knx: Option<KnxConfig>,
     /// Resolved zone configurations (1-indexed).
     pub zones: Vec<ZoneConfig>,
     /// Resolved client configurations (1-indexed).

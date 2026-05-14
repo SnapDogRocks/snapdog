@@ -51,7 +51,8 @@ pub async fn start(
     zone_commands: HashMap<usize, ZoneCommandSender>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<Option<DeviceControlHandle>> {
-    match config.knx.role {
+    let knx = config.knx.as_ref().context("KNX not configured")?;
+    match knx.role {
         crate::config::KnxRole::Client => {
             start_client(config, store, notify_rx, zone_commands, snap_tx).await?;
             Ok(None)
@@ -72,8 +73,8 @@ async fn start_client(
 ) -> Result<()> {
     let url = config
         .knx
-        .url
-        .as_deref()
+        .as_ref()
+        .and_then(|k| k.url.as_deref())
         .context("KNX client mode requires 'url'")?;
     let spec = knx_rs_ip::parse_url(url).context("Invalid KNX URL")?;
     let conn = knx_rs_ip::connect(spec)
@@ -107,8 +108,8 @@ async fn start_device(
 ) -> Result<DeviceControlHandle> {
     let addr = config
         .knx
-        .individual_address
-        .as_deref()
+        .as_ref()
+        .and_then(|k| k.individual_address.as_deref())
         .context("KNX device mode requires 'individual_address'")?;
 
     let (pub_transport, listen_transport, _ets_params) =
