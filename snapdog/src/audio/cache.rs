@@ -325,10 +325,8 @@ mod tests {
 
     fn test_config(dir: &tempfile::TempDir) -> SubsonicCacheConfig {
         SubsonicCacheConfig {
-            enabled: true,
             path: dir.path().to_string_lossy().into_owned(),
             max_size_mb: 100,
-            lookahead: 2,
         }
     }
 

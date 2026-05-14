@@ -222,7 +222,6 @@ async fn run(
     let track_cache = config
         .subsonic
         .as_ref()
-        .filter(|s| s.cache.enabled)
         .and_then(|s| {
             crate::audio::cache::TrackCache::new(&s.cache)
                 .map_err(|e| tracing::warn!(error = %e, "Failed to initialize track cache"))
@@ -468,7 +467,7 @@ async fn run(
                                     }).await;
                                     // Prefetch next tracks
                                     if let Some(ref cache) = track_cache {
-                                        let lookahead = config.subsonic.as_ref().map_or(0, |s| s.cache.lookahead);
+                                        let lookahead = crate::config::CACHE_LOOKAHEAD;
                                         prefetch_next_tracks(sub, &playlist.entry, track_idx, cache, lookahead);
                                     }
                                 }

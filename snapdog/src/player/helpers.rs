@@ -411,7 +411,7 @@ async fn advance_playlist_track(
                         .config
                         .subsonic
                         .as_ref()
-                        .map_or(0, |s| s.cache.lookahead);
+                        .map_or(0, |_| crate::config::CACHE_LOOKAHEAD);
                     prefetch_next_tracks(sub, &playlist.entry, track_index, cache, lookahead);
                 }
                 tracing::info!(

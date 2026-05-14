@@ -106,12 +106,10 @@ password = "admin"
 # Skip TLS certificate verification (for self-signed certs)
 # tls_skip_verify = false
 
-# Track cache — caches downloaded tracks on disk for instant seek and replay.
+# Track cache — always active for instant seek and replay.
 # [subsonic.cache]
-# enabled = true                    # Enable disk-backed track cache
-# path = "~/.cache/snapdog/tracks"  # Cache directory
+# path = "~/.cache/snapdog/tracks"  # Cache directory (default: platform-appropriate)
 # max_size_mb = 2048                # Max cache size (LRU eviction)
-# lookahead = 2                     # Pre-fetch next N playlist tracks
 
 # ── MQTT ───────────────────────────────────────────────────────────────────
 # Remove this section entirely to disable MQTT.
