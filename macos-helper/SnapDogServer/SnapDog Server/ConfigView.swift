@@ -177,6 +177,9 @@ struct ConfigView: View {
                     TextField("", text: $zone.icon)
                         .frame(width: 36)
                         .multilineTextAlignment(.center)
+                        .onTapGesture {
+                            NSApp.orderFrontCharacterPalette(nil)
+                        }
                     TextField("Zone Name", text: $zone.name)
                 }
             }
@@ -205,6 +208,9 @@ struct ConfigView: View {
                         TextField("", text: $client.icon)
                             .frame(width: 36)
                             .multilineTextAlignment(.center)
+                            .onTapGesture {
+                                NSApp.orderFrontCharacterPalette(nil)
+                            }
                         TextField("Name", text: $client.name)
                     }
                     HStack {
