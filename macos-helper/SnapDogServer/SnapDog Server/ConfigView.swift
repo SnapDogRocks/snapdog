@@ -360,17 +360,25 @@ struct ConfigView: View {
         }
     }
 
-    // MARK: - Load / Save (raw TOML for now — proper parser in future)
+    // MARK: - Load / Save
 
     private func load() {
         serverManager.ensureConfigExists()
-        // For now, open in external editor — structured parsing requires a TOML library
+        do {
+            config = try TOMLConfigParser.load(from: serverManager.configPath)
+        } catch {
+            // If parsing fails, start with defaults
+            config = ConfigModel()
+        }
         hasChanges = false
     }
 
     private func save() {
-        // TODO: Serialize ConfigModel back to TOML
-        // For now this is a placeholder — full implementation requires toml-swift or similar
-        hasChanges = false
+        do {
+            try TOMLConfigParser.save(config, to: serverManager.configPath)
+            hasChanges = false
+        } catch {
+            // TODO: show alert
+        }
     }
 }

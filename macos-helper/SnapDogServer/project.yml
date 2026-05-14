@@ -6,12 +6,19 @@ options:
   xcodeVersion: "16.0"
   createIntermediateGroups: true
 
+packages:
+  TOMLKit:
+    url: https://github.com/LebJe/TOMLKit.git
+    exactVersion: "0.6.0"
+
 targets:
   SnapDog Server:
     type: application
     platform: macOS
     sources:
       - path: SnapDog Server
+    dependencies:
+      - package: TOMLKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: eu.schmieder.snapdog.server

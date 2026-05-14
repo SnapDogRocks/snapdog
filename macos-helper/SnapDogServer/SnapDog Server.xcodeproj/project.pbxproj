@@ -11,11 +11,14 @@
 		2934DF33C6BB93B8FDACD973 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F345B134174843E76874F9 /* App.swift */; };
 		35AFFFAD23A19714B0A6169F /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 4067205D4BF4999F64B67740 /* AppIcon.icon */; };
 		71393F70ACFC5D6FA633B82F /* ServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 798CB180E614495536F2CC9E /* ServerManager.swift */; };
+		80FC45B370906095B342219D /* TOMLConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */; };
 		CF384D3AAAF5865042B32A38 /* ConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0DEE6574D3EECDCCA97D3E /* ConfigView.swift */; };
+		E6D10A6F4F826E39C7B7A6EC /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 81361EABDEADDA4B4F41C10F /* TOMLKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		1A0DEE6574D3EECDCCA97D3E /* ConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigView.swift; sourceTree = "<group>"; };
+		267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TOMLConfigParser.swift; sourceTree = "<group>"; };
 		4067205D4BF4999F64B67740 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		65205740F55E2DFF66DD8D6C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7362345BB262E78D9C1B077D /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
@@ -23,6 +26,17 @@
 		A3F345B134174843E76874F9 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		DB56A0FCF073986CBACB4794 /* SnapDog Server.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SnapDog Server.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		B9C00241BE2DCE12A83F7693 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E6D10A6F4F826E39C7B7A6EC /* TOMLKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		5DB5D79A52A8F7B73D14BA50 = {
@@ -42,6 +56,7 @@
 				65205740F55E2DFF66DD8D6C /* Info.plist */,
 				7362345BB262E78D9C1B077D /* LogView.swift */,
 				798CB180E614495536F2CC9E /* ServerManager.swift */,
+				267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */,
 			);
 			path = "SnapDog Server";
 			sourceTree = "<group>";
@@ -63,6 +78,7 @@
 			buildPhases = (
 				A684337872E9FE86C5CF73D0 /* Sources */,
 				DB105613C7570A506E690C01 /* Resources */,
+				B9C00241BE2DCE12A83F7693 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -70,6 +86,7 @@
 			);
 			name = "SnapDog Server";
 			packageProductDependencies = (
+				81361EABDEADDA4B4F41C10F /* TOMLKit */,
 			);
 			productName = "SnapDog Server";
 			productReference = DB56A0FCF073986CBACB4794 /* SnapDog Server.app */;
@@ -95,6 +112,9 @@
 			);
 			mainGroup = 5DB5D79A52A8F7B73D14BA50;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				08AFD7E498B82AE3D4908CCD /* XCRemoteSwiftPackageReference "TOMLKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FF70F5A8441FF8F08C392BBA /* Products */;
 			projectDirPath = "";
@@ -125,6 +145,7 @@
 				CF384D3AAAF5865042B32A38 /* ConfigView.swift in Sources */,
 				0E3812A45F373B0A57DF9D00 /* LogView.swift in Sources */,
 				71393F70ACFC5D6FA633B82F /* ServerManager.swift in Sources */,
+				80FC45B370906095B342219D /* TOMLConfigParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -312,6 +333,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		08AFD7E498B82AE3D4908CCD /* XCRemoteSwiftPackageReference "TOMLKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/LebJe/TOMLKit.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		81361EABDEADDA4B4F41C10F /* TOMLKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08AFD7E498B82AE3D4908CCD /* XCRemoteSwiftPackageReference "TOMLKit" */;
+			productName = TOMLKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 77E4E1BE9705EAEB3C552D60 /* Project object */;
 }
