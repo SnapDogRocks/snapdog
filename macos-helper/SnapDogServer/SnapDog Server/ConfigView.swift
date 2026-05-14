@@ -67,23 +67,23 @@ struct ConfigView: View {
     var body: some View {
         TabView {
             Tab("Sources", systemImage: "music.note.house") {
-                Form { sourcesForm }
+                Form { sourcesForm }.formStyle(.grouped)
             }
             Tab("Audio", systemImage: "waveform") {
-                Form { audioForm }
+                Form { audioForm }.formStyle(.grouped)
             }
             Tab("Zones", systemImage: "rectangle.split.3x1") {
-                Form { zonesForm }
+                Form { zonesForm }.formStyle(.grouped)
             }
             Tab("Clients", systemImage: "speaker.wave.2") {
-                Form { clientsForm }
+                Form { clientsForm }.formStyle(.grouped)
             }
             Tab("Integration", systemImage: "antenna.radiowaves.left.and.right") {
-                Form { integrationForm }
+                Form { integrationForm }.formStyle(.grouped)
             }
         }
         .tabViewStyle(.automatic)
-        .frame(minWidth: 520, minHeight: 400)
+        .frame(width: 480, height: 360)
         .onAppear { load() }
         .onChange(of: config.subsonic) { _, _ in debounceSave() }
         .onChange(of: config.mqtt) { _, _ in debounceSave() }
