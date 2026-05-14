@@ -198,7 +198,7 @@ fn default_state_dir() -> String {
     {
         std::env::var("HOME").map_or_else(
             |_| "/tmp/snapdog".into(),
-            |h| format!("{h}/Library/Application Support/snapdog"),
+            |h| format!("{h}/Library/Application Support/SnapDog"),
         )
     }
     #[cfg(target_os = "linux")]
