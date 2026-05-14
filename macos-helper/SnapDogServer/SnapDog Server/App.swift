@@ -30,8 +30,12 @@ struct SnapDogServerApp: App {
                 SettingsLink {
                     Text("Configuration...")
                 }
+                .onTapGesture {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
                 Button("View Logs...") {
                     openWindow(id: "logs")
+                    NSApp.activate(ignoringOtherApps: true)
                 }
             }
 
