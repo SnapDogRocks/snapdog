@@ -62,7 +62,8 @@ enum TOMLConfigParser {
             model.radios = radios.map { t in
                 ConfigModel.RadioEntry(
                     name: (t["name"] as? String) ?? "",
-                    url: (t["url"] as? String) ?? ""
+                    url: (t["url"] as? String) ?? "",
+                    cover: (t["cover"] as? String) ?? ""
                 )
             }
         }
@@ -173,6 +174,7 @@ enum TOMLConfigParser {
             let t = TOMLTable()
             t["name"] = radio.name
             t["url"] = radio.url
+            if !radio.cover.isEmpty { t["cover"] = radio.cover }
             radiosArr.append(t)
         }
         if !model.radios.isEmpty { existing["radio"] = radiosArr }

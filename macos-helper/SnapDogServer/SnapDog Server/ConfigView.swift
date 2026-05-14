@@ -55,6 +55,7 @@ final class ConfigModel {
         let id = UUID()
         var name = ""
         var url = ""
+        var cover = ""
     }
 }
 
@@ -115,11 +116,15 @@ struct ConfigView: View {
 
         SwiftUI.Section {
             ForEach($config.radios) { $radio in
-                HStack {
-                    TextField("Name", text: $radio.name)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Station Name", text: $radio.name)
                     TextField("Stream URL", text: $radio.url, prompt: Text("https://..."))
+                        .font(.callout)
+                    TextField("Cover Image URL", text: $radio.cover, prompt: Text("Optional"))
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 2)
             }
             .onDelete { config.radios.remove(atOffsets: $0) }
             .onMove { config.radios.move(fromOffsets: $0, toOffset: $1) }
