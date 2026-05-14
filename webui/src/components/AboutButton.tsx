@@ -47,15 +47,18 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             <GitHubIcon size={16} />
             GitHub
           </a>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Licensed under{" "}
           <a
-            href="https://github.com/metaneutrons/snapdog/blob/main/LICENSE"
+            href="https://www.gnu.org/licenses/gpl-3.0.html"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="underline hover:text-foreground transition-colors"
           >
             GPL-3.0
           </a>
-        </div>
+        </p>
         <p className="text-[10px] text-muted-foreground/50">© 2026 Fabian Schmieder</p>
         <button onClick={onClose} className="mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors">Close</button>
       </div>
