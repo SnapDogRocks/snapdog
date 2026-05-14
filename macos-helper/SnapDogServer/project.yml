@@ -1,0 +1,36 @@
+name: SnapDog Server
+options:
+  bundleIdPrefix: eu.schmieder.snapdog
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  SnapDog Server:
+    type: application
+    platform: macOS
+    sources:
+      - path: SnapDog Server
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: eu.schmieder.snapdog.server
+        PRODUCT_NAME: SnapDog Server
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        INFOPLIST_FILE: "SnapDog Server/Info.plist"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+        ENABLE_HARDENED_RUNTIME: true
+        CODE_SIGN_IDENTITY: "-"
+        SWIFT_STRICT_CONCURRENCY: complete
+    info:
+      path: "SnapDog Server/Info.plist"
+      properties:
+        LSUIElement: true
+        CFBundleName: SnapDog Server
+        CFBundleDisplayName: SnapDog Server
+        CFBundleIdentifier: eu.schmieder.snapdog.server
+        NSHumanReadableCopyright: "Copyright © 2026 Fabian Schmieder. All rights reserved."
