@@ -31,6 +31,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         ENABLE_HARDENED_RUNTIME: true
+        ENABLE_APP_SANDBOX: false
         CODE_SIGN_IDENTITY: "-"
         SWIFT_STRICT_CONCURRENCY: complete
     info:
