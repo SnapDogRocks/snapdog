@@ -17,6 +17,7 @@ enum TOMLConfigParser {
         // Codec
         if let snap = table["snapcast"] as? TOMLTable {
             model.codec = (snap["codec"] as? String) ?? "flac"
+            model.encryptionPsk = (snap["encryption_psk"] as? String) ?? ""
         }
 
         // AirPlay
@@ -101,6 +102,7 @@ enum TOMLConfigParser {
         // Snapcast — update codec, preserve rest
         let snap = (existing["snapcast"] as? TOMLTable) ?? TOMLTable()
         snap["codec"] = model.codec
+        if !model.encryptionPsk.isEmpty { snap["encryption_psk"] = model.encryptionPsk }
         if snap["streaming_port"] == nil { snap["streaming_port"] = 1704 }
         if snap["group_volume_mode"] == nil { snap["group_volume_mode"] = "relative" }
         if snap["unknown_clients"] == nil { snap["unknown_clients"] = "accept" }

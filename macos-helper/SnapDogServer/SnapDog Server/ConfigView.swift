@@ -12,6 +12,7 @@ final class ConfigModel {
     var knx = KnxSection()
     var airplayPassword = ""
     var codec = "flac"
+    var encryptionPsk = ""
     var sampleRate = 48000
     var bitDepth = 16
 
@@ -169,6 +170,9 @@ struct ConfigView: View {
                 Text("F32+LZ4 encrypted").tag("f32lz4e")
             }
             .pickerStyle(.menu)
+            if config.codec == "f32lz4e" {
+                SecureField("Encryption Key", text: $config.encryptionPsk, prompt: Text("Pre-shared key"))
+            }
         }
     }
 
