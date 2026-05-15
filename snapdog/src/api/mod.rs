@@ -41,7 +41,7 @@ pub struct AppState {
     /// Content-addressed cover art cache.
     pub covers: state::cover::SharedCoverCache,
     /// Broadcast sender for WebSocket notifications.
-    pub notifications: tokio::sync::broadcast::Sender<ws::Notification>,
+    pub notifications: ws::NotifySender,
     /// Shared parametric EQ store.
     pub eq_store: std::sync::Arc<std::sync::Mutex<crate::audio::eq::EqStore>>,
     /// KNX device control (programming mode). `None` in client mode.
@@ -64,7 +64,7 @@ pub async fn serve(
     zone_commands: HashMap<usize, ZoneCommandSender>,
     snap_tx: player::SnapcastCmdSender,
     covers: state::cover::SharedCoverCache,
-    notifications: tokio::sync::broadcast::Sender<ws::Notification>,
+    notifications: ws::NotifySender,
     eq_store: std::sync::Arc<std::sync::Mutex<crate::audio::eq::EqStore>>,
     knx_device_control: Option<crate::knx::DeviceControlHandle>,
 ) -> Result<()> {

@@ -47,7 +47,7 @@ pub use transport::KnxDeviceControl;
 pub async fn start(
     config: &AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<crate::api::ws::Notification>,
+    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<Option<DeviceControlHandle>> {
@@ -67,7 +67,7 @@ pub async fn start(
 async fn start_client(
     config: &AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<crate::api::ws::Notification>,
+    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<()> {
@@ -102,7 +102,7 @@ async fn start_client(
 async fn start_device(
     config: &AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<crate::api::ws::Notification>,
+    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<DeviceControlHandle> {
@@ -133,7 +133,7 @@ fn spawn_bridge(
     listen_transport: impl KnxListener + 'static,
     config: &AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<crate::api::ws::Notification>,
+    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) {
@@ -162,7 +162,7 @@ async fn publisher(
     transport: impl KnxPublisher,
     config: AppConfig,
     store: state::SharedState,
-    mut notify_rx: tokio::sync::broadcast::Receiver<crate::api::ws::Notification>,
+    mut notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
 ) {
     tracing::info!("KNX publisher started");
 
@@ -179,19 +179,26 @@ async fn publisher(
 
     loop {
         match notify_rx.recv().await {
-            Ok(crate::api::ws::Notification::ZoneStateChanged { zone, .. }) => {
-                publish_zone_state(zone, &config, &store, &transport).await;
+            Ok(json) => {
+                let Ok(notif) = serde_json::from_str::<crate::api::ws::Notification>(&json) else {
+                    continue;
+                };
+                match notif {
+                    crate::api::ws::Notification::ZoneStateChanged { zone, .. } => {
+                        publish_zone_state(zone, &config, &store, &transport).await;
+                    }
+                    crate::api::ws::Notification::ZoneTrackChanged { zone, .. } => {
+                        publish_zone_track(zone, &config, &store, &transport).await;
+                    }
+                    crate::api::ws::Notification::ZoneProgress { zone, .. } => {
+                        publish_zone_progress(zone, &config, &store, &transport).await;
+                    }
+                    crate::api::ws::Notification::ClientStateChanged { client, .. } => {
+                        publish_client_state(client, &config, &store, &transport).await;
+                    }
+                    _ => {}
+                }
             }
-            Ok(crate::api::ws::Notification::ZoneTrackChanged { zone, .. }) => {
-                publish_zone_track(zone, &config, &store, &transport).await;
-            }
-            Ok(crate::api::ws::Notification::ZoneProgress { zone, .. }) => {
-                publish_zone_progress(zone, &config, &store, &transport).await;
-            }
-            Ok(crate::api::ws::Notification::ClientStateChanged { client, .. }) => {
-                publish_client_state(client, &config, &store, &transport).await;
-            }
-            Ok(_) => {}
             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                 tracing::warn!(missed = n, "KNX publisher lagged");
             }

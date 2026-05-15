@@ -229,7 +229,7 @@ async fn handle_event(
                 client.muted = muted;
                 let n = client_notification(idx, client);
                 drop(s);
-                let _ = notify.send(n);
+                crate::api::ws::broadcast_notification(notify, &n);
             }
         }
         SnapcastEvent::ClientLatencyChanged { id, latency } => {
@@ -242,7 +242,7 @@ async fn handle_event(
                 client.latency_ms = latency;
                 let n = client_notification(idx, client);
                 drop(s);
-                let _ = notify.send(n);
+                crate::api::ws::broadcast_notification(notify, &n);
             }
         }
         SnapcastEvent::ClientNameChanged { id, name } => {
@@ -255,7 +255,7 @@ async fn handle_event(
                 client.name = name;
                 let n = client_notification(idx, client);
                 drop(s);
-                let _ = notify.send(n);
+                crate::api::ws::broadcast_notification(notify, &n);
             }
         }
         SnapcastEvent::ServerUpdated => {
@@ -599,6 +599,6 @@ const fn client_notification(idx: usize, client: &state::ClientState) -> api::ws
 async fn broadcast_all_clients(store: &state::SharedState, notify: &api::ws::NotifySender) {
     let s = store.read().await;
     for (&idx, client) in &s.clients {
-        let _ = notify.send(client_notification(idx, client));
+        api::ws::broadcast_notification(notify, &client_notification(idx, client));
     }
 }

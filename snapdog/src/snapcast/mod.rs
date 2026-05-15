@@ -428,12 +428,13 @@ mod process_impl {
                     zone: c.zone_index,
                     is_snapdog: c.is_snapdog,
                 })
-                .collect();
-            drop(s);
-            for n in notifs {
-                let _ = notify.send(n);
-            }
-        }
+                .collect::<Vec<_>>();
+                drop(s);
+                for n in notifs {
+                api::ws::broadcast_notification(notify, &n);
+                }
+                }
+
     }
 
     /// Build MAC → snapcast_id map from server status.
@@ -503,7 +504,7 @@ mod process_impl {
                     let name = client.name.clone();
                     drop(s);
                     tracing::info!(client = %name, id = %snap_id, "Client connected");
-                    let _ = notify.send(notif);
+                    crate::api::ws::broadcast_notification(notify, &notif);
 
                     setup_zone_group_for_client(zone_index, &snap_id, config, snap).await;
                 }
@@ -527,7 +528,7 @@ mod process_impl {
                     let name = client.name.clone();
                     drop(s);
                     tracing::info!(client = %name, "Client disconnected");
-                    let _ = notify.send(notif);
+                    crate::api::ws::broadcast_notification(notify, &notif);
                 }
             }
             Notification::ClientOnVolumeChanged {
@@ -555,7 +556,7 @@ mod process_impl {
                     let name = client.name.clone();
                     drop(s);
                     tracing::debug!(client = %name, volume = vol, muted, "Volume changed");
-                    let _ = notify.send(notif);
+                    crate::api::ws::broadcast_notification(notify, &notif);
                 }
             }
             Notification::ClientOnLatencyChanged {
@@ -581,7 +582,7 @@ mod process_impl {
                     let name = client.name.clone();
                     drop(s);
                     tracing::info!(client = %name, latency = lat, "Latency changed");
-                    let _ = notify.send(notif);
+                    crate::api::ws::broadcast_notification(notify, &notif);
                 }
             }
             Notification::ClientOnNameChanged {
@@ -605,7 +606,7 @@ mod process_impl {
                     };
                     drop(s);
                     tracing::info!(client = %new_name, "Name changed");
-                    let _ = notify.send(notif);
+                    crate::api::ws::broadcast_notification(notify, &notif);
                 }
             }
             Notification::GroupOnMute { id, mute } => {

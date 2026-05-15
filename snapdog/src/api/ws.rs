@@ -9,6 +9,13 @@ use axum::Router;
 const WS_PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 /// Capacity of the notification broadcast channel.
 const NOTIFICATION_CHANNEL_SIZE: usize = 256;
+/// Maximum number of concurrent WebSocket connections.
+const MAX_WS_CONNECTIONS: usize = 64;
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+
 use axum::extract::State;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -24,7 +31,7 @@ use tokio::sync::broadcast;
 use crate::api::SharedState;
 
 /// Notification broadcast to all connected WebSocket clients.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Notification {
     /// Zone playback state changed (play/pause/stop, volume, mute, source, shuffle, repeat).
@@ -114,14 +121,22 @@ pub enum Notification {
 }
 
 /// Create a broadcast channel for notifications.
-pub type NotifySender = broadcast::Sender<Notification>;
+/// We broadcast a pre-serialized JSON string to all clients for efficiency.
+pub type NotifySender = broadcast::Sender<std::sync::Arc<str>>;
 
 /// Create a broadcast channel for notifications.
 pub fn notification_channel() -> (
-    broadcast::Sender<Notification>,
-    broadcast::Receiver<Notification>,
+    broadcast::Sender<std::sync::Arc<str>>,
+    broadcast::Receiver<std::sync::Arc<str>>,
 ) {
     broadcast::channel(NOTIFICATION_CHANNEL_SIZE)
+}
+
+/// Helper to serialize and send a notification.
+pub fn broadcast_notification(sender: &NotifySender, notification: &Notification) {
+    if let Ok(json) = serde_json::to_string(notification) {
+        let _ = sender.send(json.into());
+    }
 }
 
 /// Build the WebSocket router.
@@ -132,10 +147,14 @@ pub fn router(state: SharedState) -> Router {
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<SharedState>) -> impl IntoResponse {
+    if ACTIVE_CONNECTIONS.load(Ordering::Relaxed) >= MAX_WS_CONNECTIONS {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
 async fn handle_socket(mut socket: WebSocket, state: SharedState) {
+    ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
     let mut rx = state.notifications.subscribe();
     let mut ping_interval = tokio::time::interval(WS_PING_INTERVAL);
     tracing::debug!("WebSocket client connected");
@@ -143,11 +162,8 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
     loop {
         tokio::select! {
             result = rx.recv() => {
-                if let Ok(notification) = result {
-                    let Ok(json) = serde_json::to_string(&notification) else {
-                        continue;
-                    };
-                    if socket.send(Message::Text(json.into())).await.is_err() {
+                if let Ok(json) = result {
+                    if socket.send(Message::Text(json.as_ref().into())).await.is_err() {
                         break;
                     }
                 } else {
@@ -173,5 +189,6 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
         }
     }
 
+    ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
     tracing::debug!("WebSocket client disconnected");
 }
