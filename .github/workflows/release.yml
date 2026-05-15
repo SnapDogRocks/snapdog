@@ -244,6 +244,84 @@ jobs:
           gh release upload "${{ needs.meta.outputs.tag }}" release-assets/* \
             --repo ${{ github.repository }} --clobber
 
+  update-homebrew:
+    name: Update Homebrew Tap
+    needs: [meta, upload-release-artifacts]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Update tap formulas
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${{ needs.meta.outputs.version }}
+          TAG=${{ needs.meta.outputs.tag }}
+
+          # Calculate checksums for macOS binaries
+          SNAPDOG_X64_SHA=$(sha256sum artifacts/snapdog-${TAG}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
+          SNAPDOG_ARM_SHA=$(sha256sum artifacts/snapdog-${TAG}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+          CLIENT_X64_SHA=$(sha256sum artifacts/snapdog-${TAG}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
+          CLIENT_ARM_SHA=$(sha256sum artifacts/snapdog-${TAG}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/metaneutrons/homebrew-tap.git"
+          cd homebrew-tap
+          mkdir -p Formula
+
+          cat > Formula/snapdog.rb << EOF
+          class Snapdog < Formula
+            desc "Multi-zone audio controller with AirPlay, Snapcast, MQTT, and KNX"
+            homepage "https://github.com/metaneutrons/snapdog"
+            version "${VERSION}"
+            license "GPL-3.0"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://github.com/metaneutrons/snapdog/releases/download/${TAG}/snapdog-${TAG}-x86_64-apple-darwin.tar.gz"
+                sha256 "${SNAPDOG_X64_SHA}"
+              else
+                url "https://github.com/metaneutrons/snapdog/releases/download/${TAG}/snapdog-${TAG}-aarch64-apple-darwin.tar.gz"
+                sha256 "${SNAPDOG_ARM_SHA}"
+              end
+            end
+
+            def install
+              bin.install "snapdog"
+            end
+          end
+          EOF
+
+          cat > Formula/snapdog-client.rb << EOF
+          class SnapdogClient < Formula
+            desc "SnapDog multiroom audio client"
+            homepage "https://github.com/metaneutrons/snapdog"
+            version "${VERSION}"
+            license "GPL-3.0"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://github.com/metaneutrons/snapdog/releases/download/${TAG}/snapdog-${TAG}-x86_64-apple-darwin.tar.gz"
+                sha256 "${CLIENT_X64_SHA}"
+              else
+                url "https://github.com/metaneutrons/snapdog/releases/download/${TAG}/snapdog-${TAG}-aarch64-apple-darwin.tar.gz"
+                sha256 "${CLIENT_ARM_SHA}"
+              end
+            end
+
+            def install
+              bin.install "snapdog-client"
+            end
+          end
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/snapdog.rb Formula/snapdog-client.rb
+          git commit -m "Update snapdog to ${VERSION}"
+          git push
+
   publish-aur:
     name: AUR (${{ matrix.pkg }})
     needs: [meta, upload-release-artifacts]
