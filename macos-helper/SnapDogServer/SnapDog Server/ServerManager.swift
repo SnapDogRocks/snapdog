@@ -10,7 +10,15 @@ final class ServerManager {
     var lastError: String?
 
     private var process: Process?
+    private var intentionalStop = false
+    private var crashCount = 0
+    private var lastCrash: Date?
     private let logger = Logger(subsystem: "com.metaneutrons.snapdog.helper", category: "server")
+
+    /// Reset crash count after this interval of stable running.
+    private static let crashCountResetInterval: TimeInterval = 60
+    /// Maximum consecutive restarts before giving up.
+    private static let maxCrashRestarts = 5
 
     var configPath: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -27,6 +35,7 @@ final class ServerManager {
     func start() {
         guard !isRunning else { return }
         lastError = nil
+        intentionalStop = false
         guard let binary = binaryPath else {
             appendLog("[ERROR] snapdog binary not found in app bundle")
             return
@@ -50,14 +59,17 @@ final class ServerManager {
 
         proc.terminationHandler = { [weak self] proc in
             Task { @MainActor [weak self] in
-                self?.isRunning = false
-                self?.process = nil
+                guard let self else { return }
+                self.isRunning = false
+                self.process = nil
                 let code = proc.terminationStatus
-                if code == 0 {
-                    self?.appendLog("[SERVER] Stopped")
+                if code == 0 || self.intentionalStop {
+                    self.appendLog("[SERVER] Stopped")
+                    self.crashCount = 0
                 } else {
-                    self?.appendLog("[SERVER] Crashed (exit code \(code))")
-                    self?.lastError = "Server exited with code \(code). Check logs for details."
+                    self.appendLog("[SERVER] Crashed (exit code \(code))")
+                    self.lastError = "Server exited with code \(code). Check logs for details."
+                    self.scheduleRestart()
                 }
             }
         }
@@ -76,6 +88,7 @@ final class ServerManager {
 
     func stop() {
         guard let proc = process, proc.isRunning else { return }
+        intentionalStop = true
         proc.interrupt() // SIGINT — graceful shutdown
         appendLog("[SERVER] Stopping...")
         logger.info("Sending SIGINT to server")
@@ -113,6 +126,31 @@ final class ServerManager {
         unknown_clients = "accept"
         """
         try? defaultConfig.write(to: configPath, atomically: true, encoding: .utf8)
+    }
+
+    private func scheduleRestart() {
+        // Reset crash count if last crash was long ago (server was stable)
+        if let last = lastCrash, Date().timeIntervalSince(last) > Self.crashCountResetInterval {
+            crashCount = 0
+        }
+        crashCount += 1
+        lastCrash = Date()
+
+        guard crashCount <= Self.maxCrashRestarts else {
+            appendLog("[SERVER] Too many crashes (\(crashCount)), not restarting")
+            logger.error("Giving up after \(self.crashCount) consecutive crashes")
+            return
+        }
+
+        let delay = min(pow(2.0, Double(crashCount - 1)), 30.0) // 1s, 2s, 4s, 8s, 16s, 30s
+        appendLog("[SERVER] Restarting in \(Int(delay))s (attempt \(crashCount)/\(Self.maxCrashRestarts))...")
+        logger.info("Auto-restart in \(delay)s (attempt \(self.crashCount))")
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !self.isRunning, !self.intentionalStop else { return }
+            self.start()
+        }
     }
 
     private func appendLog(_ line: String) {
