@@ -1,9 +1,11 @@
 import SwiftUI
+import Sparkle
 
 @main
 struct SnapDogServerApp: App {
     @State private var serverManager = ServerManager()
     @Environment(\.openWindow) private var openWindow
+    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     var body: some Scene {
         MenuBarExtra("SnapDog", image: "MenuBarIcon") {
@@ -37,6 +39,9 @@ struct SnapDogServerApp: App {
                 }
                 .onTapGesture {
                     NSApp.activate(ignoringOtherApps: true)
+                }
+                Button("Check for Updates…") {
+                    updaterController.checkForUpdates(nil)
                 }
                 Button("View Logs...") {
                     openWindow(id: "logs")

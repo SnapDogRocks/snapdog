@@ -10,6 +10,9 @@ packages:
   TOMLKit:
     url: https://github.com/LebJe/TOMLKit.git
     exactVersion: "0.6.0"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    exactVersion: "2.9.1"
 
 targets:
   SnapDog Server:
@@ -19,6 +22,7 @@ targets:
       - path: SnapDog Server
     dependencies:
       - package: TOMLKit
+      - package: Sparkle
     postBuildScripts:
       - name: Copy snapdog binary
         script: |
@@ -51,3 +55,5 @@ targets:
         CFBundleDisplayName: SnapDog Server
         CFBundleIdentifier: eu.schmieder.snapdog.server
         NSHumanReadableCopyright: "Copyright © 2026 Fabian Schmieder. All rights reserved."
+        SUFeedURL: "https://raw.githubusercontent.com/metaneutrons/snapdog/main/appcast.xml"
+        SUPublicEDKey: "UIAhw75KiR/srNxODDCPJSZyNtdRY3PEH1eVvyE8LKQ="

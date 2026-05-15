@@ -11,6 +11,7 @@
 		2934DF33C6BB93B8FDACD973 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F345B134174843E76874F9 /* App.swift */; };
 		2A1F1E98946CBE1DEB6EFDEF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A41907050CB9198DF85006A6 /* Assets.xcassets */; };
 		35AFFFAD23A19714B0A6169F /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 4067205D4BF4999F64B67740 /* AppIcon.icon */; };
+		3AE05A7D31BC54730A2DB903 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3000AEF8E40EA1A911AB7202 /* Sparkle */; };
 		71393F70ACFC5D6FA633B82F /* ServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 798CB180E614495536F2CC9E /* ServerManager.swift */; };
 		80FC45B370906095B342219D /* TOMLConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */; };
 		CF384D3AAAF5865042B32A38 /* ConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0DEE6574D3EECDCCA97D3E /* ConfigView.swift */; };
@@ -35,6 +36,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E6D10A6F4F826E39C7B7A6EC /* TOMLKit in Frameworks */,
+				3AE05A7D31BC54730A2DB903 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -91,6 +93,7 @@
 			name = "SnapDog Server";
 			packageProductDependencies = (
 				81361EABDEADDA4B4F41C10F /* TOMLKit */,
+				3000AEF8E40EA1A911AB7202 /* Sparkle */,
 			);
 			productName = "SnapDog Server";
 			productReference = DB56A0FCF073986CBACB4794 /* SnapDog Server.app */;
@@ -104,6 +107,8 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+				};
 			};
 			buildConfigurationList = A06ED75609C8E5E0A6E93DFA /* Build configuration list for PBXProject "SnapDog Server" */;
 			developmentRegion = en;
@@ -115,6 +120,7 @@
 			mainGroup = 5DB5D79A52A8F7B73D14BA50;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				21A5A9DB96933084BBC2F721 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				08AFD7E498B82AE3D4908CCD /* XCRemoteSwiftPackageReference "TOMLKit" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -181,21 +187,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 898G35U5LW;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = "SnapDog Server/Info.plist";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.metaneutrons.snapdog.helper;
 				PRODUCT_NAME = "SnapDog Server";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
@@ -325,21 +327,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "-";
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 898G35U5LW;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = "SnapDog Server/Info.plist";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.metaneutrons.snapdog.helper;
 				PRODUCT_NAME = "SnapDog Server";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
@@ -378,9 +376,22 @@
 				version = 0.6.0;
 			};
 		};
+		21A5A9DB96933084BBC2F721 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3000AEF8E40EA1A911AB7202 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 21A5A9DB96933084BBC2F721 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		81361EABDEADDA4B4F41C10F /* TOMLKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 08AFD7E498B82AE3D4908CCD /* XCRemoteSwiftPackageReference "TOMLKit" */;

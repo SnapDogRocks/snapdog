@@ -200,12 +200,40 @@ jobs:
       - name: Cleanup keychain
         if: always()
         run: security delete-keychain build.keychain || true
+      - name: Generate Sparkle appcast
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          VERSION=${{ needs.meta.outputs.version }}
+          TAG=${{ needs.meta.outputs.tag }}
+          DMG="SnapDog-Server-${VERSION}.dmg"
+          SIGN_TOOL=$(find ~/Library/Developer/Xcode/DerivedData -name "sign_update" -path "*Sparkle*" | head -1)
+          SIGNATURE=$(echo "$SPARKLE_KEY" | "$SIGN_TOOL" "$DMG" --ed-key-file /dev/stdin 2>/dev/null | grep "edSignature" | cut -d'"' -f2)
+          LENGTH=$(stat -f%z "$DMG")
+          cat > appcast.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>SnapDog Server</title>
+              <item>
+                <title>Version ${VERSION}</title>
+                <sparkle:version>${VERSION}</sparkle:version>
+                <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+                <enclosure url="https://github.com/metaneutrons/snapdog/releases/download/${TAG}/${DMG}"
+                  sparkle:edSignature="${SIGNATURE}"
+                  length="${LENGTH}"
+                  type="application/octet-stream"/>
+              </item>
+            </channel>
+          </rss>
+          EOF
       - uses: actions/upload-artifact@v7
         with:
           name: snapdog-macos-app
           path: |
             SnapDog-Server-*.dmg
             SnapDog-Server-*.dmg.sha256
+            appcast.xml
 
   build-deb:
     name: Debian ${{ matrix.pkg }} (${{ matrix.arch }})
@@ -284,6 +312,25 @@ jobs:
         run: |
           gh release upload "${{ needs.meta.outputs.tag }}" release-assets/* \
             --repo ${{ github.repository }} --clobber
+
+  update-appcast:
+    name: Update Sparkle Appcast
+    needs: [meta, upload-release-artifacts]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: snapdog-macos-app
+          path: artifacts
+      - name: Commit appcast.xml
+        run: |
+          cp artifacts/appcast.xml appcast.xml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          git diff --cached --quiet || git commit -m "chore: update appcast.xml for v${{ needs.meta.outputs.version }}"
+          git push
 
   update-homebrew:
     name: Update Homebrew Tap
