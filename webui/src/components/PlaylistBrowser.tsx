@@ -117,9 +117,17 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                       <HugeiconsIcon icon={MusicNote03Icon} size={28} className="text-primary/30" />
                     )}
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                       <div className="p-2 rounded-full bg-primary text-primary-foreground shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
-                         <HugeiconsIcon icon={PlayIcon} size={18} fill="currentColor" />
-                       </div>
+                       <Button
+                         size="icon"
+                         variant="default"
+                         className="rounded-full bg-primary text-primary-foreground shadow-lg transform scale-90 group-hover:scale-100 transition-transform"
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           playTrack(pl.id, 0);
+                         }}
+                       >
+                         <HugeiconsIcon icon={PlayIcon} size={20} fill="currentColor" />
+                       </Button>
                     </div>
                   </button>
                   <div className="px-0.5">

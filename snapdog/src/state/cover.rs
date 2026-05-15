@@ -163,9 +163,8 @@ pub async fn fetch_cover_with_favicon_fallback(
             if mime.starts_with("image/") {
                 tracing::debug!(url, %mime, "Found cover via config URL");
                 return Some((bytes, mime.to_string()));
-            } else {
-                tracing::debug!(url, %mime, "Config cover URL returned non-image content");
             }
+            tracing::debug!(url, %mime, "Config cover URL returned non-image content");
         }
     }
     let base = url::Url::parse(stream_url).ok().and_then(|u| {
@@ -178,7 +177,6 @@ pub async fn fetch_cover_with_favicon_fallback(
     tracing::debug!(%base, "Falling back to favicon search");
     fetch_best_favicon(&base).await
 }
-
 
 /// Fetch the best (largest) favicon from a website.
 async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {
