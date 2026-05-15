@@ -70,9 +70,16 @@
     "curve": "Curva de respuesta en frecuencia"
   },
   "playlist": {
+    "title": "Listas de reproducción",
+    "search": "Buscar listas de reproducción…",
+    "browse": "Explorar medios",
     "loading": "Cargando listas de reproducción…",
     "empty": "No hay listas de reproducción disponibles",
+    "noResults": "No se encontraron listas de reproducción",
     "play": "Reproducir {name}",
+    "playAll": "Reproducir todo",
+    "showMore": "Mostrar más",
+    "showLess": "Mostrar menos",
     "tracks": "{count, plural, one {# track} other {# tracks}}"
   },
   "auth": {

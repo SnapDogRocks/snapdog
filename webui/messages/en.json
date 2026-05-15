@@ -70,9 +70,16 @@
     "curve": "EQ frequency response curve"
   },
   "playlist": {
+    "title": "Playlists",
+    "search": "Search playlists…",
+    "browse": "Browse Media",
     "loading": "Loading playlists…",
     "empty": "No playlists available",
+    "noResults": "No playlists found",
     "play": "Play {name}",
+    "playAll": "Play All",
+    "showMore": "Show More",
+    "showLess": "Show Less",
     "tracks": "{count, plural, one {# track} other {# tracks}}"
   },
   "auth": {

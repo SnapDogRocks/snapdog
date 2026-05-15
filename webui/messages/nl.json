@@ -70,9 +70,16 @@
     "curve": "EQ-frequentieresponsecurve"
   },
   "playlist": {
+    "title": "Afspeellijsten",
+    "search": "Afspeellijsten zoeken…",
+    "browse": "Media doorbladeren",
     "loading": "Afspeellijsten laden…",
     "empty": "Geen afspeellijsten beschikbaar",
+    "noResults": "Geen afspeellijsten gevonden",
     "play": "{name} afspelen",
+    "playAll": "Alles afspelen",
+    "showMore": "Meer tonen",
+    "showLess": "Minder tonen",
     "tracks": "{count, plural, one {# track} other {# tracks}}"
   },
   "auth": {

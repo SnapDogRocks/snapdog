@@ -117,8 +117,8 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                     </div>
                   </button>
                   <div className="px-0.5">
-                    <div className="text-[11px] font-bold truncate group-hover:text-primary transition-colors leading-tight">{pl.name}</div>
-                    <div className="text-[9px] text-muted-foreground uppercase tracking-tighter">
+                    <div className="text-xs font-bold truncate group-hover:text-primary transition-colors leading-tight">{pl.name}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-tight">
                       {t("tracks", { count: pl.song_count })}
                     </div>
                   </div>

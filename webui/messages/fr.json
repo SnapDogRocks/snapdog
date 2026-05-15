@@ -70,9 +70,16 @@
     "curve": "Courbe de réponse en fréquence"
   },
   "playlist": {
+    "title": "Playlists",
+    "search": "Rechercher des playlists…",
+    "browse": "Parcourir les médias",
     "loading": "Chargement des playlists…",
     "empty": "Aucune playlist disponible",
+    "noResults": "Aucune playlist trouvée",
     "play": "Lire {name}",
+    "playAll": "Tout lire",
+    "showMore": "Afficher plus",
+    "showLess": "Afficher moins",
     "tracks": "{count, plural, one {# track} other {# tracks}}"
   },
   "auth": {

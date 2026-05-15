@@ -70,10 +70,17 @@
     "curve": "EQ-Frequenzgangkurve"
   },
   "playlist": {
-    "loading": "Wiedergabelisten werden geladen…",
-    "empty": "Keine Wiedergabelisten verfügbar",
+    "title": "Playlisten",
+    "search": "Playlisten suchen…",
+    "browse": "Medien durchsuchen",
+    "loading": "Playlisten werden geladen…",
+    "empty": "Keine Playlisten verfügbar",
+    "noResults": "Keine Playlisten gefunden",
     "play": "{name} abspielen",
-    "tracks": "{count, plural, one {# track} other {# tracks}}"
+    "playAll": "Alle abspielen",
+    "showMore": "Mehr anzeigen",
+    "showLess": "Weniger anzeigen",
+    "tracks": "{count, plural, one {# Titel} other {# Titel}}"
   },
   "auth": {
     "title": "Authentifizierung erforderlich",
