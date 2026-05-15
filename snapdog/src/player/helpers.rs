@@ -16,6 +16,7 @@ use crate::subsonic::SubsonicClient;
 /// Mutable decode state passed to navigation helpers.
 pub struct DecodeState<'a> {
     pub current_decode: &'a mut Option<JoinHandle<()>>,
+    pub current_cover: &'a mut Option<JoinHandle<()>>,
     pub decode_rx: &'a mut Option<mpsc::Receiver<audio::PcmMessage>>,
     pub source: &'a mut ActiveSource,
 }
@@ -36,6 +37,7 @@ pub struct PlaybackCtx<'a> {
 /// For radio: fetches from config URL. For subsonic: fetches from getCoverArt.
 /// Stores bytes in SharedCoverCache and sets cover_url on the zone.
 pub fn spawn_cover_fetch(
+    handle: &mut Option<JoinHandle<()>>,
     covers: &SharedCoverCache,
     store: &state::SharedState,
     zone_index: usize,
@@ -43,11 +45,14 @@ pub fn spawn_cover_fetch(
     url: String,
     base_url: &str,
 ) {
+    if let Some(h) = handle.take() {
+        h.abort();
+    }
     let covers = covers.clone();
     let store = store.clone();
     let notify = notify.clone();
     let base_url = base_url.trim_end_matches('/').to_owned();
-    tokio::spawn(async move {
+    *handle = Some(tokio::spawn(async move {
         if let Some((bytes, mime)) = state::cover::fetch_cover(&url).await {
             let mut cache = covers.write().await;
             cache.set(zone_index, bytes, mime);
@@ -61,7 +66,7 @@ pub fn spawn_cover_fetch(
                 .await;
             }
         }
-    });
+    }));
 }
 pub async fn start_subsonic_track_decode(
     sub: &SubsonicClient,
@@ -74,6 +79,7 @@ pub async fn start_subsonic_track_decode(
     if let Some(ref cover_id) = track.cover_art {
         let cover_url = sub.cover_art_fetch_url(cover_id);
         spawn_cover_fetch(
+            ds.current_cover,
             ctx.covers,
             ctx.store,
             ctx.zone_index,
@@ -183,6 +189,7 @@ pub async fn start_radio_decode(
     let fallback_cover = radio.cover.clone();
     let icy_base_url = ctx.config.http.base_url.clone();
     tokio::spawn(async move {
+        let mut meta_cover_handle: Option<JoinHandle<()>> = None;
         while let Some(meta) = icy_rx.recv().await {
             if let Some(raw_title) = meta.title {
                 tracing::debug!(zone = zone_index, title = %raw_title, "ICY metadata");
@@ -202,6 +209,7 @@ pub async fn start_radio_decode(
             };
             if let Some(url) = cover_url {
                 spawn_cover_fetch(
+                    &mut meta_cover_handle,
                     &icy_covers,
                     &icy_store,
                     zone_index,
@@ -212,6 +220,9 @@ pub async fn start_radio_decode(
             }
         }
     });
+    if let Some(h) = ds.current_cover.take() {
+        h.abort();
+    }
     {
         let covers = ctx.covers.clone();
         let store = ctx.store.clone();
@@ -220,7 +231,7 @@ pub async fn start_radio_decode(
         let base_url = ctx.config.http.base_url.trim_end_matches('/').to_owned();
         let cover_url = radio.cover.clone();
         let stream_url = radio.url.clone();
-        tokio::spawn(async move {
+        *ds.current_cover = Some(tokio::spawn(async move {
             if let Some((bytes, mime)) =
                 state::cover::fetch_cover_with_favicon_fallback(cover_url.as_deref(), &stream_url)
                     .await
@@ -237,7 +248,7 @@ pub async fn start_radio_decode(
                     .await;
                 }
             }
-        });
+        }));
     }
     let url = radio.url.clone();
     let ac = ctx.config.audio.clone();

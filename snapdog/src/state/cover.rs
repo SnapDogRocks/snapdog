@@ -166,12 +166,17 @@ pub async fn fetch_cover_with_favicon_fallback(
     }
     let base = url::Url::parse(stream_url)
         .ok()
-        .and_then(|u| Some(format!("{}://{}", u.scheme(), u.host_str()?)))?;
+        .and_then(|u| {
+            let scheme = u.scheme();
+            let host = u.host_str()?;
+            let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+            Some(format!("{scheme}://{host}{port}"))
+        })?;
     fetch_best_favicon(&base).await
 }
 
 /// Fetch the best (largest) favicon from a website.
-async fn fetch_best_favicon(origin: &str) -> Option<(Vec<u8>, String)> {
+async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {
     let client = reqwest::Client::builder()
         .user_agent(crate::USER_AGENT)
         .timeout(std::time::Duration::from_secs(10))
@@ -179,7 +184,7 @@ async fn fetch_best_favicon(origin: &str) -> Option<(Vec<u8>, String)> {
         .ok()?;
 
     let html = client
-        .get(origin)
+        .get(base_url)
         .send()
         .await
         .ok()?
@@ -189,7 +194,7 @@ async fn fetch_best_favicon(origin: &str) -> Option<(Vec<u8>, String)> {
         .await
         .ok()?;
     let icon_url =
-        parse_best_icon_url(&html, origin).unwrap_or_else(|| format!("{origin}/favicon.ico"));
+        parse_best_icon_url(&html, base_url).unwrap_or_else(|| format!("{base_url}/favicon.ico"));
 
     let resp = client
         .get(&icon_url)
@@ -207,6 +212,7 @@ async fn fetch_best_favicon(origin: &str) -> Option<(Vec<u8>, String)> {
     let bytes = resp.bytes().await.ok()?.to_vec();
 
     if mime.contains("icon")
+        || mime.contains("octet-stream")
         || std::path::Path::new(&icon_url)
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("ico"))
@@ -246,7 +252,8 @@ fn parse_best_icon_url(html: &str, origin: &str) -> Option<String> {
 
 fn extract_attr(tag: &str, attr: &str) -> Option<String> {
     let needle = format!("{attr}=");
-    let pos = tag.to_lowercase().find(&needle)? + needle.len();
+    let tag_lower = tag.to_lowercase();
+    let pos = tag_lower.find(&needle)? + needle.len();
     let rest = &tag[pos..];
     let (quote, rest) = if let Some(stripped) = rest.strip_prefix('"') {
         ('"', stripped)
@@ -262,9 +269,16 @@ fn extract_attr(tag: &str, attr: &str) -> Option<String> {
 fn ico_to_png(data: &[u8]) -> Option<(Vec<u8>, String)> {
     use image::ImageReader;
     use std::io::Cursor;
-    let reader = ImageReader::new(Cursor::new(data))
+    let mut reader = ImageReader::new(Cursor::new(data))
         .with_guessed_format()
         .ok()?;
+    // Limit to 4MB total pixels (e.g. 2048x2048) and 10MB input to prevent OOM/DoS
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(10 * 1024 * 1024);
+    limits.max_image_width = Some(2048);
+    limits.max_image_height = Some(2048);
+    reader.limits(limits);
+
     let img = reader.decode().ok()?;
     let mut buf = Cursor::new(Vec::new());
     img.write_to(&mut buf, image::ImageFormat::Png).ok()?;
