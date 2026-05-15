@@ -212,15 +212,32 @@ pub async fn start_radio_decode(
             }
         }
     });
-    if let Some(ref cover_url) = radio.cover {
-        spawn_cover_fetch(
-            ctx.covers,
-            ctx.store,
-            ctx.zone_index,
-            ctx.notify,
-            cover_url.clone(),
-            &ctx.config.http.base_url,
-        );
+    {
+        let covers = ctx.covers.clone();
+        let store = ctx.store.clone();
+        let notify = ctx.notify.clone();
+        let zone_index = ctx.zone_index;
+        let base_url = ctx.config.http.base_url.trim_end_matches('/').to_owned();
+        let cover_url = radio.cover.clone();
+        let stream_url = radio.url.clone();
+        tokio::spawn(async move {
+            if let Some((bytes, mime)) =
+                state::cover::fetch_cover_with_favicon_fallback(cover_url.as_deref(), &stream_url)
+                    .await
+            {
+                let mut cache = covers.write().await;
+                cache.set(zone_index, bytes, mime);
+                let hash = cache.get(zone_index).map(|e| e.hash.clone());
+                drop(cache);
+                if let Some(h) = hash {
+                    let url = format!("{base_url}/api/v1/zones/{zone_index}/cover?h={h}");
+                    update_and_notify(&store, zone_index, &notify, |z| {
+                        z.cover_url = Some(url.clone());
+                    })
+                    .await;
+                }
+            }
+        });
     }
     let url = radio.url.clone();
     let ac = ctx.config.audio.clone();

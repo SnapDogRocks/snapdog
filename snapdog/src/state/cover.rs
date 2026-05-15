@@ -151,6 +151,126 @@ pub async fn fetch_cover(url: &str) -> Option<(Vec<u8>, String)> {
     Some((bytes, mime))
 }
 
+/// Fetch cover art with favicon fallback.
+/// Tries `cover_url` first; if None or fetch fails, extracts the largest favicon from the stream URL's domain.
+pub async fn fetch_cover_with_favicon_fallback(
+    cover_url: Option<&str>,
+    stream_url: &str,
+) -> Option<(Vec<u8>, String)> {
+    if let Some(url) = cover_url {
+        if let Some(result) = fetch_cover(url).await {
+            if result.1.starts_with("image/") {
+                return Some(result);
+            }
+        }
+    }
+    let base = url::Url::parse(stream_url)
+        .ok()
+        .and_then(|u| Some(format!("{}://{}", u.scheme(), u.host_str()?)))?;
+    fetch_best_favicon(&base).await
+}
+
+/// Fetch the best (largest) favicon from a website.
+async fn fetch_best_favicon(origin: &str) -> Option<(Vec<u8>, String)> {
+    let client = reqwest::Client::builder()
+        .user_agent(crate::USER_AGENT)
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .ok()?;
+
+    let html = client
+        .get(origin)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .text()
+        .await
+        .ok()?;
+    let icon_url =
+        parse_best_icon_url(&html, origin).unwrap_or_else(|| format!("{origin}/favicon.ico"));
+
+    let resp = client
+        .get(&icon_url)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    let mime = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/x-icon")
+        .to_string();
+    let bytes = resp.bytes().await.ok()?.to_vec();
+
+    if mime.contains("icon")
+        || std::path::Path::new(&icon_url)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("ico"))
+    {
+        return ico_to_png(&bytes);
+    }
+    Some((bytes, mime))
+}
+
+/// Parse HTML for the largest icon link.
+fn parse_best_icon_url(html: &str, origin: &str) -> Option<String> {
+    let mut best: Option<(u32, String)> = None;
+    for line in html.lines() {
+        let lower = line.to_lowercase();
+        if !lower.contains("rel=") || !lower.contains("icon") {
+            continue;
+        }
+        let href = extract_attr(line, "href")?;
+        let size = extract_attr(line, "sizes")
+            .and_then(|s| s.split('x').next()?.parse::<u32>().ok())
+            .unwrap_or(0);
+        let url = if href.starts_with("http") {
+            href
+        } else if href.starts_with("//") {
+            format!("https:{href}")
+        } else if href.starts_with('/') {
+            format!("{origin}{href}")
+        } else {
+            format!("{origin}/{href}")
+        };
+        if best.as_ref().is_none_or(|(s, _)| size > *s) {
+            best = Some((size, url));
+        }
+    }
+    best.map(|(_, url)| url)
+}
+
+fn extract_attr(tag: &str, attr: &str) -> Option<String> {
+    let needle = format!("{attr}=");
+    let pos = tag.to_lowercase().find(&needle)? + needle.len();
+    let rest = &tag[pos..];
+    let (quote, rest) = if let Some(stripped) = rest.strip_prefix('"') {
+        ('"', stripped)
+    } else if let Some(stripped) = rest.strip_prefix('\'') {
+        ('\'', stripped)
+    } else {
+        return rest.split_whitespace().next().map(String::from);
+    };
+    rest.split(quote).next().map(String::from)
+}
+
+/// Convert ICO to PNG using the `image` crate.
+fn ico_to_png(data: &[u8]) -> Option<(Vec<u8>, String)> {
+    use image::ImageReader;
+    use std::io::Cursor;
+    let reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .ok()?;
+    let img = reader.decode().ok()?;
+    let mut buf = Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Png).ok()?;
+    Some((buf.into_inner(), "image/png".into()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
