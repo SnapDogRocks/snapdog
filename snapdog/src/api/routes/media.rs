@@ -194,24 +194,30 @@ async fn get_playlist_tracks(
     Path(index): Path<usize>,
 ) -> impl IntoResponse {
     match resolve_playlist(&state, index).await? {
-        ResolvedPlaylist::Radio => Ok(Json(
-            state
-                .config
-                .radios
-                .iter()
-                .enumerate()
-                .map(|(i, r)| {
-                    serde_json::json!({
-                        "id": format!("radio_{i}"),
-                        "title": r.name,
-                        "artist": "Radio",
-                        "album": "",
-                        "duration": 0,
-                        "track": i + 1,
+        ResolvedPlaylist::Radio => {
+            let base_url = state.config.http.base_url.trim_end_matches('/');
+            Ok(Json(
+                state
+                    .config
+                    .radios
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        let cover =
+                            format!("{base_url}/api/v1/media/playlists/{index}/tracks/{i}/cover");
+                        serde_json::json!({
+                            "id": format!("radio_{i}"),
+                            "title": r.name,
+                            "artist": "Radio",
+                            "album": "",
+                            "duration": 0,
+                            "track": i + 1,
+                            "cover_art": cover,
+                        })
                     })
-                })
-                .collect::<Vec<_>>(),
-        )),
+                    .collect::<Vec<_>>(),
+            ))
+        }
         ResolvedPlaylist::Subsonic(_) => {
             let id = resolve_subsonic_id(&state, index).await?;
             let sub = subsonic(&state)?;
@@ -304,16 +310,18 @@ async fn get_track_cover_art(
 ) -> Result<([(axum::http::header::HeaderName, String); 2], Vec<u8>), ApiError> {
     match resolve_playlist(&state, index).await? {
         ResolvedPlaylist::Radio => {
-            // Fetch cover from config URL
+            // Fetch cover with favicon fallback
             let radio = state
                 .config
                 .radios
                 .get(track_index)
                 .ok_or(ApiError::NotFound("resource"))?;
-            let cover_url = radio.cover.as_ref().ok_or(ApiError::NotFound("resource"))?;
-            let (bytes, mime) = crate::state::cover::fetch_cover(cover_url)
-                .await
-                .ok_or_else(|| ApiError::BadGateway("cover fetch failed".into()))?;
+            let (bytes, mime) = crate::state::cover::fetch_cover_with_favicon_fallback(
+                radio.cover.as_deref(),
+                &radio.url,
+            )
+            .await
+            .ok_or(ApiError::NotFound("resource"))?;
             Ok((
                 [
                     (axum::http::header::CONTENT_TYPE, mime),
