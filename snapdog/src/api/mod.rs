@@ -82,7 +82,13 @@ pub async fn serve(
         speaker_db: crate::spinorama::SpeakerDb::new(),
     });
 
-    let api_keys = state.config.http.api_keys.clone();
+    let api_keys: Vec<String> = state
+        .config
+        .http
+        .api_keys
+        .iter()
+        .map(|k| k.as_str().to_string())
+        .collect();
 
     // Protected routes (API + WebSocket)
     let mut protected = Router::new()

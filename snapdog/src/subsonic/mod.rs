@@ -36,7 +36,7 @@ impl SubsonicClient {
         Self {
             base_url: config.url.trim_end_matches('/').to_string(),
             username: config.username.clone(),
-            password: config.password.clone(),
+            password: config.password.to_string(),
             format: config.format,
             http: reqwest::Client::builder()
                 .timeout(HTTP_TIMEOUT)

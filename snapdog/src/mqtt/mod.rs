@@ -40,7 +40,7 @@ impl MqttBridge {
         );
         opts.set_keep_alive(MQTT_KEEP_ALIVE);
         if !config.username.is_empty() {
-            opts.set_credentials(&config.username, &config.password);
+            opts.set_credentials(&config.username, &*config.password);
         }
 
         let status_topic = format!("{}/status", config.base_topic.trim_end_matches('/'));

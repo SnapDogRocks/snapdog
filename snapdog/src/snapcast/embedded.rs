@@ -43,13 +43,14 @@ impl EmbeddedBackend {
             let psk = config
                 .snapcast
                 .encryption_psk
-                .clone()
+                .as_ref()
+                .map(|s| s.to_string())
                 .unwrap_or_else(|| snapcast_server::DEFAULT_ENCRYPTION_PSK.into());
             ("f32lz4".into(), Some(psk))
         } else {
             (
                 config.snapcast.codec.as_str().to_string(),
-                config.snapcast.encryption_psk.clone(),
+                config.snapcast.encryption_psk.as_ref().map(|s| s.to_string()),
             )
         };
 
