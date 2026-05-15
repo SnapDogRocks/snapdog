@@ -63,7 +63,8 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
   const [tab, setTab] = useState<Tab>("eq");
   const [config, setConfig] = useState<EqConfig>({ enabled: false, bands: [], preset: "flat" });
   const [abBypass, setAbBypass] = useState(false);
-  const [speakerEnabled, setSpeakerEnabled] = useState(false);
+  const [selectedBand, setSelectedBand] = useState<number | null>(null);
+  const [speakerMode, setSpeakerMode] = useState<"off" | "spinorama" | "custom">("off");
   const [speakerAbBypass, setSpeakerAbBypass] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -155,7 +156,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
   if (loading) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label={t("title", { zone: label })} onKeyDown={(e) => { if (e.key === "Escape") handleClose(); }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label={t("title", { zone: label })} onKeyDown={(e) => { if (e.key === "Escape") handleClose(); }} onDragStart={(e) => e.preventDefault()}>
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={handleClose} role="presentation" />
       <div className="relative z-10 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-xl space-y-5" ref={trapRef}>
         {/* Header */}
@@ -170,8 +171,9 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
             )}
             {tab === "speaker" && (
               <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("toggle")}>
-                <button role="radio" aria-checked={!speakerEnabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${!speakerEnabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setSpeakerEnabled(false)}>Off</button>
-                <button role="radio" aria-checked={speakerEnabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerEnabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setSpeakerEnabled(true)}>On</button>
+                <button role="radio" aria-checked={speakerMode === "off"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "off" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setSpeakerMode("off")}>Off</button>
+                <button role="radio" aria-checked={speakerMode === "spinorama"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "spinorama" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setSpeakerMode("spinorama")}>Spinorama</button>
+                <button role="radio" aria-checked={speakerMode === "custom"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "custom" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setSpeakerMode("custom")}>Custom</button>
               </div>
             )}
           </div>
@@ -182,7 +184,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
               </Button>
             )}
             {tab === "speaker" && (
-              <Button variant="ghost" size="sm" onClick={() => setSpeakerAbBypass(!speakerAbBypass)} disabled={!speakerEnabled} className={speakerAbBypass ? "text-orange-500 font-semibold" : "text-muted-foreground"} aria-pressed={speakerAbBypass}>
+              <Button variant="ghost" size="sm" onClick={() => setSpeakerAbBypass(!speakerAbBypass)} disabled={speakerMode === "off"} className={speakerAbBypass ? "text-orange-500 font-semibold" : "text-muted-foreground"} aria-pressed={speakerAbBypass}>
                 A/B
               </Button>
             )}
@@ -203,7 +205,19 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
           <>
             {config.enabled ? (
               <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
-                <FrequencyResponseCurve response={response} curveLabel={t("curve")} />
+                <InteractiveEQCurve
+                  bands={config.bands}
+                  response={response}
+                  selectedBand={selectedBand}
+                  onSelectBand={setSelectedBand}
+                  onBandChange={(idx, patch) => updateBand(idx, patch)}
+                  onRemoveBand={(idx) => removeBand(idx)}
+                  onAddBand={(freq, gain) => {
+                    const bands = [...config.bands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
+                    update({ bands });
+                    setSelectedBand(bands.length - 1);
+                  }}
+                />
                 <div className="flex gap-1.5 overflow-x-auto scrollbar-none py-1 -mx-1 px-1" role="radiogroup" aria-label={t("presets")}>
                   {PRESETS.map((p) => (
                     <button
@@ -245,7 +259,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
         </div>
         {showTabs && (
           <div className={`${tab === "speaker" ? '' : 'hidden'}`}>
-            <SpeakerTab clientId={clientId!} enabled={speakerEnabled} setEnabled={setSpeakerEnabled} abBypass={speakerAbBypass} />
+            <SpeakerTab clientId={clientId!} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} />
           </div>
         )}
       </div>
@@ -255,13 +269,15 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
 
 // ── Speaker Tab ───────────────────────────────────────────────
 
-function SpeakerTab({ clientId, enabled, setEnabled, abBypass }: { clientId: number; enabled: boolean; setEnabled: (v: boolean) => void; abBypass: boolean }) {
+function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; mode: "off" | "spinorama" | "custom"; setMode: (v: "off" | "spinorama" | "custom") => void; abBypass: boolean }) {
   const t = useTranslations("eq");
   const [search, setSearch] = useState("");
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [currentConfig, setCurrentConfig] = useState<EqConfig | null>(null);
   const [appliedName, setAppliedName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [customBands, setCustomBands] = useState<EqBand[]>([]);
+  const [customSelected, setCustomSelected] = useState<number | null>(null);
   const abBypassRef = useRef(false);
   const appliedNameRef = useRef<string | null>(null);
 
@@ -284,7 +300,7 @@ function SpeakerTab({ clientId, enabled, setEnabled, abBypass }: { clientId: num
       setCurrentConfig(config);
       const name = config.preset?.startsWith("spinorama:") ? config.preset.slice("spinorama:".length) : null;
       setAppliedName(name);
-      setEnabled(config.enabled || name != null);
+      if (config.enabled || name != null) setMode(name ? "spinorama" : "custom");
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [clientId]);
@@ -321,8 +337,13 @@ function SpeakerTab({ clientId, enabled, setEnabled, abBypass }: { clientId: num
     }).catch(logApiError);
   };
 
+  const pushCustom = (bands: EqBand[]) => {
+    const eq: EqConfig = { enabled: bands.length > 0, bands, preset: null };
+    setCurrentConfig(eq);
+    api.speakers.applyCustom(clientId, eq).catch(logApiError);
+  };
+
   const toggleEnabled = (on: boolean) => {
-    setEnabled(on);
     if (!on && appliedName) {
       api.speakers.apply(clientId, null).then((config) => {
         setCurrentConfig(config);
@@ -334,13 +355,13 @@ function SpeakerTab({ clientId, enabled, setEnabled, abBypass }: { clientId: num
     }
   };
 
-  // Sync parent On/Off with server
-  const prevEnabled = useRef(enabled);
+  // Sync parent mode with server
+  const prevMode = useRef(mode);
   useEffect(() => {
-    if (prevEnabled.current === enabled) return;
-    prevEnabled.current = enabled;
-    toggleEnabled(enabled);
-  }, [enabled]);
+    if (prevMode.current === mode) return;
+    prevMode.current = mode;
+    toggleEnabled(mode !== "off");
+  }, [mode]);
 
   // React to A/B bypass changes from parent
   const prevAbBypass = useRef(abBypass);
@@ -361,12 +382,54 @@ function SpeakerTab({ clientId, enabled, setEnabled, abBypass }: { clientId: num
 
   if (loading) return <div className="text-sm text-muted-foreground py-8 text-center">Loading speakers…</div>;
 
-  const isEnabled = enabled;
-
   return (
     <div className="space-y-5">
-      {/* Content — hidden when off, dimmed when A/B */}
-      {isEnabled || abBypass ? (
+      {mode === "off" ? (
+        <FrequencyResponseCurve response={[]} curveLabel="Speaker correction curve" />
+      ) : mode === "custom" ? (
+        <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
+          <InteractiveEQCurve
+            bands={customBands}
+            response={computeResponse(customBands)}
+            selectedBand={customSelected}
+            onSelectBand={setCustomSelected}
+            onBandChange={(idx, patch) => {
+              const next = customBands.map((b, i) => i === idx ? { ...b, ...patch } : b);
+              setCustomBands(next);
+              pushCustom(next);
+            }}
+            onRemoveBand={(idx) => {
+              const next = customBands.filter((_, i) => i !== idx);
+              setCustomBands(next);
+              setCustomSelected(null);
+              pushCustom(next);
+            }}
+            onAddBand={(freq, gain) => {
+              const next = [...customBands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
+              setCustomBands(next);
+              setCustomSelected(next.length - 1);
+              pushCustom(next);
+            }}
+          />
+          {customSelected !== null && customSelected < customBands.length && (
+            <BandRow
+              band={customBands[customSelected]}
+              index={customSelected}
+              onChange={(patch) => {
+                const next = customBands.map((b, i) => i === customSelected ? { ...b, ...patch } : b);
+                setCustomBands(next);
+                pushCustom(next);
+              }}
+              onRemove={() => {
+                const next = customBands.filter((_, i) => i !== customSelected);
+                setCustomBands(next);
+                setCustomSelected(null);
+                pushCustom(next);
+              }}
+            />
+          )}
+        </div>
+      ) : (
         <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
         {/* Correction curve */}
         <FrequencyResponseCurve response={response} curveLabel="Speaker correction curve" />
@@ -406,8 +469,6 @@ function SpeakerTab({ clientId, enabled, setEnabled, abBypass }: { clientId: num
         )}
       </div>
       </div>
-      ) : (
-        <FrequencyResponseCurve response={[]} curveLabel="Speaker correction curve" />
       )}
     </div>
   );
@@ -486,7 +547,150 @@ function BandRow({
   );
 }
 
-// ── Frequency Response Curve ──────────────────────────────────
+// ── Interactive EQ Curve (Logic Pro-style) ────────────────────
+
+function InteractiveEQCurve({
+  bands,
+  response,
+  selectedBand,
+  onSelectBand,
+  onBandChange,
+  onAddBand,
+  onRemoveBand,
+}: {
+  bands: EqBand[];
+  response: { freq: number; db: number }[];
+  selectedBand: number | null;
+  onSelectBand: (idx: number | null) => void;
+  onBandChange: (idx: number, patch: Partial<EqBand>) => void;
+  onAddBand: (freq: number, gain: number) => void;
+  onRemoveBand: (idx: number) => void;
+}) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [dragOutOfBounds, setDragOutOfBounds] = useState(false);
+
+  const width = CURVE_WIDTH;
+  const height = CURVE_HEIGHT;
+  const pad = { top: 10, right: 10, bottom: 20, left: 35 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const dbRange = CURVE_DB_RANGE;
+
+  const freqToX = (f: number) => pad.left + ((Math.log10(f) - Math.log10(FREQ_MIN_HZ)) / (Math.log10(FREQ_MAX_HZ) - Math.log10(FREQ_MIN_HZ))) * plotW;
+  const xToFreq = (x: number) => Math.pow(10, Math.log10(FREQ_MIN_HZ) + ((x - pad.left) / plotW) * (Math.log10(FREQ_MAX_HZ) - Math.log10(FREQ_MIN_HZ)));
+  const dbToY = (db: number) => pad.top + plotH / 2 - (db / dbRange) * (plotH / 2);
+  const yToDb = (y: number) => -(y - pad.top - plotH / 2) / (plotH / 2) * dbRange;
+
+  const svgPoint = (e: React.PointerEvent) => {
+    const svg = svgRef.current!;
+    const rect = svg.getBoundingClientRect();
+    const scaleX = width / rect.width;
+    const scaleY = height / rect.height;
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (dragging === null) return;
+    e.preventDefault();
+    const pt = svgPoint(e);
+    const outOfBounds = pt.y < pad.top - 15 || pt.y > pad.top + plotH + 15;
+    setDragOutOfBounds(outOfBounds);
+    if (!outOfBounds) {
+      const freq = Math.max(FREQ_MIN_HZ, Math.min(FREQ_MAX_HZ, xToFreq(pt.x)));
+      const gain = Math.max(GAIN_MIN_DB, Math.min(GAIN_MAX_DB, yToDb(pt.y)));
+      onBandChange(dragging, { freq: Math.round(freq), gain: Math.round(gain * 2) / 2 });
+    }
+  };
+
+  const handlePointerUp = () => {
+    if (dragging !== null && dragOutOfBounds) {
+      onRemoveBand(dragging);
+      onSelectBand(null);
+    }
+    setDragging(null);
+    setDragOutOfBounds(false);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    const svg = svgRef.current!;
+    const rect = svg.getBoundingClientRect();
+    const scaleX = width / rect.width;
+    const scaleY = height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    if (x < pad.left || x > pad.left + plotW || y < pad.top || y > pad.top + plotH) return;
+    onAddBand(xToFreq(x), yToDb(y));
+  };
+
+  const path = response.length > 0
+    ? response.map((p, i) => `${i === 0 ? "M" : "L"}${freqToX(p.freq).toFixed(1)},${dbToY(p.db).toFixed(1)}`).join("")
+    : "";
+
+  return (
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${width} ${height}`}
+      className="w-full rounded-lg bg-muted/30 border border-border cursor-crosshair select-none touch-none"
+      style={{ minHeight: CURVE_MIN_HEIGHT }}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      onDoubleClick={handleDoubleClick}
+    >
+      {/* Grid */}
+      {GRID_FREQS.map((f) => (
+        <line key={`f${f}`} x1={freqToX(f)} x2={freqToX(f)} y1={pad.top} y2={pad.top + plotH} stroke="currentColor" strokeOpacity={0.1} />
+      ))}
+      {GRID_DBS.map((db) => (
+        <g key={`db${db}`}>
+          <line x1={pad.left} x2={pad.left + plotW} y1={dbToY(db)} y2={dbToY(db)} stroke="currentColor" strokeOpacity={db === 0 ? 0.3 : 0.1} />
+          <text x={pad.left - 4} y={dbToY(db) + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.4}>{db}</text>
+        </g>
+      ))}
+      {[100, 1000, 10000].map((f) => (
+        <text key={`fl${f}`} x={freqToX(f)} y={height - 4} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.4}>
+          {f >= 1000 ? `${f / 1000}k` : f}
+        </text>
+      ))}
+      {/* Curve fill + stroke */}
+      {path && (
+        <>
+          <path d={path + `L${freqToX(FREQ_MAX_HZ)},${dbToY(0)}L${freqToX(FREQ_MIN_HZ)},${dbToY(0)}Z`} fill={CURVE_COLOR} fillOpacity={0.15} />
+          <path d={path} fill="none" stroke={CURVE_COLOR} strokeWidth={2} />
+        </>
+      )}
+      {/* Draggable band nodes */}
+      {bands.map((band, idx) => (
+        <circle
+          key={idx}
+          cx={freqToX(band.freq)}
+          cy={dbToY(band.gain)}
+          r={selectedBand === idx ? 7 : 5}
+          fill={selectedBand === idx ? CURVE_COLOR : "white"}
+          stroke={CURVE_COLOR}
+          strokeWidth={2}
+          opacity={dragging === idx && dragOutOfBounds ? 0.3 : 1}
+          className="cursor-grab active:cursor-grabbing"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragging(idx);
+            onSelectBand(idx);
+            (e.target as SVGElement).setPointerCapture(e.pointerId);
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectBand(selectedBand === idx ? null : idx);
+          }}
+        />
+      ))}
+      <text x={pad.left - 4} y={dbToY(0) + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.6} fontWeight="bold">0</text>
+    </svg>
+  );
+}
+
+// ── Frequency Response Curve (static, for Speaker tab) ────────
 
 function FrequencyResponseCurve({ response, curveLabel }: { response: { freq: number; db: number }[]; curveLabel: string }) {
   const width = CURVE_WIDTH;

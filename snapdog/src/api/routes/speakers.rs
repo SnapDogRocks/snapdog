@@ -74,6 +74,8 @@ async fn apply_speaker(
             tracing::warn!(speaker = %name, error = %e, "Speaker profile not found");
             ApiError::NotFound("speaker")
         })?
+    } else if let Some(custom) = body.custom {
+        custom
     } else {
         EqConfig::default()
     };
@@ -105,8 +107,10 @@ async fn get_speaker(
 /// Request body for applying a speaker correction.
 #[derive(serde::Deserialize)]
 pub struct ApplySpeakerRequest {
-    /// Speaker name (from spinorama). `None` to clear.
+    /// Speaker name (from spinorama). Mutually exclusive with `custom`.
     pub speaker: Option<String>,
+    /// Custom EQ config. Mutually exclusive with `speaker`.
+    pub custom: Option<EqConfig>,
 }
 
 async fn require_snapdog(state: &SharedState, idx: usize) -> Result<(), ApiError> {

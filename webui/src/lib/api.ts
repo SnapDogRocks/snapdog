@@ -239,6 +239,7 @@ const speakers = {
   list: () => get<string[]>("/api/v1/speakers"),
   getProfile: (name: string) => get<EqConfig>(`/api/v1/speakers/${encodeURIComponent(name)}/profile`),
   apply: (clientId: number, speaker: string | null) => putJson<EqConfig>(`/api/v1/clients/${clientId}/speaker`, { speaker }),
+  applyCustom: (clientId: number, custom: EqConfig) => putJson<EqConfig>(`/api/v1/clients/${clientId}/speaker`, { custom }),
   get: (clientId: number) => get<EqConfig>(`/api/v1/clients/${clientId}/speaker`),
 };
 
