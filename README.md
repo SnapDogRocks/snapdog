@@ -176,17 +176,14 @@ username = "user"
 password = "pass"
 # format = "raw"                      # raw | flac | mp3 | opus
 # [subsonic.cache]
-# enabled = true                      # Disk cache for instant seek/replay
+# path = "~/.cache/snapdog/tracks"    # Cache directory
 # max_size_mb = 2048                  # LRU eviction
-# lookahead = 2                       # Pre-fetch next N playlist tracks
 
 [knx]
-enabled = true
 # role = "client"                     # Connect to a KNX/IP gateway
 url = "udp://192.168.1.50:3671"
 # role = "device"                     # Run as ETS-programmable KNX/IP device
 # individual_address = "1.1.100"
-# url = "udp://192.168.1.50:3671"    # Optional: tunnel to gateway for GA traffic
 
 [[zone]]
 name = "Living Room"
