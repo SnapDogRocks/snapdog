@@ -1,25 +1,56 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="rg" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1410"/>
+      <stop offset="100%" stop-color="#0d0a07"/>
+    </linearGradient>
+    <linearGradient id="warm" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#e1882e"/>
       <stop offset="100%" stop-color="#bc631a"/>
     </linearGradient>
+    <radialGradient id="pulse" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#e1882e" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#e1882e" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width="128" height="128" rx="24" fill="#1a1410"/>
-  <!-- Antenna -->
-  <line x1="64" y1="28" x2="64" y2="52" stroke="url(#rg)" stroke-width="3" stroke-linecap="round"/>
-  <circle cx="64" cy="26" r="3" fill="#e1882e"/>
-  <!-- Radio body -->
-  <rect x="32" y="52" width="64" height="48" rx="8" fill="url(#rg)" opacity="0.9"/>
-  <!-- Speaker grille -->
-  <circle cx="54" cy="76" r="14" fill="#1a1410" opacity="0.5"/>
-  <circle cx="54" cy="76" r="10" fill="#1a1410" opacity="0.3"/>
-  <!-- Dial -->
-  <circle cx="82" cy="68" r="6" fill="#1a1410" opacity="0.4"/>
-  <circle cx="82" cy="68" r="3" fill="#e1882e" opacity="0.8"/>
-  <!-- Waves -->
-  <path d="M88 36c6 0 11 5 11 11" fill="none" stroke="#e1882e" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
-  <path d="M88 30c10 0 17 8 17 17" fill="none" stroke="#e1882e" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
-  <path d="M40 36c-6 0-11 5-11 11" fill="none" stroke="#e1882e" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
-  <path d="M40 30c-10 0-17 8-17 17" fill="none" stroke="#e1882e" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+  <!-- Background -->
+  <rect width="128" height="128" fill="url(#bg)"/>
+  <!-- Ambient glow -->
+  <circle cx="64" cy="52" r="52" fill="url(#pulse)"/>
+  <!-- Outer signal rings -->
+  <path d="M20 58a44 44 0 0 1 88 0" fill="none" stroke="#804117" stroke-width="1.2" opacity="0.25"/>
+  <path d="M28 58a36 36 0 0 1 72 0" fill="none" stroke="#bc631a" stroke-width="1.2" opacity="0.2"/>
+  <!-- Tower base -->
+  <path d="M54 98h20l-3-6h-14z" fill="#804117"/>
+  <rect x="58" y="36" width="12" height="62" rx="3" fill="url(#warm)"/>
+  <!-- Tower detail -->
+  <rect x="61" y="40" width="6" height="54" rx="2" fill="#804117" opacity="0.3"/>
+  <!-- Antenna tip -->
+  <circle cx="64" cy="30" r="7" fill="#e1882e"/>
+  <circle cx="64" cy="30" r="4.5" fill="#1a1410" opacity="0.4"/>
+  <circle cx="64" cy="30" r="2.5" fill="#e1882e"/>
+  <!-- Signal waves right -->
+  <path d="M78 42a18 18 0 0 1 0 28" fill="none" stroke="#e1882e" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  <path d="M88 34a28 28 0 0 1 0 44" fill="none" stroke="#e1882e" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+  <path d="M97 26a37 37 0 0 1 0 60" fill="none" stroke="#bc631a" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <!-- Signal waves left -->
+  <path d="M50 42a18 18 0 0 0 0 28" fill="none" stroke="#e1882e" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  <path d="M40 34a28 28 0 0 0 0 44" fill="none" stroke="#e1882e" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+  <path d="M31 26a37 37 0 0 0 0 60" fill="none" stroke="#bc631a" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <!-- Ground reflection -->
+  <ellipse cx="64" cy="102" rx="24" ry="4" fill="#e1882e" opacity="0.1"/>
+  <!-- Frequency spectrum bars -->
+  <rect x="24" y="112" width="4" height="8" rx="1.5" fill="#804117" opacity="0.5"/>
+  <rect x="30" y="109" width="4" height="11" rx="1.5" fill="#bc631a" opacity="0.6"/>
+  <rect x="36" y="111" width="4" height="9" rx="1.5" fill="#804117" opacity="0.5"/>
+  <rect x="42" y="106" width="4" height="14" rx="1.5" fill="#e1882e" opacity="0.8"/>
+  <rect x="48" y="109" width="4" height="11" rx="1.5" fill="#bc631a" opacity="0.6"/>
+  <rect x="54" y="104" width="4" height="16" rx="1.5" fill="#e1882e" opacity="0.9"/>
+  <rect x="60" y="107" width="4" height="13" rx="1.5" fill="#e1882e" opacity="0.7"/>
+  <rect x="66" y="104" width="4" height="16" rx="1.5" fill="#e1882e" opacity="0.9"/>
+  <rect x="72" y="108" width="4" height="12" rx="1.5" fill="#bc631a" opacity="0.7"/>
+  <rect x="78" y="106" width="4" height="14" rx="1.5" fill="#e1882e" opacity="0.8"/>
+  <rect x="84" y="110" width="4" height="10" rx="1.5" fill="#804117" opacity="0.5"/>
+  <rect x="90" y="108" width="4" height="12" rx="1.5" fill="#bc631a" opacity="0.6"/>
+  <rect x="96" y="112" width="4" height="8" rx="1.5" fill="#804117" opacity="0.4"/>
 </svg>
