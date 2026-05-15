@@ -213,9 +213,8 @@ fn default_state_dir() -> String {
     }
     #[cfg(target_os = "windows")]
     {
-        std::env::var("APPDATA")
-            .map(|p| format!("{p}\\snapdog"))
-            .unwrap_or_else(|_| "C:\\ProgramData\\snapdog".into())
+        std::env::var("LOCALAPPDATA")
+            .map_or_else(|_| "C:\\ProgramData\\SnapDog".into(), |p| format!("{p}\\SnapDog"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
