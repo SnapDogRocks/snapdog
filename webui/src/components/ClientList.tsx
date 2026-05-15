@@ -52,9 +52,9 @@ function ClientCard({ client }: { client: ClientInfo }) {
       <div className="min-w-0 flex-1 space-y-1.5">
         {/* Name row: icon + connection indicator + name + menu */}
         <div className="flex items-center gap-1.5">
-          <span className="text-lg shrink-0">{client.icon || "🔊"}</span>
           <div className={`size-2 shrink-0 ${client.connected ? "rounded-full bg-green-500" : "rotate-45 bg-destructive"}`} />
           <span className="sr-only">{client.connected ? t("connected") : t("disconnected")}</span>
+          {client.icon && <span className="text-lg shrink-0">{client.icon}</span>}
           <span className="text-sm font-medium truncate">{client.name}</span>
           {otherZones.length > 0 && (
             <div className="ml-auto relative" data-menu>

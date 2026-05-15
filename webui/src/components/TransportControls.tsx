@@ -2,16 +2,19 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   PlayIcon,
   PauseIcon,
-  StopIcon,
   NextIcon,
   PreviousIcon,
 } from "@hugeicons/core-free-icons";
 import { motion, useReducedMotion } from "framer-motion";
 import { useTranslations } from "next-intl";
+import { useRef, useCallback } from "react";
 import type { ZoneState } from "@/stores/useAppStore";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";
+
+/** Duration in ms to trigger stop via long-press. */
+const LONG_PRESS_MS = 600;
 
 interface TransportControlsProps {
   zone: ZoneState;
@@ -28,11 +31,29 @@ export function TransportControls({ zone }: TransportControlsProps) {
   const isUrl = source === "url";
   const hasNavigation = source === "radio" || source === "subsonic_playlist" || isAirPlay;
 
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPress = useRef(false);
+
+  const onPointerDown = useCallback(() => {
+    didLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      api.zones.stop(index).catch(logApiError);
+    }, LONG_PRESS_MS);
+  }, [index]);
+
+  const onPointerUp = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    if (!didLongPress.current) {
+      api.zones[isPlaying ? "pause" : "play"](index).catch(logApiError);
+    }
+  }, [index, isPlaying]);
+
   const cmd = (action: string) => {
     switch (action) {
-      case "play": api.zones.play(index).catch(logApiError); break;
-      case "pause": api.zones.pause(index).catch(logApiError); break;
-      case "stop": api.zones.stop(index).catch(logApiError); break;
       case "next": api.zones.next(index).catch(logApiError); break;
       case "previous": api.zones.previous(index).catch(logApiError); break;
     }
@@ -46,13 +67,17 @@ export function TransportControls({ zone }: TransportControlsProps) {
         </Button>
       </motion.div>
       <motion.div whileTap={tap}>
-        <Button variant="default" size="icon" disabled={isIdle} onClick={() => cmd(isPlaying ? "pause" : "play")} className="size-12 rounded-full" aria-label={isPlaying ? t("pause") : t("play")}>
+        <Button
+          variant="default"
+          size="icon"
+          disabled={isIdle}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onPointerLeave={() => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } }}
+          className="size-12 rounded-full"
+          aria-label={isPlaying ? t("pause") : t("play")}
+        >
           <HugeiconsIcon icon={isPlaying ? PauseIcon : PlayIcon} size={24} />
-        </Button>
-      </motion.div>
-      <motion.div whileTap={tap}>
-        <Button variant="ghost" size="icon" disabled={isIdle} onClick={() => cmd("stop")} className="size-10 rounded-full" aria-label={t("stop")}>
-          <HugeiconsIcon icon={StopIcon} size={20} />
         </Button>
       </motion.div>
       <motion.div whileTap={tap}>

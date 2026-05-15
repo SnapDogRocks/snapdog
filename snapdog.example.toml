@@ -256,7 +256,9 @@ url = "https://st02.sslstream.dlf.de/dlf/02/high/aac/stream.aac"
 [[radio]]
 name = "NDR Info"
 url = "http://www.ndr.de/resources/metadaten/audio/m3u/ndrinfo.m3u"
+cover = "https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/NDR_Dachmarke.svg/1280px-NDR_Dachmarke.svg.png?utm_source=de.wikipedia.org&utm_campaign=index&utm_content=thumbnail"
 
 [[radio]]
 name = "Swiss Jazz"
 url = "https://stream.srg-ssr.ch/rsj/aacp_96.m3u"
+cover = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/Radio_Swiss_Jazz_Logo_2018.svg/1280px-Radio_Swiss_Jazz_Logo_2018.svg.png?utm_source=de.wikipedia.org&utm_campaign=index&utm_content=thumbnail"
