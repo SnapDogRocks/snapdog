@@ -149,31 +149,35 @@ pub async fn update_and_notify(
             || old_track_artist != new_track_artist
             || old_cover_url != zone.cover_url
         {
-            zone.track.as_ref().map(|t| crate::api::ws::Notification::ZoneTrackChanged {
-                zone: zone_index,
-                title: t.title.clone(),
-                artist: t.artist.clone(),
-                album: t.album.clone(),
-                duration_ms: t.duration_ms,
-                position_ms: t.position_ms,
-                seekable: t.seekable,
-                cover_url: zone.cover_url.clone(),
-            })
+            zone.track
+                .as_ref()
+                .map(|t| crate::api::ws::Notification::ZoneTrackChanged {
+                    zone: zone_index,
+                    title: t.title.clone(),
+                    artist: t.artist.clone(),
+                    album: t.album.clone(),
+                    duration_ms: t.duration_ms,
+                    position_ms: t.position_ms,
+                    seekable: t.seekable,
+                    cover_url: zone.cover_url.clone(),
+                })
         } else {
             None
         };
 
         // Send progress if position changed
         let new_position = zone.track.as_ref().map(|t| t.position_ms);
-        let progress_notif = if old_position != new_position {
-            zone.track.as_ref().map(|t| crate::api::ws::Notification::ZoneProgress {
-                zone: zone_index,
-                position_ms: t.position_ms,
-                duration_ms: t.duration_ms,
-                buffered_ms: zone.buffered_ms,
-            })
-        } else {
+        let progress_notif = if old_position == new_position {
             None
+        } else {
+            zone.track
+                .as_ref()
+                .map(|t| crate::api::ws::Notification::ZoneProgress {
+                    zone: zone_index,
+                    position_ms: t.position_ms,
+                    duration_ms: t.duration_ms,
+                    buffered_ms: zone.buffered_ms,
+                })
         };
 
         s.dirty = true;

@@ -429,12 +429,11 @@ mod process_impl {
                     is_snapdog: c.is_snapdog,
                 })
                 .collect::<Vec<_>>();
-                drop(s);
-                for n in notifs {
+            drop(s);
+            for n in notifs {
                 api::ws::broadcast_notification(notify, &n);
-                }
-                }
-
+            }
+        }
     }
 
     /// Build MAC → snapcast_id map from server status.

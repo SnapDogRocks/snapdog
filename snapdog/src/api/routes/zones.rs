@@ -111,7 +111,10 @@ pub fn router(state: SharedState) -> Router {
             "/{zone_index}/play/playlist/{playlist_index}/track",
             post(play_playlist_track),
         )
-        .route("/{zone_index}/play/subsonic/{track_id}", post(play_subsonic_track))
+        .route(
+            "/{zone_index}/play/subsonic/{track_id}",
+            post(play_subsonic_track),
+        )
         .route("/{zone_index}/name", get(get_name))
         .route("/{zone_index}/icon", get(get_icon))
         .route("/{zone_index}/playback", get(get_playback))

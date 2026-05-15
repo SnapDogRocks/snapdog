@@ -40,17 +40,19 @@ impl EmbeddedBackend {
         // Resolve f32lz4e → f32lz4 + encryption
         let (codec, encryption_psk) = if config.snapcast.codec == crate::config::AudioCodec::F32lz4e
         {
-            let psk = config
-                .snapcast
-                .encryption_psk
-                .as_ref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| snapcast_server::DEFAULT_ENCRYPTION_PSK.into());
+            let psk = config.snapcast.encryption_psk.as_ref().map_or_else(
+                || snapcast_server::DEFAULT_ENCRYPTION_PSK.into(),
+                |s| s.to_string(),
+            );
             ("f32lz4".into(), Some(psk))
         } else {
             (
                 config.snapcast.codec.as_str().to_string(),
-                config.snapcast.encryption_psk.as_ref().map(|s| s.to_string()),
+                config
+                    .snapcast
+                    .encryption_psk
+                    .as_ref()
+                    .map(|s| s.to_string()),
             )
         };
 

@@ -62,7 +62,7 @@ pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
     anyhow::ensure!(
         matches!(
             raw.audio.sample_rate,
-            44100 | 48000 | 88200 | 96000 | 176400 | 192000
+            44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
         ),
         "Unsupported sample rate: {}. Use 44100, 48000, 88200, 96000, 176400, or 192000",
         raw.audio.sample_rate
@@ -722,10 +722,12 @@ mod tests {
         "#,
         )
         .unwrap();
-        assert!(load_raw(raw)
-            .unwrap_err()
-            .to_string()
-            .contains("Duplicate zone name"));
+        assert!(
+            load_raw(raw)
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate zone name")
+        );
     }
 
     #[test]
@@ -745,10 +747,12 @@ mod tests {
         "#,
         )
         .unwrap();
-        assert!(load_raw(raw)
-            .unwrap_err()
-            .to_string()
-            .contains("Duplicate client MAC address"));
+        assert!(
+            load_raw(raw)
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate client MAC address")
+        );
     }
 
     #[test]
@@ -764,10 +768,12 @@ mod tests {
         "#,
         )
         .unwrap();
-        assert!(load_raw(raw)
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid MAC address format"));
+        assert!(
+            load_raw(raw)
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid MAC address format")
+        );
     }
 
     #[test]
@@ -788,8 +794,7 @@ mod tests {
         let err = format!("{:?}", load_raw(raw).unwrap_err());
         assert!(
             err.contains("Main group must be 0-31"),
-            "Expected 'Main group must be 0-31' in error, got: {}",
-            err
+            "Expected 'Main group must be 0-31' in error, got: {err}",
         );
     }
 

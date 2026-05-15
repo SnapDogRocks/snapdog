@@ -158,22 +158,27 @@ pub async fn fetch_cover_with_favicon_fallback(
     stream_url: &str,
 ) -> Option<(Vec<u8>, String)> {
     if let Some(url) = cover_url {
-        if let Some(result) = fetch_cover(url).await {
-            if result.1.starts_with("image/") {
-                return Some(result);
+        if let Some((bytes, _)) = fetch_cover(url).await {
+            let mime = detect_mime(&bytes);
+            if mime.starts_with("image/") {
+                tracing::debug!(url, %mime, "Found cover via config URL");
+                return Some((bytes, mime.to_string()));
+            } else {
+                tracing::debug!(url, %mime, "Config cover URL returned non-image content");
             }
         }
     }
-    let base = url::Url::parse(stream_url)
-        .ok()
-        .and_then(|u| {
-            let scheme = u.scheme();
-            let host = u.host_str()?;
-            let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
-            Some(format!("{scheme}://{host}{port}"))
-        })?;
+    let base = url::Url::parse(stream_url).ok().and_then(|u| {
+        let scheme = u.scheme();
+        let host = u.host_str()?;
+        let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+        Some(format!("{scheme}://{host}{port}"))
+    })?;
+
+    tracing::debug!(%base, "Falling back to favicon search");
     fetch_best_favicon(&base).await
 }
+
 
 /// Fetch the best (largest) favicon from a website.
 async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {

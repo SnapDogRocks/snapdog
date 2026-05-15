@@ -1011,12 +1011,15 @@ async fn notify_presence(
 ) {
     let s = store.read().await;
     if let Some(z) = s.zones.get(&zone_index) {
-        crate::api::ws::broadcast_notification(notify, &crate::api::ws::Notification::ZonePresenceChanged {
-            zone: zone_index,
-            presence: z.presence,
-            enabled: z.presence_enabled,
-            timer_active: z.auto_off_active,
-        });
+        crate::api::ws::broadcast_notification(
+            notify,
+            &crate::api::ws::Notification::ZonePresenceChanged {
+                zone: zone_index,
+                presence: z.presence,
+                enabled: z.presence_enabled,
+                timer_active: z.auto_off_active,
+            },
+        );
     }
 }
 

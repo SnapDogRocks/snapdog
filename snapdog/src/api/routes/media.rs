@@ -202,7 +202,13 @@ async fn get_playlist_cover(
                 |bytes| {
                     let mime = crate::state::cover::detect_mime(&bytes);
                     Ok((
-                        [(axum::http::header::CONTENT_TYPE, mime.to_string())],
+                        [
+                            (axum::http::header::CONTENT_TYPE, mime.to_string()),
+                            (
+                                axum::http::header::CACHE_CONTROL,
+                                CACHE_CONTROL_1DAY.to_string(),
+                            ),
+                        ],
                         bytes,
                     ))
                 },
@@ -239,7 +245,6 @@ async fn get_playlist_tracks(
         ResolvedPlaylist::Subsonic(_) => {
             let id = resolve_subsonic_id(&state, index).await?;
             let sub = subsonic(&state)?;
-            let base_url = state.config.http.base_url.trim_end_matches('/');
             match sub.get_playlist(&id).await {
                 Ok(playlist) => Ok(Json(
                     playlist
