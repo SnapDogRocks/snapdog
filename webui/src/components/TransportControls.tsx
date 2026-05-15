@@ -42,14 +42,18 @@ export function TransportControls({ zone }: TransportControlsProps) {
     }, LONG_PRESS_MS);
   }, [index]);
 
-  const onPointerUp = useCallback(() => {
+  const clearTimer = useCallback(() => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
+  }, []);
+
+  const onClickPlayPause = useCallback(() => {
     if (!didLongPress.current) {
       api.zones[isPlaying ? "pause" : "play"](index).catch(logApiError);
     }
+    didLongPress.current = false;
   }, [index, isPlaying]);
 
   const cmd = (action: string) => {
@@ -72,8 +76,10 @@ export function TransportControls({ zone }: TransportControlsProps) {
           size="icon"
           disabled={isIdle}
           onPointerDown={onPointerDown}
-          onPointerUp={onPointerUp}
-          onPointerLeave={() => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } }}
+          onPointerUp={clearTimer}
+          onPointerLeave={clearTimer}
+          onContextMenu={(e) => e.preventDefault()}
+          onClick={onClickPlayPause}
           className="size-12 rounded-full"
           aria-label={isPlaying ? t("pause") : t("play")}
         >
