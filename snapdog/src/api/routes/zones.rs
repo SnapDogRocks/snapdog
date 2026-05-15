@@ -397,16 +397,8 @@ async fn get_zone_cover(
     Path(idx): Path<usize>,
 ) -> impl IntoResponse {
     let cache = state.covers.read().await;
-    match cache.get(idx) {
-        Some(entry) => (
-            [
-                ("content-type", entry.mime.clone()),
-                ("cache-control", "public, max-age=86400, immutable".into()),
-                ("etag", format!("\"{}\"", entry.hash)),
-            ],
-            entry.bytes.clone(),
-        ),
-        None => (
+    cache.get(idx).map_or_else(
+        || (
             [
                 ("content-type", "image/svg+xml".to_string()),
                 ("cache-control", "public, max-age=604800".to_string()),
@@ -414,7 +406,15 @@ async fn get_zone_cover(
             ],
             PLACEHOLDER_COVER.as_bytes().to_vec(),
         ),
-    }
+        |entry| (
+            [
+                ("content-type", entry.mime.clone()),
+                ("cache-control", "public, max-age=86400, immutable".into()),
+                ("etag", format!("\"{}\"", entry.hash)),
+            ],
+            entry.bytes.clone(),
+        ),
+    )
 }
 async fn get_track_title(
     State(state): State<SharedState>,

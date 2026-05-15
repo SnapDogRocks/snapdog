@@ -143,23 +143,20 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
     loop {
         tokio::select! {
             result = rx.recv() => {
-                match result {
-                    Ok(notification) => {
-                        let Ok(json) = serde_json::to_string(&notification) else {
-                            continue;
-                        };
-                        if socket.send(Message::Text(json.into())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => {
-                        // Broadcast channel closed — server is shutting down
-                        let _ = socket.send(Message::Close(Some(axum::extract::ws::CloseFrame {
-                            code: 1001, // Going Away
-                            reason: "Server shutting down".into(),
-                        }))).await;
+                if let Ok(notification) = result {
+                    let Ok(json) = serde_json::to_string(&notification) else {
+                        continue;
+                    };
+                    if socket.send(Message::Text(json.into())).await.is_err() {
                         break;
                     }
+                } else {
+                    // Broadcast channel closed — server is shutting down
+                    let _ = socket.send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                        code: 1001, // Going Away
+                        reason: "Server shutting down".into(),
+                    }))).await;
+                    break;
                 }
             }
             _ = ping_interval.tick() => {

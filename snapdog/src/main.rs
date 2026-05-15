@@ -172,7 +172,7 @@ pub async fn run_app() -> Result<()> {
 
     // --knx-device enables device mode
     if cli.knx_device {
-        let knx = app_config.knx.get_or_insert(config::KnxConfig::default());
+        let knx = app_config.knx.get_or_insert_default();
         knx.role = config::KnxRole::Device;
         knx.individual_address = Some(cli.knx_address.unwrap_or_else(|| "15.15.255".into()));
     }

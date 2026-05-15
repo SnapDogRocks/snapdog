@@ -18,4 +18,4 @@ fn embed_windows_resource() {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn embed_windows_resource() {}
+const fn embed_windows_resource() {}

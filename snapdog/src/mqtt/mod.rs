@@ -202,7 +202,7 @@ impl MqttBridge {
 
         let mut payload = serde_json::json!({
             "state": state_str,
-            "volume_level": zone.volume as f64 / 100.0,
+            "volume_level": f64::from(zone.volume) / 100.0,
             "is_volume_muted": zone.muted,
             "shuffle": zone.shuffle,
             "repeat": if zone.track_repeat { "one" } else if zone.repeat { "all" } else { "off" },

@@ -74,10 +74,8 @@ async fn apply_speaker(
             tracing::warn!(speaker = %name, error = %e, "Speaker profile not found");
             ApiError::NotFound("speaker")
         })?
-    } else if let Some(custom) = body.custom {
-        custom
     } else {
-        EqConfig::default()
+        body.custom.unwrap_or_default()
     };
 
     state
