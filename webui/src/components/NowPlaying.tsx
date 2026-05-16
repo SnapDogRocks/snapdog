@@ -16,41 +16,47 @@ export function NowPlaying({ zone }: { zone: ZoneState }) {
     setLastCover(coverUrl);
   }
 
-  const fallback = (
-    <div className="flex flex-col items-center justify-center size-full bg-gradient-to-br from-muted to-muted/60">
-      <img src="/assets/snapdog-icon.svg" alt="SnapDog" className="size-48 sm:size-32 opacity-30" />
-      <span className="text-xs font-medium text-muted-foreground/60 tracking-wider uppercase mt-2">{zone.name}</span>
-    </div>
-  );
-
   if (isIdle || !coverUrl) {
     return (
       <div className="relative w-full aspect-square rounded-2xl sm:rounded-xl overflow-hidden shadow-lg">
-        {fallback}
+        <div className="flex flex-col items-center justify-center size-full bg-gradient-to-br from-muted to-muted/60">
+          <div className="animate-pulse-slow">
+            <img src="/assets/snapdog-icon.svg" alt="SnapDog" className="size-48 sm:size-32 opacity-30" />
+          </div>
+          <span className="text-xs font-medium text-muted-foreground/60 tracking-wider uppercase mt-2">{zone.name}</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full aspect-square rounded-2xl sm:rounded-xl overflow-hidden bg-muted shadow-lg shrink-0">
-      {coverError ? fallback : (
-        <>
-          <img
-            key={`bg-${coverUrl}`}
-            src={coverUrl}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-40"
-            onError={() => setCoverError(true)}
-          />
+    <div className="relative w-full aspect-square">
+      {/* Color glow — blurred cover bleeds outside the container */}
+      {!coverError && (
+        <img
+          key={`glow-${coverUrl}`}
+          src={coverUrl}
+          alt=""
+          className="absolute -inset-4 w-[calc(100%+2rem)] h-[calc(100%+2rem)] object-cover blur-3xl opacity-30 scale-110 pointer-events-none transition-opacity duration-700"
+        />
+      )}
+      {/* Main cover */}
+      <div className="relative w-full h-full rounded-2xl sm:rounded-xl overflow-hidden bg-muted shadow-lg">
+        {coverError ? (
+          <div className="flex flex-col items-center justify-center size-full bg-gradient-to-br from-muted to-muted/60">
+            <img src="/assets/snapdog-icon.svg" alt="SnapDog" className="size-48 sm:size-32 opacity-30" />
+            <span className="text-xs font-medium text-muted-foreground/60 tracking-wider uppercase mt-2">{zone.name}</span>
+          </div>
+        ) : (
           <img
             key={`fg-${coverUrl}`}
             src={coverUrl}
             alt={`${track.title} cover`}
-            className="absolute inset-0 w-full h-full object-contain"
+            className="w-full h-full object-contain animate-fade-in"
             onError={() => setCoverError(true)}
           />
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

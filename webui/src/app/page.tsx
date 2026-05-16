@@ -182,7 +182,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-1 h-full">
+    <div className="flex flex-1 h-full animate-fade-in">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md">
         {t("app.skipToContent")}
       </a>
