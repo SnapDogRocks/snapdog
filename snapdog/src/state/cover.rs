@@ -99,6 +99,7 @@ pub fn detect_mime(bytes: &[u8]) -> &'static str {
     match bytes {
         [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
         [0x89, 0x50, 0x4E, 0x47, ..] => "image/png",
+        [0x00, 0x00, 0x01 | 0x02, 0x00, ..] => "image/x-icon",
         [
             0x52,
             0x49,
@@ -114,6 +115,11 @@ pub fn detect_mime(bytes: &[u8]) -> &'static str {
             0x50,
             ..,
         ] => "image/webp",
+        _ if bytes.starts_with(b"<svg")
+            || bytes.starts_with(b"<?xml") && bytes.windows(4).any(|w| w == b"<svg") =>
+        {
+            "image/svg+xml"
+        }
         _ => "application/octet-stream",
     }
 }
@@ -200,6 +206,7 @@ async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {
     let client = reqwest::Client::builder()
         .user_agent(crate::USER_AGENT)
         .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .ok()?;
 
@@ -231,7 +238,20 @@ async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {
         .to_string();
     let bytes = resp.bytes().await.ok()?.to_vec();
 
-    if mime.contains("icon")
+    // Skip tiny responses (tracking pixels, empty files)
+    if bytes.len() < 100 {
+        return None;
+    }
+
+    // Detect actual format from bytes (servers often lie about content-type)
+    let detected = detect_mime(&bytes);
+
+    if detected == "image/svg+xml" || mime.contains("svg") {
+        return Some((bytes, "image/svg+xml".into()));
+    }
+
+    if detected == "image/x-icon"
+        || mime.contains("icon")
         || mime.contains("octet-stream")
         || std::path::Path::new(&icon_url)
             .extension()
@@ -239,7 +259,12 @@ async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {
     {
         return ico_to_png(&bytes);
     }
-    Some((bytes, mime))
+
+    if detected.starts_with("image/") {
+        return Some((bytes, detected.into()));
+    }
+
+    None
 }
 
 /// Parse HTML for the largest icon link.
@@ -250,7 +275,12 @@ fn parse_best_icon_url(html: &str, origin: &str) -> Option<String> {
         if !lower.contains("rel=") || !lower.contains("icon") {
             continue;
         }
-        let href = extract_attr(line, "href")?;
+        let Some(href) = extract_attr(line, "href") else {
+            continue;
+        };
+        if href.is_empty() {
+            continue;
+        }
         let size = extract_attr(line, "sizes")
             .and_then(|s| s.split('x').next()?.parse::<u32>().ok())
             .unwrap_or(0);
