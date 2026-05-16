@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/metaneutrons/snapdog/compare/v0.9.0...v0.9.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* **release:** Docker missing assets/, KNX skip webui, Windows sha256sum ([9a412b2](https://github.com/metaneutrons/snapdog/commit/9a412b28578256274c49838aebd29183d4de149d))
+
 ## [0.9.0](https://github.com/metaneutrons/snapdog/compare/v0.8.0...v0.9.0) (2026-05-16)
 
 
