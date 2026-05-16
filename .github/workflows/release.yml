@@ -149,7 +149,6 @@ jobs:
       - name: Build Swift app
         working-directory: macos-helper/SnapDogServer
         run: |
-          xcodegen generate
           xcodebuild -project "SnapDog Server.xcodeproj" \
             -scheme "SnapDog Server" \
             -configuration Release \
