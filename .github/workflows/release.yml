@@ -173,13 +173,19 @@ jobs:
         run: |
           VERSION=${{ needs.meta.outputs.version }}
           DMG="SnapDog-Server-${VERSION}.dmg"
-          mkdir -p dmg-staging
-          cp -R "SnapDog Server.app" dmg-staging/
-          ln -s /Applications dmg-staging/Applications
-          hdiutil create -volname "SnapDog Server" \
-            -srcfolder dmg-staging \
-            -ov -format UDZO \
-            "$DMG"
+          brew install create-dmg
+          create-dmg \
+            --volname "SnapDog Server" \
+            --background "assets/dmg-background.png" \
+            --window-size 600 400 \
+            --icon "SnapDog Server.app" 150 200 \
+            --app-drop-link 450 200 \
+            --icon-size 80 \
+            --no-internet-enable \
+            "$DMG" \
+            "SnapDog Server.app" || true
+          # create-dmg returns 2 on "DMG created but background not set" — still valid
+          test -f "$DMG"
       - name: Notarize DMG
         env:
           KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}

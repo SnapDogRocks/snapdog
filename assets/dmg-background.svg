@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1410"/>
+      <stop offset="100%" stop-color="#0d0a07"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="400" fill="url(#bg)"/>
+  <!-- Subtle arrow -->
+  <path d="M270 200 L330 200" stroke="#e1882e" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <path d="M320 192 L332 200 L320 208" fill="none" stroke="#e1882e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+  <!-- Instruction text -->
+  <text x="300" y="340" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="13" fill="#e1882e" opacity="0.7">Drag to Applications to install</text>
+</svg>
