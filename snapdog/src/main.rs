@@ -507,20 +507,69 @@ pub async fn run_app() -> Result<()> {
                     std::future::pending::<()>().await;
                 }
             } => {}
-            // Shutdown
-            _ = tokio::signal::ctrl_c() => {
-                tracing::info!("Shutting down");
+            // Shutdown signals
+            _ = async {
+                let sigint = tokio::signal::ctrl_c();
+                #[cfg(unix)]
+                let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+
+                #[cfg(unix)]
+                tokio::select! {
+                    _ = sigint => { tracing::info!("Received Ctrl-C, shutting down gracefully..."); }
+                    _ = sigterm.recv() => { tracing::info!("Received SIGTERM, shutting down gracefully..."); }
+                };
+                #[cfg(not(unix))]
+                let _ = sigint.await;
+            } => {
                 break;
             }
         }
     }
 
     // ── Shutdown ──────────────────────────────────────────────
-    // Second Ctrl+C during graceful shutdown → force exit immediately
-    tokio::spawn(async {
-        let _ = tokio::signal::ctrl_c().await;
-        tracing::warn!("Forced exit");
-        std::process::exit(1);
+
+    // Spawn a dedicated thread for the forced-exit safety net.
+    // This survives the tokio runtime shutdown and handles second signals.
+    std::thread::spawn(|| {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let sigint = tokio::signal::ctrl_c();
+            #[cfg(unix)]
+            let mut sigterm =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .unwrap();
+
+            #[cfg(unix)]
+            tokio::select! {
+                _ = sigint => {
+                    tracing::warn!("Second signal received, forcing exit");
+                    std::process::exit(1);
+                }
+                _ = sigterm.recv() => {
+                    tracing::warn!("Second signal received, forcing exit");
+                    std::process::exit(1);
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
+                    tracing::warn!("Graceful shutdown timed out, forcing exit");
+                    std::process::exit(0);
+                }
+            };
+            #[cfg(not(unix))]
+            tokio::select! {
+                _ = sigint => {
+                    tracing::warn!("Second signal received, forcing exit");
+                    std::process::exit(1);
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
+                    tracing::warn!("Graceful shutdown timed out, forcing exit");
+                    std::process::exit(0);
+                }
+            };
+        });
     });
 
     let _ = backend.stop().await;
@@ -530,6 +579,6 @@ pub async fn run_app() -> Result<()> {
     #[cfg(feature = "snapcast-process")]
     snapserver.stop().await?;
 
-    // Force exit — background threads (mDNS, AirPlay) don't respond to tokio shutdown
+    tracing::info!("SnapDog server terminated");
     std::process::exit(0);
 }
