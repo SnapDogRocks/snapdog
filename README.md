@@ -122,6 +122,18 @@ sudo apt update
 sudo apt install snapdog snapdog-client
 ```
 
+### Homebrew (macOS)
+
+```bash
+brew tap metaneutrons/tap
+brew install snapdog
+brew install snapdog-client
+```
+
+### macOS App
+
+Download `SnapDog-Server-*.dmg` from [Releases](https://github.com/metaneutrons/snapdog/releases/latest). The menu bar app embeds the server binary, manages start/stop, and includes Sparkle auto-update.
+
 ### From Source
 
 ```bash
@@ -145,6 +157,7 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 ```toml
 [http]
 port = 5555
+base_url = "http://192.168.1.10:5555"  # For absolute URLs in API responses
 
 [audio]
 sample_rate = 48000
@@ -153,10 +166,6 @@ channels = 2
 source_conflict = "last_wins"        # last_wins | receiver_wins
 zone_switch_fade_ms = 300            # Client zone switch fade (0 to disable)
 source_switch_fade_ms = 300          # Source change fade within a zone (0 to disable)
-
-[system]
-base_url = "http://192.168.1.10:5555"  # For absolute URLs in API responses
-# state_dir = "/var/lib/snapdog"       # Persistent state (default: platform-appropriate)
 
 [snapcast]
 streaming_port = 1704
