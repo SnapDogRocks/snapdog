@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.2](https://github.com/metaneutrons/snapdog/compare/v0.9.1...v0.9.2) (2026-05-16)
+
+
+### Bug Fixes
+
+* **release:** decouple macOS DMG from upload — AUR/Homebrew no longer blocked by DMG failure ([6f66390](https://github.com/metaneutrons/snapdog/commit/6f66390037a7c6a43234f7be6410f28ffe4ed600))
+* **release:** fix universal binary find pattern for versioned tar directories ([5ff33fe](https://github.com/metaneutrons/snapdog/commit/5ff33fe828b9ba74dd9d5ed5db5e99ca5b548d68))
+
 ## [0.9.1](https://github.com/metaneutrons/snapdog/compare/v0.9.0...v0.9.1) (2026-05-16)
 
 
