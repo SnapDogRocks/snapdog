@@ -362,7 +362,7 @@ mod process_impl {
         snap: &SnapcastClient,
         config: &AppConfig,
         store: &state::SharedState,
-        notify: &tokio::sync::broadcast::Sender<api::ws::Notification>,
+        notify: &crate::api::ws::NotifySender,
     ) {
         let status = match snap.server_get_status().await {
             Ok(s) => s,
@@ -473,7 +473,7 @@ mod process_impl {
         config: &AppConfig,
         snap: &SnapcastClient,
         store: &state::SharedState,
-        notify: &tokio::sync::broadcast::Sender<api::ws::Notification>,
+        notify: &crate::api::ws::NotifySender,
     ) {
         match notification {
             Notification::ClientOnConnect {
