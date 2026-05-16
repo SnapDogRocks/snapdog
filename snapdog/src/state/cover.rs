@@ -44,7 +44,8 @@ impl CoverEntry {
 impl CoverCache {
     /// Store cover art for a zone.
     pub fn set(&mut self, zone_index: usize, bytes: Vec<u8>, mime: String) {
-        self.entries.insert(zone_index, CoverEntry::new(bytes, mime));
+        self.entries
+            .insert(zone_index, CoverEntry::new(bytes, mime));
     }
 
     /// Store cover art with a static key.

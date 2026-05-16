@@ -540,8 +540,7 @@ pub async fn run_app() -> Result<()> {
             let sigint = tokio::signal::ctrl_c();
             #[cfg(unix)]
             let mut sigterm =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .unwrap();
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
 
             #[cfg(unix)]
             tokio::select! {

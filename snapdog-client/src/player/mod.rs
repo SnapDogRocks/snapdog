@@ -367,6 +367,7 @@ fn detect_alsa_control() -> Option<String> {
 }
 
 /// Start audio output. Waits for the Stream to have audio, then starts cpal.
+/// Automatically restarts the pipeline if the stream format changes.
 pub async fn play_audio(
     rx: mpsc::Receiver<AudioFrame>,
     stream: Arc<Mutex<Stream>>,
@@ -375,7 +376,6 @@ pub async fn play_audio(
     speaker_eq: SharedEq,
     mixer: Arc<Mixer>,
     fade: Arc<FadeState>,
-    shutdown: Arc<AtomicBool>,
 ) {
     // Drain audio_rx in background
     tokio::spawn(async move {
@@ -383,16 +383,14 @@ pub async fn play_audio(
         while rx.recv().await.is_some() {}
     });
 
+    // Shared flag for format-change signaling from cpal thread
+    let format_changed = Arc::new(AtomicBool::new(false));
+
     loop {
-        if shutdown.load(Ordering::Relaxed) {
-            break;
-        }
+        format_changed.store(false, Ordering::Relaxed);
 
         // Wait for the Stream to have a valid format
         let format = loop {
-            if shutdown.load(Ordering::Relaxed) {
-                return;
-            }
             {
                 let s = stream.lock().unwrap_or_else(|e| e.into_inner());
                 let f = s.format();
@@ -410,17 +408,17 @@ pub async fn play_audio(
             "Audio format detected"
         );
 
-        // Run cpal on a dedicated thread; returns on format change or error
         let stream_clone = Arc::clone(&stream);
         let tp_clone = Arc::clone(&time_provider);
         let eq_clone = eq.clone();
         let speaker_eq_clone = speaker_eq.clone();
         let mixer_clone = Arc::clone(&mixer);
         let fade_clone = Arc::clone(&fade);
-        let shutdown_clone = Arc::clone(&shutdown);
+        let fc_clone = Arc::clone(&format_changed);
 
-        let handle = std::thread::spawn(move || {
-            run_cpal(
+        // Spawn cpal thread — don't join, just let it run
+        std::thread::spawn(move || {
+            if let Err(e) = run_cpal(
                 stream_clone,
                 tp_clone,
                 format,
@@ -428,29 +426,24 @@ pub async fn play_audio(
                 speaker_eq_clone,
                 mixer_clone,
                 fade_clone,
-                shutdown_clone,
-            )
+                fc_clone,
+            ) {
+                tracing::error!(error = %e, "Audio output failed");
+            }
         });
 
-        match handle.join() {
-            Ok(Ok(FormatChanged)) => {
+        // Poll async until format changes
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            if format_changed.load(Ordering::Relaxed) {
                 tracing::info!("Audio format changed, restarting pipeline");
-            }
-            Ok(Err(e)) => {
-                tracing::error!(error = %e, "Audio output failed, retrying in 1s");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-            Err(_) => {
-                tracing::error!("Audio thread panicked, restarting in 1s");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                break;
             }
         }
     }
 }
 
-/// Sentinel returned by `run_cpal` when the stream format changes.
-struct FormatChanged;
-
+#[allow(clippy::too_many_arguments)]
 fn run_cpal(
     stream: Arc<Mutex<Stream>>,
     time_provider: Arc<Mutex<TimeProvider>>,
@@ -459,8 +452,8 @@ fn run_cpal(
     speaker_eq: SharedEq,
     mixer: Arc<Mixer>,
     fade: Arc<FadeState>,
-    shutdown: Arc<AtomicBool>,
-) -> anyhow::Result<FormatChanged> {
+    format_changed: Arc<AtomicBool>,
+) -> anyhow::Result<()> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
     let host = cpal::default_host();
@@ -470,59 +463,46 @@ fn run_cpal(
 
     tracing::info!(device = %device.description().map(|d| format!("{d}")).unwrap_or_default(), "Using audio device");
 
-    // Probe device capabilities — try native format first, fallback to default
-    let supported = device.supported_output_configs()?;
-    let mut native_config = None;
+    // Probe device capabilities — try native format, fallback to default
     let target_rate = format.rate();
     let target_channels = format.channels();
-    for cfg in supported {
-        if cfg.channels() == target_channels
-            && cfg.min_sample_rate() <= target_rate
-            && cfg.max_sample_rate() >= target_rate
-        {
-            native_config = Some(cfg.with_sample_rate(target_rate));
-            break;
+    let config = match device.supported_output_configs() {
+        Ok(supported) => {
+            let native = supported.into_iter().find(|cfg| {
+                cfg.channels() == target_channels
+                    && cfg.min_sample_rate() <= target_rate
+                    && cfg.max_sample_rate() >= target_rate
+            });
+            if let Some(cfg) = native {
+                cfg.with_sample_rate(target_rate).into()
+            } else {
+                tracing::warn!(
+                    target_rate,
+                    target_channels,
+                    "Stream format not natively supported, using device default"
+                );
+                let default: cpal::StreamConfig = device.default_output_config()?.into();
+                if default.sample_rate != target_rate {
+                    anyhow::bail!(
+                        "Device default rate ({} Hz) differs from stream ({target_rate} Hz). \
+                         Configure the server to match or enable the 'resampler' feature.",
+                        default.sample_rate
+                    );
+                }
+                default
+            }
         }
-    }
-
-    let (config, needs_resampling): (cpal::StreamConfig, bool) = if let Some(c) = native_config {
-        (c.into(), false)
-    } else {
-        tracing::warn!(
-            "Stream format not natively supported, using device default with resampling"
-        );
-        let c = device.default_output_config()?;
-        (c.into(), true)
+        Err(e) => {
+            tracing::warn!(error = %e, "Cannot probe device, using stream format directly");
+            cpal::StreamConfig {
+                channels: target_channels,
+                sample_rate: target_rate,
+                buffer_size: cpal::BufferSize::Default,
+            }
+        }
     };
 
-    let device_rate = config.sample_rate;
-    let device_channels = config.channels as usize;
-
-    #[cfg(feature = "resampler")]
-    let resampler = if needs_resampling {
-        let device_format =
-            snapcast_proto::SampleFormat::new(device_rate, format.bits(), device_channels as u16);
-        let chunk_frames = (format.rate() / 50) as usize; // ~20ms chunks
-        snapcast_client::resampler::Resampler::new_if_needed(format, device_format, chunk_frames)?
-    } else {
-        None
-    };
-    #[cfg(feature = "resampler")]
-    let resampler = Arc::new(std::sync::Mutex::new(resampler));
-
-    #[cfg(not(feature = "resampler"))]
-    if needs_resampling {
-        anyhow::bail!(
-            "Device requires resampling ({device_rate} Hz) but resampler feature is disabled"
-        );
-    }
-
-    let channels = device_channels;
-    let format_changed = Arc::new(AtomicBool::new(false));
-    let format_changed_cb = Arc::clone(&format_changed);
-
-    #[cfg(feature = "resampler")]
-    let resampler_cb = Arc::clone(&resampler);
+    let channels = config.channels as usize;
 
     let cpal_stream = device.build_output_stream(
         &config,
@@ -534,7 +514,7 @@ fn run_cpal(
                 .playback
                 .duration_since(&info.timestamp().callback)
                 .map_or(0, |d| d.as_micros() as i64)
-                + (num_frames as i64 * 1_000_000) / i64::from(device_rate);
+                + (num_frames as i64 * 1_000_000) / i64::from(format.rate());
 
             let server_now = {
                 let tp = time_provider.lock().unwrap_or_else(|e| e.into_inner());
@@ -544,13 +524,13 @@ fn run_cpal(
             let mut s = stream.lock().unwrap_or_else(|e| e.into_inner());
             let current_format = s.format();
 
-            // Format change detection
-            if current_format.rate() != format.rate()
-                || current_format.channels() != format.channels()
+            // Format change detection — output silence if stream format changed
+            if current_format.rate() > 0
+                && current_format.channels() > 0
+                && (current_format.rate() != format.rate()
+                    || current_format.channels() != format.channels())
             {
-                if current_format.rate() > 0 && current_format.channels() > 0 {
-                    format_changed_cb.store(true, Ordering::Relaxed);
-                }
+                format_changed.store(true, Ordering::Relaxed);
                 data.fill(0.0);
                 return;
             }
@@ -563,91 +543,48 @@ fn run_cpal(
                 return;
             }
 
-            let stream_channels = current_format.channels() as usize;
-            let stream_frames = if needs_resampling {
-                // Calculate input frames needed for the desired output frames
-                let ratio = f64::from(format.rate()) / f64::from(device_rate);
-                (num_frames as f64 * ratio).ceil() as usize
-            } else {
-                num_frames
-            };
-
-            let mut pcm_buf = vec![0u8; stream_frames * current_frame_size];
+            let mut pcm_buf = vec![0u8; num_frames * current_frame_size];
             s.get_player_chunk_or_silence(
                 server_now,
                 buffer_dac_usec,
                 &mut pcm_buf,
-                stream_frames as u32,
+                num_frames as u32,
             );
             drop(s);
 
-            // Decode PCM to f32
-            let decoded_len = stream_frames * stream_channels;
-            let mut decoded = vec![0.0f32; decoded_len];
             match current_sample_size {
                 2 => {
                     for (i, chunk) in pcm_buf.chunks_exact(2).enumerate() {
-                        if i < decoded_len {
-                            decoded[i] = f32::from(i16::from_le_bytes([chunk[0], chunk[1]]))
+                        if i < data.len() {
+                            data[i] = f32::from(i16::from_le_bytes([chunk[0], chunk[1]]))
                                 / f32::from(i16::MAX);
                         }
                     }
                 }
                 4 => {
                     for (i, chunk) in pcm_buf.chunks_exact(4).enumerate() {
-                        if i < decoded_len {
-                            decoded[i] =
-                                f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                        if i < data.len() {
+                            data[i] = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
                         }
                     }
                 }
-                _ => {}
+                _ => data.fill(0.0),
             }
 
-            // Apply EQ
+            // Apply EQ after PCM decode
             if let Ok(mut eq) = eq.try_lock() {
-                eq.process(&mut decoded);
+                eq.process(data);
             }
 
-            // Apply speaker correction
+            // Apply speaker correction after music EQ
             if let Ok(mut spk) = speaker_eq.try_lock() {
-                spk.process(&mut decoded);
+                spk.process(data);
             }
 
-            // Resample if needed
-            #[cfg(feature = "resampler")]
-            if let Ok(mut r) = resampler_cb.try_lock() {
-                if let Some(ref mut resampler) = *r {
-                    // Convert f32 interleaved to raw bytes for resampler
-                    let mut raw: Vec<u8> = Vec::with_capacity(decoded.len() * 2);
-                    for &s in &decoded {
-                        let i16_val = (s * f32::from(i16::MAX)) as i16;
-                        raw.extend_from_slice(&i16_val.to_le_bytes());
-                    }
-                    if resampler.process(&mut raw).is_ok() {
-                        // Convert back to f32
-                        decoded.clear();
-                        for chunk in raw.chunks_exact(2) {
-                            decoded.push(
-                                f32::from(i16::from_le_bytes([chunk[0], chunk[1]]))
-                                    / f32::from(i16::MAX),
-                            );
-                        }
-                    }
-                }
-            }
-
-            // Copy to output buffer
-            let copy_len = data.len().min(decoded.len());
-            data[..copy_len].copy_from_slice(&decoded[..copy_len]);
-            if copy_len < data.len() {
-                data[copy_len..].fill(0.0);
-            }
-
-            // Apply crossfade
+            // Apply crossfade (fade-out/fade-in on zone switch)
             fade.process(data, channels);
 
-            // Apply software volume
+            // Apply software volume (no-op for hardware/none mixer)
             let gain = mixer.software_gain();
             if gain < 1.0 {
                 for sample in data.iter_mut() {
@@ -660,23 +597,12 @@ fn run_cpal(
     )?;
 
     cpal_stream.play()?;
-    tracing::info!(
-        rate = device_rate,
-        channels = device_channels,
-        resampling = needs_resampling,
-        "Audio output stream started"
-    );
+    tracing::info!("Audio output stream started");
 
-    // Poll for format change — unpark when detected
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        if format_changed.load(Ordering::Relaxed) {
-            return Ok(FormatChanged);
-        }
-        if shutdown.load(Ordering::Relaxed) {
-            return anyhow::Ok(FormatChanged);
-        }
-    }
+    // Park indefinitely — the cpal callback sets format_changed,
+    // and the async side will spawn a new thread when it detects it.
+    std::thread::park();
+    Ok(())
 }
 
 /// Play a 440 Hz sine wave for 2 seconds to verify audio output, then exit.
