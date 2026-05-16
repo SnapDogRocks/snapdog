@@ -195,7 +195,7 @@ export default function Home() {
         <div className="px-4 py-4 border-b border-border flex items-center gap-2">
           <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
           <h1 className="text-base font-semibold">SnapDog</h1>
-          <div className="flex items-center gap-0.5 ml-auto">
+          <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
             <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
           </div>
         </div>
@@ -217,7 +217,7 @@ export default function Home() {
         <header className="flex md:hidden items-center gap-2 px-4 py-3 border-b border-border">
           <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
           <h1 className="text-base font-semibold">SnapDog</h1>
-          <div className="flex items-center gap-0.5 ml-auto">
+          <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
             <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
           </div>
         </header>
@@ -226,7 +226,7 @@ export default function Home() {
         <header className="hidden xl:flex items-center gap-2 px-6 py-3 border-b border-border">
           <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
           <h1 className="text-base font-semibold">SnapDog</h1>
-          <div className="flex items-center gap-0.5 ml-auto">
+          <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
             <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
           </div>
         </header>
