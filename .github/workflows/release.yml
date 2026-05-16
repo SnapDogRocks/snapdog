@@ -137,8 +137,13 @@ jobs:
         run: |
           tar xzf artifacts/snapdog-aarch64-apple-darwin/snapdog-*-aarch64-apple-darwin.tar.gz
           tar xzf artifacts/snapdog-x86_64-apple-darwin/snapdog-*-x86_64-apple-darwin.tar.gz
-          ARM_BIN=$(find . -path "*/aarch64-apple-darwin/snapdog" -not -name "*.tar.gz")
-          X86_BIN=$(find . -path "*/x86_64-apple-darwin/snapdog" -not -name "*.tar.gz")
+          ARM_BIN=$(find . -name "snapdog" -path "*aarch64-apple-darwin*" -not -name "*.tar.gz" | head -1)
+          X86_BIN=$(find . -name "snapdog" -path "*x86_64-apple-darwin*" -not -name "*.tar.gz" | head -1)
+          if [ -z "$ARM_BIN" ] || [ -z "$X86_BIN" ]; then
+            echo "::error::Could not find binaries: ARM='$ARM_BIN' X86='$X86_BIN'"
+            find . -name "snapdog" -type f
+            exit 1
+          fi
           lipo -create "$ARM_BIN" "$X86_BIN" -output snapdog-universal
           file snapdog-universal
       - name: Build Swift app
