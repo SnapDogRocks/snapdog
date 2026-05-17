@@ -290,6 +290,7 @@ async fn run(
     let mut source = ActiveSource::Idle;
     let mut remote_control: Option<std::sync::Arc<dyn crate::receiver::RemoteControl>> = None;
     let mut position_offset_ms: i64 = 0;
+    let mut last_buffer_progress = std::time::Instant::now();
     let mut zone_fade: Option<ZoneFade> = None;
     let mut resampler = audio::resample::F32Resampling::new(
         config.audio.sample_rate,
@@ -946,15 +947,19 @@ async fn run(
                     }
                     Some(audio::PcmMessage::BufferProgress { buffered_bytes, total_bytes }) => {
                         if let Some(total) = total_bytes {
-                            let duration = store.read().await.zones.get(&zone_index)
-                                .and_then(|z| z.track.as_ref().map(|t| t.duration_ms))
-                                .unwrap_or(0);
-                            let buffered_ms = if total > 0 {
-                                (buffered_bytes as f64 / total as f64 * duration as f64) as i64
-                            } else { 0 };
-                            update_and_notify(store, zone_index, notify, |z| {
-                                z.buffered_ms = Some(buffered_ms);
-                            }).await;
+                            let now = std::time::Instant::now();
+                            if now.duration_since(last_buffer_progress).as_millis() >= 1000 {
+                                last_buffer_progress = now;
+                                let duration = store.read().await.zones.get(&zone_index)
+                                    .and_then(|z| z.track.as_ref().map(|t| t.duration_ms))
+                                    .unwrap_or(0);
+                                let buffered_ms = if total > 0 {
+                                    (buffered_bytes as f64 / total as f64 * duration as f64) as i64
+                                } else { 0 };
+                                update_and_notify(store, zone_index, notify, |z| {
+                                    z.buffered_ms = Some(buffered_ms);
+                                }).await;
+                            }
                         }
                     }
                     None => {
