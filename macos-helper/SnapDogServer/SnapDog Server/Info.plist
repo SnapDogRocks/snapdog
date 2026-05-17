@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
-	<string>eu.schmieder.snapdog.server</string>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -17,16 +17,16 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Fabian Schmieder. All rights reserved.</string>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/metaneutrons/homebrew-tap/main/appcast.xml</string>
+	<string>https://updates.snapdog.cc/helper/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>UIAhw75KiR/srNxODDCPJSZyNtdRY3PEH1eVvyE8LKQ=</string>
+	<string>KIg907mzCZc4rIUC2zNxtu2HOxy1tDVSOOKrix2ZR9w=</string>
 </dict>
 </plist>

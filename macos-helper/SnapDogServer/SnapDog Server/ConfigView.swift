@@ -30,13 +30,13 @@ final class ConfigModel {
         var baseTopic = "snapdog"
     }
 
-    struct ZoneEntry: Identifiable {
+    struct ZoneEntry: Identifiable, Equatable {
         let id = UUID()
         var name = ""
         var icon = "🏠"
     }
 
-    struct ClientEntry: Identifiable {
+    struct ClientEntry: Identifiable, Equatable {
         let id = UUID()
         var name = ""
         var mac = ""
@@ -44,7 +44,7 @@ final class ConfigModel {
         var icon = "🔊"
     }
 
-    struct RadioEntry: Identifiable {
+    struct RadioEntry: Identifiable, Equatable {
         let id = UUID()
         var name = ""
         var url = ""
@@ -84,11 +84,12 @@ struct ConfigView: View {
         .onChange(of: config.mqtt) { _, _ in debounceSave() }
         .onChange(of: config.airplayPassword) { _, _ in debounceSave() }
         .onChange(of: config.codec) { _, _ in debounceSave() }
+        .onChange(of: config.encryptionPsk) { _, _ in debounceSave() }
         .onChange(of: config.sampleRate) { _, _ in debounceSave() }
         .onChange(of: config.bitDepth) { _, _ in debounceSave() }
-        .onChange(of: config.zones.count) { _, _ in debounceSave() }
-        .onChange(of: config.clients.count) { _, _ in debounceSave() }
-        .onChange(of: config.radios.count) { _, _ in debounceSave() }
+        .onChange(of: config.zones) { _, _ in debounceSave() }
+        .onChange(of: config.clients) { _, _ in debounceSave() }
+        .onChange(of: config.radios) { _, _ in debounceSave() }
     }
 
     // MARK: - Sources Tab

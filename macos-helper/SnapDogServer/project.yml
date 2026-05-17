@@ -28,9 +28,14 @@ targets:
         script: |
           HELPERS_DIR="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers"
           mkdir -p "$HELPERS_DIR"
-          cp "${SRCROOT}/../../target/release/snapdog" "$HELPERS_DIR/" 2>/dev/null || \
-          cp "${SRCROOT}/../../target/debug/snapdog" "$HELPERS_DIR/" || \
-          echo "warning: snapdog binary not found"
+          if [ -x "${SRCROOT}/../../target/release/snapdog" ]; then
+            cp "${SRCROOT}/../../target/release/snapdog" "$HELPERS_DIR/"
+          elif [ "$CONFIGURATION" != "Release" ] && [ -x "${SRCROOT}/../../target/debug/snapdog" ]; then
+            cp "${SRCROOT}/../../target/debug/snapdog" "$HELPERS_DIR/"
+          else
+            echo "error: snapdog binary not found. Build the Rust snapdog binary before packaging the helper app."
+            exit 1
+          fi
         basedOnDependencyAnalysis: false
     settings:
       base:
@@ -53,7 +58,7 @@ targets:
         LSUIElement: true
         CFBundleName: SnapDog Server
         CFBundleDisplayName: SnapDog Server
-        CFBundleIdentifier: eu.schmieder.snapdog.server
+        CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"
         NSHumanReadableCopyright: "Copyright © 2026 Fabian Schmieder. All rights reserved."
         SUFeedURL: "https://updates.snapdog.cc/helper/appcast.xml"
         SUPublicEDKey: "KIg907mzCZc4rIUC2zNxtu2HOxy1tDVSOOKrix2ZR9w="

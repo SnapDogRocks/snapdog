@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import os
+import TOMLKit
 
 @Observable
 @MainActor
@@ -36,8 +37,11 @@ final class ServerManager {
         guard !isRunning else { return }
         lastError = nil
         intentionalStop = false
-        guard let binary = binaryPath else {
+        ensureConfigExists()
+        guard let binary = binaryPath,
+              FileManager.default.isExecutableFile(atPath: binary.path) else {
             appendLog("[ERROR] snapdog binary not found in app bundle")
+            lastError = "snapdog binary not found in app bundle."
             return
         }
 
@@ -95,9 +99,7 @@ final class ServerManager {
     }
 
     func openWebUI() {
-        // Read port from config or default to 5555
-        let url = URL(string: "http://localhost:5555")!
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(configuredWebUIURL())
     }
 
     func openConfigInEditor() {
@@ -110,6 +112,7 @@ final class ServerManager {
         let defaultConfig = """
         [http]
         port = 5555
+        bind = "127.0.0.1"
         base_url = "http://localhost:5555"
 
         [audio]
@@ -126,6 +129,38 @@ final class ServerManager {
         unknown_clients = "accept"
         """
         try? defaultConfig.write(to: configPath, atomically: true, encoding: .utf8)
+    }
+
+    private func configuredWebUIURL() -> URL {
+        ensureConfigExists()
+        guard let content = try? String(contentsOf: configPath, encoding: .utf8),
+              let table = try? TOMLTable(string: content),
+              let http = table["http"] as? TOMLTable else {
+            return URL(string: "http://localhost:5555")!
+        }
+
+        if let baseURL = http["base_url"] as? String,
+           let url = URL(string: baseURL),
+           let scheme = url.scheme,
+           ["http", "https"].contains(scheme) {
+            return url
+        }
+
+        let port = tomlInt(http["port"]) ?? 5555
+        return URL(string: "http://localhost:\(port)")!
+    }
+
+    private func tomlInt(_ value: Any?) -> Int? {
+        switch value {
+        case let int as Int:
+            return int
+        case let int64 as Int64:
+            return Int(int64)
+        case let number as NSNumber:
+            return number.intValue
+        default:
+            return nil
+        }
     }
 
     private func scheduleRestart() {
