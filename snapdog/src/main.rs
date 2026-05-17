@@ -385,7 +385,7 @@ pub async fn run_app() -> Result<()> {
 
     // ── MQTT bridge ───────────────────────────────────────────
     let mut mqtt_bridge = if let Some(mqtt_config) = &config.mqtt {
-        match mqtt::MqttBridge::connect(mqtt_config).await {
+        match mqtt::MqttBridge::connect(mqtt_config, &config.http.base_url).await {
             Ok(bridge) => {
                 if let Err(e) = bridge.subscribe_commands().await {
                     tracing::warn!(error = %e, "MQTT subscribe failed");

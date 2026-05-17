@@ -161,7 +161,7 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 [http]
 port = 5555
 bind = "0.0.0.0"                       # :: for dual-stack IPv4+IPv6
-base_url = "http://192.168.1.10:5555"  # For absolute URLs in API responses
+base_url = "http://192.168.1.10:5555"  # Required for MQTT cover art URLs; REST API uses relative URLs
 
 [audio]
 sample_rate = 48000

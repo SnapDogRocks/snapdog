@@ -43,7 +43,6 @@ pub fn spawn_cover_fetch(
     zone_index: usize,
     notify: &NotifySender,
     url: String,
-    base_url: &str,
 ) {
     if let Some(h) = handle.take() {
         h.abort();
@@ -51,7 +50,6 @@ pub fn spawn_cover_fetch(
     let covers = covers.clone();
     let store = store.clone();
     let notify = notify.clone();
-    let base_url = base_url.trim_end_matches('/').to_owned();
     *handle = Some(tokio::spawn(async move {
         if let Some((bytes, mime)) = state::cover::fetch_cover(&url).await {
             let mut cache = covers.write().await;
@@ -59,7 +57,7 @@ pub fn spawn_cover_fetch(
             let hash = cache.get(zone_index).map(|e| e.hash.clone());
             drop(cache);
             if let Some(h) = hash {
-                let cover_url = format!("{base_url}/api/v1/zones/{zone_index}/cover?h={h}");
+                let cover_url = format!("/api/v1/zones/{zone_index}/cover?h={h}");
                 update_and_notify(&store, zone_index, &notify, |z| {
                     z.cover_url = Some(cover_url.clone());
                 })
@@ -85,7 +83,6 @@ pub async fn start_subsonic_track_decode(
             ctx.zone_index,
             ctx.notify,
             cover_url,
-            &ctx.config.http.base_url,
         );
     }
 
@@ -187,7 +184,6 @@ pub async fn start_radio_decode(
     let icy_covers = ctx.covers.clone();
     let zone_index = ctx.zone_index;
     let fallback_cover = radio.cover.clone();
-    let icy_base_url = ctx.config.http.base_url.clone();
     tokio::spawn(async move {
         let mut meta_cover_handle: Option<JoinHandle<()>> = None;
         while let Some(meta) = icy_rx.recv().await {
@@ -215,7 +211,6 @@ pub async fn start_radio_decode(
                     zone_index,
                     &icy_notify,
                     url,
-                    &icy_base_url,
                 );
             }
         }
@@ -228,7 +223,6 @@ pub async fn start_radio_decode(
         let store = ctx.store.clone();
         let notify = ctx.notify.clone();
         let zone_index = ctx.zone_index;
-        let base_url = ctx.config.http.base_url.trim_end_matches('/').to_owned();
         let cover_url = radio.cover.clone();
         let stream_url = radio.url.clone();
         *ds.current_cover = Some(tokio::spawn(async move {
@@ -241,7 +235,7 @@ pub async fn start_radio_decode(
                 let hash = cache.get(zone_index).map(|e| e.hash.clone());
                 drop(cache);
                 if let Some(h) = hash {
-                    let url = format!("{base_url}/api/v1/zones/{zone_index}/cover?h={h}");
+                    let url = format!("/api/v1/zones/{zone_index}/cover?h={h}");
                     update_and_notify(&store, zone_index, &notify, |z| {
                         z.cover_url = Some(url.clone());
                     })

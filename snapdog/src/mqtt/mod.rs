@@ -27,12 +27,13 @@ pub struct MqttBridge {
     client: AsyncClient,
     eventloop: rumqttc::EventLoop,
     base_topic: String,
+    base_url: String,
 }
 
 impl MqttBridge {
     /// Connect to MQTT broker.
     #[tracing::instrument(skip_all, fields(broker = %config.broker))]
-    pub async fn connect(config: &MqttConfig) -> Result<Self> {
+    pub async fn connect(config: &MqttConfig, base_url: &str) -> Result<Self> {
         let mut opts = MqttOptions::new(
             &config.client_id,
             parse_host(&config.broker),
@@ -58,6 +59,7 @@ impl MqttBridge {
             client,
             eventloop,
             base_topic: config.base_topic.trim_end_matches('/').to_string(),
+            base_url: base_url.trim_end_matches('/').to_string(),
         })
     }
 
@@ -70,6 +72,7 @@ impl MqttBridge {
             client,
             eventloop,
             base_topic: base_topic.to_string(),
+            base_url: "http://localhost:5555".to_string(),
         }
     }
 
@@ -225,7 +228,12 @@ impl MqttBridge {
         }
 
         if let Some(ref cover_url) = zone.cover_url {
-            payload["media_image_url"] = serde_json::json!(cover_url);
+            let absolute = if cover_url.starts_with('/') {
+                format!("{}{cover_url}", self.base_url)
+            } else {
+                cover_url.clone()
+            };
+            payload["media_image_url"] = serde_json::json!(absolute);
         }
 
         self.publish(&format!("zones/{index}/state"), &payload.to_string())
