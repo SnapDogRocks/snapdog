@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useAppStore } from "@/stores/useAppStore";
 
@@ -6,16 +5,7 @@ export function ConnectionStatus({ retryIn }: { retryIn: number }) {
   const t = useTranslations("connection");
   const isConnected = useAppStore((s) => s.isConnected);
   const serverGoingAway = useAppStore((s) => s.serverGoingAway);
-  const [countdown, setCountdown] = useState(retryIn);
-
-  useEffect(() => {
-    setCountdown(retryIn);
-    if (retryIn <= 0) return;
-    const interval = setInterval(() => {
-      setCountdown((c) => Math.max(0, c - 1));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [retryIn]);
+  const countdown = Math.max(0, retryIn);
 
   if (isConnected) return null;
 

@@ -4,13 +4,14 @@ const STORAGE_KEY = "snapdog_api_key";
 
 export function getApiKey(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(STORAGE_KEY);
+  return sessionStorage.getItem(STORAGE_KEY);
 }
 
 export function setApiKey(key: string) {
-  localStorage.setItem(STORAGE_KEY, key);
+  sessionStorage.setItem(STORAGE_KEY, key);
 }
 
 export function clearApiKey() {
+  sessionStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(STORAGE_KEY);
 }

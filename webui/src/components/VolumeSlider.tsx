@@ -66,7 +66,7 @@ export function VolumeSlider({
       commit(value[0]);
       onVolumeChange(value[0]);
     },
-    [onVolumeChange],
+    [commit, onVolumeChange],
   );
 
   const iconSize = compact ? 14 : 18;

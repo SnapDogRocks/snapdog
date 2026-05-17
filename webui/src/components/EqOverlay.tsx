@@ -51,6 +51,10 @@ const DEFAULT_BAND: EqBand = { freq: 1000, gain: 0, q: 1.0, type: "peaking" };
 
 type Tab = "eq" | "speaker";
 
+function limitEqBands(bands: EqBand[]): EqBand[] {
+  return bands.slice(0, MAX_EQ_BANDS);
+}
+
 export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) {
   const t = useTranslations("eq");
   const trapRef = useFocusTrap<HTMLDivElement>();
@@ -205,11 +209,12 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
                   selectedBand={selectedBand}
                   onSelectBand={setSelectedBand}
                   onBandChange={(idx, patch) => updateBand(idx, patch)}
-                  onRemoveBand={(idx) => removeBand(idx)}
-                  onAddBand={(freq, gain) => {
-                    const bands = [...config.bands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
-                    update({ bands });
-                    setSelectedBand(bands.length - 1);
+	                  onRemoveBand={(idx) => removeBand(idx)}
+	                  onAddBand={(freq, gain) => {
+	                    if (config.bands.length >= MAX_EQ_BANDS) return;
+	                    const bands = [...config.bands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
+	                    update({ bands });
+	                    setSelectedBand(bands.length - 1);
                   }}
                 />
                 <div className="flex gap-1.5 overflow-x-auto scrollbar-none py-1 -mx-1 px-1" role="radiogroup" aria-label={t("presets")}>
@@ -264,7 +269,6 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
 // ── Speaker Tab ───────────────────────────────────────────────
 
 function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; mode: "off" | "spinorama" | "custom"; setMode: (v: "off" | "spinorama" | "custom") => void; abBypass: boolean }) {
-  const t = useTranslations("eq");
   const [search, setSearch] = useState("");
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [currentConfig, setCurrentConfig] = useState<EqConfig | null>(null);
@@ -272,6 +276,7 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
   const [loading, setLoading] = useState(true);
   const [customBands, setCustomBands] = useState<EqBand[]>([]);
   const [customSelected, setCustomSelected] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState(MAX_SPEAKER_RESULTS);
   const abBypassRef = useRef(false);
   const appliedNameRef = useRef<string | null>(null);
 
@@ -289,20 +294,19 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
     Promise.all([
       api.speakers.list(),
       api.speakers.get(clientId),
-    ]).then(([list, config]) => {
-      setSpeakers(list);
-      setCurrentConfig(config);
+	    ]).then(([list, config]) => {
+	      setSpeakers(list);
+	      setCurrentConfig(config);
       const name = config.preset?.startsWith("spinorama:") ? config.preset.slice("spinorama:".length) : null;
       setAppliedName(name);
+      setCustomBands(name ? [] : limitEqBands(config.bands));
+      setVisibleCount(MAX_SPEAKER_RESULTS);
       if (config.enabled || name != null) setMode(name ? "spinorama" : "custom");
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [clientId]);
-
-  const [visibleCount, setVisibleCount] = useState(MAX_SPEAKER_RESULTS);
+  }, [clientId, setMode]);
 
   const filtered = useMemo(() => {
-    setVisibleCount(MAX_SPEAKER_RESULTS); // reset on search change
     if (!search) return speakers;
     const q = search.toLowerCase();
     return speakers.filter((s) => s.toLowerCase().includes(q));
@@ -331,23 +335,27 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
     }).catch(logApiError);
   };
 
-  const pushCustom = (bands: EqBand[]) => {
-    const eq: EqConfig = { enabled: bands.length > 0, bands, preset: null };
+  const pushCustom = useCallback((bands: EqBand[]) => {
+    const limitedBands = limitEqBands(bands);
+    const eq: EqConfig = { enabled: limitedBands.length > 0, bands: limitedBands, preset: null };
     setCurrentConfig(eq);
     api.speakers.applyCustom(clientId, eq).catch(logApiError);
-  };
+  }, [clientId]);
 
-  const toggleEnabled = (on: boolean) => {
-    if (!on && appliedName) {
+  const toggleEnabled = useCallback((on: boolean) => {
+    if (!on) {
       api.speakers.apply(clientId, null).then((config) => {
         setCurrentConfig(config);
+        setAppliedName(null);
       }).catch(logApiError);
     } else if (on && appliedName) {
       api.speakers.apply(clientId, appliedName).then((config) => {
         setCurrentConfig(config);
       }).catch(logApiError);
+    } else if (customBands.length > 0) {
+      pushCustom(customBands);
     }
-  };
+  }, [appliedName, clientId, customBands, pushCustom]);
 
   // Sync parent mode with server
   const prevMode = useRef(mode);
@@ -355,7 +363,7 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
     if (prevMode.current === mode) return;
     prevMode.current = mode;
     toggleEnabled(mode !== "off");
-  }, [mode]);
+  }, [mode, toggleEnabled]);
 
   // React to A/B bypass changes from parent
   const prevAbBypass = useRef(abBypass);
@@ -397,12 +405,13 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
               setCustomBands(next);
               setCustomSelected(null);
               pushCustom(next);
-            }}
-            onAddBand={(freq, gain) => {
-              const next = [...customBands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
-              setCustomBands(next);
-              setCustomSelected(next.length - 1);
-              pushCustom(next);
+	            }}
+	            onAddBand={(freq, gain) => {
+	              if (customBands.length >= MAX_EQ_BANDS) return;
+	              const next = [...customBands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
+	              setCustomBands(next);
+	              setCustomSelected(next.length - 1);
+	              pushCustom(next);
             }}
           />
           {customSelected !== null && customSelected < customBands.length && (
@@ -440,7 +449,10 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
       <input
         type="text"
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setVisibleCount(MAX_SPEAKER_RESULTS);
+        }}
         placeholder="Search speakers…"
         className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         aria-label="Search speakers"

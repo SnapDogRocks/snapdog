@@ -32,18 +32,16 @@ export function LocalePicker() {
   const [focusIdx, setFocusIdx] = useState(-1);
 
   const close = useCallback(() => { setOpen(false); setFocusIdx(-1); }, []);
+  const openMenu = useCallback(() => {
+    const idx = locales.indexOf(locale);
+    setFocusIdx(idx >= 0 ? idx : 0);
+    setOpen(true);
+  }, [locale]);
 
   const select = useCallback((l: Locale) => {
     setLocale(l);
     close();
   }, [setLocale, close]);
-
-  // Focus active item on open
-  useEffect(() => {
-    if (!open) return;
-    const idx = locales.indexOf(locale);
-    setFocusIdx(idx >= 0 ? idx : 0);
-  }, [open, locale]);
 
   // Focus the active button when focusIdx changes
   useEffect(() => {
@@ -84,7 +82,7 @@ export function LocalePicker() {
   return (
     <div className="relative" ref={containerRef}>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => { if (open) { close(); } else { openMenu(); } }}
         className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
         aria-label={t("language")}
         aria-expanded={open}

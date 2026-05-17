@@ -15,9 +15,13 @@ export function useWebSocket(onNotification: (n: WsNotification) => void, onReco
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onNotifRef = useRef(onNotification);
   const onReconnectRef = useRef(onReconnect);
-  onNotifRef.current = onNotification;
-  onReconnectRef.current = onReconnect;
+  const connectRef = useRef<() => void>(() => {});
   const wasConnectedRef = useRef(false);
+
+  useEffect(() => {
+    onNotifRef.current = onNotification;
+    onReconnectRef.current = onReconnect;
+  }, [onNotification, onReconnect]);
 
   const connect = useCallback(() => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -55,11 +59,15 @@ export function useWebSocket(onNotification: (n: WsNotification) => void, onReco
       const delay = BACKOFF_STEPS[Math.min(attemptRef.current, BACKOFF_STEPS.length - 1)];
       attemptRef.current++;
       setRetryIn(Math.ceil(delay / 1000));
-      timerRef.current = setTimeout(connect, delay);
+      timerRef.current = setTimeout(() => connectRef.current(), delay);
     };
 
     ws.onerror = () => ws.close();
   }, []);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

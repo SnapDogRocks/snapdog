@@ -175,7 +175,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ zones });
   },
 
-  updateZoneEq: (id, enabled, bands, preset) => {
+  updateZoneEq: (id) => {
     // Note: The actual EQ values are currently only used by EqOverlay which fetches them on open.
     // However, we might want to store 'enabled' status here to show indicators in the UI.
     const zones = new Map(get().zones);

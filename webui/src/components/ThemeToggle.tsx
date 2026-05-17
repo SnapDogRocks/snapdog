@@ -7,21 +7,20 @@ import { Sun01Icon, Moon01Icon } from "@hugeicons/core-free-icons";
 type Theme = "system" | "light" | "dark";
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("system");
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "system";
+    const stored = localStorage.getItem("theme") as Theme | null;
+    return stored ?? "system";
+  });
 
   useEffect(() => {
-    const stored = localStorage.getItem("theme") as Theme | null;
-    if (stored) {
-      setTheme(stored);
-      applyTheme(stored);
-    }
-  }, []);
+    applyTheme(theme);
+  }, [theme]);
 
   const cycle = () => {
     const next: Theme = theme === "system" ? "light" : theme === "light" ? "dark" : "system";
     setTheme(next);
     localStorage.setItem("theme", next);
-    applyTheme(next);
   };
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";

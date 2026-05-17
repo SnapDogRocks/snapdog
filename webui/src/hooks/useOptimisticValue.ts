@@ -19,6 +19,7 @@ export function useOptimisticValue(
   { tolerance = 1, timeoutMs = 2000 } = {},
 ) {
   const [localValue, setLocalValue] = useState(serverValue);
+  const [pending, setPending] = useState(false);
   const committedRef = useRef<number | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -29,6 +30,7 @@ export function useOptimisticValue(
     } else if (Math.abs(serverValue - committedRef.current) <= tolerance) {
       // Server confirmed
       committedRef.current = null;
+      setPending(false);
       setLocalValue(serverValue);
     }
   }, [serverValue, tolerance]);
@@ -46,17 +48,16 @@ export function useOptimisticValue(
     (value: number) => {
       setLocalValue(value);
       committedRef.current = value;
+      setPending(true);
       // Safety fallback: release after timeout
       clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
         committedRef.current = null;
+        setPending(false);
       }, timeoutMs);
     },
     [timeoutMs],
   );
-
-  /** Whether we're waiting for server confirmation. */
-  const pending = committedRef.current !== null;
 
   return { value: localValue, setOptimistic, commit, pending };
 }

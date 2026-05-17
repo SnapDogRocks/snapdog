@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { locales, defaultLocale, type Locale } from "./config";
 
 const STORAGE_KEY = "snapdog-locale";
@@ -13,9 +13,7 @@ function detect(): Locale {
 }
 
 export function useLocaleState() {
-  const [locale, setLocaleState] = useState<Locale>(defaultLocale);
-
-  useEffect(() => { setLocaleState(detect()); }, []);
+  const [locale, setLocaleState] = useState<Locale>(() => detect());
 
   const setLocale = useCallback((l: Locale) => {
     localStorage.setItem(STORAGE_KEY, l);
