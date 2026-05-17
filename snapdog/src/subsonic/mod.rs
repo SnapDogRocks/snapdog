@@ -6,8 +6,6 @@
 //! Playlists, track streaming URLs, cover art.
 //! Uses token-based auth (md5(password+salt)) for security.
 
-use std::fmt::Write;
-
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
@@ -20,6 +18,7 @@ const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 const API_VERSION: &str = "1.16.1";
 const CLIENT_NAME: &str = "snapdog";
+const MAX_COVER_ART_BYTES: u64 = 10 * 1024 * 1024;
 
 /// Subsonic API client.
 pub struct SubsonicClient {
@@ -90,49 +89,32 @@ impl SubsonicClient {
 
     /// Get the streaming URL with a time offset in seconds.
     pub fn stream_url_with_offset(&self, track_id: &str, offset_secs: u64) -> String {
-        let (token, salt) = self.auth_token();
-        let mut url = format!(
-            "{}/rest/stream?id={}&u={}&t={}&s={}&v={}&c={}&f=json&format={}",
-            self.base_url,
-            track_id,
-            self.username,
-            token,
-            salt,
-            API_VERSION,
-            CLIENT_NAME,
-            self.format.as_str()
-        );
+        let mut url = self.rest_url("stream");
+        self.add_auth_query(&mut url);
+        url.query_pairs_mut()
+            .append_pair("id", track_id)
+            .append_pair("f", "json")
+            .append_pair("format", self.format.as_str());
         if offset_secs > 0 {
-            write!(url, "&timeOffset={offset_secs}").unwrap();
+            url.query_pairs_mut()
+                .append_pair("timeOffset", &offset_secs.to_string());
         }
-        url
+        url.into()
     }
 
     /// Get cover art URL for fetching (authenticated).
     pub fn cover_art_fetch_url(&self, cover_id: &str) -> String {
-        let (token, salt) = self.auth_token();
-        format!(
-            "{}/rest/getCoverArt?id={}&u={}&t={}&s={}&v={}&c={}",
-            self.base_url, cover_id, self.username, token, salt, API_VERSION, CLIENT_NAME
-        )
+        let mut url = self.rest_url("getCoverArt");
+        self.add_auth_query(&mut url);
+        url.query_pairs_mut().append_pair("id", cover_id);
+        url.into()
     }
 
     /// Get cover art bytes.
     pub async fn get_cover_art(&self, cover_id: &str) -> Result<Vec<u8>> {
-        let (token, salt) = self.auth_token();
-        let url = format!(
-            "{}/rest/getCoverArt?id={}&u={}&t={}&s={}&v={}&c={}",
-            self.base_url, cover_id, self.username, token, salt, API_VERSION, CLIENT_NAME
-        );
-        let bytes = self
-            .http
-            .get(&url)
-            .send()
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?;
-        Ok(bytes.to_vec())
+        let url = self.cover_art_fetch_url(cover_id);
+        let resp = self.http.get(&url).send().await?.error_for_status()?;
+        read_response_bytes_limited(resp, MAX_COVER_ART_BYTES, "Subsonic cover art").await
     }
 
     /// Make an authenticated GET request to the Subsonic API.
@@ -141,21 +123,19 @@ impl SubsonicClient {
         method: &str,
         params: &[(&str, &str)],
     ) -> Result<T> {
-        let (token, salt) = self.auth_token();
-        let mut url = format!("{}/rest/{}", self.base_url, method);
-        write!(
-            url,
-            "?u={}&t={}&s={}&v={}&c={}&f=json",
-            self.username, token, salt, API_VERSION, CLIENT_NAME
-        )
-        .unwrap();
-        for (k, v) in params {
-            write!(url, "&{k}={v}").unwrap();
+        let mut url = self.rest_url(method);
+        self.add_auth_query(&mut url);
+        url.query_pairs_mut().append_pair("f", "json");
+        {
+            let mut query = url.query_pairs_mut();
+            for (k, v) in params {
+                query.append_pair(k, v);
+            }
         }
 
         let resp = self
             .http
-            .get(&url)
+            .get(url.clone())
             .send()
             .await
             .with_context(|| format!("GET {method}"))?;
@@ -166,12 +146,56 @@ impl SubsonicClient {
             .with_context(|| format!("Parse {method} response"))
     }
 
+    fn rest_url(&self, method: &str) -> url::Url {
+        let base = format!("{}/", self.base_url);
+        let mut url = url::Url::parse(&base).expect("validated Subsonic base URL");
+        url.path_segments_mut()
+            .expect("Subsonic base URL cannot be a base")
+            .extend(["rest", method]);
+        url
+    }
+
+    fn add_auth_query(&self, url: &mut url::Url) {
+        let (token, salt) = self.auth_token();
+        url.query_pairs_mut()
+            .append_pair("u", &self.username)
+            .append_pair("t", &token)
+            .append_pair("s", &salt)
+            .append_pair("v", API_VERSION)
+            .append_pair("c", CLIENT_NAME);
+    }
+
     /// Generate auth token: token = md5(password + salt), returns (token, salt).
     fn auth_token(&self) -> (String, String) {
         let salt: String = (0..8).map(|_| fastrand::alphanumeric()).collect();
         let token = format!("{:x}", md5::compute(format!("{}{salt}", self.password)));
         (token, salt)
     }
+}
+
+async fn read_response_bytes_limited(
+    response: reqwest::Response,
+    limit: u64,
+    label: &str,
+) -> Result<Vec<u8>> {
+    if let Some(len) = response.content_length() {
+        if len > limit {
+            anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
+        }
+    }
+
+    use futures_util::StreamExt;
+    let mut stream = response.bytes_stream();
+    let mut body = bytes::BytesMut::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.with_context(|| format!("Failed to read {label} body"))?;
+        let next_len = body.len() as u64 + chunk.len() as u64;
+        if next_len > limit {
+            anyhow::bail!("{label} body exceeded {limit} bytes");
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.to_vec())
 }
 
 // ── Subsonic API response types ───────────────────────────────

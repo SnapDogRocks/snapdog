@@ -9,6 +9,9 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
+const MAX_COVER_ART_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_FAVICON_HTML_BYTES: u64 = 1024 * 1024;
+
 /// Thread-safe cover cache handle.
 pub type SharedCoverCache = Arc<RwLock<CoverCache>>;
 
@@ -135,7 +138,16 @@ pub async fn fetch_cover(url: &str) -> Option<(Vec<u8>, String)> {
             .unwrap_or("application/octet-stream")
             .to_string();
         let bytes = percent_decode_bytes(data);
+        if bytes.len() as u64 > MAX_COVER_ART_BYTES {
+            tracing::debug!(url, size = bytes.len(), "Data URI cover art too large");
+            return None;
+        }
         return Some((bytes, mime));
+    }
+
+    if !is_http_url(url) {
+        tracing::debug!(url, "Ignoring non-HTTP cover art URL");
+        return None;
     }
 
     let client = reqwest::Client::builder()
@@ -160,12 +172,7 @@ pub async fn fetch_cover(url: &str) -> Option<(Vec<u8>, String)> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/octet-stream")
         .to_string();
-    let bytes = resp
-        .bytes()
-        .await
-        .inspect_err(|e| tracing::debug!(error = %e, url, "Failed to read cover art bytes"))
-        .ok()?
-        .to_vec();
+    let bytes = response_bytes_limited(resp, MAX_COVER_ART_BYTES, url, "cover art").await?;
     Some((bytes, mime))
 }
 
@@ -203,6 +210,9 @@ pub async fn fetch_cover_with_favicon_fallback(
 
 /// Fetch the best (largest) favicon from a website.
 async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {
+    if !is_http_url(base_url) {
+        return None;
+    }
     let client = reqwest::Client::builder()
         .user_agent(crate::USER_AGENT)
         .timeout(std::time::Duration::from_secs(10))
@@ -210,16 +220,16 @@ async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {
         .build()
         .ok()?;
 
-    let html = client
+    let resp = client
         .get(base_url)
         .send()
         .await
         .ok()?
         .error_for_status()
-        .ok()?
-        .text()
-        .await
         .ok()?;
+    let html_bytes =
+        response_bytes_limited(resp, MAX_FAVICON_HTML_BYTES, base_url, "favicon HTML").await?;
+    let html = String::from_utf8(html_bytes).ok()?;
     let icon_url =
         parse_best_icon_url(&html, base_url).unwrap_or_else(|| format!("{base_url}/favicon.ico"));
 
@@ -236,7 +246,7 @@ async fn fetch_best_favicon(base_url: &str) -> Option<(Vec<u8>, String)> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("image/x-icon")
         .to_string();
-    let bytes = resp.bytes().await.ok()?.to_vec();
+    let bytes = response_bytes_limited(resp, MAX_COVER_ART_BYTES, &icon_url, "favicon").await?;
 
     // Skip tiny responses (tracking pixels, empty files)
     if bytes.len() < 100 {
@@ -313,6 +323,41 @@ fn extract_attr(tag: &str, attr: &str) -> Option<String> {
         return rest.split_whitespace().next().map(String::from);
     };
     rest.split(quote).next().map(String::from)
+}
+
+fn is_http_url(value: &str) -> bool {
+    url::Url::parse(value)
+        .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host().is_some())
+}
+
+async fn response_bytes_limited(
+    response: reqwest::Response,
+    limit: u64,
+    url: &str,
+    label: &str,
+) -> Option<Vec<u8>> {
+    if let Some(len) = response.content_length() {
+        if len > limit {
+            tracing::debug!(url, label, len, limit, "Remote body too large");
+            return None;
+        }
+    }
+
+    use futures_util::StreamExt;
+    let mut stream = response.bytes_stream();
+    let mut body = bytes::BytesMut::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk
+            .inspect_err(|e| tracing::debug!(error = %e, url, label, "Failed to read remote body"))
+            .ok()?;
+        let next_len = body.len() as u64 + chunk.len() as u64;
+        if next_len > limit {
+            tracing::debug!(url, label, next_len, limit, "Remote body exceeded limit");
+            return None;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Some(body.to_vec())
 }
 
 /// Convert ICO to PNG using the `image` crate.

@@ -14,19 +14,27 @@ pub async fn require_api_key(request: Request, next: Next) -> Response {
         return next.run(request).await;
     };
 
-    let token = request
+    let header_token = request
         .headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .or_else(|| {
-            request
-                .uri()
-                .query()
-                .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("token=")))
-        });
+        .and_then(|v| v.strip_prefix("Bearer "));
 
-    if token.is_some_and(|t| keys.0.iter().any(|k| k == t)) {
+    let query_token = if request.uri().path() == "/ws" {
+        request.uri().query().and_then(|q| {
+            url::form_urlencoded::parse(q.as_bytes())
+                .find_map(|(key, value)| (key == "token").then(|| value.into_owned()))
+        })
+    } else {
+        None
+    };
+
+    let authorized = header_token.is_some_and(|t| keys.0.iter().any(|k| k == t))
+        || query_token
+            .as_deref()
+            .is_some_and(|t| keys.0.iter().any(|k| k == t));
+
+    if authorized {
         next.run(request).await
     } else {
         (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response()

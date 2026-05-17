@@ -81,6 +81,12 @@ const MAX_HLS_FAILURES: u32 = 5;
 const HLS_DEFAULT_TARGET_DURATION: u64 = 6;
 /// Number of trailing segments to keep when joining a live HLS stream.
 const HLS_LIVE_EDGE_SEGMENTS: usize = 3;
+/// Maximum response body buffered for seek-only containers such as MP4/M4A.
+const MAX_SEEKABLE_AUDIO_BYTES: u64 = 512 * 1024 * 1024;
+/// Maximum playlist body size accepted from remote URLs.
+const MAX_PLAYLIST_BYTES: u64 = 1024 * 1024;
+/// Maximum single HLS segment size.
+const MAX_HLS_SEGMENT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Build a reqwest client with User-Agent and timeout.
 fn http_client() -> Result<reqwest::Client> {
@@ -115,6 +121,40 @@ where
     }
 }
 
+async fn read_response_bytes_limited(
+    response: reqwest::Response,
+    limit: u64,
+    label: &str,
+) -> Result<bytes::Bytes> {
+    if let Some(len) = response.content_length() {
+        if len > limit {
+            anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
+        }
+    }
+
+    use futures_util::StreamExt;
+    let mut stream = response.bytes_stream();
+    let mut body = bytes::BytesMut::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.with_context(|| format!("Failed to read {label} body"))?;
+        let next_len = body.len() as u64 + chunk.len() as u64;
+        if next_len > limit {
+            anyhow::bail!("{label} body exceeded {limit} bytes");
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.freeze())
+}
+
+async fn read_response_text_limited(
+    response: reqwest::Response,
+    limit: u64,
+    label: &str,
+) -> Result<String> {
+    let bytes = read_response_bytes_limited(response, limit, label).await?;
+    String::from_utf8(bytes.to_vec()).with_context(|| format!("{label} body is not UTF-8"))
+}
+
 /// Returns an optional ICY metadata receiver for live title updates.
 #[tracing::instrument(skip(tx, audio_config, icy_meta_tx))]
 pub async fn decode_http_stream(
@@ -123,10 +163,14 @@ pub async fn decode_http_stream(
     audio_config: AudioConfig,
     icy_meta_tx: Option<tokio::sync::mpsc::Sender<icy::IcyMetadata>>,
 ) -> Result<()> {
+    validate_http_url(&url)?;
     // Resolve playlist URLs (.m3u/.m3u8/.pls) to the actual stream URL
     let resolved = resolve_playlist_url(&url).await;
     let url = match resolved {
-        Some(ResolvedUrl::Direct(u)) => u,
+        Some(ResolvedUrl::Direct(u)) => {
+            validate_http_url(&u)?;
+            u
+        }
         Some(ResolvedUrl::HlsMedia(playlist_url)) => {
             return decode_hls_stream(playlist_url, tx, audio_config, icy_meta_tx).await;
         }
@@ -164,10 +208,8 @@ pub async fn decode_http_stream(
     // MP4/M4A containers need seeking — buffer entire response first
     let needs_seek = content_type.contains("mp4") || content_type.contains("m4a");
     if needs_seek {
-        let bytes = response
-            .bytes()
-            .await
-            .context("Failed to read MP4 stream body")?;
+        let bytes =
+            read_response_bytes_limited(response, MAX_SEEKABLE_AUDIO_BYTES, "MP4 stream").await?;
         tracing::debug!(
             size = bytes.len(),
             "Buffered MP4 stream for seekable decode"
@@ -240,6 +282,7 @@ pub async fn decode_http_stream_cached(
     cache: &cache::TrackCache,
     track_id: &str,
 ) -> Result<()> {
+    validate_http_url(&url)?;
     let client = icy::icy_client();
     let response = client
         .get(&url)
@@ -267,10 +310,9 @@ pub async fn decode_http_stream_cached(
     // MP4/M4A: buffer entirely, write to cache, then decode
     let needs_seek = content_type.contains("mp4") || content_type.contains("m4a");
     if needs_seek {
-        let bytes = response
-            .bytes()
-            .await
-            .context("Failed to read stream body")?;
+        let bytes =
+            read_response_bytes_limited(response, MAX_SEEKABLE_AUDIO_BYTES, "cached stream")
+                .await?;
         cache_writer.write(&bytes)?;
         let _ = tx
             .send(PcmMessage::BufferProgress {
@@ -360,6 +402,7 @@ async fn decode_hls_stream(
     _audio_config: AudioConfig,
     icy_meta_tx: Option<tokio::sync::mpsc::Sender<icy::IcyMetadata>>,
 ) -> Result<()> {
+    validate_http_url(&playlist_url)?;
     let client = http_client()?;
     let base_url = url::Url::parse(&playlist_url).context("Failed to parse HLS playlist URL")?;
     let content_type = "audio/aac".to_string();
@@ -382,7 +425,7 @@ async fn decode_hls_stream(
                     let u = u.clone();
                     async move {
                         let resp = c.get(&u).send().await?.error_for_status()?;
-                        Ok(resp.text().await?)
+                        read_response_text_limited(resp, MAX_PLAYLIST_BYTES, "HLS playlist").await
                     }
                 })
                 .await
@@ -437,6 +480,10 @@ async fn decode_hls_stream(
                 if !first_fetch && seen.contains(seg_url) {
                     continue;
                 }
+                if !is_http_url(seg_url) {
+                    tracing::warn!(segment = %seg_url, "Skipping non-HTTP HLS segment URL");
+                    continue;
+                }
                 seen.insert(seg_url.clone());
 
                 // Send metadata update if we have a title
@@ -453,7 +500,11 @@ async fn decode_hls_stream(
                 match with_retry("HLS segment", || {
                     let c = c.clone();
                     let u = u.clone();
-                    async move { Ok(c.get(&u).send().await?.error_for_status()?.bytes().await?) }
+                    async move {
+                        let resp = c.get(&u).send().await?.error_for_status()?;
+                        read_response_bytes_limited(resp, MAX_HLS_SEGMENT_BYTES, "HLS segment")
+                            .await
+                    }
                 })
                 .await
                 {
@@ -732,6 +783,10 @@ const MAX_PLAYLIST_DEPTH: u8 = 3;
 
 #[allow(clippy::case_sensitive_file_extension_comparisons)] // URLs are already lowercased
 async fn resolve_playlist_recursive(url: &str, depth: u8) -> Option<ResolvedUrl> {
+    if !is_http_url(url) {
+        tracing::warn!(url, "Rejecting non-HTTP playlist URL");
+        return None;
+    }
     if depth == 0 {
         tracing::warn!(url, "Nested playlist resolution exceeded max depth");
         return None;
@@ -777,7 +832,9 @@ async fn resolve_playlist_recursive(url: &str, depth: u8) -> Option<ResolvedUrl>
         || final_lower.ends_with(".pls");
 
     tracing::debug!(url, final_url, content_type, "Resolving playlist");
-    let body = response.text().await.ok()?;
+    let body = read_response_text_limited(response, MAX_PLAYLIST_BYTES, "playlist")
+        .await
+        .ok()?;
 
     // Parse the final URL for resolving relative paths
     let base_url = url::Url::parse(&final_url).ok()?;
@@ -837,6 +894,18 @@ fn resolve_relative(base: &url::Url, target: &str) -> String {
         base.join(target)
             .map_or_else(|_| target.to_string(), |u| u.to_string())
     }
+}
+
+fn validate_http_url(url: &str) -> Result<()> {
+    if is_http_url(url) {
+        Ok(())
+    } else {
+        anyhow::bail!("Only http and https URLs are supported");
+    }
+}
+
+fn is_http_url(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.host().is_some())
 }
 
 /// Extract the highest bitrate variant URL from an HLS master playlist.

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::config::SubsonicCacheConfig;
@@ -64,6 +64,13 @@ pub struct CacheWriter {
 impl CacheWriter {
     /// Append bytes to the partial file.
     pub fn write(&mut self, data: &[u8]) -> Result<()> {
+        let next_size = self.bytes_written + data.len() as u64;
+        if next_size > self.cache.max_bytes() {
+            bail!(
+                "Cache entry exceeds configured maximum size of {} bytes",
+                self.cache.max_bytes()
+            );
+        }
         if let Some(ref mut file) = self.file {
             file.write_all(data)
                 .context("Failed to write to cache file")?;
@@ -146,6 +153,7 @@ impl TrackCache {
     /// Look up a track. Updates LRU timestamp on hit.
     pub fn get(&self, track_id: &str) -> CacheEntry {
         let mut idx = self.index.lock().unwrap_or_else(|e| e.into_inner());
+        let filename_stem = filename_stem_for_track_id(track_id);
 
         // Check for complete file
         if let Some(pos) = idx.entries.iter().position(|e| e.track_id == track_id) {
@@ -161,7 +169,7 @@ impl TrackCache {
         }
 
         // Check for partial file
-        let partial = Path::new(&self.config.path).join(format!("{track_id}.{PARTIAL_EXT}"));
+        let partial = Path::new(&self.config.path).join(format!("{filename_stem}.{PARTIAL_EXT}"));
         if partial.exists() {
             let bytes_written = partial.metadata().map_or(0, |m| m.len());
             return CacheEntry::Partial {
@@ -182,9 +190,19 @@ impl TrackCache {
         content_type: &str,
         total_bytes: Option<u64>,
     ) -> Result<CacheWriter> {
+        if let Some(total_bytes) = total_bytes {
+            if total_bytes > self.max_bytes() {
+                bail!(
+                    "Cache entry Content-Length {total_bytes} exceeds configured maximum size of {} bytes",
+                    self.max_bytes()
+                );
+            }
+        }
         let ext = ext_for_content_type(content_type);
-        let final_path = Path::new(&self.config.path).join(format!("{track_id}.{ext}"));
-        let partial_path = Path::new(&self.config.path).join(format!("{track_id}.{PARTIAL_EXT}"));
+        let filename_stem = filename_stem_for_track_id(track_id);
+        let final_path = Path::new(&self.config.path).join(format!("{filename_stem}.{ext}"));
+        let partial_path =
+            Path::new(&self.config.path).join(format!("{filename_stem}.{PARTIAL_EXT}"));
 
         // Remove any existing partial
         let _ = fs::remove_file(&partial_path);
@@ -224,7 +242,7 @@ impl TrackCache {
 
     /// Evict oldest entries until total size ≤ max_size_mb.
     pub fn evict_lru(&self) {
-        let max_bytes = self.config.max_size_mb * 1024 * 1024;
+        let max_bytes = self.max_bytes();
         let mut idx = self.index.lock().unwrap_or_else(|e| e.into_inner());
 
         let total: u64 = idx.entries.iter().map(|e| e.size_bytes).sum();
@@ -253,7 +271,7 @@ impl TrackCache {
 
     fn mark_complete(&self, track_id: &str, content_type: &str, size_bytes: u64) {
         let ext = ext_for_content_type(content_type);
-        let filename = format!("{track_id}.{ext}");
+        let filename = format!("{}.{ext}", filename_stem_for_track_id(track_id));
         let mut idx = self.index.lock().unwrap_or_else(|e| e.into_inner());
 
         // Remove any existing entry for this track
@@ -279,6 +297,10 @@ impl TrackCache {
         if let Ok(data) = serde_json::to_string_pretty(idx) {
             let _ = fs::write(path, data);
         }
+    }
+
+    const fn max_bytes(&self) -> u64 {
+        self.config.max_size_mb.saturating_mul(1024 * 1024)
     }
 }
 
@@ -310,6 +332,10 @@ fn ext_for_content_type(ct: &str) -> &'static str {
         t if t.contains("wav") => "wav",
         _ => "bin",
     }
+}
+
+fn filename_stem_for_track_id(track_id: &str) -> String {
+    format!("track-{:x}", md5::compute(track_id.as_bytes()))
 }
 
 fn now_epoch_secs() -> u64 {
@@ -373,17 +399,22 @@ mod tests {
     fn eviction_removes_oldest_not_most_recent() {
         let dir = tempfile::tempdir().unwrap();
         let mut config = test_config(&dir);
-        // 300 bytes max — fits 2 of our 100-byte tracks but not 3
-        config.max_size_mb = 0; // will evict everything on each complete
+        // 1 MiB max — each entry fits on its own, but two entries exceed the cap.
+        config.max_size_mb = 1;
 
         let cache = TrackCache::new(&config).unwrap();
 
         let mut w = cache.start_download("old", "audio/mpeg", None).unwrap();
-        w.write(&[0u8; 100]).unwrap();
+        w.write(&vec![0u8; 700 * 1024]).unwrap();
+        w.complete().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let mut w = cache.start_download("new", "audio/mpeg", None).unwrap();
+        w.write(&vec![0u8; 700 * 1024]).unwrap();
         w.complete().unwrap();
 
-        // max_size_mb = 0 means eviction triggers immediately
         assert!(matches!(cache.get("old"), CacheEntry::Miss));
+        assert!(matches!(cache.get("new"), CacheEntry::Complete { .. }));
     }
 
     #[test]
@@ -537,6 +568,41 @@ mod tests {
         let data = fs::read(&path).unwrap();
         assert_eq!(data.len(), 50);
         assert!(data.iter().all(|&b| b == 0xBB));
+    }
+
+    #[test]
+    fn track_ids_are_sanitized_for_filenames() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TrackCache::new(&test_config(&dir)).unwrap();
+
+        let mut writer = cache
+            .start_download("../outside/track", "audio/mpeg", None)
+            .unwrap();
+        writer.write(&[0u8; 10]).unwrap();
+        let path = writer.complete().unwrap();
+
+        assert!(path.starts_with(dir.path()));
+        assert!(!path.to_string_lossy().contains("../outside"));
+    }
+
+    #[test]
+    fn rejects_oversized_cache_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = test_config(&dir);
+        config.max_size_mb = 1;
+        let cache = TrackCache::new(&config).unwrap();
+
+        assert!(
+            cache
+                .start_download("too-large", "audio/mpeg", Some(2 * 1024 * 1024))
+                .is_err()
+        );
+
+        let mut writer = cache
+            .start_download("grows-too-large", "audio/mpeg", None)
+            .unwrap();
+        assert!(writer.write(&vec![0u8; 1024 * 1024]).is_ok());
+        assert!(writer.write(&[0u8; 1]).is_err());
     }
 
     // ── Content type → extension mapping ──────────────────────
