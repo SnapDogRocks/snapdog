@@ -308,8 +308,8 @@ jobs:
   upload-release-artifacts:
     name: Upload Release Artifacts
     runs-on: ubuntu-latest
-    needs: [meta, build, build-deb, knxprod]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    needs: [meta, build, build-deb, knxprod, macos-app]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.macos-app.result == 'success' }}
     permissions:
       contents: write
     steps:
@@ -330,8 +330,8 @@ jobs:
 
   update-appcast:
     name: Update Sparkle Appcast
-    needs: [meta, macos-app]
-    if: ${{ needs.macos-app.result == 'success' }}
+    needs: [meta, macos-app, upload-release-artifacts]
+    if: ${{ needs.macos-app.result == 'success' && needs.upload-release-artifacts.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8

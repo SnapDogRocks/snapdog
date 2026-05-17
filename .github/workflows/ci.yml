@@ -21,6 +21,29 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  webui:
+    name: WebUI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 25
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - name: Install dependencies
+        working-directory: webui
+        run: npm ci --force
+      - name: Lint
+        working-directory: webui
+        run: npm run lint
+      - name: Typecheck
+        working-directory: webui
+        run: npm run typecheck
+      - name: Build
+        working-directory: webui
+        run: npm run build
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
