@@ -198,9 +198,7 @@ impl Cli {
 fn parse_url(url: &str) -> Result<ServerSettings> {
     let mut settings = ServerSettings::default();
 
-    let (scheme, rest) = url
-        .split_once("://")
-        .unwrap_or(("tcp", url));
+    let (scheme, rest) = url.split_once("://").unwrap_or(("tcp", url));
 
     match scheme {
         "tcp" => settings.scheme = scheme.to_string(),
