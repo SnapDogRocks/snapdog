@@ -125,6 +125,7 @@ pub enum Notification {
 pub type NotifySender = broadcast::Sender<std::sync::Arc<str>>;
 
 /// Create a broadcast channel for notifications.
+#[must_use]
 pub fn notification_channel() -> (
     broadcast::Sender<std::sync::Arc<str>>,
     broadcast::Receiver<std::sync::Arc<str>>,

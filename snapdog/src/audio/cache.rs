@@ -84,11 +84,13 @@ impl CacheWriter {
     }
 
     /// Current number of bytes written.
+    #[must_use]
     pub const fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
 
     /// Total expected bytes (from Content-Length), if known.
+    #[must_use]
     pub const fn total_bytes(&self) -> Option<u64> {
         self.total_bytes
     }
@@ -116,6 +118,7 @@ impl CacheWriter {
     }
 
     /// Path to the partial file (for reading while downloading).
+    #[must_use]
     pub fn partial_path(&self) -> &Path {
         &self.partial_path
     }
@@ -181,6 +184,7 @@ impl TrackCache {
             // File missing — remove stale index entry
             idx.entries.remove(pos);
             self.persist_index(&idx);
+            drop(idx);
         }
 
         // Check for partial file
@@ -243,6 +247,7 @@ impl TrackCache {
     }
 
     /// Check if a track is fully cached.
+    #[must_use]
     pub fn is_complete(&self, track_id: &str) -> bool {
         matches!(self.get(track_id), CacheEntry::Complete { .. })
     }
@@ -258,6 +263,7 @@ impl TrackCache {
             let _ = fs::remove_file(&path);
             idx.entries.remove(pos);
             self.persist_index(&idx);
+            drop(idx);
             tracing::debug!(track_id, "Invalidated cached track");
         }
     }
@@ -292,6 +298,7 @@ impl TrackCache {
         }
 
         self.persist_index(&idx);
+        drop(idx);
     }
 
     fn mark_complete(&self, track_id: &str, content_type: &str, size_bytes: u64) {

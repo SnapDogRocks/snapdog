@@ -206,26 +206,31 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ZoneInfo>> {
 }
 
 async fn get_zone(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
-    let store = state.store.read().await;
     let cfg = idx
         .checked_sub(1)
         .and_then(|i| state.config.zones.get(i))
         .ok_or(zone_not_found())?;
-    let zs = store.zones.get(&idx);
+    let zs = state.store.read().await.zones.get(&idx).cloned();
     Ok::<_, ApiError>(Json(ZoneInfo {
         index: cfg.index,
         name: cfg.name.clone(),
         icon: cfg.icon.clone(),
-        volume: zs.map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
-        muted: zs.is_some_and(|s| s.muted),
-        playback: zs.map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
-        source: zs.map_or_else(|| "idle".into(), |s| s.source.to_string()),
-        shuffle: zs.is_some_and(|s| s.shuffle),
-        repeat: zs.is_some_and(|s| s.repeat),
-        track_repeat: zs.is_some_and(|s| s.track_repeat),
-        presence: zs.is_some_and(|s| s.presence),
-        presence_enabled: zs.is_none_or(|s| s.presence_enabled),
-        presence_timer_active: zs.is_some_and(|s| s.auto_off_active),
+        volume: zs
+            .as_ref()
+            .map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
+        muted: zs.as_ref().is_some_and(|s| s.muted),
+        playback: zs
+            .as_ref()
+            .map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
+        source: zs
+            .as_ref()
+            .map_or_else(|| "idle".into(), |s| s.source.to_string()),
+        shuffle: zs.as_ref().is_some_and(|s| s.shuffle),
+        repeat: zs.as_ref().is_some_and(|s| s.repeat),
+        track_repeat: zs.as_ref().is_some_and(|s| s.track_repeat),
+        presence: zs.as_ref().is_some_and(|s| s.presence),
+        presence_enabled: zs.as_ref().is_none_or(|s| s.presence_enabled),
+        presence_timer_active: zs.as_ref().is_some_and(|s| s.auto_off_active),
     }))
 }
 

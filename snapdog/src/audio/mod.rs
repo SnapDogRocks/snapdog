@@ -53,6 +53,7 @@ pub type PcmSender = mpsc::Sender<PcmMessage>;
 pub type PcmReceiver = mpsc::Receiver<PcmMessage>;
 
 /// Create a PCM channel pair.
+#[must_use]
 pub fn pcm_channel(buffer: usize) -> (PcmSender, PcmReceiver) {
     mpsc::channel(buffer)
 }

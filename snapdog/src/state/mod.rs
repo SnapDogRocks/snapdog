@@ -433,6 +433,7 @@ pub async fn update_client_and_notify(
         let zone = client.zone_index;
         let is_snapdog = client.is_snapdog;
         s.dirty = true;
+        drop(s);
         crate::api::ws::Notification::ClientStateChanged {
             client: client_index,
             volume,

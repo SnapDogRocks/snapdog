@@ -19,11 +19,13 @@ impl SecretString {
     }
 
     /// Access the underlying string.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     /// Convert into the underlying string.
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -67,6 +69,7 @@ pub enum KnxRole {
 
 impl KnxRole {
     /// String representation for matching and display.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Client => "client",
@@ -92,6 +95,7 @@ pub enum AudioCodec {
 
 impl AudioCodec {
     /// String representation for Snapcast protocol.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pcm => "pcm",
@@ -154,6 +158,7 @@ pub enum SubsonicFormat {
 
 impl SubsonicFormat {
     /// String representation for Subsonic API URL parameter.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Raw => "raw",
@@ -289,6 +294,7 @@ pub enum GroupVolumeMode {
 impl GroupVolumeMode {
     /// Compute effective client volume given the client's base volume, zone volume,
     /// and maximum volume limit.
+    #[must_use]
     pub fn effective(self, base_volume: i32, zone_volume: i32, max_volume: i32) -> i32 {
         let max = max_volume.clamp(0, 100);
         let base = base_volume.clamp(0, max);
@@ -374,6 +380,7 @@ pub struct PresenceConfig {
 pub const DEFAULT_AUTO_OFF_DELAY: u16 = 900;
 
 /// Default auto-off delay in seconds (15 minutes).
+#[must_use]
 pub const fn default_auto_off_delay() -> u16 {
     DEFAULT_AUTO_OFF_DELAY
 }
@@ -453,6 +460,7 @@ impl Default for AudioConfig {
 
 impl AudioConfig {
     /// Snapcast sample format string (e.g., "48000:16:2").
+    #[must_use]
     pub fn sample_format(&self) -> String {
         format!("{}:{}:{}", self.sample_rate, self.bit_depth, self.channels)
     }
@@ -583,12 +591,14 @@ pub struct SpotifyConfig {
 
 impl SpotifyConfig {
     /// Stable device ID derived from the name (for Zeroconf).
+    #[must_use]
     pub fn device_id(&self) -> String {
         format!("{:x}", md5::compute(self.name.as_bytes()))
     }
 
     /// Convert the bitrate u32 to librespot's Bitrate enum.
     #[cfg(feature = "spotify")]
+    #[must_use]
     pub const fn bitrate_enum(&self) -> librespot_playback::config::Bitrate {
         match self.bitrate {
             96 => librespot_playback::config::Bitrate::Bitrate96,
@@ -931,16 +941,19 @@ pub enum ResolvedPlaylist {
 
 impl AppConfig {
     /// Whether the radio "playlist" occupies index 0.
+    #[must_use]
     pub fn has_radio_playlist(&self) -> bool {
         !self.radios.is_empty()
     }
 
     /// Total number of unified playlists (radio + subsonic).
+    #[must_use]
     pub fn unified_playlist_count(&self, subsonic_count: usize) -> usize {
         usize::from(self.has_radio_playlist()) + subsonic_count
     }
 
     /// Resolve a unified playlist index to radio or a Subsonic playlist offset.
+    #[must_use]
     pub fn resolve_playlist_index(
         &self,
         index: usize,
@@ -1177,10 +1190,12 @@ fn default_client_icon() -> String {
     "🎵".into()
 }
 /// Default maximum volume (100%).
+#[must_use]
 pub const fn default_max_volume() -> i32 {
     100
 }
 /// Serde default returning `true`.
+#[must_use]
 pub const fn default_true() -> bool {
     true
 }

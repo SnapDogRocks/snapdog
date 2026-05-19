@@ -391,14 +391,12 @@ pub async fn play_audio(
 
         // Wait for the Stream to have a valid format
         let format = loop {
-            {
-                let s = stream
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let f = s.format();
-                if f.rate() > 0 && f.channels() > 0 {
-                    break f;
-                }
+            let f = stream
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .format();
+            if f.rate() > 0 && f.channels() > 0 {
+                break f;
             }
             tokio::time::sleep(FORMAT_POLL_INTERVAL).await;
         };

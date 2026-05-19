@@ -16,6 +16,7 @@ const MAX_FAVICON_HTML_BYTES: u64 = 1024 * 1024;
 pub type SharedCoverCache = Arc<RwLock<CoverCache>>;
 
 /// Create a new empty shared cover cache.
+#[must_use]
 pub fn new_cache() -> SharedCoverCache {
     Arc::new(RwLock::new(CoverCache::default()))
 }
@@ -65,11 +66,13 @@ impl CoverCache {
     }
 
     /// Get cover art for a zone.
+    #[must_use]
     pub fn get(&self, zone_index: usize) -> Option<&CoverEntry> {
         self.entries.get(&zone_index)
     }
 
     /// Get cover art by a static key.
+    #[must_use]
     pub fn get_static(&self, key: &str) -> Option<&CoverEntry> {
         self.static_entries.get(key)
     }
@@ -98,6 +101,7 @@ fn percent_decode_bytes(input: &str) -> Vec<u8> {
     out
 }
 /// Detect image MIME type from magic bytes. Falls back to `application/octet-stream`.
+#[must_use]
 pub fn detect_mime(bytes: &[u8]) -> &'static str {
     match bytes {
         [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",

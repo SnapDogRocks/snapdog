@@ -90,6 +90,7 @@ pub struct GoDefinition {
 
 impl GoFlags {
     /// Encode as a 16-bit group object descriptor (upper bits).
+    #[must_use]
     pub const fn to_descriptor_bits(&self, size_code: u8) -> u16 {
         let mut bits: u16 = 0;
         if self.communicate {
@@ -517,6 +518,7 @@ pub const CLIENT_GOS: &[GoDefinition] = &[
 /// Compute the 1-based ASAP for a zone group object.
 ///
 /// Zone `zone_index` (1-based), GO `go_index` (0-based within `ZONE_GOS`).
+#[must_use]
 pub const fn zone_asap(zone_index: usize, go_index: usize) -> u16 {
     ((zone_index - 1) * ZONE_GO_COUNT + go_index + 1) as u16
 }
@@ -717,6 +719,7 @@ pub mod mem {
 /// Compute the 1-based ASAP for a client group object.
 ///
 /// Client `client_index` (1-based), GO `go_index` (0-based within `CLIENT_GOS`).
+#[must_use]
 pub const fn client_asap(client_index: usize, go_index: usize) -> u16 {
     (MAX_ZONES * ZONE_GO_COUNT + (client_index - 1) * CLIENT_GO_COUNT + go_index + 1) as u16
 }

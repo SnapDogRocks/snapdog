@@ -2,19 +2,16 @@
 // Copyright (C) 2026 Fabian Schmieder
 
 // Pedantic lints allowed crate-wide: same rationale as lib.rs — audio/protocol code
-// uses intentional numeric casts, long functions are unavoidable in the main event loop,
-// and significant_drop_tightening has false positives with async locks.
+// uses intentional numeric casts, long functions are unavoidable in the main event loop.
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::float_cmp)]
 #![allow(clippy::too_many_lines)]
-#![allow(clippy::significant_drop_tightening)]
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::future_not_send)]
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::implicit_hasher)]
-#![allow(clippy::significant_drop_in_scrutinee)]
 
 #[cfg(all(feature = "snapcast-embedded", feature = "snapcast-process"))]
 compile_error!(
@@ -422,6 +419,7 @@ pub async fn run_app() -> Result<()> {
                     let s = store.read().await;
                     let z: Vec<_> = s.zones.iter().map(|(&i, z)| (i, z.clone())).collect();
                     let c: Vec<_> = s.clients.iter().map(|(&i, c)| (i, c.clone())).collect();
+                    drop(s);
                     (z, c)
                 };
                 for (idx, zone) in &zones {
@@ -602,7 +600,8 @@ pub async fn run_app() -> Result<()> {
     });
 
     let _ = backend.stop().await;
-    if let Err(e) = store.write().await.persist() {
+    let persist_result = store.write().await.persist();
+    if let Err(e) = persist_result {
         tracing::warn!(error = %e, "Failed to persist state");
     }
     #[cfg(feature = "snapcast-process")]

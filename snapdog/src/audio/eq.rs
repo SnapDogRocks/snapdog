@@ -69,6 +69,7 @@ impl EqStore {
     }
 
     /// Get EQ config for a zone.
+    #[must_use]
     pub fn get(&self, zone: usize) -> EqConfig {
         self.data.zones.get(&zone).cloned().unwrap_or_default()
     }
@@ -80,6 +81,7 @@ impl EqStore {
     }
 
     /// Get EQ config for a client.
+    #[must_use]
     pub fn get_client(&self, client: usize) -> EqConfig {
         self.data.clients.get(&client).cloned().unwrap_or_default()
     }
@@ -91,6 +93,7 @@ impl EqStore {
     }
 
     /// Get speaker correction config for a client.
+    #[must_use]
     pub fn get_speaker_correction(&self, client: usize) -> EqConfig {
         self.data
             .speaker_corrections
@@ -119,6 +122,7 @@ impl EqStore {
 // ── Presets ───────────────────────────────────────────────────
 
 /// Return the EQ bands for a named preset, or `None` if unknown.
+#[must_use]
 pub fn preset(name: &str) -> Option<Vec<EqBand>> {
     Some(match name {
         "flat" => vec![],
@@ -285,6 +289,7 @@ pub fn preset(name: &str) -> Option<Vec<EqBand>> {
 }
 
 /// List all available preset names.
+#[must_use]
 pub const fn preset_names() -> &'static [&'static str] {
     &[
         "flat",
@@ -317,6 +322,7 @@ struct BandPair {
 
 impl ZoneEq {
     /// Create a new EQ processor.
+    #[must_use]
     pub const fn new(sample_rate: u32, channels: u16) -> Self {
         Self {
             bands: vec![],

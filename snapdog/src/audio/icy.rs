@@ -112,6 +112,7 @@ fn extract_field(s: &str, field: &str) -> Option<String> {
 }
 
 /// Parse the `icy-metaint` header from an HTTP response.
+#[must_use]
 pub fn parse_metaint(response: &reqwest::Response) -> Option<usize> {
     response
         .headers()
@@ -121,6 +122,7 @@ pub fn parse_metaint(response: &reqwest::Response) -> Option<usize> {
 }
 
 /// Build a reqwest client that requests ICY metadata.
+#[must_use]
 pub fn icy_client() -> reqwest::Client {
     reqwest::Client::builder()
         .default_headers({

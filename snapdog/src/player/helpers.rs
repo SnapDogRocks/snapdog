@@ -325,12 +325,13 @@ pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
     // Otherwise, go to previous track.
     const RESTART_THRESHOLD_MS: i64 = 3000;
     let (position_ms, was_playing) = {
-        let s = ctx.store.read().await;
-        let z = s.zones.get(&ctx.zone_index);
+        let z = ctx.store.read().await.zones.get(&ctx.zone_index).cloned();
         (
-            z.and_then(|z| z.track.as_ref().map(|t| t.position_ms))
+            z.as_ref()
+                .and_then(|z| z.track.as_ref().map(|t| t.position_ms))
                 .unwrap_or(0),
-            z.is_some_and(|z| z.playback == crate::state::PlaybackState::Playing),
+            z.as_ref()
+                .is_some_and(|z| z.playback == crate::state::PlaybackState::Playing),
         )
     };
 
@@ -378,11 +379,10 @@ pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
 
 pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
     let (track_repeat, shuffle) = {
-        let s = ctx.store.read().await;
-        let z = s.zones.get(&ctx.zone_index);
+        let z = ctx.store.read().await.zones.get(&ctx.zone_index).cloned();
         (
-            z.is_some_and(|z| z.track_repeat),
-            z.is_some_and(|z| z.shuffle),
+            z.as_ref().is_some_and(|z| z.track_repeat),
+            z.as_ref().is_some_and(|z| z.shuffle),
         )
     };
 

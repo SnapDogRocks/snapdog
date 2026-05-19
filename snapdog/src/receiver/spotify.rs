@@ -55,6 +55,7 @@ pub struct SpotifyReceiver {
 
 impl SpotifyReceiver {
     /// Create a new (stopped) Spotify Connect receiver for the given zone.
+    #[must_use]
     pub const fn new(config: SpotifyConfig, zone_index: usize) -> Self {
         Self {
             config,

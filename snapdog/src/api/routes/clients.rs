@@ -84,23 +84,24 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ClientInfo>> {
 }
 
 async fn get_client(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
-    let store = state.store.read().await;
     let cfg = idx
         .checked_sub(1)
         .and_then(|i| state.config.clients.get(i))
         .ok_or(not_found())?;
-    let cs = store.clients.get(&idx);
+    let cs = state.store.read().await.clients.get(&idx).cloned();
     Ok::<_, ApiError>(Json(ClientInfo {
         index: cfg.index,
         name: cfg.name.clone(),
         mac: cfg.mac.clone(),
-        zone_index: cs.map_or(cfg.zone_index, |s| s.zone_index),
+        zone_index: cs.as_ref().map_or(cfg.zone_index, |s| s.zone_index),
         icon: cfg.icon.clone(),
-        volume: cs.map_or(crate::state::DEFAULT_VOLUME, |s| s.base_volume),
-        max_volume: cs.map_or(cfg.max_volume, |s| s.max_volume),
-        muted: cs.is_some_and(|s| s.muted),
-        connected: cs.is_some_and(|s| s.connected),
-        is_snapdog: cs.is_some_and(|s| s.is_snapdog),
+        volume: cs
+            .as_ref()
+            .map_or(crate::state::DEFAULT_VOLUME, |s| s.base_volume),
+        max_volume: cs.as_ref().map_or(cfg.max_volume, |s| s.max_volume),
+        muted: cs.as_ref().is_some_and(|s| s.muted),
+        connected: cs.as_ref().is_some_and(|s| s.connected),
+        is_snapdog: cs.as_ref().is_some_and(|s| s.is_snapdog),
     }))
 }
 

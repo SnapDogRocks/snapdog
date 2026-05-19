@@ -390,6 +390,7 @@ async fn setup_zone_group(
     if let Some(zone) = s.zones.get_mut(&zone_index) {
         zone.snapcast_group_id = Some(gid.clone());
     }
+    drop(s);
 
     tracing::info!(
         zone = zone_index,

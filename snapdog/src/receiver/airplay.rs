@@ -40,6 +40,7 @@ pub struct AirPlayReceiver {
 
 impl AirPlayReceiver {
     /// Create a new (stopped) `AirPlay` receiver for the given zone.
+    #[must_use]
     pub const fn new(config: AirplayConfig, zone_index: usize, airplay_name: String) -> Self {
         Self {
             config,

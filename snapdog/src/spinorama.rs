@@ -34,6 +34,7 @@ struct SpeakerDbInner {
 
 impl SpeakerDb {
     /// Create a new speaker database with empty cache.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RwLock::new(SpeakerDbInner {
@@ -101,6 +102,7 @@ impl SpeakerDb {
         let mut inner = self.inner.write().await;
         inner.index.clone_from(&names);
         inner.index_fetched_at = Some(std::time::Instant::now());
+        drop(inner);
         Ok(names)
     }
 
@@ -120,8 +122,11 @@ impl SpeakerDb {
         }
         let text = resp.text().await?;
         let config = parse_autoeq(&text, speaker);
-        let mut inner = self.inner.write().await;
-        inner.profiles.insert(speaker.to_string(), config.clone());
+        self.inner
+            .write()
+            .await
+            .profiles
+            .insert(speaker.to_string(), config.clone());
         Ok(config)
     }
 }

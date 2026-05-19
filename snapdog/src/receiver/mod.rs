@@ -30,6 +30,7 @@ pub type AudioSender = mpsc::Sender<Vec<f32>>;
 pub type AudioReceiver = mpsc::Receiver<Vec<f32>>;
 
 /// Create a bounded F32 audio channel pair with the given buffer capacity.
+#[must_use]
 pub fn audio_channel(buffer: usize) -> (AudioSender, AudioReceiver) {
     mpsc::channel(buffer)
 }

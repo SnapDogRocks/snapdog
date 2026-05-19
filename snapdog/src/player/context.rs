@@ -181,6 +181,7 @@ pub async fn update_and_notify(
         };
 
         s.dirty = true;
+        drop(s);
 
         let mut notifications = vec![crate::api::ws::Notification::ZoneStateChanged {
             zone: zone_index,

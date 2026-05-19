@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Fabian Schmieder
+
 // Pedantic lints allowed crate-wide: audio code uses intentional numeric casts,
-// significant_drop_tightening has false positives with async locks, and the main
-// event loop is necessarily long.
+// and the main event loop is necessarily long.
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
-#![allow(clippy::significant_drop_tightening)]
 #![allow(clippy::too_many_lines)]
 
 mod cli;
@@ -191,6 +192,7 @@ fn main() -> anyhow::Result<()> {
                         if let Some(ref config) = last_eq_config {
                             eq.set_config(config);
                         }
+                        drop(eq);
                         let mut spk = event_speaker_eq
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);

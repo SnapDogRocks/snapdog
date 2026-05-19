@@ -31,6 +31,7 @@ pub struct SubsonicClient {
 
 impl SubsonicClient {
     /// Create a client from the `[subsonic]` config section.
+    #[must_use]
     pub fn new(config: &SubsonicConfig) -> Self {
         Self {
             base_url: config.url.trim_end_matches('/').to_string(),
@@ -95,11 +96,13 @@ impl SubsonicClient {
     }
 
     /// Get the streaming URL for a track (does not fetch — returns the URL).
+    #[must_use]
     pub fn stream_url(&self, track_id: &str) -> String {
         self.stream_url_with_offset(track_id, 0)
     }
 
     /// Get the streaming URL with a time offset in seconds.
+    #[must_use]
     pub fn stream_url_with_offset(&self, track_id: &str, offset_secs: u64) -> String {
         let mut url = self.rest_url("stream");
         self.add_auth_query(&mut url);
@@ -115,6 +118,7 @@ impl SubsonicClient {
     }
 
     /// Get cover art URL for fetching (authenticated).
+    #[must_use]
     pub fn cover_art_fetch_url(&self, cover_id: &str) -> String {
         let mut url = self.rest_url("getCoverArt");
         self.add_auth_query(&mut url);
