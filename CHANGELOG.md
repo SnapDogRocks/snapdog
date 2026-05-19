@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/metaneutrons/snapdog/compare/v0.11.0...v0.11.1) (2026-05-19)
+
+
+### Bug Fixes
+
+* **release:** retry artifact download for macOS DMG build ([5af5262](https://github.com/metaneutrons/snapdog/commit/5af5262b46754efdbc06c7d0e24877a35d32d95b))
+
 ## [0.11.0](https://github.com/metaneutrons/snapdog/compare/v0.10.0...v0.11.0) (2026-05-18)
 
 
