@@ -5,7 +5,7 @@
 
 **Multi-room audio system with smart home integration**
 
-One binary. AirPlay + Snapcast + MQTT + KNX.
+One binary. AirPlay + Spotify + Subsonic + MQTT + KNX. Snapcast-based audio delivery.
 
 [![CI](https://github.com/metaneutrons/snapdog/actions/workflows/ci.yml/badge.svg)](https://github.com/metaneutrons/snapdog/actions/workflows/ci.yml)
 [![Release](https://github.com/metaneutrons/snapdog/actions/workflows/release.yml/badge.svg)](https://github.com/metaneutrons/snapdog/actions/workflows/release.yml)
@@ -17,7 +17,9 @@ One binary. AirPlay + Snapcast + MQTT + KNX.
 
 ---
 
-SnapDog turns a Linux box (or Mac) into a synchronized multi-room audio system with deep smart home integration. It embeds a [Snapcast](https://github.com/badaix/snapcast) compatible server completly reimplemented in pure Rust (see [snapcast-rs](https://github.com/metaneutrons/snapcast-rs)), runs AirPlay and Spotify Connect receivers per zone, streams from subsonic-compatible media servers like [Navidrome](https://www.navidrome.org), plays internet radio — and bridges everything tightly to MQTT and KNX.
+SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system with deep smart home integration. It embeds a [Snapcast](https://github.com/badaix/snapcast) compatible server completly reimplemented in pure Rust (see [snapcast-rs](https://github.com/metaneutrons/snapcast-rs)), runs AirPlay and Spotify Connect receivers per zone, streams from subsonic-compatible media servers like [Navidrome](https://www.navidrome.org), plays internet radio — and bridges everything tightly to MQTT and KNX.
+
+
 
 ## Features
 

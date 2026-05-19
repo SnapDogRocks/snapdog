@@ -270,6 +270,7 @@ pub struct Playlist {
 /// A single track from a Subsonic playlist.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_field_names)] // Subsonic API field name
 pub struct Track {
     /// Subsonic track ID.
     pub id: String,

@@ -635,7 +635,7 @@ mod tests {
     fn parse_icy_title_no_separator() {
         assert_eq!(
             parse_icy_title("Nachrichten"),
-            ("".into(), "Nachrichten".into())
+            (String::new(), "Nachrichten".into())
         );
     }
 
