@@ -405,6 +405,7 @@ pub async fn decode_http_stream_cached(
 /// HLS segments (.ts, .aac) are designed to be concatenated, so we download them one by one
 /// and write the bytes through a pipe to the symphonia decoder. For live streams, we re-fetch
 /// the playlist periodically to discover new segments.
+#[allow(clippy::too_many_lines)] // HLS fetch + decode pipeline — splitting would obscure control flow
 async fn decode_hls_stream(
     playlist_url: String,
     tx: PcmSender,

@@ -543,6 +543,7 @@ fn build_bau(ia: IndividualAddress, config: &crate::config::AppConfig) -> Bau {
 }
 
 /// Build address and association tables from TOML zone/client KNX addresses.
+#[allow(clippy::too_many_lines)] // Table construction from config — linear data flow
 fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
     // Collect all (GA string, ASAP) pairs
     let mut ga_asap_pairs: Vec<(u16, u16)> = Vec::new();

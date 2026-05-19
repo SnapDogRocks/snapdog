@@ -58,48 +58,8 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
         );
     }
 
-    // ── Uniqueness validation ────────────────────────────────
-    let mut zone_names_set = std::collections::HashSet::new();
-    for zone in &raw.zone {
-        if !zone_names_set.insert(&zone.name) {
-            anyhow::bail!("Duplicate zone name: '{}'", zone.name);
-        }
-    }
-
-    let mut client_names_set = std::collections::HashSet::new();
-    let mut client_macs_set = std::collections::HashSet::new();
-    for client in &raw.client {
-        if !client_names_set.insert(&client.name) {
-            anyhow::bail!("Duplicate client name: '{}'", client.name);
-        }
-        let mac = client.mac.to_lowercase();
-        if !client_macs_set.insert(mac.clone()) {
-            anyhow::bail!("Duplicate client MAC address: '{}'", client.mac);
-        }
-        // Validate MAC format
-        mac.parse::<mac_address::MacAddress>()
-            .with_context(|| format!("Invalid MAC address format: '{}'", client.mac))?;
-    }
-
-    // ── Audio validation ─────────────────────────────────────
-    anyhow::ensure!(
-        matches!(
-            raw.audio.sample_rate,
-            44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
-        ),
-        "Unsupported sample rate: {}. Use 44100, 48000, 88200, 96000, 176400, or 192000",
-        raw.audio.sample_rate
-    );
-    anyhow::ensure!(
-        matches!(raw.audio.bit_depth, 16 | 24 | 32),
-        "Unsupported bit depth: {}. Use 16, 24, or 32",
-        raw.audio.bit_depth
-    );
-    anyhow::ensure!(
-        raw.audio.channels > 0 && raw.audio.channels <= 8,
-        "Unsupported number of channels: {}. Use 1 to 8",
-        raw.audio.channels
-    );
+    // ── Uniqueness & format validation ─────────────────────────
+    validate_raw_inputs(&raw)?;
 
     // ── KNX address validation ───────────────────────────────
     if let Some(ref knx) = raw.knx {
@@ -161,61 +121,7 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
 
     // ── Presence validation ───────────────────────────────────
     for zone in &zones {
-        if let Some(ref presence) = zone.presence {
-            let mut intervals: Vec<(u16, u16, usize)> = Vec::new();
-            for (i, entry) in presence.schedule.iter().enumerate() {
-                let from = types::parse_time(&entry.from).with_context(|| {
-                    format!(
-                        "Zone '{}' presence schedule[{i}]: invalid 'from' time '{}'",
-                        zone.name, entry.from
-                    )
-                })?;
-                let to = types::parse_time(&entry.to).with_context(|| {
-                    format!(
-                        "Zone '{}' presence schedule[{i}]: invalid 'to' time '{}'",
-                        zone.name, entry.to
-                    )
-                })?;
-                anyhow::ensure!(
-                    from < to,
-                    "Zone '{}' presence schedule[{i}]: 'from' ({}) must be before 'to' ({}). For overnight, use two entries.",
-                    zone.name,
-                    entry.from,
-                    entry.to
-                );
-                for &(pf, pt, j) in &intervals {
-                    anyhow::ensure!(
-                        to <= pf || from >= pt,
-                        "Zone '{}' presence schedule[{i}] ({}-{}) overlaps with schedule[{j}] ({:02}:{:02}-{:02}:{:02})",
-                        zone.name,
-                        entry.from,
-                        entry.to,
-                        pf / 60,
-                        pf % 60,
-                        pt / 60,
-                        pt % 60
-                    );
-                }
-                intervals.push((from, to, i));
-
-                if let types::PresenceSource::Radio(idx) = &entry.source {
-                    anyhow::ensure!(
-                        *idx < radios.len(),
-                        "Zone '{}' presence schedule[{i}]: radio index {idx} out of range (have {} stations)",
-                        zone.name,
-                        radios.len()
-                    );
-                }
-            }
-            if let Some(types::PresenceSource::Radio(idx)) = &presence.default_source {
-                anyhow::ensure!(
-                    *idx < radios.len(),
-                    "Zone '{}' presence default_source: radio index {idx} out of range (have {} stations)",
-                    zone.name,
-                    radios.len()
-                );
-            }
-        }
+        validate_presence(zone, radios.len())?;
     }
 
     let mut config = AppConfig {
@@ -236,6 +142,109 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
     apply_env_overrides(&mut config);
 
     Ok(config)
+}
+
+/// Validate uniqueness of zone/client names and audio format parameters.
+fn validate_raw_inputs(raw: &FileConfig) -> Result<()> {
+    let mut zone_names_set = std::collections::HashSet::new();
+    for zone in &raw.zone {
+        if !zone_names_set.insert(&zone.name) {
+            anyhow::bail!("Duplicate zone name: '{}'", zone.name);
+        }
+    }
+
+    let mut client_names_set = std::collections::HashSet::new();
+    let mut client_macs_set = std::collections::HashSet::new();
+    for client in &raw.client {
+        if !client_names_set.insert(&client.name) {
+            anyhow::bail!("Duplicate client name: '{}'", client.name);
+        }
+        let mac = client.mac.to_lowercase();
+        if !client_macs_set.insert(mac.clone()) {
+            anyhow::bail!("Duplicate client MAC address: '{}'", client.mac);
+        }
+        mac.parse::<mac_address::MacAddress>()
+            .with_context(|| format!("Invalid MAC address format: '{}'", client.mac))?;
+    }
+
+    anyhow::ensure!(
+        matches!(
+            raw.audio.sample_rate,
+            44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
+        ),
+        "Unsupported sample rate: {}. Use 44100, 48000, 88200, 96000, 176400, or 192000",
+        raw.audio.sample_rate
+    );
+    anyhow::ensure!(
+        matches!(raw.audio.bit_depth, 16 | 24 | 32),
+        "Unsupported bit depth: {}. Use 16, 24, or 32",
+        raw.audio.bit_depth
+    );
+    anyhow::ensure!(
+        raw.audio.channels > 0 && raw.audio.channels <= 8,
+        "Unsupported number of channels: {}. Use 1 to 8",
+        raw.audio.channels
+    );
+    Ok(())
+}
+
+/// Validate presence schedule for a zone (time ranges, overlaps, radio indices).
+fn validate_presence(zone: &ZoneConfig, num_radios: usize) -> Result<()> {
+    let Some(ref presence) = zone.presence else {
+        return Ok(());
+    };
+    let mut intervals: Vec<(u16, u16, usize)> = Vec::new();
+    for (i, entry) in presence.schedule.iter().enumerate() {
+        let from = types::parse_time(&entry.from).with_context(|| {
+            format!(
+                "Zone '{}' presence schedule[{i}]: invalid 'from' time '{}'",
+                zone.name, entry.from
+            )
+        })?;
+        let to = types::parse_time(&entry.to).with_context(|| {
+            format!(
+                "Zone '{}' presence schedule[{i}]: invalid 'to' time '{}'",
+                zone.name, entry.to
+            )
+        })?;
+        anyhow::ensure!(
+            from < to,
+            "Zone '{}' presence schedule[{i}]: 'from' ({}) must be before 'to' ({}). For overnight, use two entries.",
+            zone.name,
+            entry.from,
+            entry.to
+        );
+        for &(pf, pt, j) in &intervals {
+            anyhow::ensure!(
+                to <= pf || from >= pt,
+                "Zone '{}' presence schedule[{i}] ({}-{}) overlaps with schedule[{j}] ({:02}:{:02}-{:02}:{:02})",
+                zone.name,
+                entry.from,
+                entry.to,
+                pf / 60,
+                pf % 60,
+                pt / 60,
+                pt % 60
+            );
+        }
+        intervals.push((from, to, i));
+
+        if let types::PresenceSource::Radio(idx) = &entry.source {
+            anyhow::ensure!(
+                *idx < num_radios,
+                "Zone '{}' presence schedule[{i}]: radio index {idx} out of range (have {num_radios} stations)",
+                zone.name,
+            );
+        }
+    }
+    if let Some(types::PresenceSource::Radio(idx)) = &presence.default_source {
+        anyhow::ensure!(
+            *idx < num_radios,
+            "Zone '{}' presence default_source: radio index {idx} out of range (have {num_radios} stations)",
+            zone.name,
+        );
+    }
+    Ok(())
 }
 
 /// Apply environment variable overrides to the resolved configuration.

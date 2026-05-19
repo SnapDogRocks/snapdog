@@ -34,6 +34,7 @@ pub fn spawn_event_handler(
     });
 }
 
+#[allow(clippy::too_many_lines)] // Event match dispatcher — splitting would obscure control flow
 async fn handle_event(
     event: SnapcastEvent,
     config: &AppConfig,
@@ -265,6 +266,7 @@ async fn handle_event(
 }
 
 /// Assign all clients of a zone to the same group, set stream + name.
+#[allow(clippy::too_many_lines)] // Single coherent zone setup operation
 async fn setup_zone_group(
     zone_index: usize,
     connecting_client_id: &str,
@@ -462,6 +464,7 @@ async fn merge_client_into_group(
 ///
 /// The server may reorganize groups (new client → new group, `SetGroupClients` → merge/delete).
 /// The stream name is the stable identifier; the group ID is ephemeral.
+#[allow(clippy::too_many_lines)] // Two-pass sync with shared mutable state — splitting would obscure control flow
 async fn sync_group_ids(
     config: &AppConfig,
     backend: &dyn SnapcastBackend,

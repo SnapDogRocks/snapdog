@@ -324,6 +324,7 @@ impl MqttBridge {
         }
     }
 
+    #[allow(clippy::too_many_lines)] // Match dispatcher for MQTT topics — splitting would obscure control flow
     pub(crate) async fn handle_command(
         &self,
         topic: &str,

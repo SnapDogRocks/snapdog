@@ -195,6 +195,7 @@ impl ZoneFade {
 }
 
 /// Main `ZonePlayer` loop.
+#[allow(clippy::too_many_lines)] // Main event loop — splitting would obscure control flow
 async fn run(
     zone_index: usize,
     commands: &mut mpsc::Receiver<ZoneCommand>,

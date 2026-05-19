@@ -273,6 +273,7 @@ impl SnapcastBackend for EmbeddedBackend {
         })
     }
 
+    #[allow(clippy::too_many_lines)] // Command match dispatcher — splitting would obscure control flow
     fn execute(&self, cmd: SnapcastCmd) -> BoxFuture<'_, Result<()>> {
         Box::pin(async move {
             let commands = match &cmd {

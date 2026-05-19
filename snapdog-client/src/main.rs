@@ -6,7 +6,6 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
-#![allow(clippy::too_many_lines)]
 
 mod cli;
 mod eq;
@@ -20,6 +19,7 @@ use snapdog_common::CLIENT_NAME;
 
 const DEFAULT_SAMPLE_RATE: u32 = snapdog_common::DEFAULT_SAMPLE_RATE;
 
+#[allow(clippy::too_many_lines)] // Main app setup + event loop — splitting would obscure control flow
 fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
 

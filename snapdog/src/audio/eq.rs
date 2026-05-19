@@ -123,6 +123,7 @@ impl EqStore {
 
 /// Return the EQ bands for a named preset, or `None` if unknown.
 #[must_use]
+#[allow(clippy::too_many_lines)] // Data table of EQ presets — not decomposable
 pub fn preset(name: &str) -> Option<Vec<EqBand>> {
     Some(match name {
         "flat" => vec![],

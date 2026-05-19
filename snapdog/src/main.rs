@@ -7,7 +7,6 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::float_cmp)]
-#![allow(clippy::too_many_lines)]
 #![allow(clippy::future_not_send)]
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::implicit_hasher)]
@@ -174,6 +173,7 @@ async fn main() -> Result<()> {
 /// # Panics
 ///
 /// Panics if the OS signal handler cannot be registered (Unix only).
+#[allow(clippy::too_many_lines)] // Main app setup + event loop — splitting would obscure control flow
 pub async fn run_app() -> Result<()> {
     // ── Parse config ──────────────────────────────────────────
     let cli = Cli::parse();

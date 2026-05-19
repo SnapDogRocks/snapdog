@@ -10,7 +10,6 @@
 // memory sizes, long functions are inherent to ETS XML structure, and must_use
 // on internal helpers is noise.
 #![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::too_many_lines)]
 
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
@@ -435,6 +434,7 @@ fn pt_num(x: &mut String, name: &str, bits: u16, typ: &str, min: u32, max: u32) 
     w(x, "              </ParameterType>");
 }
 
+#[allow(clippy::too_many_lines)] // Repetitive XML parameter generation — not decomposable
 fn write_parameters(x: &mut String) {
     w(x, "            <Parameters>");
     let mut off = 0usize;
