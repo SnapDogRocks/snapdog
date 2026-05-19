@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/metaneutrons/snapdog/compare/v0.11.2...v0.11.3) (2026-05-19)
+
+
+### Performance Improvements
+
+* tighten lock scopes — fix significant_drop_tightening (15 fixes) ([691a304](https://github.com/metaneutrons/snapdog/commit/691a304b345b0217a5ecfb86892f31e08bde7165))
+
 ## [0.11.2](https://github.com/metaneutrons/snapdog/compare/v0.11.1...v0.11.2) (2026-05-19)
 
 
