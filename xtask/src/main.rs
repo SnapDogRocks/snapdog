@@ -6,6 +6,13 @@
 //! Uses GO definitions from `snapdog::knx::group_objects` (SSOT) and outputs
 //! a complete ETS-compatible XML that `knx-prod` can convert to .knxprod.
 
+// Pedantic lints allowed crate-wide: XML generation uses intentional casts for
+// memory sizes, long functions are inherent to ETS XML structure, and must_use
+// on internal helpers is noise.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::must_use_candidate)]
+
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
     CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_COUNT,

@@ -1,6 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
+// Pedantic lints allowed crate-wide: same rationale as lib.rs — audio/protocol code
+// uses intentional numeric casts, long functions are unavoidable in the main event loop,
+// and significant_drop_tightening has false positives with async locks.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::float_cmp)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::significant_drop_tightening)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::future_not_send)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::implicit_hasher)]
+#![allow(clippy::significant_drop_in_scrutinee)]
+
 #[cfg(all(feature = "snapcast-embedded", feature = "snapcast-process"))]
 compile_error!(
     "Features `snapcast-embedded` and `snapcast-process` are mutually exclusive. \
@@ -159,6 +174,10 @@ async fn main() -> Result<()> {
 /// # Errors
 ///
 /// Returns an error if the application fails to start or encounters a fatal error.
+///
+/// # Panics
+///
+/// Panics if the OS signal handler cannot be registered (Unix only).
 pub async fn run_app() -> Result<()> {
     // ── Parse config ──────────────────────────────────────────
     let cli = Cli::parse();

@@ -1,3 +1,12 @@
+// Pedantic lints allowed crate-wide: audio code uses intentional numeric casts,
+// significant_drop_tightening has false positives with async locks, and the main
+// event loop is necessarily long.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::significant_drop_tightening)]
+#![allow(clippy::too_many_lines)]
+
 mod cli;
 mod eq;
 mod logging;

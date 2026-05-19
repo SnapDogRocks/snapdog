@@ -3,6 +3,24 @@
 
 //! `SnapDog` library — re-exports all modules for integration tests.
 
+// Pedantic lints allowed crate-wide: audio/KNX code uses intentional numeric casts,
+// float comparisons are acceptable for gain/volume, long functions are unavoidable in
+// protocol handlers, significant_drop_tightening has false positives with async locks,
+// must_use on every helper is noise, future_not_send is expected with tokio::spawn,
+// struct_excessive_bools reflects protocol state, and implicit_hasher is fixed at
+// public API boundaries but not for all internal helpers.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::float_cmp)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::significant_drop_tightening)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::future_not_send)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::implicit_hasher)]
+#![allow(clippy::branches_sharing_code)]
+#![allow(clippy::significant_drop_in_scrutinee)]
 #![forbid(unsafe_code)]
 #![warn(clippy::redundant_closure)]
 #![warn(clippy::implicit_clone)]

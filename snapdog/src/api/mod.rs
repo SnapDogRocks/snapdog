@@ -14,6 +14,7 @@ pub mod ws;
 pub(crate) const CACHE_CONTROL_1DAY: &str = "public, max-age=86400";
 
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -61,10 +62,10 @@ pub type SharedState = Arc<AppState>;
 ///
 /// Returns an error if the TCP listener cannot bind or the server fails.
 #[expect(clippy::too_many_arguments)]
-pub async fn serve(
+pub async fn serve<S: BuildHasher>(
     config: AppConfig,
     store: state::SharedState,
-    zone_commands: HashMap<usize, ZoneCommandSender>,
+    zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: player::SnapcastCmdSender,
     covers: state::cover::SharedCoverCache,
     notifications: ws::NotifySender,
@@ -76,7 +77,7 @@ pub async fn serve(
     let state = Arc::new(AppState {
         config,
         store,
-        zone_commands,
+        zone_commands: zone_commands.into_iter().collect(),
         snap_tx,
         covers,
         notifications,

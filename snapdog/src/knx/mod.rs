@@ -17,6 +17,7 @@ pub mod group_objects;
 mod transport;
 
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
@@ -48,11 +49,11 @@ pub use transport::KnxDeviceControl;
 /// # Errors
 ///
 /// Returns an error if KNX is not configured or the connection fails.
-pub async fn start(
+pub async fn start<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
     notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
-    zone_commands: HashMap<usize, ZoneCommandSender>,
+    zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<Option<DeviceControlHandle>> {
     let knx = config.knx.as_ref().context("KNX not configured")?;
@@ -68,11 +69,11 @@ pub async fn start(
     }
 }
 
-async fn start_client(
+async fn start_client<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
     notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
-    zone_commands: HashMap<usize, ZoneCommandSender>,
+    zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<()> {
     let url = config
@@ -103,11 +104,11 @@ async fn start_client(
     Ok(())
 }
 
-async fn start_device(
+async fn start_device<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
     notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
-    zone_commands: HashMap<usize, ZoneCommandSender>,
+    zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<DeviceControlHandle> {
     let addr = config
@@ -132,13 +133,13 @@ async fn start_device(
     Ok(handle)
 }
 
-fn spawn_bridge(
+fn spawn_bridge<S: BuildHasher + Send + Sync + 'static>(
     pub_transport: impl KnxPublisher + 'static,
     listen_transport: impl KnxListener + 'static,
     config: &AppConfig,
     store: state::SharedState,
     notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
-    zone_commands: HashMap<usize, ZoneCommandSender>,
+    zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) {
     let pub_config = config.clone();
@@ -418,11 +419,11 @@ async fn publish_client_state(
 
 // ── Listener ──────────────────────────────────────────────────
 
-async fn listener(
+async fn listener<S: BuildHasher + Send + Sync>(
     mut transport: impl KnxListener,
     config: AppConfig,
     store: state::SharedState,
-    zone_commands: HashMap<usize, ZoneCommandSender>,
+    zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) {
     let zone_ga_map = build_zone_ga_map(&config);
@@ -512,12 +513,12 @@ pub(crate) fn build_client_ga_map(config: &AppConfig) -> HashMap<String, (usize,
     map
 }
 
-pub(crate) async fn handle_incoming(
+pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
     ga: GroupAddress,
     data: &[u8],
     zone_ga_map: &HashMap<String, (usize, &str)>,
     client_ga_map: &HashMap<String, (usize, &str)>,
-    zone_commands: &HashMap<usize, ZoneCommandSender>,
+    zone_commands: &HashMap<usize, ZoneCommandSender, S>,
     snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
     store: &state::SharedState,
 ) {
