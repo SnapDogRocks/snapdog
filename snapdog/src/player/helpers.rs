@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! ZonePlayer helper functions for track navigation and completion.
+//! `ZonePlayer` helper functions for track navigation and completion.
 
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -35,7 +35,7 @@ pub struct PlaybackCtx<'a> {
 /// Fetch cover art in the background and update zone state.
 ///
 /// For radio: fetches from config URL. For subsonic: fetches from getCoverArt.
-/// Stores bytes in SharedCoverCache and sets cover_url on the zone.
+/// Stores bytes in `SharedCoverCache` and sets `cover_url` on the zone.
 pub fn spawn_cover_fetch(
     handle: &mut Option<JoinHandle<()>>,
     covers: &SharedCoverCache,
@@ -501,7 +501,7 @@ async fn is_image_url(url: &str) -> bool {
         .is_some_and(|ct| ct.starts_with("image/"))
 }
 
-/// Parse ICY StreamTitle into (artist, title).
+/// Parse ICY `StreamTitle` into (artist, title).
 ///
 /// Strips station prefixes (before `|` or `:`) and splits on ` - `.
 /// Examples:

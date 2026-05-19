@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! Generate monolithic ETS XML for SnapDog KNX product database.
+//! Generate monolithic ETS XML for `SnapDog` KNX product database.
 //!
 //! Uses GO definitions from `snapdog::knx::group_objects` (SSOT) and outputs
 //! a complete ETS-compatible XML that `knx-prod` can convert to .knxprod.

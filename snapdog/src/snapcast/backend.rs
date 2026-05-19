@@ -13,7 +13,7 @@ use crate::player::SnapcastCmd;
 /// Client identification from the Snapcast Hello handshake.
 #[derive(Debug, Clone, Default)]
 pub struct ClientHello {
-    /// Client-reported name (e.g. "SnapDog").
+    /// Client-reported name (e.g. "`SnapDog`").
     pub client_name: String,
     /// MAC address.
     pub mac: String,

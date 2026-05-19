@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! Embedded WebUI static asset serving.
+//! Embedded `WebUI` static asset serving.
 
 use axum::body::Body;
 use axum::http::{Request, Response, StatusCode, header};
@@ -39,7 +39,7 @@ fn serve_asset(path: &str) -> Option<Response<Body>> {
     )
 }
 
-/// Axum fallback handler: serves embedded WebUI assets or SPA index.html.
+/// Axum fallback handler: serves embedded `WebUI` assets or SPA index.html.
 pub async fn fallback(req: Request<Body>) -> impl IntoResponse {
     let path = req.uri().path().trim_start_matches('/');
 

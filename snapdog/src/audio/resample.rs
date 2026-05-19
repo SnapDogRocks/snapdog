@@ -5,7 +5,7 @@
 //!
 //! [`F32Resampler`] / [`F32Resampling`] — F32 samples in/out, used for all audio paths.
 //!
-//! Wraps rubato's SincFixedIn resampler with internal buffers to handle
+//! Wraps rubato's `SincFixedIn` resampler with internal buffers to handle
 //! arbitrary input chunk sizes. Filter state is maintained across calls
 //! for artifact-free output.
 
@@ -51,7 +51,7 @@ pub struct F32Resampler {
 }
 
 impl F32Resampler {
-    /// Create a new F32 resampler. Returns `None` if source_rate == target_rate.
+    /// Create a new F32 resampler. Returns `None` if `source_rate` == `target_rate`.
     pub fn new(source_rate: u32, target_rate: u32, channels: u16) -> Option<Self> {
         if source_rate == target_rate {
             return None;
@@ -100,7 +100,7 @@ impl F32Resampler {
                 .map(|ch_buf| ch_buf.drain(..self.chunk_size).collect())
                 .collect();
 
-            let refs: Vec<&[f64]> = chunk.iter().map(|v| v.as_slice()).collect();
+            let refs: Vec<&[f64]> = chunk.iter().map(std::vec::Vec::as_slice).collect();
             match self.resampler.process(&refs, None) {
                 Ok(resampled) => {
                     let out_frames = resampled[0].len();

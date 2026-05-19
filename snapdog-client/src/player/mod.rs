@@ -245,7 +245,7 @@ impl Mixer {
     }
 }
 
-/// Parse `interface:ch[:cc]` → (MidiOutputConnection, channel_0based, cc)
+/// Parse `interface:ch[:cc]` → (`MidiOutputConnection`, `channel_0based`, cc)
 fn parse_midi_param(param: &str) -> anyhow::Result<(midir::MidiOutputConnection, u8, u8)> {
     let parts: Vec<&str> = param.rsplitn(3, ':').collect();
     // rsplitn reverses: "IAC Driver:1:7" → ["7", "1", "IAC Driver"]
@@ -392,7 +392,9 @@ pub async fn play_audio(
         // Wait for the Stream to have a valid format
         let format = loop {
             {
-                let s = stream.lock().unwrap_or_else(|e| e.into_inner());
+                let s = stream
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 let f = s.format();
                 if f.rate() > 0 && f.channels() > 0 {
                     break f;
@@ -517,11 +519,15 @@ fn run_cpal(
                 + (num_frames as i64 * 1_000_000) / i64::from(format.rate());
 
             let server_now = {
-                let tp = time_provider.lock().unwrap_or_else(|e| e.into_inner());
+                let tp = time_provider
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 now_usec() + tp.diff_to_server_usec()
             };
 
-            let mut s = stream.lock().unwrap_or_else(|e| e.into_inner());
+            let mut s = stream
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let current_format = s.format();
 
             // Format change detection — output silence if stream format changed

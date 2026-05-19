@@ -12,7 +12,7 @@ use super::types::{
 
 const TCP_SOURCE_BASE_PORT: u16 = 4952;
 
-/// Resolve a raw zone config into a fully populated ZoneConfig.
+/// Resolve a raw zone config into a fully populated `ZoneConfig`.
 pub fn resolve_zone(
     index: usize,
     raw: RawZoneConfig,
@@ -38,7 +38,7 @@ pub fn resolve_zone(
     }
 }
 
-/// Resolve a raw client config into a fully populated ClientConfig.
+/// Resolve a raw client config into a fully populated `ClientConfig`.
 pub fn resolve_client(
     index: usize,
     raw: RawClientConfig,

@@ -32,10 +32,10 @@ fn now_ms() -> u64 {
 /// KNX device serial number: manufacturer prefix (0x00FA) + last 4 bytes of host MAC.
 /// Unique per host, no configuration needed.
 fn device_serial() -> [u8; 6] {
-    let mac = mac_address::get_mac_address()
-        .ok()
-        .flatten()
-        .map_or([0x01, 0x02, 0x03, 0x04, 0x05, 0x06], |m| m.bytes());
+    let mac = mac_address::get_mac_address().ok().flatten().map_or(
+        [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+        mac_address::MacAddress::bytes,
+    );
     [0x00, 0xFA, mac[2], mac[3], mac[4], mac[5]]
 }
 
@@ -56,7 +56,7 @@ const ETS_MEMORY_PATH: &str = "knx-memory.bin";
 // File layout: [magic 4B] [version 1B] [length 2B (LE)] [payload …] [crc32 4B (LE)]
 // Total overhead: 11 bytes. Atomic write via temp file + rename.
 
-/// Magic bytes identifying a SnapDog KNX memory file.
+/// Magic bytes identifying a `SnapDog` KNX memory file.
 const PERSIST_MAGIC: &[u8; 4] = b"SDKM";
 
 /// Current persistence format version. Bump when memory layout changes.
@@ -147,7 +147,7 @@ use super::group_objects::{
 
 /// Parsed ETS parameters from BAU memory.
 #[derive(Debug, Default)]
-pub(crate) struct EtsParams {
+pub struct EtsParams {
     // Numeric
     pub zone_active: [bool; MAX_ZONES],
     pub zone_default_volume: [u8; MAX_ZONES],
@@ -189,7 +189,7 @@ fn read_string(data: &[u8], offset: usize, max_len: usize) -> String {
 }
 
 /// Parse ETS parameters from BAU memory area.
-pub(crate) fn parse_ets_memory(data: &[u8]) -> EtsParams {
+pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
     let mut p = EtsParams::default();
     if data.len() < mem::TOTAL {
         return p;
@@ -299,12 +299,12 @@ impl super::transport::KnxDeviceControl for DevicePublisher {
 }
 
 /// Device-mode listener: receives group object updates from the BAU task.
-pub(crate) struct DeviceListener {
+pub struct DeviceListener {
     update_rx: mpsc::Receiver<(GroupAddress, Vec<u8>)>,
 }
 
 /// Start the device server and BAU, returning a publisher/listener pair.
-pub(crate) async fn start_device_transport(
+pub async fn start_device_transport(
     individual_address: &str,
     config: &crate::config::AppConfig,
 ) -> Result<(DevicePublisher, DeviceListener, Option<EtsParams>)> {
@@ -472,7 +472,7 @@ async fn bau_task_loop(
                 }
             }
             // Debounced persist timer
-            _ = &mut persist_timer, if persist_armed => {
+            () = &mut persist_timer, if persist_armed => {
                 persist_armed = false;
                 memory_dirty = false;
                 tunnel_active = false;
@@ -714,7 +714,7 @@ async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(GroupAddr
 }
 
 /// Find the next updated GO and return its GA + data.
-/// Resolve an ASAP to (GroupAddress, data) via the association and address tables.
+/// Resolve an ASAP to (`GroupAddress`, data) via the association and address tables.
 fn resolve_go_update(bau: &Bau, asap: u16) -> Option<(GroupAddress, Vec<u8>)> {
     let go = bau.group_objects().get(asap)?;
     let data = go.value_ref().to_vec();

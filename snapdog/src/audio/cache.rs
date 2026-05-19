@@ -152,7 +152,10 @@ impl TrackCache {
 
     /// Look up a track. Updates LRU timestamp on hit.
     pub fn get(&self, track_id: &str) -> CacheEntry {
-        let mut idx = self.index.lock().unwrap_or_else(|e| e.into_inner());
+        let mut idx = self
+            .index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let filename_stem = filename_stem_for_track_id(track_id);
 
         // Check for complete file
@@ -230,7 +233,10 @@ impl TrackCache {
 
     /// Remove a track from the cache (e.g., on decode failure due to corruption).
     pub fn invalidate(&self, track_id: &str) {
-        let mut idx = self.index.lock().unwrap_or_else(|e| e.into_inner());
+        let mut idx = self
+            .index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(pos) = idx.entries.iter().position(|e| e.track_id == track_id) {
             let path = Path::new(&self.config.path).join(&idx.entries[pos].filename);
             let _ = fs::remove_file(&path);
@@ -240,10 +246,13 @@ impl TrackCache {
         }
     }
 
-    /// Evict oldest entries until total size ≤ max_size_mb.
+    /// Evict oldest entries until total size ≤ `max_size_mb`.
     pub fn evict_lru(&self) {
         let max_bytes = self.max_bytes();
-        let mut idx = self.index.lock().unwrap_or_else(|e| e.into_inner());
+        let mut idx = self
+            .index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let total: u64 = idx.entries.iter().map(|e| e.size_bytes).sum();
         if total <= max_bytes {
@@ -272,7 +281,10 @@ impl TrackCache {
     fn mark_complete(&self, track_id: &str, content_type: &str, size_bytes: u64) {
         let ext = ext_for_content_type(content_type);
         let filename = format!("{}.{ext}", filename_stem_for_track_id(track_id));
-        let mut idx = self.index.lock().unwrap_or_else(|e| e.into_inner());
+        let mut idx = self
+            .index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // Remove any existing entry for this track
         idx.entries.retain(|e| e.track_id != track_id);

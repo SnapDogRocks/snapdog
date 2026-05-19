@@ -4,7 +4,7 @@
 //! Spinorama speaker EQ profile fetcher.
 //!
 //! Fetches speaker correction profiles from the spinorama GitHub repository
-//! and parses EqualizerAPO format into [`EqConfig`].
+//! and parses `EqualizerAPO` format into [`EqConfig`].
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -131,7 +131,7 @@ struct GitHubEntry {
     entry_type: String,
 }
 
-/// Parse EqualizerAPO format into [`EqConfig`].
+/// Parse `EqualizerAPO` format into [`EqConfig`].
 ///
 /// Format: `Filter N: ON PK Fc 1234 Hz Gain +1.23 dB Q 1.50`
 fn parse_autoeq(text: &str, speaker: &str) -> EqConfig {

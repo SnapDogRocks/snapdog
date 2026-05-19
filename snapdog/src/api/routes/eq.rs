@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! EQ endpoints: /api/v1/zones/{zone_index}/eq
+//! EQ endpoints: /`api/v1/zones/{zone_index}/eq`
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
@@ -23,7 +23,7 @@ fn require_zone(zone: usize, config: &AppConfig) -> Result<(), ApiError> {
     }
 }
 
-/// Resolve a preset name into a full EqConfig. Shared by zone and client EQ routes.
+/// Resolve a preset name into a full `EqConfig`. Shared by zone and client EQ routes.
 pub(super) fn resolve_preset(name: &str) -> Result<EqConfig, ApiError> {
     let bands = eq::preset(name).ok_or_else(|| {
         ApiError::BadRequest(format!(
@@ -52,7 +52,7 @@ async fn get_eq(State(state): State<SharedState>, Path(zone): Path<usize>) -> im
     let config = state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get(zone);
     Ok::<_, ApiError>(Json(config))
 }
@@ -83,7 +83,7 @@ async fn set_band(
     let mut config = state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get(zone);
     if band_idx >= config.bands.len() {
         return Err(ApiError::NotFound("band"));

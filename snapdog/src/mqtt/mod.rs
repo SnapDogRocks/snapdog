@@ -4,7 +4,7 @@
 //! MQTT integration via rumqttc.
 //!
 //! Bidirectional: subscribes to command topics (`*/set`), publishes status updates.
-//! All incoming commands are routed through ZonePlayer command channels.
+//! All incoming commands are routed through `ZonePlayer` command channels.
 
 use std::collections::HashMap;
 
@@ -257,7 +257,7 @@ impl MqttBridge {
             .await
     }
 
-    /// Run the event loop, dispatching incoming commands via ZonePlayer channels.
+    /// Run the event loop, dispatching incoming commands via `ZonePlayer` channels.
     pub async fn run(
         &mut self,
         zone_commands: HashMap<usize, ZoneCommandSender>,

@@ -181,7 +181,7 @@ pub struct FileConfig {
     /// Snapcast connection and management settings.
     #[serde(default)]
     pub snapcast: SnapcastConfig,
-    /// AirPlay receiver settings.
+    /// `AirPlay` receiver settings.
     #[serde(default)]
     pub airplay: AirplayConfig,
     /// Subsonic/Navidrome server connection.
@@ -371,10 +371,10 @@ pub struct PresenceConfig {
 }
 
 /// Default auto-off delay in seconds (15 minutes).
-pub(crate) const DEFAULT_AUTO_OFF_DELAY: u16 = 900;
+pub const DEFAULT_AUTO_OFF_DELAY: u16 = 900;
 
 /// Default auto-off delay in seconds (15 minutes).
-pub(crate) const fn default_auto_off_delay() -> u16 {
+pub const fn default_auto_off_delay() -> u16 {
     DEFAULT_AUTO_OFF_DELAY
 }
 
@@ -410,7 +410,7 @@ pub struct AudioConfig {
     #[serde(default)]
     pub source_conflict: SourceConflict,
     /// Fade duration in milliseconds when a client switches zones.
-    /// Set to 0 to disable. Only applies to SnapDog clients.
+    /// Set to 0 to disable. Only applies to `SnapDog` clients.
     #[serde(default = "default_zone_switch_fade_ms")]
     pub zone_switch_fade_ms: u16,
     /// Fade duration in milliseconds when switching audio sources within a zone
@@ -457,7 +457,7 @@ impl AudioConfig {
 /// HTTP server configuration.
 #[derive(Debug, Deserialize, Clone)]
 pub struct HttpConfig {
-    /// Port for the REST API, WebSocket, and embedded WebUI.
+    /// Port for the REST API, WebSocket, and embedded `WebUI`.
     #[serde(default = "default_http_port")]
     pub port: u16,
     /// Bind address. Default: `0.0.0.0`. Use `::` for dual-stack IPv4+IPv6.
@@ -487,10 +487,10 @@ impl Default for HttpConfig {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnknownClientPolicy {
-    /// Accept unknown clients, show in WebUI, assign to default zone.
+    /// Accept unknown clients, show in `WebUI`, assign to default zone.
     #[default]
     Accept,
-    /// Accept connection but don't show in WebUI or assign a zone.
+    /// Accept connection but don't show in `WebUI` or assign a zone.
     Ignore,
     /// Reject connection immediately after Hello.
     Reject,
@@ -523,7 +523,7 @@ pub struct SnapcastConfig {
     /// mDNS service type (default: "_snapdog._tcp.local.").
     #[serde(default = "default_mdns_service_type")]
     pub mdns_service_type: String,
-    /// mDNS advertised name (default: "SnapDog").
+    /// mDNS advertised name (default: "`SnapDog`").
     #[serde(default = "default_mdns_name")]
     pub mdns_name: String,
     /// Streaming codec: pcm, flac, f32lz4, f32lz4e.
@@ -556,12 +556,12 @@ impl Default for SnapcastConfig {
     }
 }
 
-/// AirPlay receiver settings (shared across all zones).
+/// `AirPlay` receiver settings (shared across all zones).
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct AirplayConfig {
-    /// Optional password for AirPlay connections.
+    /// Optional password for `AirPlay` connections.
     pub password: Option<String>,
-    /// Path to persist AirPlay pairing keys (required for AP2 reconnects).
+    /// Path to persist `AirPlay` pairing keys (required for AP2 reconnects).
     pub pairing_store: Option<std::path::PathBuf>,
     /// Bind to specific addresses (default: all interfaces).
     pub bind: Option<Vec<std::net::IpAddr>>,
@@ -570,7 +570,7 @@ pub struct AirplayConfig {
 /// Spotify Connect receiver settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SpotifyConfig {
-    /// Device name shown in Spotify app (e.g., "SnapDog Ground Floor").
+    /// Device name shown in Spotify app (e.g., "`SnapDog` Ground Floor").
     pub name: String,
     /// Audio bitrate: 96, 160, or 320 kbps. Default: 320.
     #[serde(default = "default_spotify_bitrate")]
@@ -726,14 +726,14 @@ pub struct KnxConfig {
 /// Zone definition as written in TOML.
 #[derive(Debug, Deserialize)]
 pub struct RawZoneConfig {
-    /// Human-readable zone name (also used as AirPlay name).
+    /// Human-readable zone name (also used as `AirPlay` name).
     pub name: String,
     /// Emoji icon for the zone.
     #[serde(default = "default_zone_icon")]
     pub icon: String,
     /// Override Snapcast sink path (default: auto-generated).
     pub sink: Option<String>,
-    /// Override AirPlay receiver name (default: zone name).
+    /// Override `AirPlay` receiver name (default: zone name).
     pub airplay_name: Option<String>,
     /// KNX group addresses for this zone.
     #[serde(default)]
@@ -898,7 +898,7 @@ pub struct AppConfig {
     pub http: HttpConfig,
     /// Snapcast connection settings.
     pub snapcast: SnapcastConfig,
-    /// AirPlay receiver settings.
+    /// `AirPlay` receiver settings.
     pub airplay: AirplayConfig,
     /// Subsonic connection (if configured).
     pub subsonic: Option<SubsonicConfig>,
@@ -971,7 +971,7 @@ pub struct ZoneConfig {
     pub stream_name: String,
     /// TCP source port for audio data to snapserver.
     pub tcp_source_port: u16,
-    /// AirPlay receiver name (shown in AirPlay picker).
+    /// `AirPlay` receiver name (shown in `AirPlay` picker).
     pub airplay_name: String,
     /// KNX group addresses.
     pub knx: ZoneKnxAddresses,
@@ -1173,10 +1173,10 @@ fn default_client_icon() -> String {
     "🎵".into()
 }
 /// Default maximum volume (100%).
-pub(crate) const fn default_max_volume() -> i32 {
+pub const fn default_max_volume() -> i32 {
     100
 }
 /// Serde default returning `true`.
-pub(crate) const fn default_true() -> bool {
+pub const fn default_true() -> bool {
     true
 }

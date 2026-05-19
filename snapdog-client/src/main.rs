@@ -175,12 +175,16 @@ fn main() -> anyhow::Result<()> {
                         }
                         event_sample_rate
                             .store(format.rate(), std::sync::atomic::Ordering::Relaxed);
-                        let mut eq = event_eq.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut eq = event_eq
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
                         *eq = eq::ZoneEq::new(format.rate(), format.channels());
                         if let Some(ref config) = last_eq_config {
                             eq.set_config(config);
                         }
-                        let mut spk = event_speaker_eq.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut spk = event_speaker_eq
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
                         *spk = eq::ZoneEq::new(format.rate(), format.channels());
                         if let Some(ref config) = last_speaker_config {
                             spk.set_config(config);
@@ -197,7 +201,7 @@ fn main() -> anyhow::Result<()> {
                                 );
                                 event_eq
                                     .lock()
-                                    .unwrap_or_else(|e| e.into_inner())
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                                     .set_config(&config);
                                 last_eq_config = Some(config);
                             }
@@ -215,7 +219,7 @@ fn main() -> anyhow::Result<()> {
                                 );
                                 event_speaker_eq
                                     .lock()
-                                    .unwrap_or_else(|e| e.into_inner())
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                                     .set_config(&config);
                                 last_speaker_config = Some(config);
                             }
@@ -279,7 +283,7 @@ fn main() -> anyhow::Result<()> {
                         tokio::select! {
                             _ = sigint.recv() => {}
                             _ = sigterm.recv() => {}
-                            _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {}
+                            () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {}
                         }
                     }
                     #[cfg(not(unix))]

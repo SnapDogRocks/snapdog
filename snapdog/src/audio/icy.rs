@@ -4,7 +4,7 @@
 //! ICY metadata parsing for Icecast/Shoutcast streams.
 //!
 //! Strips inline metadata from the audio byte stream and extracts
-//! StreamTitle updates (e.g. "Artist - Song").
+//! `StreamTitle` updates (e.g. "Artist - Song").
 
 use bytes::Bytes;
 use tokio::sync::mpsc;

@@ -8,7 +8,7 @@
 use anyhow::{Result, bail};
 use tracing_subscriber::EnvFilter;
 
-/// Convert snapcast-style log filter to tracing EnvFilter syntax.
+/// Convert snapcast-style log filter to tracing `EnvFilter` syntax.
 ///
 /// Snapcast: `*:info,Stream:debug` → tracing: `info,snapdog_client::stream=debug`
 fn convert_filter(filter: &str) -> String {
@@ -51,7 +51,7 @@ fn convert_filter(filter: &str) -> String {
 /// Initialize logging from CLI options.
 ///
 /// Falls back to `RUST_LOG` env var if set, otherwise uses the provided filter.
-pub(crate) fn init(sink: &str, filter: &str) -> Result<()> {
+pub fn init(sink: &str, filter: &str) -> Result<()> {
     let env_filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()
     } else {

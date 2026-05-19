@@ -96,7 +96,7 @@ pub type ReceiverEventRx = mpsc::Receiver<ReceiverEvent>;
 
 // ── Remote control (zone player → source device) ─────────────
 
-/// Command sent from SnapDog to the source device.
+/// Command sent from `SnapDog` to the source device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoteCommand {
     /// Resume playback.
@@ -121,7 +121,7 @@ pub enum RemoteCommand {
 ///
 /// Delivered via [`ReceiverEvent::RemoteAvailable`] when a client connects.
 /// Implementations bridge to protocol-specific control channels
-/// (DACP for AirPlay 1, MediaRemote for AirPlay 2, Spotify Connect API, etc.).
+/// (DACP for `AirPlay` 1, `MediaRemote` for `AirPlay` 2, Spotify Connect API, etc.).
 pub trait RemoteControl: Send + Sync {
     /// Send a playback command to the source device.
     fn send_command(&self, cmd: RemoteCommand) -> Result<()>;
@@ -136,7 +136,7 @@ use std::future::Future;
 /// Each zone spawns one instance per provider type. The provider writes
 /// F32 PCM audio and events to the channels supplied at startup.
 pub trait ReceiverProvider: Send {
-    /// Human-readable provider name (e.g., "AirPlay", "Spotify Connect").
+    /// Human-readable provider name (e.g., "`AirPlay`", "Spotify Connect").
     fn name(&self) -> &'static str;
 
     /// Start the receiver. Audio and events flow to the provided channels.

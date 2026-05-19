@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! ZonePlayer command definitions.
+//! `ZonePlayer` command definitions.
 
-/// Commands sent to a ZonePlayer from API, MQTT, or KNX.
+/// Commands sent to a `ZonePlayer` from API, MQTT, or KNX.
 #[derive(Debug)]
 pub enum ZoneCommand {
     // ── Source selection ───────────────────────────────────────
@@ -77,7 +77,7 @@ pub enum ZoneCommand {
     SetEq(crate::audio::eq::EqConfig),
 }
 
-/// What the ZonePlayer is currently doing.
+/// What the `ZonePlayer` is currently doing.
 #[derive(Debug, Clone)]
 pub enum ActiveSource {
     /// No active source — zone is silent.
@@ -103,7 +103,7 @@ pub enum ActiveSource {
     },
     /// Playing an arbitrary URL.
     Url,
-    /// Receiving audio from an AirPlay client.
+    /// Receiving audio from an `AirPlay` client.
     AirPlay,
     /// Receiving audio from a Spotify Connect client.
     Spotify,

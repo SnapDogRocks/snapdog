@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! Client EQ endpoints: /api/v1/clients/{client_index}/eq
+//! Client EQ endpoints: /`api/v1/clients/{client_index}/eq`
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
@@ -23,7 +23,7 @@ pub fn router(state: SharedState) -> Router {
         .with_state(state)
 }
 
-/// Returns 400 if the client is not a SnapDog client.
+/// Returns 400 if the client is not a `SnapDog` client.
 async fn require_snapdog(state: &SharedState, idx: usize) -> Result<(), ApiError> {
     if idx == 0 || idx > state.config.clients.len() {
         return Err(ApiError::NotFound("client"));
@@ -70,7 +70,7 @@ async fn get_eq(State(state): State<SharedState>, Path(idx): Path<usize>) -> imp
     let config = state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get_client(idx);
     Ok::<_, ApiError>(Json(config))
 }
@@ -87,7 +87,7 @@ async fn set_eq(
     state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .set_client(idx, config.clone());
     send_eq(&state, idx, &config).await?;
     Ok::<_, ApiError>(Json(config))
@@ -102,7 +102,7 @@ async fn set_band(
     let mut config = state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get_client(idx);
     if band_idx >= config.bands.len() {
         return Err(ApiError::NotFound("band"));
@@ -112,7 +112,7 @@ async fn set_band(
     state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .set_client(idx, config.clone());
     send_eq(&state, idx, &config).await?;
     Ok::<_, ApiError>(Json(config))
@@ -128,7 +128,7 @@ async fn apply_preset(
     state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .set_client(idx, config.clone());
     send_eq(&state, idx, &config).await?;
     Ok::<_, ApiError>(Json(config))

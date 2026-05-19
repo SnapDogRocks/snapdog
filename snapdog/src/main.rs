@@ -21,7 +21,7 @@ use tracing_subscriber::EnvFilter;
 use snapdog::process;
 use snapdog::{api, audio, config, knx, mqtt, player, snapcast, state};
 
-/// Multi-zone audio controller with AirPlay, Snapcast, MQTT, and KNX integration.
+/// Multi-zone audio controller with `AirPlay`, Snapcast, MQTT, and KNX integration.
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -69,7 +69,7 @@ struct Cli {
     #[arg(long)]
     mdns_service_type: Option<String>,
 
-    /// mDNS advertised name (default: SnapDog)
+    /// mDNS advertised name (default: `SnapDog`)
     #[arg(long)]
     mdns_name: Option<String>,
 
@@ -90,7 +90,7 @@ const SNAPCAST_CMD_CHANNEL_SIZE: usize = 64;
 /// Delay after starting snapserver before connecting.
 #[cfg(feature = "snapcast-process")]
 const SNAPSERVER_STARTUP_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
-/// State file names (relative to config.system.state_dir).
+/// State file names (relative to `config.system.state_dir`).
 const STATE_FILE: &str = "zones.json";
 const EQ_FILE: &str = "eq.json";
 
@@ -464,7 +464,7 @@ pub async fn run_app() -> Result<()> {
                 }
             }
             // Coalesce timer fired — flush expired volumes
-            _ = sleep => {
+            () = sleep => {
                 for (client_id, volume) in coalescer.flush_expired() {
                     let cmd = player::SnapcastCmd::Client {
                         client_id,
@@ -476,7 +476,7 @@ pub async fn run_app() -> Result<()> {
                 }
             }
             // Snapcast server notifications → state updates (process backend only)
-            _ = async {
+            () = async {
                 #[cfg(all(feature = "snapcast-process", not(feature = "snapcast-embedded")))]
                 if let Ok(notification) = snap_notifications.recv().await {
                     snapcast::handle_notification(notification, &config, process_backend.client(), &store, &notify_tx).await;
@@ -485,10 +485,10 @@ pub async fn run_app() -> Result<()> {
                 std::future::pending::<()>().await;
             } => {}
             // MQTT: poll commands + republish state on notifications
-            _ = async {
+            () = async {
                 if let Some(ref mut bridge) = mqtt_bridge {
                     tokio::select! {
-                        _ = bridge.poll_once(&mqtt_zone_cmds, &mqtt_store, &mqtt_snap_tx) => {}
+                        () = bridge.poll_once(&mqtt_zone_cmds, &mqtt_store, &mqtt_snap_tx) => {}
                         Ok(json) = mqtt_notifications.recv() => {
                             if let Ok(notif) = serde_json::from_str::<api::ws::Notification>(&json) {
                                 let s = mqtt_notify_store.read().await;
@@ -515,7 +515,7 @@ pub async fn run_app() -> Result<()> {
                 }
             } => {}
             // Shutdown signals
-            _ = async {
+            () = async {
                 let sigint = tokio::signal::ctrl_c();
                 #[cfg(unix)]
                 let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
@@ -559,7 +559,7 @@ pub async fn run_app() -> Result<()> {
                     tracing::warn!("Second signal received, forcing exit");
                     std::process::exit(1);
                 }
-                _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
+                () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
                     tracing::warn!("Graceful shutdown timed out, forcing exit");
                     std::process::exit(0);
                 }

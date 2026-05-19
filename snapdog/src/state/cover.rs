@@ -33,7 +33,7 @@ pub struct CoverEntry {
     pub bytes: Vec<u8>,
     /// MIME type (e.g. `image/jpeg`).
     pub mime: String,
-    /// CRC32 hex hash for ETag / cache validation.
+    /// CRC32 hex hash for `ETag` / cache validation.
     pub hash: String,
 }
 

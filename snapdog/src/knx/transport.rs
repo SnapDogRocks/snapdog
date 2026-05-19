@@ -10,7 +10,7 @@ use knx_rs_core::dpt::{Dpt, DptValue};
 ///
 /// Used by the publisher task to send group value writes.
 /// Immutable (`&self`) — can be shared across tasks via `Arc`.
-pub(crate) trait KnxPublisher: Send + Sync + 'static {
+pub trait KnxPublisher: Send + Sync + 'static {
     /// Write a typed value to a group address.
     fn write(
         &self,
@@ -24,7 +24,7 @@ pub(crate) trait KnxPublisher: Send + Sync + 'static {
 ///
 /// Used by the listener task to receive group value writes from the bus.
 /// Mutable (`&mut self`) — owned by a single task.
-pub(crate) trait KnxListener: Send + 'static {
+pub trait KnxListener: Send + 'static {
     /// Receive the next group write from the bus.
     /// Returns `None` if the connection is closed.
     fn recv_group_write(

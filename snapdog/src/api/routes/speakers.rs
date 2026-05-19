@@ -89,7 +89,7 @@ async fn apply_speaker(
     state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .set_speaker_correction(idx, config.clone());
 
     send_speaker_eq(&state, idx, &config).await?;
@@ -105,7 +105,7 @@ async fn get_speaker(
     let config = state
         .eq_store
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get_speaker_correction(idx);
     Ok::<_, ApiError>(Json(config))
 }

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Fabian Schmieder
 
 //! Build script:
-//! - Compiles the WebUI (Next.js static export) so rust-embed can bundle the assets.
+//! - Compiles the `WebUI` (Next.js static export) so rust-embed can bundle the assets.
 //! - Embeds Windows icon and version metadata on Windows targets.
 
 use std::path::Path;

@@ -4,7 +4,7 @@
 //! Audio decoding and PCM pipeline.
 //!
 //! Fetches HTTP audio streams, decodes via symphonia to interleaved f32 samples,
-//! and sends them to a consumer (ZonePlayer) for resampling, EQ, and output.
+//! and sends them to a consumer (`ZonePlayer`) for resampling, EQ, and output.
 
 pub mod cache;
 pub mod eq;
@@ -736,7 +736,7 @@ fn run_decode_loop(
     }
 }
 
-/// Bridge from async tokio DuplexStream to sync Read for symphonia.
+/// Bridge from async tokio `DuplexStream` to sync Read for symphonia.
 struct SyncReader(tokio::runtime::Handle, tokio::io::DuplexStream);
 
 impl Read for SyncReader {

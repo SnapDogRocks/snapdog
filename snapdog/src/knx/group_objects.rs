@@ -5,7 +5,7 @@
 //!
 //! Used by:
 //! - Device mode runtime (BAU `GroupObjectStore` construction)
-//! - `cargo xtask generate-knxprod-xml` (OpenKNXproducer XML generation)
+//! - `cargo xtask generate-knxprod-xml` (`OpenKNXproducer` XML generation)
 
 use knx_rs_core::dpt::{DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_UCOUNT, Dpt};
 
@@ -34,7 +34,7 @@ pub struct GoFlags {
     pub write: bool,
     /// Transmit on change (Ü-flag) — send to bus when value changes.
     pub transmit: bool,
-    /// Update on response (A-flag) — update value from GroupValueResponse.
+    /// Update on response (A-flag) — update value from `GroupValueResponse`.
     pub update: bool,
 }
 
@@ -67,7 +67,7 @@ pub const DPT_CONTROL_DIMMING: Dpt = Dpt::new(3, 7);
 /// DPT 1.018 — Occupancy (presence sensor).
 const DPT_OCCUPANCY: Dpt = Dpt::new(1, 18);
 
-/// DPT 7.005 — Time period in seconds (UInt16).
+/// DPT 7.005 — Time period in seconds (`UInt16`).
 pub const DPT_TIME_PERIOD_SEC: Dpt = Dpt::new(7, 5);
 
 /// Definition of a single group object.
@@ -76,13 +76,13 @@ pub struct GoDefinition {
     pub name: &'static str,
     /// German display name (ETS Text attribute).
     pub name_de: &'static str,
-    /// English display name (ETS FunctionText attribute).
+    /// English display name (ETS `FunctionText` attribute).
     pub name_en: &'static str,
     /// KNX datapoint type.
     pub dpt: Dpt,
     /// ETS DPT string (e.g. "DPST-1-1").
     pub dpt_str: &'static str,
-    /// ETS ObjectSize string (e.g. "1 Bit").
+    /// ETS `ObjectSize` string (e.g. "1 Bit").
     pub size_str: &'static str,
     /// Communication flags.
     pub flags: GoFlags,
@@ -632,7 +632,7 @@ pub mod mem {
     pub const ZONE_DEF_VOL: usize = ZONE_ACTIVE + MAX_ZONES;
     /// Zone max volume (10 × 1 byte).
     pub const ZONE_MAX_VOL: usize = ZONE_DEF_VOL + MAX_ZONES;
-    /// Zone AirPlay enabled (10 × 1 byte).
+    /// Zone `AirPlay` enabled (10 × 1 byte).
     pub const ZONE_AIRPLAY: usize = ZONE_MAX_VOL + MAX_ZONES;
     /// Zone Spotify enabled (10 × 1 byte).
     pub const ZONE_SPOTIFY: usize = ZONE_AIRPLAY + MAX_ZONES;

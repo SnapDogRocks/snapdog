@@ -137,7 +137,7 @@ pub struct ClientState {
     pub connected: bool,
     /// Snapcast client ID (set after Snapcast sync).
     pub snapcast_id: Option<String>,
-    /// Whether this is a SnapDog client (supports custom protocol features like EQ).
+    /// Whether this is a `SnapDog` client (supports custom protocol features like EQ).
     #[serde(default)]
     pub is_snapdog: bool,
 }
@@ -188,7 +188,7 @@ pub enum SourceType {
     SubsonicTrack,
     /// Arbitrary URL stream.
     Url,
-    /// AirPlay receiver (passive, preempts other sources).
+    /// `AirPlay` receiver (passive, preempts other sources).
     AirPlay,
     /// Spotify Connect receiver (passive, preempts other sources).
     Spotify,

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! Shared types and constants for SnapDog server and client.
+//! Shared types and constants for `SnapDog` server and client.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 use serde::{Deserialize, Serialize};
 
-/// Client name used by SnapDog clients to identify themselves to the server.
+/// Client name used by `SnapDog` clients to identify themselves to the server.
 pub const CLIENT_NAME: &str = "SnapDog";
 
 /// Snapcast custom message type ID for EQ configuration.

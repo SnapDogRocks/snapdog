@@ -24,7 +24,7 @@ pub fn load(path: &Path) -> Result<AppConfig> {
     load_raw(raw)
 }
 
-/// Resolve raw TOML config into fully populated AppConfig with conventions applied.
+/// Resolve raw TOML config into fully populated `AppConfig` with conventions applied.
 pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
     load_raw_inner(raw, false)
 }
@@ -236,7 +236,7 @@ fn apply_env_overrides(config: &mut AppConfig) {
     if let Ok(val) = std::env::var("SNAPDOG_HTTP_API_KEYS") {
         config.http.api_keys = val
             .split(',')
-            .map(|s| s.trim())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(SecretString::from)
             .collect();

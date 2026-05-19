@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! ZonePlayer shared context and Snapcast command types.
+//! `ZonePlayer` shared context and Snapcast command types.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,13 +22,13 @@ pub type ZoneCommandSender = mpsc::Sender<super::ZoneCommand>;
 /// Channel sender for Snapcast JSON-RPC commands.
 pub type SnapcastCmdSender = mpsc::Sender<SnapcastCmd>;
 
-/// Shared context for all ZonePlayers. Cloned (Arc) per zone task.
+/// Shared context for all `ZonePlayers`. Cloned (Arc) per zone task.
 pub struct ZonePlayerContext {
     /// Application configuration (zones, clients, audio settings, etc.).
     pub config: Arc<AppConfig>,
     /// Shared application state (zone states, client states).
     pub store: state::SharedState,
-    /// Content-addressed cover art cache (AirPlay only).
+    /// Content-addressed cover art cache (`AirPlay` only).
     pub covers: SharedCoverCache,
     /// Broadcast sender for WebSocket notifications.
     pub notify: NotifySender,

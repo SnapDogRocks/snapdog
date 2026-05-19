@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! AirPlay 1 + 2 receiver implementing [`ReceiverProvider`].
+//! `AirPlay` 1 + 2 receiver implementing [`ReceiverProvider`].
 //!
-//! Bridges the [`shairplay`] crate's callback-based API into SnapDog's
+//! Bridges the [`shairplay`] crate's callback-based API into `SnapDog`'s
 //! channel-based receiver model. Audio is delivered as F32 interleaved PCM.
 
 use std::sync::Arc;
@@ -20,17 +20,17 @@ use super::{AudioFormat, AudioSender, ReceiverEvent, ReceiverEventTx, ReceiverPr
 
 use crate::config::AirplayConfig;
 
-/// Base port for AirPlay receivers (each zone gets base + zone_index).
+/// Base port for `AirPlay` receivers (each zone gets base + `zone_index`).
 const AIRPLAY_BASE_PORT: u16 = 7000;
 
-/// AirPlay volume minimum in dB (silence).
+/// `AirPlay` volume minimum in dB (silence).
 const AIRPLAY_VOLUME_MIN_DB: f32 = -144.0;
-/// AirPlay volume maximum in dB.
+/// `AirPlay` volume maximum in dB.
 const AIRPLAY_VOLUME_MAX_DB: f32 = 30.0;
 
 // ── AirPlayReceiver ───────────────────────────────────────────
 
-/// AirPlay receiver wrapping [`shairplay::RaopServer`].
+/// `AirPlay` receiver wrapping [`shairplay::RaopServer`].
 pub struct AirPlayReceiver {
     config: AirplayConfig,
     zone_index: usize,
@@ -39,7 +39,7 @@ pub struct AirPlayReceiver {
 }
 
 impl AirPlayReceiver {
-    /// Create a new (stopped) AirPlay receiver for the given zone.
+    /// Create a new (stopped) `AirPlay` receiver for the given zone.
     pub const fn new(config: AirplayConfig, zone_index: usize, airplay_name: String) -> Self {
         Self {
             config,
@@ -103,7 +103,9 @@ impl ReceiverProvider for AirPlayReceiver {
     }
 
     fn is_running(&self) -> bool {
-        self.server.as_ref().is_some_and(|s| s.is_running())
+        self.server
+            .as_ref()
+            .is_some_and(shairplay::RaopServer::is_running)
     }
 }
 
@@ -271,8 +273,8 @@ impl PairingStore for FilePairingStore {
 
 /// Detect the MAC address of the primary network interface.
 pub(crate) fn detect_hwaddr() -> [u8; 6] {
-    mac_address::get_mac_address()
-        .ok()
-        .flatten()
-        .map_or([0x02, 0x42, 0xAA, 0xBB, 0xCC, 0x00], |mac| mac.bytes())
+    mac_address::get_mac_address().ok().flatten().map_or(
+        [0x02, 0x42, 0xAA, 0xBB, 0xCC, 0x00],
+        mac_address::MacAddress::bytes,
+    )
 }

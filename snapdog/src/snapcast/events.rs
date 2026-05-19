@@ -168,7 +168,7 @@ async fn handle_event(
                 if is_snapdog {
                     let eq_config = eq_store
                         .lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .get_client(client_index);
                     if eq_config.enabled && !eq_config.bands.is_empty() {
                         if let Ok(payload) = serde_json::to_vec(&eq_config) {
@@ -187,7 +187,7 @@ async fn handle_event(
                     // Push persisted speaker correction config
                     let speaker_config = eq_store
                         .lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .get_speaker_correction(client_index);
                     if speaker_config.enabled && !speaker_config.bands.is_empty() {
                         if let Ok(payload) = serde_json::to_vec(&speaker_config) {
@@ -459,7 +459,7 @@ async fn merge_client_into_group(
 
 /// Re-sync zone group IDs from server status.
 ///
-/// The server may reorganize groups (new client → new group, SetGroupClients → merge/delete).
+/// The server may reorganize groups (new client → new group, `SetGroupClients` → merge/delete).
 /// The stream name is the stable identifier; the group ID is ephemeral.
 async fn sync_group_ids(
     config: &AppConfig,
@@ -495,7 +495,7 @@ async fn sync_group_ids(
             .max_by_key(|g| {
                 g.get("clients")
                     .and_then(|c| c.as_array())
-                    .map_or(0, |c| c.len())
+                    .map_or(0, std::vec::Vec::len)
             });
 
         if let Some(group) = best_group {
@@ -507,7 +507,7 @@ async fn sync_group_ids(
                     }
                     let group_muted = group
                         .get("muted")
-                        .and_then(|m| m.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false);
                     if zone.muted != group_muted {
                         tracing::debug!(

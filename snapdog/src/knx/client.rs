@@ -11,7 +11,7 @@ use knx_rs_ip::ops::GroupOps;
 use super::transport::{KnxListener, KnxPublisher};
 
 /// Client-mode publisher: sends group writes via a `MultiplexHandle`.
-pub(crate) struct ClientPublisher {
+pub struct ClientPublisher {
     handle: MultiplexHandle,
 }
 
@@ -30,7 +30,7 @@ impl KnxPublisher for ClientPublisher {
 }
 
 /// Client-mode listener: receives group writes via a `MultiplexHandle`.
-pub(crate) struct ClientListener {
+pub struct ClientListener {
     handle: MultiplexHandle,
 }
 

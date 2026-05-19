@@ -14,7 +14,7 @@ use crate::api::error::ApiError;
 use crate::player::ZoneCommand;
 use crate::state;
 
-/// Embedded SnapDog icon PNG (1024×1024) used as placeholder when no cover art is available.
+/// Embedded `SnapDog` icon PNG (1024×1024) used as placeholder when no cover art is available.
 const PLACEHOLDER_COVER: &[u8] = include_bytes!("../../../../assets/snapdog-icon-placeholder.png");
 
 /// Volume value: absolute (e.g. `75`) or relative (e.g. `"+5"`, `"-3"`).

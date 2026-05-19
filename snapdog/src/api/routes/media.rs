@@ -121,7 +121,7 @@ async fn resolve_playlist(state: &SharedState, index: usize) -> Result<ResolvedP
         .ok_or(ApiError::NotFound("resource"))
 }
 
-/// Resolve index and return the Subsonic playlist ID (or NOT_FOUND for radio/out-of-range).
+/// Resolve index and return the Subsonic playlist ID (or `NOT_FOUND` for radio/out-of-range).
 async fn resolve_subsonic_id(state: &SharedState, index: usize) -> Result<String, ApiError> {
     let playlists = cached_playlists(state).await;
     match state.config.resolve_playlist_index(index, playlists.len()) {
@@ -301,7 +301,7 @@ async fn get_playlist_track(
 }
 
 /// Cover art for a specific track in a playlist.
-/// GET /api/v1/media/playlists/{playlist_index}/tracks/{track_index}/cover
+/// GET /`api/v1/media/playlists/{playlist_index}/tracks/{track_index}/cover`
 ///
 /// For radio (playlist 0): fetches the station's cover from config URL.
 /// For Subsonic (playlist 1+): fetches via Subsonic getCoverArt API.

@@ -213,7 +213,7 @@ async fn run_spotify(
                         None => break,
                     }
                 }
-                _ = tokio::time::sleep(SESSION_POLL_INTERVAL) => {
+                () = tokio::time::sleep(SESSION_POLL_INTERVAL) => {
                     if player.is_invalid() {
                         tracing::info!(zone = zone_index, "Spotify session ended");
                         break;

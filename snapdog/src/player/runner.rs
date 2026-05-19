@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! ZonePlayer runner — the per-zone tokio task.
+//! `ZonePlayer` runner — the per-zone tokio task.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,7 +29,7 @@ use chrono::Timelike;
 
 /// Channel capacity for zone player commands.
 const ZONE_CMD_CHANNEL_SIZE: usize = 32;
-/// Channel capacity for receiver events (AirPlay, Spotify).
+/// Channel capacity for receiver events (`AirPlay`, Spotify).
 const RECEIVER_EVENT_CHANNEL_SIZE: usize = 32;
 /// Channel capacity for receiver audio frames.
 const RECEIVER_AUDIO_CHANNEL_SIZE: usize = 128;
@@ -39,7 +39,7 @@ pub(super) const PCM_DECODE_CHANNEL_SIZE: usize = 64;
 /// Delay before restarting a crashed zone player.
 const ZONE_RESTART_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// Spawn a ZonePlayer task for each configured zone. Returns command senders.
+/// Spawn a `ZonePlayer` task for each configured zone. Returns command senders.
 pub async fn spawn_zone_players(
     ctx: ZonePlayerContext,
 ) -> Result<HashMap<usize, ZoneCommandSender>> {
@@ -78,7 +78,7 @@ async fn reset_playback(
 }
 
 /// Fade out the current stream, stop decode, and prepare fade-in for the next stream.
-/// If fade_ms is 0 or no stream is active, falls back to immediate reset.
+/// If `fade_ms` is 0 or no stream is active, falls back to immediate reset.
 #[allow(clippy::too_many_arguments)]
 async fn fade_transition(
     current_decode: &mut Option<JoinHandle<()>>,
@@ -190,7 +190,7 @@ impl ZoneFade {
     }
 }
 
-/// Main ZonePlayer loop.
+/// Main `ZonePlayer` loop.
 async fn run(
     zone_index: usize,
     commands: &mut mpsc::Receiver<ZoneCommand>,
@@ -305,7 +305,7 @@ async fn run(
         let eq_config = ctx
             .eq_store
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(zone_index);
         zone_eq.set_config(&eq_config);
     }
@@ -844,7 +844,7 @@ async fn run(
                     ZoneCommand::ToggleTrackRepeat => { update_and_notify(store, zone_index, notify, |z| z.track_repeat = !z.track_repeat).await; }
                     ZoneCommand::SetEq(eq_config) => {
                         zone_eq.set_config(&eq_config);
-                        ctx.eq_store.lock().unwrap_or_else(|e| e.into_inner()).set(zone_index, eq_config.clone());
+                        ctx.eq_store.lock().unwrap_or_else(std::sync::PoisonError::into_inner).set(zone_index, eq_config.clone());
                         crate::api::ws::broadcast_notification(notify, &crate::api::ws::Notification::ZoneEqChanged {
                             zone: zone_index,
                             config: eq_config,
@@ -985,7 +985,7 @@ async fn run(
                 handle_receiver_event!(event, ActiveSource::Spotify, SourceType::Spotify);
             }
             // Auto-off timer expired
-            _ = &mut auto_off_timer, if auto_off_armed => {
+            () = &mut auto_off_timer, if auto_off_armed => {
                 auto_off_armed = false;
                 let should_stop = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_source && !z.presence);
                 if should_stop {
@@ -1029,7 +1029,7 @@ async fn notify_presence(
 }
 
 /// Resolve which source to play for presence-triggered playback.
-/// Checks schedule (by current time) → default_source → None (resume).
+/// Checks schedule (by current time) → `default_source` → None (resume).
 fn resolve_presence_source(
     config: &crate::config::AppConfig,
     zone_index: usize,

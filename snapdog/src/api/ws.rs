@@ -96,7 +96,7 @@ pub enum Notification {
         connected: bool,
         /// Zone the client belongs to (1-based).
         zone: usize,
-        /// Whether this is a SnapDog client (supports EQ).
+        /// Whether this is a `SnapDog` client (supports EQ).
         is_snapdog: bool,
     },
     /// Zone equalizer configuration changed.
