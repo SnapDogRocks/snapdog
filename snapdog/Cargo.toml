@@ -15,7 +15,6 @@ path = "src/main.rs"
 [dependencies]
 tokio = { workspace = true }
 axum = { workspace = true }
-tower = { workspace = true }
 tower-http = { workspace = true }
 serde = { workspace = true }
 image = { version = "0.25.10", default-features = false, features = ["ico", "png"] }
@@ -24,7 +23,6 @@ toml = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-tracing-appender = { workspace = true }
 # snapcast-control removed — using own JSON-RPC client (ADR-018)
 symphonia = { workspace = true }
 rubato = { workspace = true }
@@ -36,7 +34,6 @@ knx-rs-device = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
 futures-util = { workspace = true }
-thiserror = { workspace = true }
 anyhow = { workspace = true }
 md5 = { workspace = true }
 fastrand = { workspace = true }
