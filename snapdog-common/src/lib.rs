@@ -8,7 +8,6 @@
 // public helper adds noise without safety benefit.
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::float_cmp)]
-#![allow(clippy::must_use_candidate)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
@@ -94,6 +93,7 @@ impl Default for EqConfig {
 
 /// Calculate linear fade gain for a given position.
 /// Returns 1.0→0.0 for fade-out, 0.0→1.0 for fade-in.
+#[must_use]
 #[inline]
 pub fn fade_gain(remaining: u32, total: u32, fading_out: bool) -> f32 {
     if total == 0 {
@@ -105,6 +105,7 @@ pub fn fade_gain(remaining: u32, total: u32, fading_out: bool) -> f32 {
 
 /// Perceptual (quadratic) volume curve: maps linear 0–100 to 0.0–1.0.
 /// Input: linear percentage (0–100). Output: gain factor (0.0–1.0).
+#[must_use]
 pub fn perceptual_volume(linear: u8) -> f32 {
     let normalized = f32::from(linear) / 100.0;
     normalized * normalized

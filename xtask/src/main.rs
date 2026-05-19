@@ -11,7 +11,6 @@
 // on internal helpers is noise.
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::too_many_lines)]
-#![allow(clippy::must_use_candidate)]
 
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
