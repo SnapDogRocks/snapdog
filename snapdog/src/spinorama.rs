@@ -46,6 +46,10 @@ impl SpeakerDb {
     }
 
     /// Get the list of available speakers. Fetches from GitHub if cache is stale.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the remote index cannot be fetched.
     pub async fn list_speakers(&self) -> Result<Vec<String>> {
         {
             let inner = self.inner.read().await;
@@ -59,6 +63,10 @@ impl SpeakerDb {
     }
 
     /// Get the EQ profile for a speaker. Fetches from GitHub if not cached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the profile cannot be fetched or parsed.
     pub async fn get_profile(&self, speaker: &str) -> Result<EqConfig> {
         {
             let inner = self.inner.read().await;

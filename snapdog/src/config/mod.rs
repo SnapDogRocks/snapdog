@@ -16,6 +16,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 /// Load, validate, and resolve configuration from a TOML file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or contains invalid TOML/config.
 pub fn load(path: &Path) -> Result<AppConfig> {
     let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
         .with_context(|| format!("Failed to read {}", path.display()))?;
@@ -25,11 +29,19 @@ pub fn load(path: &Path) -> Result<AppConfig> {
 }
 
 /// Resolve raw TOML config into fully populated `AppConfig` with conventions applied.
+///
+/// # Errors
+///
+/// Returns an error if the configuration is invalid.
 pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
     load_raw_inner(raw, false)
 }
 
 /// Like `load_raw` but skips zone/client validation (for KNX device mode).
+///
+/// # Errors
+///
+/// Returns an error if the configuration is invalid.
 pub fn load_raw_no_validate(raw: FileConfig) -> Result<AppConfig> {
     load_raw_inner(raw, true)
 }

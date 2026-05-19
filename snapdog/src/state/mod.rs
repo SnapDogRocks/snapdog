@@ -22,6 +22,10 @@ use crate::config::AppConfig;
 pub type SharedState = Arc<RwLock<Store>>;
 
 /// Create a new state store initialized from config, optionally loading persisted state.
+///
+/// # Errors
+///
+/// Returns an error if the persisted state file cannot be read or parsed.
 pub fn init(config: &AppConfig, persist_path: Option<&Path>) -> Result<SharedState> {
     let mut store = Store::from_config(config);
 
@@ -323,6 +327,10 @@ impl Store {
     }
 
     /// Persist current state to JSON file via atomic write (write to `.tmp`, then rename).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be written or renamed.
     pub fn persist(&mut self) -> Result<()> {
         let Some(path) = &self.persist_path else {
             return Ok(());

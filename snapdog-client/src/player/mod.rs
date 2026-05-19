@@ -516,7 +516,11 @@ fn run_cpal(
                 .playback
                 .duration_since(&info.timestamp().callback)
                 .map_or(0, |d| d.as_micros() as i64)
-                + (num_frames as i64 * 1_000_000) / i64::from(format.rate());
+                + {
+                    #[allow(clippy::cast_possible_wrap)]
+                    let v = num_frames as i64;
+                    v * 1_000_000
+                } / i64::from(format.rate());
 
             let server_now = {
                 let tp = time_provider

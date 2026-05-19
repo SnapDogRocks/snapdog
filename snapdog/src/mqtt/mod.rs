@@ -32,6 +32,10 @@ pub struct MqttBridge {
 
 impl MqttBridge {
     /// Connect to MQTT broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the broker connection fails.
     #[tracing::instrument(skip_all, fields(broker = %config.broker))]
     pub async fn connect(config: &MqttConfig, base_url: &str) -> Result<Self> {
         let mut opts = MqttOptions::new(
@@ -77,6 +81,10 @@ impl MqttBridge {
     }
 
     /// Subscribe to all command topics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any subscription fails.
     pub async fn subscribe_commands(&self) -> Result<()> {
         let topics = [
             "zones/+/volume/set",
@@ -109,6 +117,10 @@ impl MqttBridge {
     }
 
     /// Publish Home Assistant MQTT Discovery messages for all zones.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if publishing any discovery message fails.
     pub async fn publish_ha_discovery(&self, zones: &[crate::config::ZoneConfig]) -> Result<()> {
         for zone in zones {
             let idx = zone.index;
@@ -182,6 +194,10 @@ impl MqttBridge {
     }
 
     /// Publish a status value (retained).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the MQTT publish fails.
     pub async fn publish(&self, topic: &str, payload: &str) -> Result<()> {
         self.client
             .publish(
@@ -195,6 +211,10 @@ impl MqttBridge {
     }
 
     /// Publish zone state as a single retained JSON object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the MQTT publish fails.
     pub async fn publish_zone_state(&self, index: usize, zone: &state::ZoneState) -> Result<()> {
         let state_str = match zone.playback {
             state::PlaybackState::Playing => "playing",
@@ -241,6 +261,10 @@ impl MqttBridge {
     }
 
     /// Publish client state as a single retained JSON object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the MQTT publish fails.
     pub async fn publish_client_state(
         &self,
         index: usize,
@@ -258,6 +282,10 @@ impl MqttBridge {
     }
 
     /// Run the event loop, dispatching incoming commands via `ZonePlayer` channels.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event loop encounters a fatal MQTT error.
     pub async fn run(
         &mut self,
         zone_commands: HashMap<usize, ZoneCommandSender>,

@@ -44,6 +44,10 @@ pub type DeviceControlHandle = std::sync::Arc<device::DevicePublisher>;
 pub use transport::KnxDeviceControl;
 
 /// Start the KNX bridge. Returns a device control handle in device mode.
+///
+/// # Errors
+///
+/// Returns an error if KNX is not configured or the connection fails.
 pub async fn start(
     config: &AppConfig,
     store: state::SharedState,

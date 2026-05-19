@@ -124,6 +124,10 @@ pub enum RemoteCommand {
 /// (DACP for `AirPlay` 1, `MediaRemote` for `AirPlay` 2, Spotify Connect API, etc.).
 pub trait RemoteControl: Send + Sync {
     /// Send a playback command to the source device.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be delivered.
     fn send_command(&self, cmd: RemoteCommand) -> Result<()>;
 }
 

@@ -56,6 +56,10 @@ pub struct AppState {
 pub type SharedState = Arc<AppState>;
 
 /// Start the HTTP server.
+///
+/// # Errors
+///
+/// Returns an error if the TCP listener cannot bind or the server fails.
 #[expect(clippy::too_many_arguments)]
 pub async fn serve(
     config: AppConfig,

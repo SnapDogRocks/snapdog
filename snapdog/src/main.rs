@@ -155,6 +155,10 @@ async fn main() -> Result<()> {
 }
 
 /// Core application logic — used by both console mode and Windows service.
+///
+/// # Errors
+///
+/// Returns an error if the application fails to start or encounters a fatal error.
 pub async fn run_app() -> Result<()> {
     // ── Parse config ──────────────────────────────────────────
     let cli = Cli::parse();
@@ -360,7 +364,7 @@ pub async fn run_app() -> Result<()> {
     // ── API server ────────────────────────────────────────────
     // Intentionally spawned without shutdown propagation: if the API dies,
     // the main loop continues serving MQTT/KNX/Snapcast. The API is non-critical.
-    let api_config = (*config).clone();
+    let http_config = (*config).clone();
     let api_store = store.clone();
     let api_commands = zone_commands.clone();
     let api_covers = covers.clone();
@@ -368,7 +372,7 @@ pub async fn run_app() -> Result<()> {
     let api_snap_tx = snap_cmd_tx.clone();
     tokio::spawn(async move {
         if let Err(e) = api::serve(
-            api_config,
+            http_config,
             api_store,
             api_commands,
             api_snap_tx,

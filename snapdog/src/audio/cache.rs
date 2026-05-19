@@ -63,6 +63,10 @@ pub struct CacheWriter {
 
 impl CacheWriter {
     /// Append bytes to the partial file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the write exceeds the maximum cache size or the I/O fails.
     pub fn write(&mut self, data: &[u8]) -> Result<()> {
         let next_size = self.bytes_written + data.len() as u64;
         if next_size > self.cache.max_bytes() {
@@ -90,6 +94,10 @@ impl CacheWriter {
     }
 
     /// Finalize the download — rename `.partial` to final path and update index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file rename fails.
     pub fn complete(mut self) -> Result<PathBuf> {
         self.completed = true;
         self.file.take(); // close file before rename
@@ -132,6 +140,10 @@ pub struct TrackCache {
 
 impl TrackCache {
     /// Create or open a track cache at the configured path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache directory cannot be created.
     pub fn new(config: &SubsonicCacheConfig) -> Result<Self> {
         fs::create_dir_all(&config.path)
             .with_context(|| format!("Failed to create cache dir: {}", config.path))?;
@@ -187,6 +199,10 @@ impl TrackCache {
     }
 
     /// Start downloading a track to cache. Returns a writer handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the track exceeds the maximum cache size or the file cannot be created.
     pub fn start_download(
         &self,
         track_id: &str,

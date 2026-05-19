@@ -40,6 +40,10 @@ pub(super) const PCM_DECODE_CHANNEL_SIZE: usize = 64;
 const ZONE_RESTART_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Spawn a `ZonePlayer` task for each configured zone. Returns command senders.
+///
+/// # Errors
+///
+/// Returns an error if any zone player fails to initialize.
 pub async fn spawn_zone_players(
     ctx: ZonePlayerContext,
 ) -> Result<HashMap<usize, ZoneCommandSender>> {
@@ -197,6 +201,8 @@ async fn run(
     self_tx: mpsc::Sender<ZoneCommand>,
     ctx: Arc<ZonePlayerContext>,
 ) -> Result<()> {
+    const TIMER_INACTIVE: std::time::Duration = std::time::Duration::from_secs(86400);
+
     let config = &ctx.config;
     let store = &ctx.store;
     let covers = &ctx.covers;
@@ -311,7 +317,6 @@ async fn run(
     }
 
     // Presence auto-off timer (inactive until armed)
-    const TIMER_INACTIVE: std::time::Duration = std::time::Duration::from_secs(86400);
     let auto_off_timer = tokio::time::sleep(TIMER_INACTIVE);
     tokio::pin!(auto_off_timer);
     let mut auto_off_armed = false;
@@ -393,8 +398,11 @@ async fn run(
                 } => {
                     update_and_notify(store, zone_index, notify, |z| {
                         if let Some(ref mut t) = z.track {
-                            t.position_ms = position_ms as i64;
-                            t.duration_ms = duration_ms as i64;
+                            #[allow(clippy::cast_possible_wrap)]
+                            {
+                                t.position_ms = position_ms as i64;
+                                t.duration_ms = duration_ms as i64;
+                            }
                         }
                     })
                     .await;

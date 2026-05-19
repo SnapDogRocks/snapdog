@@ -381,7 +381,11 @@ async fn toggle_repeat(
 async fn get_track(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
     read_zone(&state, idx)
         .await
-        .map(|z| Json(z.playlist_track_index.unwrap_or(0) as i32))
+        .map(|z| {
+            #[allow(clippy::cast_possible_wrap)]
+            let idx = z.playlist_track_index.unwrap_or(0) as i32;
+            Json(idx)
+        })
         .ok_or(zone_not_found())
 }
 async fn get_track_metadata(
@@ -643,7 +647,11 @@ async fn get_playlist_count(
 ) -> impl IntoResponse {
     read_zone(&state, idx)
         .await
-        .map(|z| Json(z.playlist_track_count.unwrap_or(0) as i32))
+        .map(|z| {
+            #[allow(clippy::cast_possible_wrap)]
+            let count = z.playlist_track_count.unwrap_or(0) as i32;
+            Json(count)
+        })
         .ok_or(zone_not_found())
 }
 async fn get_clients(State(state): State<SharedState>, Path(idx): Path<usize>) -> Json<Vec<usize>> {

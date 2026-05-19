@@ -131,6 +131,8 @@ async fn run_spotify(
     audio_tx: AudioSender,
     event_tx: ReceiverEventTx,
 ) -> Result<()> {
+    use futures_util::StreamExt;
+
     loop {
         tracing::info!(zone = zone_index, name = %config.name, "Waiting for Spotify Connect client");
 
@@ -140,7 +142,6 @@ async fn run_spotify(
             .launch()
             .map_err(|e| anyhow::anyhow!("Discovery failed: {e}"))?;
 
-        use futures_util::StreamExt;
         let Some(credentials) = discovery.next().await else {
             return Ok(());
         };

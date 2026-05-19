@@ -22,6 +22,10 @@ pub struct SnapserverHandle {
 
 impl SnapserverHandle {
     /// Start snapserver if managed=true, otherwise return a no-op handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the snapserver process cannot be spawned.
     pub fn start(config: &AppConfig) -> Result<Self> {
         if !config.snapcast.managed {
             tracing::info!("Snapserver not managed — skipping");
@@ -58,6 +62,10 @@ impl SnapserverHandle {
     }
 
     /// Gracefully stop the snapserver process.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the process cannot be killed.
     pub async fn stop(&mut self) -> Result<()> {
         if let Some(ref mut child) = self.child {
             tracing::info!("Stopping snapserver");

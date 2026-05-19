@@ -336,14 +336,14 @@ async fn response_bytes_limited(
     url: &str,
     label: &str,
 ) -> Option<Vec<u8>> {
+    use futures_util::StreamExt;
+
     if let Some(len) = response.content_length() {
         if len > limit {
             tracing::debug!(url, label, len, limit, "Remote body too large");
             return None;
         }
     }
-
-    use futures_util::StreamExt;
     let mut stream = response.bytes_stream();
     let mut body = bytes::BytesMut::new();
     while let Some(chunk) = stream.next().await {

@@ -126,13 +126,13 @@ async fn read_response_bytes_limited(
     limit: u64,
     label: &str,
 ) -> Result<bytes::Bytes> {
+    use futures_util::StreamExt;
+
     if let Some(len) = response.content_length() {
         if len > limit {
             anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
         }
     }
-
-    use futures_util::StreamExt;
     let mut stream = response.bytes_stream();
     let mut body = bytes::BytesMut::new();
     while let Some(chunk) = stream.next().await {
@@ -156,6 +156,10 @@ async fn read_response_text_limited(
 }
 
 /// Returns an optional ICY metadata receiver for live title updates.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP request or audio decoding fails.
 #[tracing::instrument(skip(tx, audio_config, icy_meta_tx))]
 pub async fn decode_http_stream(
     url: String,
@@ -275,6 +279,10 @@ pub async fn decode_http_stream(
 ///
 /// On completion, finalizes the cache entry. On abort (consumer dropped), the partial
 /// file remains for potential future resume.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP request, cache write, or audio decoding fails.
 #[tracing::instrument(skip(tx, cache))]
 pub async fn decode_http_stream_cached(
     url: String,
@@ -587,6 +595,10 @@ fn decode_to_pcm(
 ///
 /// Unlike `decode_http_stream`, this operates on a complete (or partial) file
 /// and supports symphonia's native seek for instant position changes.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened or the audio format is unsupported.
 pub fn decode_cached_file(
     path: &std::path::Path,
     content_type: &str,
@@ -694,7 +706,7 @@ fn run_decode_loop(
             continue;
         }
 
-        let decoded = match decoder.decode(&packet) {
+        let audio_buf = match decoder.decode(&packet) {
             Ok(d) => d,
             Err(e) => {
                 tracing::debug!(error = %e, "Decode error, skipping packet");
@@ -702,8 +714,8 @@ fn run_decode_loop(
             }
         };
 
-        let spec = *decoded.spec();
-        let num_frames = decoded.frames();
+        let spec = *audio_buf.spec();
+        let num_frames = audio_buf.frames();
 
         if !format_sent {
             let _ = tx.blocking_send(PcmMessage::Format {
@@ -714,7 +726,7 @@ fn run_decode_loop(
         }
 
         let mut sample_buf = SampleBuffer::<f32>::new(num_frames as u64, spec);
-        sample_buf.copy_interleaved_ref(decoded);
+        sample_buf.copy_interleaved_ref(audio_buf);
 
         if tx
             .blocking_send(PcmMessage::Audio(sample_buf.samples().to_vec()))
@@ -726,9 +738,11 @@ fn run_decode_loop(
 
         if let Some(tb) = time_base {
             let time = tb.calc_time(packet.ts());
-            let sec = time.seconds as i64;
-            if sec != last_position_sec {
-                last_position_sec = sec;
+            #[allow(clippy::cast_possible_wrap)]
+            let seconds = time.seconds as i64;
+            if seconds != last_position_sec {
+                last_position_sec = seconds;
+                #[allow(clippy::cast_possible_wrap)]
                 let ms = (time.seconds as i64) * 1000 + (time.frac * 1000.0) as i64;
                 let _ = tx.blocking_send(PcmMessage::Position(ms));
             }

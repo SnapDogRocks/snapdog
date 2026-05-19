@@ -47,6 +47,10 @@ impl SubsonicClient {
     }
 
     /// Test connection to the Subsonic server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the server is unreachable or responds with a failure.
     pub async fn ping(&self) -> Result<()> {
         let resp: SubsonicResponse<()> = self.get("ping", &[]).await?;
         if resp.subsonic_response.status == "ok" {
@@ -64,6 +68,10 @@ impl SubsonicClient {
     }
 
     /// Get all playlists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails.
     pub async fn get_playlists(&self) -> Result<Vec<PlaylistEntry>> {
         let resp: SubsonicResponse<PlaylistsWrapper> = self.get("getPlaylists", &[]).await?;
         Ok(resp
@@ -74,6 +82,10 @@ impl SubsonicClient {
     }
 
     /// Get a playlist with its tracks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or the playlist is not found.
     pub async fn get_playlist(&self, id: &str) -> Result<Playlist> {
         let resp: SubsonicResponse<PlaylistWrapper> =
             self.get("getPlaylist", &[("id", id)]).await?;
@@ -111,6 +123,10 @@ impl SubsonicClient {
     }
 
     /// Get cover art bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response is too large.
     pub async fn get_cover_art(&self, cover_id: &str) -> Result<Vec<u8>> {
         let url = self.cover_art_fetch_url(cover_id);
         let resp = self.http.get(&url).send().await?.error_for_status()?;
@@ -178,13 +194,13 @@ async fn read_response_bytes_limited(
     limit: u64,
     label: &str,
 ) -> Result<Vec<u8>> {
+    use futures_util::StreamExt;
+
     if let Some(len) = response.content_length() {
         if len > limit {
             anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
         }
     }
-
-    use futures_util::StreamExt;
     let mut stream = response.bytes_stream();
     let mut body = bytes::BytesMut::new();
     while let Some(chunk) = stream.next().await {

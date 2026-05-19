@@ -379,6 +379,10 @@ pub const fn default_auto_off_delay() -> u16 {
 }
 
 /// Parse a HH:MM time string into minutes since midnight.
+///
+/// # Errors
+///
+/// Returns an error if the string is not in valid HH:MM format.
 pub fn parse_time(s: &str) -> anyhow::Result<u16> {
     let parts: Vec<&str> = s.split(':').collect();
     anyhow::ensure!(parts.len() == 2, "expected HH:MM format, got '{s}'");

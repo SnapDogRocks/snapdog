@@ -182,7 +182,7 @@ pub async fn update_and_notify(
 
         s.dirty = true;
 
-        let mut notifs = vec![crate::api::ws::Notification::ZoneStateChanged {
+        let mut notifications = vec![crate::api::ws::Notification::ZoneStateChanged {
             zone: zone_index,
             playback,
             volume,
@@ -193,12 +193,12 @@ pub async fn update_and_notify(
             track_repeat,
         }];
         if let Some(n) = track_changed_notif {
-            notifs.push(n);
+            notifications.push(n);
         }
         if let Some(n) = progress_notif {
-            notifs.push(n);
+            notifications.push(n);
         }
-        notifs
+        notifications
     };
     for n in notifications {
         crate::api::ws::broadcast_notification(notify, &n);

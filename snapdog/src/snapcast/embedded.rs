@@ -33,6 +33,10 @@ pub struct EmbeddedEventReceiver {
 
 impl EmbeddedBackend {
     /// Start the embedded server. Returns the backend + event receiver.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the server cannot be started.
     pub fn start(
         config: &AppConfig,
         store: state::SharedState,
@@ -59,17 +63,17 @@ impl EmbeddedBackend {
         // Build client filter based on unknown_clients policy
         let client_filter: Option<std::sync::Arc<dyn snapcast_server::auth::ClientFilter>> =
             if config.snapcast.unknown_clients == crate::config::UnknownClientPolicy::Reject {
-                let allowed_macs: Vec<String> = config
-                    .clients
-                    .iter()
-                    .map(|c| c.mac.to_lowercase())
-                    .collect();
                 struct MacAllowlist(Vec<String>);
                 impl snapcast_server::auth::ClientFilter for MacAllowlist {
                     fn accept(&self, hello: &snapcast_server::Hello) -> bool {
                         self.0.iter().any(|m| m == &hello.mac.to_lowercase())
                     }
                 }
+                let allowed_macs: Vec<String> = config
+                    .clients
+                    .iter()
+                    .map(|c| c.mac.to_lowercase())
+                    .collect();
                 Some(std::sync::Arc::new(MacAllowlist(allowed_macs)))
             } else {
                 None

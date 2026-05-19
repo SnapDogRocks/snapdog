@@ -141,7 +141,11 @@ pub fn subsonic_track_info(track: &crate::subsonic::Track) -> TrackInfo {
         year: None,
         track_number: track.track,
         disc_number: None,
-        duration_ms: (track.duration * 1000) as i64,
+        duration_ms: {
+            #[allow(clippy::cast_possible_wrap)]
+            let v = (track.duration * 1000) as i64;
+            v
+        },
         position_ms: 0,
         seekable: true,
         source: SourceType::SubsonicPlaylist,
@@ -574,6 +578,8 @@ async fn prefetch_one(
     track_id: &str,
     url: &str,
 ) -> anyhow::Result<()> {
+    use futures_util::StreamExt;
+
     anyhow::ensure!(
         url::Url::parse(url)
             .is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.host().is_some()),
@@ -592,7 +598,6 @@ async fn prefetch_one(
 
     let mut writer = cache.start_download(track_id, &content_type, content_length)?;
 
-    use futures_util::StreamExt;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let bytes = chunk?;
