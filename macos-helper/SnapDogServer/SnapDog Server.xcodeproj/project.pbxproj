@@ -161,7 +161,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-				shellScript = "HELPERS_DIR=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers\"\nmkdir -p \"$HELPERS_DIR\"\nif [ -x \"${SRCROOT}/../../target/release/snapdog\" ]; then\n  cp \"${SRCROOT}/../../target/release/snapdog\" \"$HELPERS_DIR/\"\nelif [ \"$CONFIGURATION\" != \"Release\" ] && [ -x \"${SRCROOT}/../../target/debug/snapdog\" ]; then\n  cp \"${SRCROOT}/../../target/debug/snapdog\" \"$HELPERS_DIR/\"\nelse\n  echo \"error: snapdog binary not found. Build the Rust snapdog binary before packaging the helper app.\"\n  exit 1\nfi\n";
+				shellScript = "# On CI, the binary is injected after xcodebuild by the workflow\nif [ -n \"$CI\" ]; then\n  echo \"note: CI build — skipping binary copy (injected by workflow)\"\n  exit 0\nfi\nHELPERS_DIR=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers\"\nmkdir -p \"$HELPERS_DIR\"\nif [ -x \"${SRCROOT}/../../target/release/snapdog\" ]; then\n  cp \"${SRCROOT}/../../target/release/snapdog\" \"$HELPERS_DIR/\"\nelif [ \"$CONFIGURATION\" != \"Release\" ] && [ -x \"${SRCROOT}/../../target/debug/snapdog\" ]; then\n  cp \"${SRCROOT}/../../target/debug/snapdog\" \"$HELPERS_DIR/\"\nelse\n  echo \"error: snapdog binary not found. Build the Rust snapdog binary before packaging the helper app.\"\n  exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -4025,7 +4025,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog"
-version = "0.10.0"
+version = "0.11.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4078,7 +4078,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog-client"
-version = "0.10.0"
+version = "0.11.1"
 dependencies = [
  "alsa",
  "anyhow",
