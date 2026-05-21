@@ -174,6 +174,10 @@ impl SubsonicFormat {
 /// Root of the TOML config file. Optional fields use defaults.
 #[derive(Debug, Default, Deserialize)]
 pub struct FileConfig {
+    /// Server display name. Used for `mDNS`, MQTT discovery, KNX device name.
+    /// Default: "`SnapDog`".
+    #[serde(default = "default_server_name")]
+    pub name: String,
     /// System settings (log level, log file).
     #[serde(default)]
     pub system: SystemConfig,
@@ -904,6 +908,8 @@ pub struct RawRadioConfig {
 /// Fully resolved application configuration. All conventions applied.
 #[derive(Debug, Clone)]
 pub struct AppConfig {
+    /// Server display name.
+    pub name: String,
     /// System settings.
     pub system: SystemConfig,
     /// Audio output format.
@@ -1178,6 +1184,9 @@ fn default_mdns_service_type() -> String {
     "_snapdog._tcp.local.".into()
 }
 fn default_mdns_name() -> String {
+    "SnapDog".into()
+}
+fn default_server_name() -> String {
     "SnapDog".into()
 }
 fn default_mqtt_base_topic() -> String {

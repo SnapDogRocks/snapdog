@@ -198,11 +198,13 @@ impl Cli {
 fn parse_url(url: &str) -> Result<ServerSettings> {
     let mut settings = ServerSettings::default();
 
-    let (scheme, rest) = url.split_once("://").unwrap_or(("tcp", url));
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| anyhow::anyhow!("missing scheme separator '://'"))?;
 
     match scheme {
-        "tcp" => settings.scheme = scheme.to_string(),
-        _ => bail!("unsupported scheme: {scheme} (expected tcp)"),
+        "tcp" | "ws" | "wss" => settings.scheme = scheme.to_string(),
+        _ => bail!("unsupported scheme: {scheme} (expected tcp, ws, or wss)"),
     }
 
     // Extract optional user:password@

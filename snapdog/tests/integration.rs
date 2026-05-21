@@ -162,7 +162,7 @@ async fn mqtt_connect_and_subscribe() {
         eprintln!("Skipping — no MQTT credentials in .env.test");
         return;
     };
-    let bridge = snapdog::mqtt::MqttBridge::connect(&cfg, "http://localhost:5555")
+    let bridge = snapdog::mqtt::MqttBridge::connect(&cfg, "http://localhost:5555", "SnapDog")
         .await
         .expect("MQTT connect should succeed");
     bridge
@@ -177,7 +177,7 @@ async fn mqtt_publish_and_receive() {
         eprintln!("Skipping — no MQTT credentials in .env.test");
         return;
     };
-    let bridge = snapdog::mqtt::MqttBridge::connect(&cfg, "http://localhost:5555")
+    let bridge = snapdog::mqtt::MqttBridge::connect(&cfg, "http://localhost:5555", "SnapDog")
         .await
         .expect("MQTT connect should succeed");
 

@@ -4,6 +4,9 @@
 # Copy to snapdog.toml and adjust to your setup.
 # All sections and fields are optional — sensible defaults are used.
 
+# Server display name — used for mDNS discovery, MQTT, KNX device name.
+# name = "SnapDog"
+
 # ── System ─────────────────────────────────────────────────────────────────
 [system]
 # Logging verbosity: trace, debug, info, warn, error
@@ -76,7 +79,6 @@ default_zone = "Ground Floor"
 # mDNS service type for client discovery
 # mdns_service_type = "_snapcast._tcp.local."
 # mDNS advertised name
-# mdns_name = "SnapDog"
 
 # ── AirPlay ────────────────────────────────────────────────────────────────
 [airplay]

@@ -79,9 +79,9 @@ struct Cli {
     #[arg(long)]
     mdns_service_type: Option<String>,
 
-    /// mDNS advertised name (default: `SnapDog`)
+    /// Server display name (`mDNS`, MQTT, KNX). Default: "`SnapDog`"
     #[arg(long)]
-    mdns_name: Option<String>,
+    name: Option<String>,
 
     /// Log level: trace, debug, info, warn, error
     #[arg(short, long)]
@@ -235,8 +235,8 @@ pub async fn run_app() -> Result<()> {
     if let Some(ref s) = cli.mdns_service_type {
         app_config.snapcast.mdns_service_type = s.clone();
     }
-    if let Some(ref s) = cli.mdns_name {
-        app_config.snapcast.mdns_name = s.clone();
+    if let Some(ref s) = cli.name {
+        app_config.name = s.clone();
     }
     if let Some(ref level) = cli.log_level {
         app_config.system.log_level = match level.as_str() {
@@ -404,7 +404,7 @@ pub async fn run_app() -> Result<()> {
 
     // ── MQTT bridge ───────────────────────────────────────────
     let mut mqtt_bridge = if let Some(mqtt_config) = &config.mqtt {
-        match mqtt::MqttBridge::connect(mqtt_config, &config.http.base_url).await {
+        match mqtt::MqttBridge::connect(mqtt_config, &config.http.base_url, &config.name).await {
             Ok(bridge) => {
                 if let Err(e) = bridge.subscribe_commands().await {
                     tracing::warn!(error = %e, "MQTT subscribe failed");

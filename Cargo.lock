@@ -4050,6 +4050,7 @@ dependencies = [
  "snapcast-proto",
  "snapcast-server",
  "snapdog-common",
+ "subtle",
  "symphonia",
  "tempfile",
  "tokio",

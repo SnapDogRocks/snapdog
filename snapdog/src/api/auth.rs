@@ -10,6 +10,8 @@ use axum::response::{IntoResponse, Response};
 
 /// Middleware that checks `Authorization: Bearer <key>` on API routes.
 pub async fn require_api_key(request: Request, next: Next) -> Response {
+    use subtle::ConstantTimeEq;
+
     let Some(keys) = request.extensions().get::<ApiKeys>().cloned() else {
         return next.run(request).await;
     };
@@ -29,10 +31,15 @@ pub async fn require_api_key(request: Request, next: Next) -> Response {
         None
     };
 
-    let authorized = header_token.is_some_and(|t| keys.0.iter().any(|k| k == t))
-        || query_token
-            .as_deref()
-            .is_some_and(|t| keys.0.iter().any(|k| k == t));
+    let authorized = header_token.is_some_and(|t| {
+        keys.0
+            .iter()
+            .any(|k| k.len() == t.len() && k.as_bytes().ct_eq(t.as_bytes()).unwrap_u8() == 1)
+    }) || query_token.as_deref().is_some_and(|t| {
+        keys.0
+            .iter()
+            .any(|k| k.len() == t.len() && k.as_bytes().ct_eq(t.as_bytes()).unwrap_u8() == 1)
+    });
 
     if authorized {
         next.run(request).await

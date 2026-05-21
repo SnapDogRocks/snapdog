@@ -28,6 +28,7 @@ pub struct MqttBridge {
     eventloop: rumqttc::EventLoop,
     base_topic: String,
     base_url: String,
+    name: String,
 }
 
 impl MqttBridge {
@@ -37,7 +38,7 @@ impl MqttBridge {
     ///
     /// Returns an error if the broker connection fails.
     #[tracing::instrument(skip_all, fields(broker = %config.broker))]
-    pub async fn connect(config: &MqttConfig, base_url: &str) -> Result<Self> {
+    pub async fn connect(config: &MqttConfig, base_url: &str, name: &str) -> Result<Self> {
         let mut opts = MqttOptions::new(
             &config.client_id,
             parse_host(&config.broker),
@@ -64,6 +65,7 @@ impl MqttBridge {
             eventloop,
             base_topic: config.base_topic.trim_end_matches('/').to_string(),
             base_url: base_url.trim_end_matches('/').to_string(),
+            name: name.to_string(),
         })
     }
 
@@ -77,6 +79,7 @@ impl MqttBridge {
             eventloop,
             base_topic: base_topic.to_string(),
             base_url: "http://localhost:5555".to_string(),
+            name: "SnapDog".to_string(),
         }
     }
 
@@ -158,7 +161,7 @@ impl MqttBridge {
                 "supported_features": ["play", "pause", "stop", "next_track", "previous_track", "volume_set", "volume_mute", "shuffle_set", "repeat_set", "seek"],
                 "device": {
                     "identifiers": ["snapdog"],
-                    "name": "SnapDog",
+                    "name": self.name,
                     "manufacturer": "metaneutrons",
                     "model": "Multi-zone Audio Controller",
                     "sw_version": env!("CARGO_PKG_VERSION"),
