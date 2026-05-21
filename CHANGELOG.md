@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.4](https://github.com/metaneutrons/snapdog/compare/v0.11.3...v0.11.4) (2026-05-21)
+
+
+### Bug Fixes
+
+* **client:** adapt to sd-notify 0.5 API (removed unset_environment param) ([841911d](https://github.com/metaneutrons/snapdog/commit/841911de8145f8117bbc5fe694b93e0f6fa50545))
+* move use statement before code (items_after_statements) ([a806528](https://github.com/metaneutrons/snapdog/commit/a806528039a760763f3775b102bc3dc898f45f6b))
+
 ## [0.11.3](https://github.com/metaneutrons/snapdog/compare/v0.11.2...v0.11.3) (2026-05-19)
 
 
