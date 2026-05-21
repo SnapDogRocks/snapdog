@@ -348,13 +348,13 @@ fn list_alsa_controls() -> Option<String> {
 
 #[cfg(target_os = "linux")]
 fn detect_alsa_control() -> Option<String> {
+    use alsa::mixer::{Mixer, Selem};
     for candidate in ["Master", "Digital", "PCM", "Speaker"] {
         if validate_alsa_control(candidate) {
             return Some(candidate.to_string());
         }
     }
     // Fall back to first available playback control
-    use alsa::mixer::{Mixer, Selem};
     let mixer = Mixer::new("default", false).ok()?;
     mixer.iter().find_map(|elem| {
         let selem = Selem::new(elem)?;
