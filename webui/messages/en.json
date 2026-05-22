@@ -126,7 +126,7 @@
     "title": "About",
     "dialogLabel": "About SnapDog",
     "closeLabel": "Close dialog",
-    "description": "High-fidelity multi-zone audio streaming & control center for modern spaces",
+    "description": "Multi-zone audio controller with AirPlay, Spotify, Subsonic, MQTT and KNX integration",
     "modelLabel": "MODEL",
     "modelValue": "SNAPDOG-CORE",
     "versionLabel": "VERSION",
