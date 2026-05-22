@@ -274,6 +274,37 @@ pub async fn run_app() -> Result<()> {
         config_label
     );
 
+    // ── Pre-bind ports ────────────────────────────────────────
+    // Bind early — before starting any subsystems — so a port conflict
+    // (e.g. a stale snapdog instance) fails fast with an actionable error
+    // instead of crashing mid-startup via astro-dnssd or silently degrading.
+
+    // HTTP API listener — passed into api::serve() so no TOCTOU window.
+    let http_addr = format!("{}:{}", config.http.bind, config.http.port);
+    let http_listener = tokio::net::TcpListener::bind(&http_addr).await.with_context(|| {
+        format!(
+            "HTTP API port {} is already in use — is snapdog already running?",
+            config.http.port
+        )
+    })?;
+
+    // Snapcast streaming port — probe-bind then immediately release so the
+    // embedded server can bind it a moment later.  Catches conflicts early.
+    #[cfg(feature = "snapcast-embedded")]
+    {
+        let snap_addr = format!(
+            "{}:{}",
+            config.snapcast.address, config.snapcast.streaming_port
+        );
+        tokio::net::TcpListener::bind(&snap_addr).await.with_context(|| {
+            format!(
+                "Snapcast streaming port {} is already in use — is snapdog already running?",
+                config.snapcast.streaming_port
+            )
+        })?;
+        // listener dropped here — embedded server will bind it below
+    }
+
     // ── Initialize subsystems ─────────────────────────────────
     let state_dir = PathBuf::from(&config.system.state_dir);
     std::fs::create_dir_all(&state_dir)
@@ -377,16 +408,19 @@ pub async fn run_app() -> Result<()> {
     }
 
     // ── API server ────────────────────────────────────────────
-    // Intentionally spawned without shutdown propagation: if the API dies,
-    // the main loop continues serving MQTT/KNX/Snapcast. The API is non-critical.
+    // Spawned with a fatal-error channel: if the API task exits unexpectedly
+    // (not via the pre-bound listener failing — that's already caught above),
+    // the main loop receives the error and shuts down gracefully.
     let http_config = (*config).clone();
     let api_store = store.clone();
     let api_commands = zone_commands.clone();
     let api_covers = covers.clone();
     let api_notify = notify_tx.clone();
     let api_snap_tx = snap_cmd_tx.clone();
+    let (api_fatal_tx, api_fatal_rx) = tokio::sync::oneshot::channel::<anyhow::Error>();
     tokio::spawn(async move {
         if let Err(e) = api::serve(
+            http_listener,
             http_config,
             api_store,
             api_commands,
@@ -398,7 +432,8 @@ pub async fn run_app() -> Result<()> {
         )
         .await
         {
-            tracing::error!(error = %e, "API server failed");
+            // Only fires if axum::serve itself fails after startup (very rare).
+            let _ = api_fatal_tx.send(e);
         }
     });
 
@@ -452,6 +487,10 @@ pub async fn run_app() -> Result<()> {
 
     // Volume coalescing: buffer rapid volume changes per client
     let mut coalescer = VolumeCoalescer::new(std::time::Duration::from_millis(VOLUME_COALESCE_MS));
+
+    // Fuse the API fatal receiver so it can be safely polled inside the loop
+    // without moving out of a non-Copy type on every iteration.
+    let mut api_fatal_rx = Some(api_fatal_rx);
 
     loop {
         let sleep = async {
@@ -534,6 +573,20 @@ pub async fn run_app() -> Result<()> {
                     std::future::pending::<()>().await;
                 }
             } => {}
+            // API fatal error (post-startup axum failure — extremely rare)
+            Some(e) = async {
+                if let Some(rx) = api_fatal_rx.as_mut() {
+                    if let Ok(e) = rx.await {
+                        api_fatal_rx = None; // consume so the arm never fires again
+                        return Some(e);
+                    }
+                    api_fatal_rx = None; // sender dropped without sending
+                }
+                std::future::pending::<Option<anyhow::Error>>().await
+            } => {
+                tracing::error!(error = %e, "API server failed — shutting down");
+                break;
+            }
             // Shutdown signals
             () = async {
                 let sigint = tokio::signal::ctrl_c();

@@ -60,9 +60,12 @@ pub type SharedState = Arc<AppState>;
 ///
 /// # Errors
 ///
-/// Returns an error if the TCP listener cannot bind or the server fails.
+/// Returns an error if the server fails. The caller is responsible for
+/// pre-binding the `listener` before starting any subsystems so that a
+/// port conflict is detected early and can be handled as a fatal error.
 #[expect(clippy::too_many_arguments)]
 pub async fn serve<S: BuildHasher>(
+    listener: TcpListener,
     config: AppConfig,
     store: state::SharedState,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
@@ -72,8 +75,6 @@ pub async fn serve<S: BuildHasher>(
     eq_store: std::sync::Arc<std::sync::Mutex<crate::audio::eq::EqStore>>,
     knx_device_control: Option<crate::knx::DeviceControlHandle>,
 ) -> Result<()> {
-    let port = config.http.port;
-    let bind = config.http.bind.clone();
     let state = Arc::new(AppState {
         config,
         store,
@@ -141,9 +142,8 @@ pub async fn serve<S: BuildHasher>(
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http());
 
-    let addr = format!("{bind}:{port}");
-    let listener = TcpListener::bind(&addr).await?;
     let local_addr = listener.local_addr()?;
+    let port = local_addr.port();
     if local_addr.ip().is_unspecified() {
         tracing::info!("REST API listening on port {port} (all interfaces)");
         tracing::info!("  → http://localhost:{port}");
