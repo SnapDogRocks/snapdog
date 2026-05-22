@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/metaneutrons/snapdog/compare/v0.12.0...v0.12.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* fail fast with actionable error on port conflict at startup ([a5b373e](https://github.com/metaneutrons/snapdog/commit/a5b373ec4790e07ae1347a35872d4e219d9c79d9))
+
 ## [0.12.0](https://github.com/metaneutrons/snapdog/compare/v0.11.4...v0.12.0) (2026-05-22)
 
 
