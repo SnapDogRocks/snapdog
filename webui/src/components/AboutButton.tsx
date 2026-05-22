@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { api } from "@/lib/api";
+import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
 
 export function AboutButton() {
   const [open, setOpen] = useState(false);
@@ -11,12 +14,14 @@ export function AboutButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+        className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/55 transition-colors cursor-pointer"
         aria-label="About"
       >
         <InfoIcon size={16} />
       </button>
-      {open && <AboutOverlay onClose={() => setOpen(false)} />}
+      <AnimatePresence>
+        {open && <AboutOverlay onClose={() => setOpen(false)} />}
+      </AnimatePresence>
     </>
   );
 }
@@ -29,41 +34,175 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
     api.system.version().then((v) => setVersion(v.version)).catch(() => {});
   }, []);
 
+  // Motion values for swipe/drag close physics
+  const y = useMotionValue(0);
+
+  // Transform y distance into backdrop opacity (0.7 -> 0) and blur (12px -> 0px)
+  const backdropOpacity = useTransform(y, [0, 250], [0.7, 0], { clamp: true });
+  const blurAmount = useTransform(y, [0, 250], [12, 0], { clamp: true });
+  const backdropFilter = useTransform(blurAmount, (v) => `blur(${v}px)`);
+
+  // Transform y distance into minor scale change on card
+  const cardScale = useTransform(y, [0, 250], [1, 0.95], { clamp: true });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="About SnapDog" onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}>
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} role="presentation" />
-      <div ref={trapRef} className="relative z-10 w-full max-w-sm mx-4 rounded-2xl border border-border bg-card p-6 shadow-xl space-y-4 text-center">
-        <img src="/assets/snapdog-icon.svg" alt="SnapDog" className="size-16 mx-auto opacity-80" />
-        <h2 className="text-lg font-semibold">SnapDog</h2>
-        <p className="text-sm text-muted-foreground">Multi-zone audio system with smart home integration</p>
-        {version && (
-          <p className="text-xs text-muted-foreground tabular-nums">v{version}</p>
-        )}
-        <div className="flex items-center justify-center gap-4 pt-2">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="About SnapDog"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        style={{
+          opacity: backdropOpacity,
+          backdropFilter: backdropFilter,
+          WebkitBackdropFilter: backdropFilter,
+        }}
+        transition={{ duration: 0.2 }}
+        className="absolute inset-0 bg-background/80 cursor-pointer"
+        onClick={onClose}
+        role="presentation"
+      />
+
+      {/* Card */}
+      <motion.div
+        ref={trapRef}
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 600 }}
+        dragElastic={{ top: 0.05, bottom: 0.75 }}
+        style={{ y, scale: cardScale }}
+        onDragEnd={(_, info) => {
+          if (info.offset.y > 120 || info.velocity.y > 500) {
+            onClose();
+          }
+        }}
+        initial={{ y: "100%", opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: "100%", opacity: 0 }}
+        transition={{ type: "spring", damping: 28, stiffness: 320 }}
+        className="relative z-10 w-full max-w-none sm:max-w-sm mx-0 sm:mx-4 rounded-t-3xl sm:rounded-2xl border-t border-x sm:border border-border bg-card p-6 shadow-2xl flex flex-col items-center gap-5 text-center touch-none select-none cursor-default"
+      >
+        {/* Drag handle line indicator */}
+        <div className="w-12 h-1 rounded-full bg-muted-foreground/20 mx-auto cursor-grab active:cursor-grabbing shrink-0 hover:bg-muted-foreground/45 transition-colors" />
+
+        {/* Top-right floating close button */}
+        <motion.button
+          onClick={onClose}
+          whileHover={{ scale: 1.1, rotate: 90 }}
+          whileTap={{ scale: 0.95 }}
+          className="absolute top-4 right-4 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer shrink-0 z-20"
+          aria-label="Close dialog"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={16} />
+        </motion.button>
+
+        {/* Status bar */}
+        <div className="w-full flex items-center justify-between px-1 text-[10px] font-mono text-muted-foreground/60 border-b border-border/30 pb-2.5">
+          <span className="flex items-center gap-1.5">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+            </span>
+            <span>SYS.STATUS: OK</span>
+          </span>
+          <span>HOST: localhost</span>
+        </div>
+
+        {/* Logo and Headings */}
+        <div className="space-y-2.5 mt-1.5">
+          <img
+            src="/assets/snapdog-icon.svg"
+            alt="SnapDog Logo"
+            className="size-16 mx-auto opacity-95 animate-pulse-slow"
+          />
+          <h2 className="text-2xl font-bold tracking-tight">SnapDog</h2>
+          <p className="text-xs text-muted-foreground leading-relaxed px-4">
+            High-fidelity multi-zone audio streaming & control center for modern spaces
+          </p>
+        </div>
+
+        {/* Retro digital soundwave visualizer */}
+        <div className="flex items-center justify-center gap-0.5 h-4 my-1">
+          {[...Array(9)].map((_, i) => (
+            <motion.div
+              key={i}
+              animate={{
+                height: [4, 16, 4],
+              }}
+              transition={{
+                duration: 1.0 + (i % 3) * 0.25,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: i * 0.08,
+              }}
+              className="w-[2px] rounded-full bg-primary/60"
+            />
+          ))}
+        </div>
+
+        {/* Monospace Tech Spec Grid */}
+        <div className="grid grid-cols-2 gap-2 w-full font-mono text-left text-xs pt-1">
+          <div className="flex flex-col p-2.5 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
+            <span className="text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.MODEL</span>
+            <span className="font-semibold text-foreground mt-1 tracking-tight">SNAPDOG-CORE</span>
+          </div>
+
+          <div className="flex flex-col p-2.5 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
+            <span className="text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.FIRMWARE</span>
+            <span className="font-semibold text-foreground mt-1 tabular-nums tracking-tight">
+              {version ? `v${version}` : "v0.11.4"}
+            </span>
+          </div>
+
           <a
             href="https://github.com/metaneutrons/snapdog"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="flex flex-col p-2.5 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
           >
-            <GitHubIcon size={16} />
-            GitHub
+            <span className="text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider flex items-center gap-1">
+              SYS.SOURCE <GitHubIcon size={8} />
+            </span>
+            <span className="font-semibold text-primary mt-1 group-hover:underline tracking-tight">
+              GITHUB ↗
+            </span>
           </a>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Licensed under{" "}
+
           <a
             href="https://www.gnu.org/licenses/gpl-3.0.html"
             target="_blank"
             rel="noopener noreferrer"
-            className="underline hover:text-foreground transition-colors"
+            className="flex flex-col p-2.5 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
           >
-            GPL-3.0
+            <span className="text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.LICENSE</span>
+            <span className="font-semibold text-primary mt-1 group-hover:underline tracking-tight">
+              GPL-3.0 ↗
+            </span>
           </a>
-        </p>
-        <p className="text-[10px] text-muted-foreground/50">© 2026 Fabian Schmieder</p>
-        <button onClick={onClose} className="mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors">Close</button>
-      </div>
+        </div>
+
+        {/* Copyright Footer */}
+        <div className="text-[10px] font-mono text-muted-foreground/45 mt-1">
+          © 2026 Fabian Schmieder
+        </div>
+
+        {/* Prominent main done button */}
+        <motion.button
+          onClick={onClose}
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.98 }}
+          className="w-full py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 active:scale-[0.98] transition-all duration-150 shadow-md shadow-primary/10 text-sm cursor-pointer mt-1"
+        >
+          Done
+        </motion.button>
+      </motion.div>
     </div>
   );
 }
