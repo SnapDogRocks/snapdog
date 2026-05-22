@@ -34,7 +34,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
     api.system.version().then((v) => setVersion(v.version)).catch(() => {});
   }, []);
 
-  // Motion values for swipe/drag close physics
+  // Motion values for swipe/drag close physics (strictly numeric for interpolation safety)
   const y = useMotionValue(0);
 
   // Transform y distance into backdrop opacity (0.7 -> 0) and blur (12px -> 0px)
@@ -47,7 +47,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-label="About SnapDog"
@@ -83,11 +83,11 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             onClose();
           }
         }}
-        initial={{ y: "100%", opacity: 0 }}
+        initial={{ y: 600, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        exit={{ y: "100%", opacity: 0 }}
-        transition={{ type: "spring", damping: 28, stiffness: 320 }}
-        className="relative z-10 w-full max-w-none sm:max-w-sm mx-0 sm:mx-4 rounded-t-3xl sm:rounded-2xl border-t border-x sm:border border-border bg-card p-6 shadow-2xl flex flex-col items-center gap-5 text-center touch-none select-none cursor-default"
+        exit={{ y: 600, opacity: 0 }}
+        transition={{ type: "spring", damping: 30, stiffness: 300 }}
+        className="relative z-10 w-full max-w-none sm:max-w-sm mx-0 sm:mx-4 rounded-t-3xl sm:rounded-2xl border-t border-x sm:border border-border bg-card p-5 sm:p-6 pb-6 shadow-2xl flex flex-col items-center gap-4 text-center touch-none select-none cursor-default flex-shrink-0"
       >
         {/* Drag handle line indicator */}
         <div className="w-12 h-1 rounded-full bg-muted-foreground/20 mx-auto cursor-grab active:cursor-grabbing shrink-0 hover:bg-muted-foreground/45 transition-colors" />
@@ -104,7 +104,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
         </motion.button>
 
         {/* Status bar */}
-        <div className="w-full flex items-center justify-between px-1 text-[10px] font-mono text-muted-foreground/60 border-b border-border/30 pb-2.5">
+        <div className="w-full flex items-center justify-between px-1 text-[10px] font-mono text-muted-foreground/60 border-b border-border/30 pb-2.5 flex-shrink-0">
           <span className="flex items-center gap-1.5">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75"></span>
@@ -115,48 +115,48 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
           <span>HOST: localhost</span>
         </div>
 
-        {/* Logo and Headings */}
-        <div className="space-y-2.5 mt-1.5">
+        {/* Header Group (Logo, Headings, Soundwave) */}
+        <div className="flex flex-col items-center gap-2 mt-0.5 flex-shrink-0">
           <img
             src="/assets/snapdog-icon.svg"
             alt="SnapDog Logo"
-            className="size-16 mx-auto opacity-95 animate-pulse-slow"
+            className="size-12 sm:size-16 mx-auto opacity-95 animate-pulse-slow"
           />
-          <h2 className="text-2xl font-bold tracking-tight">SnapDog</h2>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight mt-0.5">SnapDog</h2>
           <p className="text-xs text-muted-foreground leading-relaxed px-4">
             High-fidelity multi-zone audio streaming & control center for modern spaces
           </p>
-        </div>
 
-        {/* Retro digital soundwave visualizer */}
-        <div className="flex items-center justify-center gap-0.5 h-4 my-1">
-          {[...Array(9)].map((_, i) => (
-            <motion.div
-              key={i}
-              animate={{
-                height: [4, 16, 4],
-              }}
-              transition={{
-                duration: 1.0 + (i % 3) * 0.25,
-                repeat: Infinity,
-                ease: "easeInOut",
-                delay: i * 0.08,
-              }}
-              className="w-[2px] rounded-full bg-primary/60"
-            />
-          ))}
+          {/* Retro digital soundwave visualizer */}
+          <div className="flex items-center justify-center gap-0.5 h-4 mt-2">
+            {[...Array(9)].map((_, i) => (
+              <motion.div
+                key={i}
+                animate={{
+                  height: [4, 16, 4],
+                }}
+                transition={{
+                  duration: 1.0 + (i % 3) * 0.25,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: i * 0.08,
+                }}
+                className="w-[2px] rounded-full bg-primary/60"
+              />
+            ))}
+          </div>
         </div>
 
         {/* Monospace Tech Spec Grid */}
-        <div className="grid grid-cols-2 gap-2 w-full font-mono text-left text-xs pt-1">
-          <div className="flex flex-col p-2.5 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
-            <span className="text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.MODEL</span>
-            <span className="font-semibold text-foreground mt-1 tracking-tight">SNAPDOG-CORE</span>
+        <div className="grid grid-cols-2 gap-2 w-full font-mono text-left text-xs pt-1 flex-shrink-0">
+          <div className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.MODEL</span>
+            <span className="font-semibold text-foreground mt-0.5 tracking-tight text-xs sm:text-sm">SNAPDOG-CORE</span>
           </div>
 
-          <div className="flex flex-col p-2.5 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
-            <span className="text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.FIRMWARE</span>
-            <span className="font-semibold text-foreground mt-1 tabular-nums tracking-tight">
+          <div className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.FIRMWARE</span>
+            <span className="font-semibold text-foreground mt-0.5 tabular-nums tracking-tight text-xs sm:text-sm">
               {version ? `v${version}` : "v0.11.4"}
             </span>
           </div>
@@ -165,12 +165,12 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             href="https://github.com/metaneutrons/snapdog"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex flex-col p-2.5 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
+            className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
           >
-            <span className="text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider flex items-center gap-1">
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider flex items-center gap-1">
               SYS.SOURCE <GitHubIcon size={8} />
             </span>
-            <span className="font-semibold text-primary mt-1 group-hover:underline tracking-tight">
+            <span className="font-semibold text-primary mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm">
               GITHUB ↗
             </span>
           </a>
@@ -179,29 +179,31 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             href="https://www.gnu.org/licenses/gpl-3.0.html"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex flex-col p-2.5 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
+            className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
           >
-            <span className="text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.LICENSE</span>
-            <span className="font-semibold text-primary mt-1 group-hover:underline tracking-tight">
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.LICENSE</span>
+            <span className="font-semibold text-primary mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm">
               GPL-3.0 ↗
             </span>
           </a>
         </div>
 
-        {/* Copyright Footer */}
-        <div className="text-[10px] font-mono text-muted-foreground/45 mt-1">
-          © 2026 Fabian Schmieder
-        </div>
+        {/* Footer Group (Copyright & Done Button) */}
+        <div className="w-full flex flex-col items-center gap-3 mt-1 flex-shrink-0">
+          <div className="text-[10px] font-mono text-muted-foreground/45">
+            © 2026 Fabian Schmieder
+          </div>
 
-        {/* Prominent main done button */}
-        <motion.button
-          onClick={onClose}
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
-          className="w-full py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 active:scale-[0.98] transition-all duration-150 shadow-md shadow-primary/10 text-sm cursor-pointer mt-1"
-        >
-          Done
-        </motion.button>
+          {/* Prominent main done button */}
+          <motion.button
+            onClick={onClose}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 active:scale-[0.98] transition-all duration-150 shadow-md shadow-primary/10 text-sm cursor-pointer"
+          >
+            Done
+          </motion.button>
+        </div>
       </motion.div>
     </div>
   );
