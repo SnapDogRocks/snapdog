@@ -37,7 +37,9 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     api.system.version().then((v) => setVersion(v.version)).catch(() => {});
     if (typeof window !== "undefined") {
-      setHostname(window.location.hostname);
+      setTimeout(() => {
+        setHostname(window.location.hostname);
+      }, 0);
     }
   }, []);
 

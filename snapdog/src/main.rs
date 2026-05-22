@@ -281,12 +281,14 @@ pub async fn run_app() -> Result<()> {
 
     // HTTP API listener — passed into api::serve() so no TOCTOU window.
     let http_addr = format!("{}:{}", config.http.bind, config.http.port);
-    let http_listener = tokio::net::TcpListener::bind(&http_addr).await.with_context(|| {
-        format!(
-            "HTTP API port {} is already in use — is snapdog already running?",
-            config.http.port
-        )
-    })?;
+    let http_listener = tokio::net::TcpListener::bind(&http_addr)
+        .await
+        .with_context(|| {
+            format!(
+                "HTTP API port {} is already in use — is snapdog already running?",
+                config.http.port
+            )
+        })?;
 
     // Snapcast streaming port — probe-bind then immediately release so the
     // embedded server can bind it a moment later.  Catches conflicts early.
@@ -296,12 +298,14 @@ pub async fn run_app() -> Result<()> {
             "{}:{}",
             config.snapcast.address, config.snapcast.streaming_port
         );
-        tokio::net::TcpListener::bind(&snap_addr).await.with_context(|| {
-            format!(
-                "Snapcast streaming port {} is already in use — is snapdog already running?",
-                config.snapcast.streaming_port
-            )
-        })?;
+        tokio::net::TcpListener::bind(&snap_addr)
+            .await
+            .with_context(|| {
+                format!(
+                    "Snapcast streaming port {} is already in use — is snapdog already running?",
+                    config.snapcast.streaming_port
+                )
+            })?;
         // listener dropped here — embedded server will bind it below
     }
 
