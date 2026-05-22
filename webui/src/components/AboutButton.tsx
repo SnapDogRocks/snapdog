@@ -30,11 +30,15 @@ export function AboutButton() {
 
 function AboutOverlay({ onClose }: { onClose: () => void }) {
   const [version, setVersion] = useState<string | null>(null);
+  const [hostname, setHostname] = useState<string>("");
   const trapRef = useFocusTrap<HTMLDivElement>();
   const t = useTranslations("about");
 
   useEffect(() => {
     api.system.version().then((v) => setVersion(v.version)).catch(() => {});
+    if (typeof window !== "undefined") {
+      setHostname(window.location.hostname);
+    }
   }, []);
 
   // Motion values for swipe/drag close physics (strictly numeric for interpolation safety)
@@ -106,16 +110,9 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
           <HugeiconsIcon icon={Cancel01Icon} size={16} />
         </motion.button>
 
-        {/* Status bar */}
-        <div className="w-full flex items-center justify-between px-1 text-[10px] font-mono text-muted-foreground/60 border-b border-border/30 pb-2.5 flex-shrink-0">
-          <span className="flex items-center gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-            </span>
-            <span>{t("status")}</span>
-          </span>
-          <span>{t("host")}</span>
+        {/* Host bar */}
+        <div className="w-full flex items-center justify-center px-1 text-[10px] font-mono text-muted-foreground/60 border-b border-border/30 pb-2.5 flex-shrink-0">
+          <span>HOST: {hostname || "..."}</span>
         </div>
 
         {/* Header Group (Logo, Headings, Soundwave) */}

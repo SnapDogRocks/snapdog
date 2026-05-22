@@ -127,14 +127,12 @@
     "dialogLabel": "About SnapDog",
     "closeLabel": "Close dialog",
     "description": "High-fidelity multi-zone audio streaming & control center for modern spaces",
-    "status": "SYS.STATUS: OK",
-    "host": "HOST: localhost",
-    "modelLabel": "SYS.MODEL",
+    "modelLabel": "MODEL",
     "modelValue": "SNAPDOG-CORE",
-    "firmwareLabel": "SYS.FIRMWARE",
-    "sourceLabel": "SYS.SOURCE",
+    "firmwareLabel": "FIRMWARE",
+    "sourceLabel": "SOURCE",
     "sourceValue": "GITHUB ↗",
-    "licenseLabel": "SYS.LICENSE",
+    "licenseLabel": "LICENSE",
     "licenseValue": "GPL-3.0 ↗",
     "done": "Done"
   }
