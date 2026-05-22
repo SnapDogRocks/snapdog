@@ -6,16 +6,18 @@ import { api } from "@/lib/api";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { useTranslations } from "next-intl";
 
 export function AboutButton() {
   const [open, setOpen] = useState(false);
+  const t = useTranslations("about");
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
         className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/55 transition-colors cursor-pointer"
-        aria-label="About"
+        aria-label={t("title")}
       >
         <InfoIcon size={16} />
       </button>
@@ -29,6 +31,7 @@ export function AboutButton() {
 function AboutOverlay({ onClose }: { onClose: () => void }) {
   const [version, setVersion] = useState<string | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
+  const t = useTranslations("about");
 
   useEffect(() => {
     api.system.version().then((v) => setVersion(v.version)).catch(() => {});
@@ -50,7 +53,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center overflow-hidden"
       role="dialog"
       aria-modal="true"
-      aria-label="About SnapDog"
+      aria-label={t("dialogLabel")}
       onKeyDown={(e) => {
         if (e.key === "Escape") onClose();
       }}
@@ -98,7 +101,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
           whileHover={{ scale: 1.1, rotate: 90 }}
           whileTap={{ scale: 0.95 }}
           className="absolute top-4 right-4 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer shrink-0 z-20"
-          aria-label="Close dialog"
+          aria-label={t("closeLabel")}
         >
           <HugeiconsIcon icon={Cancel01Icon} size={16} />
         </motion.button>
@@ -110,9 +113,9 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
             </span>
-            <span>SYS.STATUS: OK</span>
+            <span>{t("status")}</span>
           </span>
-          <span>HOST: localhost</span>
+          <span>{t("host")}</span>
         </div>
 
         {/* Header Group (Logo, Headings, Soundwave) */}
@@ -124,7 +127,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
           />
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight mt-0.5">SnapDog</h2>
           <p className="text-xs text-muted-foreground leading-relaxed px-4">
-            High-fidelity multi-zone audio streaming & control center for modern spaces
+            {t("description")}
           </p>
 
           {/* Retro digital soundwave visualizer */}
@@ -150,12 +153,12 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
         {/* Monospace Tech Spec Grid */}
         <div className="grid grid-cols-2 gap-2 w-full font-mono text-left text-xs pt-1 flex-shrink-0">
           <div className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.MODEL</span>
-            <span className="font-semibold text-foreground mt-0.5 tracking-tight text-xs sm:text-sm">SNAPDOG-CORE</span>
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("modelLabel")}</span>
+            <span className="font-semibold text-foreground mt-0.5 tracking-tight text-xs sm:text-sm">{t("modelValue")}</span>
           </div>
 
           <div className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.FIRMWARE</span>
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("firmwareLabel")}</span>
             <span className="font-semibold text-foreground mt-0.5 tabular-nums tracking-tight text-xs sm:text-sm">
               {version ? `v${version}` : "v0.11.4"}
             </span>
@@ -168,10 +171,10 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
           >
             <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider flex items-center gap-1">
-              SYS.SOURCE <GitHubIcon size={8} />
+              {t("sourceLabel")} <GitHubIcon size={8} />
             </span>
             <span className="font-semibold text-primary mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm">
-              GITHUB ↗
+              {t("sourceValue")}
             </span>
           </a>
 
@@ -181,9 +184,9 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             rel="noopener noreferrer"
             className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
           >
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">SYS.LICENSE</span>
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("licenseLabel")}</span>
             <span className="font-semibold text-primary mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm">
-              GPL-3.0 ↗
+              {t("licenseValue")}
             </span>
           </a>
         </div>
@@ -201,7 +204,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             whileTap={{ scale: 0.98 }}
             className="w-full py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 active:scale-[0.98] transition-all duration-150 shadow-md shadow-primary/10 text-sm cursor-pointer"
           >
-            Done
+            {t("done")}
           </motion.button>
         </div>
       </motion.div>

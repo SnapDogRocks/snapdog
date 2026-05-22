@@ -119,5 +119,21 @@
     "title": "Aucune zone configurée",
     "description": "Activez le mode programmation KNX pour permettre à ETS de configurer les zones et clients, ou fournissez un fichier snapdog.toml.",
     "programmingMode": "Mode programmation KNX"
+  },
+  "about": {
+    "title": "À propos",
+    "dialogLabel": "À propos de SnapDog",
+    "closeLabel": "Fermer le dialogue",
+    "description": "Streaming audio multi-zones haute fidélité et centre de contrôle pour espaces modernes",
+    "status": "SYS.STATUS: OK",
+    "host": "HOST: localhost",
+    "modelLabel": "SYS.MODEL",
+    "modelValue": "SNAPDOG-CORE",
+    "firmwareLabel": "SYS.FIRMWARE",
+    "sourceLabel": "SYS.SOURCE",
+    "sourceValue": "GITHUB ↗",
+    "licenseLabel": "SYS.LICENSE",
+    "licenseValue": "GPL-3.0 ↗",
+    "done": "Terminé"
   }
 }

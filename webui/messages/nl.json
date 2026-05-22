@@ -120,5 +120,21 @@
     "title": "Geen zones geconfigureerd",
     "description": "Schakel de KNX-programmeermodus in zodat ETS zones en clients kan configureren, of gebruik een snapdog.toml configuratiebestand.",
     "programmingMode": "KNX-programmeermodus"
+  },
+  "about": {
+    "title": "Over",
+    "dialogLabel": "Over SnapDog",
+    "closeLabel": "Dialoog sluiten",
+    "description": "High-fidelity multi-zone audio streaming & controlecentrum voor moderne ruimtes",
+    "status": "SYS.STATUS: OK",
+    "host": "HOST: localhost",
+    "modelLabel": "SYS.MODEL",
+    "modelValue": "SNAPDOG-CORE",
+    "firmwareLabel": "SYS.FIRMWARE",
+    "sourceLabel": "SYS.SOURCE",
+    "sourceValue": "GITHUB ↗",
+    "licenseLabel": "SYS.LICENSE",
+    "licenseValue": "GPL-3.0 ↗",
+    "done": "Gereed"
   }
 }
