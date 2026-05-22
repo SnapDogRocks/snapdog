@@ -127,12 +127,12 @@
     "description": "Streaming audio multi-zones haute fidélité et centre de contrôle pour espaces modernes",
     "status": "SYS.STATUS: OK",
     "host": "HOST: localhost",
-    "modelLabel": "SYS.MODEL",
+    "modelLabel": "SYS.MODÈLE",
     "modelValue": "SNAPDOG-CORE",
     "firmwareLabel": "SYS.FIRMWARE",
     "sourceLabel": "SYS.SOURCE",
     "sourceValue": "GITHUB ↗",
-    "licenseLabel": "SYS.LICENSE",
+    "licenseLabel": "SYS.LICENCE",
     "licenseValue": "GPL-3.0 ↗",
     "done": "Terminé"
   }
