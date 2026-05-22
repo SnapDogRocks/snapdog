@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.12.0](https://github.com/metaneutrons/snapdog/compare/v0.11.4...v0.12.0) (2026-05-22)
+
+
+### Features
+
+* add top-level `name` field — single server identity ([9309922](https://github.com/metaneutrons/snapdog/commit/9309922bd79e22b9c47b06142285986dff0ce8e8))
+* redesign About view with responsive sheets, tactile swipe close, and hardware spec board ([be137b6](https://github.com/metaneutrons/snapdog/commit/be137b64381ba65a087f9cf96306bd7b01649dbd))
+* **webui:** localize About view modal labels using next-intl ([33f93d5](https://github.com/metaneutrons/snapdog/commit/33f93d5f61cc7888f05aa22024cdb7c7ff1ae0f3))
+* **webui:** redesign light theme with premium warm sand and oatmeal aesthetic ([2562daa](https://github.com/metaneutrons/snapdog/commit/2562daae4ede6c4fdb89efb339d3452f4dc28b2e))
+* **webui:** remove redundant system status and display real connected hostname ([ad56cb3](https://github.com/metaneutrons/snapdog/commit/ad56cb35ce23aeb8a3ea9861bbb48f4d8e51359c))
+* **webui:** rename firmware spec label to version ([fe8798d](https://github.com/metaneutrons/snapdog/commit/fe8798d7782c9c8be4d03a75ce69c5ba73dbc139))
+* **webui:** translate tech telemetry labels for de, fr, es, nl ([c6c6c28](https://github.com/metaneutrons/snapdog/commit/c6c6c28d470ac1d8af160f60ad9b7bb7026be6ff))
+* **webui:** update about dialog subclaim description with dynamic integration info ([ae240f0](https://github.com/metaneutrons/snapdog/commit/ae240f093d21a321547aa0ebcb9b1cc002658ea3))
+* **webui:** update source link text to metaneutrons/snapdog ([cc469e3](https://github.com/metaneutrons/snapdog/commit/cc469e33aa96eb71180e6a8e6e0f807057eb45d3))
+
+
+### Bug Fixes
+
+* prevent About modal vertical overflow and ensure Done button visibility ([bd3b206](https://github.com/metaneutrons/snapdog/commit/bd3b2065aec2faf08dcebec85c6bc14d8d54790b))
+* **webui:** resolve double-press theme toggle glitch and add premium micro-animations ([1a78921](https://github.com/metaneutrons/snapdog/commit/1a789218041e848cee0514e3e8d04bcbe55231d4))
+* **webui:** resolve playback detail layout shifts and enhance EQ UX ([46a7205](https://github.com/metaneutrons/snapdog/commit/46a7205fae2ac9b86e0fb4458e043ba4dad6032d))
+
 ## [0.11.4](https://github.com/metaneutrons/snapdog/compare/v0.11.3...v0.11.4) (2026-05-21)
 
 
