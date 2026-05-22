@@ -155,7 +155,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 translate-x-[40px]">
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("firmwareLabel")}</span>
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("versionLabel")}</span>
             <span className="font-semibold text-foreground mt-0.5 tabular-nums tracking-tight text-xs sm:text-sm">
               {version ? `v${version}` : "v0.11.4"}
             </span>

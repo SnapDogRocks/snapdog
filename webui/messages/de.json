@@ -129,7 +129,7 @@
     "description": "High-Fidelity Multi-Zone Audio-Streaming & Kontrollzentrum für moderne Räume",
     "modelLabel": "MODEL",
     "modelValue": "SNAPDOG-CORE",
-    "firmwareLabel": "FIRMWARE",
+    "versionLabel": "VERSION",
     "sourceLabel": "SOURCE",
     "sourceValue": "metaneutrons/snapdog ↗",
     "licenseLabel": "LICENSE",

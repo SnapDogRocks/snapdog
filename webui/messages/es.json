@@ -128,7 +128,7 @@
     "description": "Transmisión de audio multi-zona de alta fidelidad y centro de control para espacios modernos",
     "modelLabel": "MODEL",
     "modelValue": "SNAPDOG-CORE",
-    "firmwareLabel": "FIRMWARE",
+    "versionLabel": "VERSION",
     "sourceLabel": "SOURCE",
     "sourceValue": "metaneutrons/snapdog ↗",
     "licenseLabel": "LICENSE",
