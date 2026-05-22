@@ -130,7 +130,7 @@
     "modelValue": "SNAPDOG-CORE",
     "firmwareLabel": "FIRMWARE",
     "sourceLabel": "SOURCE",
-    "sourceValue": "GITHUB ↗",
+    "sourceValue": "metaneutrons/snapdog ↗",
     "licenseLabel": "LICENSE",
     "licenseValue": "GPL-3.0 ↗",
     "done": "Hecho"
