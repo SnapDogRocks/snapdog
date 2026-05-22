@@ -19,7 +19,11 @@ use snapdog_common::CLIENT_NAME;
 
 const DEFAULT_SAMPLE_RATE: u32 = snapdog_common::DEFAULT_SAMPLE_RATE;
 
-#[allow(clippy::too_many_lines)] // Main app setup + event loop — splitting would obscure control flow
+#[allow(
+    clippy::too_many_lines,
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::needless_update
+)] // Main app setup + event loop — splitting would obscure control flow
 fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
 
@@ -39,6 +43,7 @@ fn main() -> anyhow::Result<()> {
     let encryption_psk = cli.encryption_psk.clone();
     let null_player = cli.player == "null";
     let mixer_raw = cli.mixer.clone();
+    let mdns_name = cli.mdns_name.clone();
     let settings = cli.into_settings()?;
 
     #[cfg(unix)]
@@ -54,6 +59,27 @@ fn main() -> anyhow::Result<()> {
         instance = settings.instance,
         "snapdog-client starting"
     );
+
+    let mut mdns_service_type = settings.server.host.clone();
+    if mdns_service_type.starts_with('_') {
+        while mdns_service_type.ends_with('.') {
+            mdns_service_type.pop();
+        }
+        if !mdns_service_type.ends_with(".local") {
+            mdns_service_type.push_str(".local");
+        }
+        mdns_service_type.push('.');
+    } else {
+        let mut base = mdns_name;
+        while base.ends_with('.') {
+            base.pop();
+        }
+        if !base.ends_with(".local") {
+            base.push_str(".local");
+        }
+        base.push('.');
+        mdns_service_type = base;
+    }
 
     let config = ClientConfig {
         scheme: settings.server.scheme.clone(),
@@ -76,6 +102,7 @@ fn main() -> anyhow::Result<()> {
         host_id: settings.host_id.clone(),
         latency: settings.player.latency,
         client_name: CLIENT_NAME.into(),
+        mdns_service_type,
         ..ClientConfig::default()
     };
     let rt = tokio::runtime::Runtime::new()?;

@@ -94,11 +94,11 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
       <div className="w-full max-w-[calc(100%-2rem)] mx-auto sm:max-w-[600px] space-y-3 px-4 py-4 sm:px-5 sm:py-4">
         <div className="hidden sm:block"><ZoneHeader zone={zone} /></div>
         {/* Compact+: horizontal layout for cover + controls */}
-        <div className="sm:flex sm:gap-5 sm:items-stretch">
-          <div className="sm:w-56 lg:w-64 sm:shrink-0">
+        <div className="sm:flex sm:gap-5 sm:items-start">
+          <div className="sm:w-56 lg:w-64 sm:h-56 lg:h-64 sm:shrink-0">
             <NowPlaying zone={zone} />
           </div>
-          <div className="sm:flex sm:flex-col sm:justify-between sm:flex-1 sm:min-w-0 sm:max-w-sm sm:space-y-0 space-y-3">
+          <div className="sm:flex sm:flex-col sm:justify-between sm:flex-1 sm:min-w-0 sm:max-w-sm sm:h-56 lg:h-64 sm:space-y-0 space-y-3">
             <TrackInfo zone={zone} />
             <SeekBar zone={zone} />
             <div className="flex items-center gap-2">

@@ -65,9 +65,9 @@ thiserror = "2"
 anyhow = "1"
 
 # Snapcast
-snapcast-server = { version = "0.12", features = ["flac", "encryption", "mdns", "custom-protocol"] }
-snapcast-client = "0.12"
-snapcast-proto = "0.12"
+snapcast-server = { version = "0.12.1", features = ["flac", "encryption", "mdns", "custom-protocol"] }
+snapcast-client = "0.12.1"
+snapcast-proto = "0.12.1"
 
 # Shared
 snapdog-common = { path = "snapdog-common" }

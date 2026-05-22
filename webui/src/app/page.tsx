@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Component, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
+import Link from "next/link";
 import { useAppStore, type ZoneState } from "@/stores/useAppStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -245,8 +246,10 @@ export default function Home() {
       {/* ── Sidebar / Rail (tablet only) ──────────────────── */}
       <aside className="hidden md:flex xl:hidden flex-col border-r border-border bg-card md:w-56 shrink-0" aria-label={t("zone.navigation")}>
         <div className="px-4 py-4 border-b border-border flex items-center gap-2">
-          <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
-          <h1 className="text-base font-semibold">SnapDog</h1>
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
+            <h1 className="text-base font-semibold">SnapDog</h1>
+          </Link>
           <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
             <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
           </div>
@@ -267,8 +270,10 @@ export default function Home() {
       <main className="flex flex-1 flex-col min-w-0" id="main-content">
         {/* Header (mobile + compact + wide — hidden when sidebar visible at lg–xl) */}
         <header className="flex md:hidden items-center gap-2 px-4 py-3 border-b border-border">
-          <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
-          <h1 className="text-base font-semibold">SnapDog</h1>
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
+            <h1 className="text-base font-semibold">SnapDog</h1>
+          </Link>
           <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
             <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
           </div>
@@ -276,8 +281,10 @@ export default function Home() {
 
         {/* Wide header (xl+) */}
         <header className="hidden xl:flex items-center gap-2 px-6 py-3 border-b border-border">
-          <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
-          <h1 className="text-base font-semibold">SnapDog</h1>
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
+            <h1 className="text-base font-semibold">SnapDog</h1>
+          </Link>
           <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
             <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
           </div>
