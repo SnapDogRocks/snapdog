@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";
-import { useEqEnabled } from "@/hooks/useEqEnabled";
-import type { ZoneState } from "@/stores/useAppStore";
+import { useAppStore, type ZoneState } from "@/stores/useAppStore";
 import type { SourceType } from "@/lib/types";
 import { NowPlaying } from "@/components/NowPlaying";
 import { TransportControls } from "@/components/TransportControls";
@@ -32,7 +31,14 @@ function ZoneHeader({ zone }: { zone: ZoneState }) {
   const sourceKey = SOURCE_KEYS[zone.source];
   return (
     <div className="flex items-center justify-between gap-2">
-      <h2 className="text-sm font-semibold truncate">{zone.name}</h2>
+      <div className="flex items-center gap-2 truncate">
+        <h2 className="text-sm font-semibold truncate">{zone.name}</h2>
+        {zone.eqEnabled && (
+          <span className="text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.5 rounded uppercase tracking-wider shrink-0" aria-label="EQ Active">
+            EQ
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-1.5 shrink-0">
         {zone.presence && (
           <span
@@ -60,18 +66,27 @@ function TrackInfo({ zone }: { zone: ZoneState }) {
   const track = zone.track;
   const isIdle = zone.source === "idle" || !track;
 
+  if (isIdle) {
+    return (
+      <div className="text-center sm:text-left w-full flex flex-col justify-start">
+        <div className="text-base font-bold leading-snug">{t("noAudio")}</div>
+        <div className="text-sm text-muted-foreground mt-0.5">{"\u00A0"}</div>
+        <div className="text-xs text-muted-foreground/70 mt-0.5">{"\u00A0"}</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="text-center sm:text-left space-y-0.5 w-full">
-      <Marquee className="text-base font-bold leading-snug">{isIdle ? "\u00A0" : (track.title || t("unknownTitle"))}</Marquee>
-      <Marquee className="text-sm text-muted-foreground">{isIdle ? t("noAudio") : (track.artist || t("unknownArtist"))}</Marquee>
-      <Marquee className="text-xs text-muted-foreground/70">{isIdle ? "\u00A0" : (track.album || "\u00A0")}</Marquee>
+    <div className="text-center sm:text-left w-full flex flex-col justify-start">
+      <Marquee className="text-base font-bold leading-snug">{track.title || t("unknownTitle")}</Marquee>
+      <Marquee className="text-sm text-muted-foreground mt-0.5">{track.artist || t("unknownArtist")}</Marquee>
+      <Marquee className="text-xs text-muted-foreground/70 mt-0.5">{track.album || "\u00A0"}</Marquee>
     </div>
   );
 }
 
 export function ZoneDetail({ zone }: { zone: ZoneState }) {
   const [showEq, setShowEq] = useState(false);
-  const [eqEnabled, setEqEnabled] = useEqEnabled({ zoneId: zone.index });
   const t = useTranslations();
 
   return (
@@ -79,16 +94,16 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
       <div className="w-full max-w-[calc(100%-2rem)] mx-auto sm:max-w-[600px] space-y-3 px-4 py-4 sm:px-5 sm:py-4">
         <div className="hidden sm:block"><ZoneHeader zone={zone} /></div>
         {/* Compact+: horizontal layout for cover + controls */}
-        <div className="sm:flex sm:gap-5 sm:items-center">
+        <div className="sm:flex sm:gap-5 sm:items-stretch">
           <div className="sm:w-56 lg:w-64 sm:shrink-0">
             <NowPlaying zone={zone} />
           </div>
-          <div className="space-y-3 sm:flex-1 sm:min-w-0 sm:max-w-sm sm:min-h-56 sm:justify-between">
+          <div className="sm:flex sm:flex-col sm:justify-between sm:flex-1 sm:min-w-0 sm:max-w-sm sm:space-y-0 space-y-3">
             <TrackInfo zone={zone} />
             <SeekBar zone={zone} />
             <div className="flex items-center gap-2">
               <div className="flex-1"><TransportControls zone={zone} /></div>
-              <Button variant="ghost" size="sm" onClick={() => setShowEq(true)} className={`text-xs px-2 ${eqEnabled ? "text-orange-500 font-bold" : ""}`} aria-label={t("eq.title", { zone: zone.name })}>
+              <Button variant="ghost" size="sm" onClick={() => setShowEq(true)} className={`text-xs px-2 ${zone.eqEnabled ? "text-orange-500 font-bold" : ""}`} aria-label={t("eq.title", { zone: zone.name })}>
                 EQ
               </Button>
             </div>
@@ -105,7 +120,7 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
         <PlaylistBrowser zone={zone} />
         <ClientList zone={zone} />
       </div>
-      {showEq && <EqOverlay zoneId={zone.index} label={zone.name} onClose={(enabled) => { setShowEq(false); setEqEnabled(enabled); }} />}
+      {showEq && <EqOverlay zoneId={zone.index} label={zone.name} onClose={(enabled) => { setShowEq(false); useAppStore.getState().updateZoneEq(zone.index, enabled); }} />}
     </div>
   );
 }

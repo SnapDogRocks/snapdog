@@ -17,11 +17,12 @@ export function Marquee({ children, className = "" }: { children: ReactNode; cla
     check();
     const obs = new ResizeObserver(check);
     if (outerRef.current) obs.observe(outerRef.current);
+    if (innerRef.current) obs.observe(innerRef.current);
     return () => obs.disconnect();
   }, [children]);
 
   return (
-    <div ref={outerRef} className={`overflow-hidden whitespace-nowrap ${className}`}>
+    <div ref={outerRef} className={`overflow-hidden whitespace-nowrap ${offset > 0 ? "" : "truncate"} ${className}`}>
       <span
         ref={innerRef}
         className={offset > 0 ? "inline-block animate-marquee" : "inline-block"}
@@ -32,3 +33,4 @@ export function Marquee({ children, className = "" }: { children: ReactNode; cla
     </div>
   );
 }
+

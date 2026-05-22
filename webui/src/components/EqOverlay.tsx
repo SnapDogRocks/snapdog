@@ -269,6 +269,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
 // ── Speaker Tab ───────────────────────────────────────────────
 
 function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; mode: "off" | "spinorama" | "custom"; setMode: (v: "off" | "spinorama" | "custom") => void; abBypass: boolean }) {
+  const t = useTranslations("eq");
   const [search, setSearch] = useState("");
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [currentConfig, setCurrentConfig] = useState<EqConfig | null>(null);
@@ -414,22 +415,39 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
 	              pushCustom(next);
             }}
           />
-          {customSelected !== null && customSelected < customBands.length && (
-            <BandRow
-              band={customBands[customSelected]}
-              index={customSelected}
-              onChange={(patch) => {
-                const next = customBands.map((b, i) => i === customSelected ? { ...b, ...patch } : b);
+          <div className="space-y-3">
+            {customBands.map((band, idx) => (
+              <BandRow
+                key={idx}
+                band={band}
+                index={idx}
+                onChange={(patch) => {
+                  const next = customBands.map((b, i) => i === idx ? { ...b, ...patch } : b);
+                  setCustomBands(next);
+                  pushCustom(next);
+                }}
+                onRemove={() => {
+                  const next = customBands.filter((_, i) => i !== idx);
+                  setCustomBands(next);
+                  if (customSelected === idx) setCustomSelected(null);
+                  pushCustom(next);
+                }}
+              />
+            ))}
+          </div>
+          {customBands.length < MAX_EQ_BANDS && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const next = [...customBands, { ...DEFAULT_BAND }];
                 setCustomBands(next);
                 pushCustom(next);
               }}
-              onRemove={() => {
-                const next = customBands.filter((_, i) => i !== customSelected);
-                setCustomBands(next);
-                setCustomSelected(null);
-                pushCustom(next);
-              }}
-            />
+              className="w-full"
+            >
+              + {t("addBand")}
+            </Button>
           )}
         </div>
       ) : (

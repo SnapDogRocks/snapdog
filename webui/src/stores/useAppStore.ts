@@ -4,7 +4,7 @@ import type {
   TrackMetadata,
   ClientInfo,
 } from "@/lib/types";
-import { api } from "@/lib/api";
+import { api, type EqConfig } from "@/lib/api";
 
 const DEFAULT_TRACK: TrackMetadata = {
   title: "",
@@ -35,6 +35,7 @@ export interface ZoneState extends ZoneInfo {
   presenceEnabled: boolean;
   presenceTimerActive: boolean;
   buffered_ms: number | null;
+  eqEnabled?: boolean;
 }
 
 // ── Store shape ───────────────────────────────────────────────
@@ -63,7 +64,7 @@ interface AppState {
   ) => void;
   updateZoneProgress: (id: number, position_ms: number, duration_ms: number, buffered_ms: number | null) => void;
   updateZonePresence: (id: number, presence: boolean, enabled: boolean, timerActive: boolean) => void;
-  updateZoneEq: (id: number, enabled: boolean, bands: Array<{ filter_type: string; frequency: number; gain: number; q: number }>, preset?: string) => void;
+  updateZoneEq: (id: number, enabled: boolean, bands?: Array<{ filter_type: string; frequency: number; gain: number; q: number }>, preset?: string) => void;
 
   // Client updates
   setClients: (clients: ClientInfo[]) => void;
@@ -99,15 +100,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled ?? true, presenceTimerActive: z.presence_timer_active ?? false, buffered_ms: null });
       }
 
-      // Fetch track metadata for each zone in parallel
-      const metaResults = await Promise.allSettled(
-        zoneList.map((z) => api.zones.getTrackMetadata(z.index)),
-      );
+      // Fetch track metadata and EQ state for each zone in parallel
+      const [metaResults, eqResults] = await Promise.all([
+        Promise.allSettled(zoneList.map((z) => api.zones.getTrackMetadata(z.index))),
+        Promise.allSettled(zoneList.map((z) => api.eq.get(z.index))),
+      ]);
+
       for (let i = 0; i < zoneList.length; i++) {
-        const r = metaResults[i];
-        if (r.status === "fulfilled") {
-          const zone = zones.get(zoneList[i].index);
-          if (zone) zone.track = r.value;
+        const zoneId = zoneList[i].index;
+        const zone = zones.get(zoneId);
+        if (zone) {
+          if (metaResults[i].status === "fulfilled") {
+            zone.track = (metaResults[i] as PromiseFulfilledResult<TrackMetadata>).value;
+          }
+          if (eqResults[i].status === "fulfilled") {
+            zone.eqEnabled = (eqResults[i] as PromiseFulfilledResult<EqConfig>).value.enabled;
+          }
         }
       }
 
@@ -133,6 +141,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         presenceEnabled: existing?.presenceEnabled ?? true,
         presenceTimerActive: existing?.presenceTimerActive ?? false,
         buffered_ms: existing?.buffered_ms ?? null,
+        eqEnabled: existing?.eqEnabled ?? false,
       });
     }
     set({ zones });
@@ -175,14 +184,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ zones });
   },
 
-  updateZoneEq: (id) => {
-    // Note: The actual EQ values are currently only used by EqOverlay which fetches them on open.
-    // However, we might want to store 'enabled' status here to show indicators in the UI.
+  updateZoneEq: (id, enabled) => {
     const zones = new Map(get().zones);
     const z = zones.get(id);
     if (z) {
-      // If we ever add eq_enabled to ZoneState, we'd update it here.
-      // For now, this serves as a placeholder for when we refactor EQ state management.
+      zones.set(id, { ...z, eqEnabled: enabled });
     }
     set({ zones });
   },

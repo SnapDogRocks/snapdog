@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useClientDrop } from "@/hooks/useClientDrop";
-import { Marquee } from "@/components/Marquee";
 import type { ZoneState } from "@/stores/useAppStore";
+import { Marquee } from "@/components/Marquee";
 
 interface ZoneRailItemProps {
   zone: ZoneState;
@@ -52,13 +52,20 @@ export function ZoneRailItem({ zone, selected, onSelect }: ZoneRailItemProps) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium truncate">{zone.name}</div>
-        <div className="text-xs text-muted-foreground">
+        <Marquee className="text-xs text-muted-foreground">
           {zone.track && zone.source !== "idle"
-            ? <Marquee>{`${zone.track.artist} — ${zone.track.title}`}</Marquee>
+            ? `${zone.track.artist} — ${zone.track.title}`
             : t("zone.idle")}
-        </div>
+        </Marquee>
       </div>
-      <div className="text-xs text-muted-foreground tabular-nums">{zone.volume}</div>
+      <div className="flex flex-col items-end gap-1.5 shrink-0">
+        <div className="text-xs text-muted-foreground tabular-nums">{zone.volume}</div>
+        {zone.eqEnabled && (
+          <span className="text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.5 rounded uppercase tracking-wider scale-90" aria-label="EQ Active">
+            EQ
+          </span>
+        )}
+      </div>
     </button>
   );
 }
