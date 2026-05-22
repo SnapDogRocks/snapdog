@@ -170,7 +170,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider flex items-center gap-1">
               {t("sourceLabel")} <GitHubIcon size={8} />
             </span>
-            <span className="font-semibold text-primary mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm">
+            <span className="font-semibold text-primary mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm whitespace-nowrap">
               {t("sourceValue")}
             </span>
           </a>
