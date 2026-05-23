@@ -9,6 +9,7 @@ enum TOMLConfigParser {
 
         // Subsonic
         if let sub = table["subsonic"] as? TOMLTable {
+            model.subsonic.enabled = true
             model.subsonic.url = (sub["url"] as? String) ?? ""
             model.subsonic.username = (sub["username"] as? String) ?? ""
             model.subsonic.password = (sub["password"] as? String) ?? ""
@@ -110,7 +111,7 @@ enum TOMLConfigParser {
         existing["snapcast"] = snap
 
         // Subsonic
-        if !model.subsonic.url.isEmpty {
+        if model.subsonic.enabled && !model.subsonic.url.isEmpty {
             let sub = (existing["subsonic"] as? TOMLTable) ?? TOMLTable()
             sub["url"] = model.subsonic.url
             sub["username"] = model.subsonic.username

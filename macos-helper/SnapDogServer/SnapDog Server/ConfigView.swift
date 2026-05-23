@@ -16,6 +16,7 @@ final class ConfigModel {
     var bitDepth = 16
 
     struct SubsonicSection: Equatable {
+        var enabled = false
         var url = ""
         var username = ""
         var password = ""
@@ -97,9 +98,12 @@ struct ConfigView: View {
     @ViewBuilder
     private var sourcesForm: some View {
         SwiftUI.Section("Subsonic") {
-            TextField("Server URL", text: $config.subsonic.url, prompt: Text("http://navidrome:4533"))
-            TextField("Username", text: $config.subsonic.username)
-            SecureField("Password", text: $config.subsonic.password)
+            Toggle("Enable", isOn: $config.subsonic.enabled)
+            if config.subsonic.enabled {
+                TextField("Server URL", text: $config.subsonic.url, prompt: Text("http://navidrome:4533"))
+                TextField("Username", text: $config.subsonic.username)
+                SecureField("Password", text: $config.subsonic.password)
+            }
         }
 
         SwiftUI.Section("AirPlay") {
