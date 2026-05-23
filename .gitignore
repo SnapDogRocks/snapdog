@@ -23,3 +23,4 @@ eq.json
 .wrangler/
 sparkle_private.key
 /build_local/
+*.dmg
