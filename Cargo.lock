@@ -4009,9 +4009,9 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "snapcast-client"
-version = "0.12.2"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ed842e659821ab8058bf4c636e257dea50f39498c9427ed60eafe2c8121ae1e"
+checksum = "ec53d373c2b8d64aeceaf8fb48f046c0a2c15549814e6b07a412cf0ce7a45736"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
@@ -4038,9 +4038,9 @@ dependencies = [
 
 [[package]]
 name = "snapcast-proto"
-version = "0.12.2"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8af0af78941e987203a4442c196a818fc1382c20e7c7ce741ba585b778a84048"
+checksum = "ddb45be6579aa8abc25ff0cc7669e8aedcdae2cbc46030286f2a32346106669c"
 dependencies = [
  "byteorder",
  "serde",
@@ -4050,20 +4050,19 @@ dependencies = [
 
 [[package]]
 name = "snapcast-server"
-version = "0.12.2"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ceff23f67dd28a8517f159b16ced765fddf5f7cf52344a8f01a627fc891fe1b"
+checksum = "2a63227fc77d49583fcd5178354a4ded2f3ba2c1a2429f7229695112c506a924"
 dependencies = [
  "anyhow",
+ "astro-dnssd",
  "base64",
  "chacha20poly1305",
  "getrandom 0.4.2",
  "hkdf",
- "hostname",
  "libc",
  "libflac-sys",
  "lz4_flex",
- "mdns-sd 0.12.0",
  "serde",
  "serde_json",
  "sha2",
