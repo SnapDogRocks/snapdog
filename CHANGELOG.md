@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.12.4](https://github.com/metaneutrons/snapdog/compare/v0.12.3...v0.12.4) (2026-05-23)
+
+
+### Bug Fixes
+
+* **release:** fix Sparkle appcast R2 deployment and foreground activation focus ([16c8b1a](https://github.com/metaneutrons/snapdog/commit/16c8b1ab7162d09f4414893f3a8d8526049c9cf7))
+* **release:** preserve manual Xcode project changes and user-defined AppIcon.icon ([75770fd](https://github.com/metaneutrons/snapdog/commit/75770fd073a045c75ae6e19f798995b6584bb223))
+* **release:** resolve missing macOS app icon and dark DMG background issue ([4084a0b](https://github.com/metaneutrons/snapdog/commit/4084a0b1532e7cbc3edcffc86a1f6edfab253a8c))
+* **webui:** keep sidebar visible at xl when 3+ zones overflow the grid ([36f4432](https://github.com/metaneutrons/snapdog/commit/36f44323a8fb7690333870826b3eddb2b1163616))
+
 ## [0.12.3](https://github.com/metaneutrons/snapdog/compare/v0.12.2...v0.12.3) (2026-05-23)
 
 
