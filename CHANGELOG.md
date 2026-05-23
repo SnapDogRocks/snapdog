@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.2](https://github.com/metaneutrons/snapdog/compare/v0.12.1...v0.12.2) (2026-05-23)
+
+
+### Bug Fixes
+
+* **ci:** fix rust format and webui react-hooks lint warning ([59d25ca](https://github.com/metaneutrons/snapdog/commit/59d25ca2b30d22a6f493ab574955199ac724f397))
+* **deps:** upgrade shairplay crate to 0.3.1 ([66dc0fb](https://github.com/metaneutrons/snapdog/commit/66dc0fb1b7aa666bd56c75d0d5c5ea72693f4404))
+
 ## [0.12.1](https://github.com/metaneutrons/snapdog/compare/v0.12.0...v0.12.1) (2026-05-22)
 
 
