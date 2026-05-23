@@ -610,3 +610,106 @@ async fn broadcast_all_clients(store: &state::SharedState, notify: &api::ws::Not
         api::ws::broadcast_notification(notify, &client_notification(idx, client));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::snapcast::backend::BoxFuture;
+    use crate::snapcast::backend::ClientHello;
+    use crate::audio::eq::EqStore;
+
+    struct MockBackend;
+    impl SnapcastBackend for MockBackend {
+        fn send_audio(&self, _zone_index: usize, _samples: &[f32], _sample_rate: u32, _channels: u16) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn execute(&self, _cmd: SnapcastCmd) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn stop(&self) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn get_status(&self) -> BoxFuture<'_, anyhow::Result<serde_json::Value>> {
+            Box::pin(async {
+                Ok(serde_json::json!({
+                    "server": {
+                        "groups": [
+                            {
+                                "id": "g1",
+                                "name": "Ground Floor",
+                                "stream_id": "Zone1",
+                                "clients": [
+                                    {
+                                        "id": "c1",
+                                        "name": "Kitchen",
+                                        "connected": true
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }))
+            })
+        }
+        fn delete_client(&self, _id: &str) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    fn test_config() -> AppConfig {
+        let raw: crate::config::FileConfig = toml::from_str(
+            r#"
+            [[zone]]
+            name = "Ground Floor"
+            [[client]]
+            name = "Living Room"
+            mac = "00:00:00:00:00:00"
+            zone = "Ground Floor"
+        "#,
+        )
+        .unwrap();
+        crate::config::load_raw(raw).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_unknown_client_connection_does_not_deadlock() {
+        let config = test_config();
+        let store = crate::state::init(&config, None).unwrap();
+        let (notify, _) = tokio::sync::broadcast::channel(16);
+        let temp_dir = tempfile::tempdir().unwrap();
+        let eq_store = Arc::new(std::sync::Mutex::new(EqStore::load(&temp_dir.path().join("eq.json"))));
+
+        let event = SnapcastEvent::ClientConnected {
+            id: "c2".into(),
+            hello: ClientHello {
+                client_name: "SnapDog".into(),
+                mac: "6e:91:28:1d:34:2b".into(),
+                host_name: "TestClient".into(),
+                version: "0.12.2".into(),
+            },
+        };
+
+        // If the double-lock bug were still present, calling handle_event would hang forever!
+        // Wrapping in tokio::time::timeout ensures we fail quickly and safely instead of hanging tests.
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            handle_event(event, &config, &MockBackend, &store, &notify, &eq_store)
+        ).await;
+
+        assert!(result.is_ok(), "handle_event hung / deadlocked on unknown client connection");
+
+        // Verify the client was successfully accepted and added to the store state
+        let (name, zone_index, connected) = {
+            let s = store.read().await;
+            assert_eq!(s.clients.len(), 2);
+            let accepted = s.clients.values().find(|c| c.mac == "6e:91:28:1d:34:2b").unwrap();
+            let res = (accepted.name.clone(), accepted.zone_index, accepted.connected);
+            drop(s);
+            res
+        };
+        assert_eq!(name, "TestClient");
+        assert_eq!(zone_index, 1);
+        assert!(connected);
+    }
+}
