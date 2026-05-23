@@ -1102,7 +1102,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1669,7 +1669,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -2633,7 +2633,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3640,7 +3640,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4009,9 +4009,9 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "snapcast-client"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12240288b5c12695eff248dc4b5ed0a446aaa8f945ae997b904125fe72ac76e7"
+checksum = "7ed842e659821ab8058bf4c636e257dea50f39498c9427ed60eafe2c8121ae1e"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
@@ -4038,9 +4038,9 @@ dependencies = [
 
 [[package]]
 name = "snapcast-proto"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44bb68c54e5ede56345fcf4fc65f69cf8b1b88004537166093316f33de0bf649"
+checksum = "8af0af78941e987203a4442c196a818fc1382c20e7c7ce741ba585b778a84048"
 dependencies = [
  "byteorder",
  "serde",
@@ -4050,9 +4050,9 @@ dependencies = [
 
 [[package]]
 name = "snapcast-server"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fc72f6c6f5e5510197a9e97391ded00f491dc7937a8bf8cc381581ccd30f329"
+checksum = "4ceff23f67dd28a8517f159b16ced765fddf5f7cf52344a8f01a627fc891fe1b"
 dependencies = [
  "anyhow",
  "base64",
@@ -4644,10 +4644,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5509,7 +5509,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
