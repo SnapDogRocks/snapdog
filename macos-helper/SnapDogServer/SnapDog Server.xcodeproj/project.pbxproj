@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0E3812A45F373B0A57DF9D00 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7362345BB262E78D9C1B077D /* LogView.swift */; };
+		1FBD1FB82FC1A018005B284C /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 1FBD1FB72FC1A018005B284C /* AppIcon.icon */; };
 		2934DF33C6BB93B8FDACD973 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F345B134174843E76874F9 /* App.swift */; };
 		2A1F1E98946CBE1DEB6EFDEF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A41907050CB9198DF85006A6 /* Assets.xcassets */; };
 		3AE05A7D31BC54730A2DB903 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3000AEF8E40EA1A911AB7202 /* Sparkle */; };
@@ -19,6 +20,7 @@
 
 /* Begin PBXFileReference section */
 		1A0DEE6574D3EECDCCA97D3E /* ConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigView.swift; sourceTree = "<group>"; };
+		1FBD1FB72FC1A018005B284C /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TOMLConfigParser.swift; sourceTree = "<group>"; };
 		65205740F55E2DFF66DD8D6C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7362345BB262E78D9C1B077D /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
@@ -59,6 +61,7 @@
 				7362345BB262E78D9C1B077D /* LogView.swift */,
 				798CB180E614495536F2CC9E /* ServerManager.swift */,
 				267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */,
+				1FBD1FB72FC1A018005B284C /* AppIcon.icon */,
 			);
 			path = "SnapDog Server";
 			sourceTree = "<group>";
@@ -104,8 +107,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = A06ED75609C8E5E0A6E93DFA /* Build configuration list for PBXProject "SnapDog Server" */;
 			developmentRegion = en;
@@ -136,6 +137,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				2A1F1E98946CBE1DEB6EFDEF /* Assets.xcassets in Resources */,
+				1FBD1FB82FC1A018005B284C /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -183,17 +185,22 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 898G35U5LW;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = "SnapDog Server/Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.metaneutrons.snapdog.helper;
 				PRODUCT_NAME = "SnapDog Server";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
@@ -323,17 +330,22 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 898G35U5LW;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = "SnapDog Server/Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.metaneutrons.snapdog.helper;
 				PRODUCT_NAME = "SnapDog Server";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
