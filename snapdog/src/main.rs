@@ -483,7 +483,10 @@ pub async fn run_app() -> Result<()> {
             "snapcast_port".into(),
             config.snapcast.streaming_port.to_string(),
         );
-        txt.insert("auth".into(), (!config.http.api_keys.is_empty()).to_string());
+        txt.insert(
+            "auth".into(),
+            (!config.http.api_keys.is_empty()).to_string(),
+        );
         if is_docker() {
             txt.insert("docker".into(), "true".into());
         }
@@ -526,7 +529,6 @@ pub async fn run_app() -> Result<()> {
     } else {
         None
     };
-
 
     // ── Main loop ─────────────────────────────────────────────
     let mqtt_zone_cmds = zone_commands.clone();

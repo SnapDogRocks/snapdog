@@ -386,14 +386,10 @@ fn discover_snapdog() -> anyhow::Result<(String, u16)> {
         }
         match receiver.recv_timeout(remaining) {
             Ok(mdns_sd::ServiceEvent::ServiceResolved(info)) => {
-                let host = info
-                    .get_addresses()
-                    .iter()
-                    .next()
-                    .map_or_else(
-                        || info.get_hostname().trim_end_matches('.').to_string(),
-                        ToString::to_string,
-                    );
+                let host = info.get_addresses().iter().next().map_or_else(
+                    || info.get_hostname().trim_end_matches('.').to_string(),
+                    ToString::to_string,
+                );
                 let port = info
                     .get_properties()
                     .get("snapcast_port")
