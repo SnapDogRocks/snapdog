@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.3](https://github.com/metaneutrons/snapdog/compare/v0.12.2...v0.12.3) (2026-05-23)
+
+
+### Bug Fixes
+
+* **snapcast:** resolve double-lock deadlock in event handler when accepting unknown clients ([35159fa](https://github.com/metaneutrons/snapdog/commit/35159fa92fe862103ede2a21b0fd717cb6e8e9f7))
+
 ## [0.12.2](https://github.com/metaneutrons/snapdog/compare/v0.12.1...v0.12.2) (2026-05-23)
 
 
