@@ -19,6 +19,9 @@ authors = ["Fabian Schmieder"]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
+# mDNS discovery
+mdns-sd = "0.12"
+
 # Web framework
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-full"] }

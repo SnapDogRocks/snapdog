@@ -43,12 +43,24 @@ fn main() -> anyhow::Result<()> {
     let encryption_psk = cli.encryption_psk.clone();
     let null_player = cli.player == "null";
     let mixer_raw = cli.mixer.clone();
-    let mdns_name = cli.mdns_name.clone();
-    let settings = cli.into_settings()?;
+    let mut settings = cli.into_settings()?;
 
     #[cfg(unix)]
     if let Some(ref daemon) = settings.daemon {
         daemonize(daemon)?;
+    }
+
+    // mDNS discovery: browse _snapdog._tcp, read snapcast_port from TXT
+    if settings.server.host.is_empty() {
+        #[cfg(feature = "mdns")]
+        {
+            tracing::info!("No server specified, browsing mDNS for _snapdog._tcp...");
+            let (host, port) = discover_snapdog()?;
+            settings.server.host = host;
+            settings.server.port = port;
+        }
+        #[cfg(not(feature = "mdns"))]
+        anyhow::bail!("No server specified and mDNS feature not enabled");
     }
 
     tracing::info!(
@@ -59,27 +71,6 @@ fn main() -> anyhow::Result<()> {
         instance = settings.instance,
         "snapdog-client starting"
     );
-
-    let mut mdns_service_type = settings.server.host.clone();
-    if mdns_service_type.starts_with('_') {
-        while mdns_service_type.ends_with('.') {
-            mdns_service_type.pop();
-        }
-        if !mdns_service_type.ends_with(".local") {
-            mdns_service_type.push_str(".local");
-        }
-        mdns_service_type.push('.');
-    } else {
-        let mut base = mdns_name;
-        while base.ends_with('.') {
-            base.pop();
-        }
-        if !base.ends_with(".local") {
-            base.push_str(".local");
-        }
-        base.push('.');
-        mdns_service_type = base;
-    }
 
     let config = ClientConfig {
         scheme: settings.server.scheme.clone(),
@@ -102,7 +93,6 @@ fn main() -> anyhow::Result<()> {
         host_id: settings.host_id.clone(),
         latency: settings.player.latency,
         client_name: CLIENT_NAME.into(),
-        mdns_service_type,
         ..ClientConfig::default()
     };
     let rt = tokio::runtime::Runtime::new()?;
@@ -377,4 +367,52 @@ fn daemonize(daemon: &snapcast_client::config::DaemonSettings) -> anyhow::Result
 
     tracing::info!("Daemonized");
     Ok(())
+}
+
+/// Discover a `SnapDog` server via mDNS. Returns `(host, snapcast_port)`.
+#[cfg(feature = "mdns")]
+fn discover_snapdog() -> anyhow::Result<(String, u16)> {
+    use std::time::Duration;
+    let mdns = mdns_sd::ServiceDaemon::new()?;
+    let service_type = "_snapdog._tcp.local.";
+    let receiver = mdns.browse(service_type)?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            mdns.stop_browse(service_type).ok();
+            anyhow::bail!("mDNS discovery timed out after 5s");
+        }
+        match receiver.recv_timeout(remaining) {
+            Ok(mdns_sd::ServiceEvent::ServiceResolved(info)) => {
+                let host = info
+                    .get_addresses()
+                    .iter()
+                    .next()
+                    .map_or_else(
+                        || info.get_hostname().trim_end_matches('.').to_string(),
+                        ToString::to_string,
+                    );
+                let port = info
+                    .get_properties()
+                    .get("snapcast_port")
+                    .and_then(|v| v.val_str().parse::<u16>().ok())
+                    .unwrap_or(snapcast_proto::DEFAULT_STREAM_PORT);
+                tracing::info!(
+                    host = %host,
+                    port,
+                    name = %info.get_fullname(),
+                    "Discovered SnapDog server via mDNS"
+                );
+                mdns.stop_browse(service_type).ok();
+                return Ok((host, port));
+            }
+            Ok(_) => {}
+            Err(_) => {
+                mdns.stop_browse(service_type).ok();
+                anyhow::bail!("mDNS discovery timed out after 5s");
+            }
+        }
+    }
 }

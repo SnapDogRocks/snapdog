@@ -99,10 +99,6 @@ pub struct Cli {
     #[arg(long, default_value = "*:info")]
     pub logfilter: String,
 
-    /// mDNS service name for server discovery
-    #[arg(long, default_value = "_snapdog._tcp")]
-    pub mdns_name: String,
-
     /// Pre-shared key for f32lz4e decryption (default: built-in key)
     #[cfg(feature = "encryption")]
     #[arg(long)]
@@ -112,8 +108,7 @@ pub struct Cli {
 impl Cli {
     /// Parse CLI args and build a [`ClientSettings`].
     pub fn into_settings(self) -> Result<ClientSettings> {
-        let default_url = format!("tcp://{}", self.mdns_name);
-        let url = self.url.as_deref().unwrap_or(&default_url);
+        let url = self.url.as_deref().unwrap_or("tcp://");
         let mut server = parse_url(url)?;
 
         // TLS certificate options
@@ -307,8 +302,8 @@ mod tests {
         let cli = Cli::parse_from(["snapdog-client"]);
         assert!(cli.url.is_none());
         let settings = cli.into_settings().unwrap();
-        // With mdns feature, default host is mDNS service name
-        assert!(settings.server.host == "_snapdog._tcp" || settings.server.host == "localhost");
+        // No URL specified → empty host triggers mDNS discovery at runtime
+        assert!(settings.server.host.is_empty());
     }
 
     #[test]

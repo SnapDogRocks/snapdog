@@ -4144,6 +4144,7 @@ dependencies = [
  "clap",
  "cpal",
  "libc",
+ "mdns-sd 0.12.0",
  "midir",
  "sd-notify",
  "serde_json",
