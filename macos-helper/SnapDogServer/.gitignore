@@ -2,3 +2,6 @@
 DerivedData/
 *.xcuserdata
 xcuserdata/
+build/
+build_local/
+.DS_Store

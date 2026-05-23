@@ -22,3 +22,4 @@ eq.json
 .env.test
 .wrangler/
 sparkle_private.key
+/build_local/
