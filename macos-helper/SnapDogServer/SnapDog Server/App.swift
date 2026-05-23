@@ -41,6 +41,7 @@ struct SnapDogServerApp: App {
                     NSApp.activate(ignoringOtherApps: true)
                 }
                 Button("Check for Updates…") {
+                    NSApp.activate(ignoringOtherApps: true)
                     updaterController.checkForUpdates(nil)
                 }
                 Button("View Logs...") {

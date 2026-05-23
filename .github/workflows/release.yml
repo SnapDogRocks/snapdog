@@ -353,7 +353,8 @@ jobs:
           npm install -g wrangler
           wrangler r2 object put snapdog-updates/helper/appcast.xml \
             --file artifacts/appcast.xml \
-            --content-type "application/xml"
+            --content-type "application/xml" \
+            --remote
 
   update-homebrew:
     name: Update Homebrew Tap
