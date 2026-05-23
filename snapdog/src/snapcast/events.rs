@@ -614,14 +614,20 @@ async fn broadcast_all_clients(store: &state::SharedState, notify: &api::ws::Not
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::eq::EqStore;
     use crate::config::AppConfig;
     use crate::snapcast::backend::BoxFuture;
     use crate::snapcast::backend::ClientHello;
-    use crate::audio::eq::EqStore;
 
     struct MockBackend;
     impl SnapcastBackend for MockBackend {
-        fn send_audio(&self, _zone_index: usize, _samples: &[f32], _sample_rate: u32, _channels: u16) -> BoxFuture<'_, anyhow::Result<()>> {
+        fn send_audio(
+            &self,
+            _zone_index: usize,
+            _samples: &[f32],
+            _sample_rate: u32,
+            _channels: u16,
+        ) -> BoxFuture<'_, anyhow::Result<()>> {
             Box::pin(async { Ok(()) })
         }
         fn execute(&self, _cmd: SnapcastCmd) -> BoxFuture<'_, anyhow::Result<()>> {
@@ -678,7 +684,9 @@ mod tests {
         let store = crate::state::init(&config, None).unwrap();
         let (notify, _) = tokio::sync::broadcast::channel(16);
         let temp_dir = tempfile::tempdir().unwrap();
-        let eq_store = Arc::new(std::sync::Mutex::new(EqStore::load(&temp_dir.path().join("eq.json"))));
+        let eq_store = Arc::new(std::sync::Mutex::new(EqStore::load(
+            &temp_dir.path().join("eq.json"),
+        )));
 
         let event = SnapcastEvent::ClientConnected {
             id: "c2".into(),
@@ -694,17 +702,29 @@ mod tests {
         // Wrapping in tokio::time::timeout ensures we fail quickly and safely instead of hanging tests.
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(2),
-            handle_event(event, &config, &MockBackend, &store, &notify, &eq_store)
-        ).await;
+            handle_event(event, &config, &MockBackend, &store, &notify, &eq_store),
+        )
+        .await;
 
-        assert!(result.is_ok(), "handle_event hung / deadlocked on unknown client connection");
+        assert!(
+            result.is_ok(),
+            "handle_event hung / deadlocked on unknown client connection"
+        );
 
         // Verify the client was successfully accepted and added to the store state
         let (name, zone_index, connected) = {
             let s = store.read().await;
             assert_eq!(s.clients.len(), 2);
-            let accepted = s.clients.values().find(|c| c.mac == "6e:91:28:1d:34:2b").unwrap();
-            let res = (accepted.name.clone(), accepted.zone_index, accepted.connected);
+            let accepted = s
+                .clients
+                .values()
+                .find(|c| c.mac == "6e:91:28:1d:34:2b")
+                .unwrap();
+            let res = (
+                accepted.name.clone(),
+                accepted.zone_index,
+                accepted.connected,
+            );
             drop(s);
             res
         };

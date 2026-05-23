@@ -283,8 +283,8 @@ pub(crate) fn detect_hwaddr() -> [u8; 6] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::mpsc;
     use shairplay::AudioHandler;
+    use tokio::sync::mpsc;
 
     #[test]
     fn test_detect_hwaddr_not_all_zeros() {
@@ -351,4 +351,3 @@ mod tests {
         }
     }
 }
-
