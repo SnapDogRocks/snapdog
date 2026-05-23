@@ -241,6 +241,29 @@ When using Navidrome, ensure transcoding is configured for the format specified 
 
 </details>
 
+## mDNS / Bonjour Discovery
+
+SnapDog advertises `_snapdog._tcp` via the OS DNS-SD daemon (Avahi on Linux, mDNSResponder on macOS). Clients discover the server automatically on the local network.
+
+**Advertised service:**
+
+| Field | Value |
+|-------|-------|
+| Service type | `_snapdog._tcp` |
+| Port | REST API port (default 5555) |
+| TXT `api_version` | `1` |
+| TXT `snapcast_port` | Binary audio streaming port (default `1704`) |
+| TXT `auth` | `true` if API keys are configured |
+| TXT `docker` | `true` if running in a container (only present when detected) |
+| TXT `base_url` | External URL when behind reverse proxy (only present when configured) |
+
+Optionally, `_snapcast._tcp` can be advertised on the streaming port for standard Snapcast client compatibility:
+
+```toml
+[mdns]
+advertise_snapcast = true
+```
+
 ## Ecosystem
 
 SnapDog builds on a family of Rust crates:

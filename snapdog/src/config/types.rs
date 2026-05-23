@@ -190,6 +190,9 @@ pub struct FileConfig {
     /// Snapcast connection and management settings.
     #[serde(default)]
     pub snapcast: SnapcastConfig,
+    /// mDNS/Bonjour service advertisement.
+    #[serde(default)]
+    pub mdns: MdnsConfig,
     /// `AirPlay` receiver settings.
     #[serde(default)]
     pub airplay: AirplayConfig,
@@ -512,6 +515,27 @@ pub enum UnknownClientPolicy {
     Reject,
 }
 
+/// mDNS/Bonjour service advertisement configuration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct MdnsConfig {
+    /// Enable mDNS advertisement. Default: true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Additionally advertise `_snapcast._tcp` on the streaming port for
+    /// compatibility with standard Snapcast clients. Default: false.
+    #[serde(default)]
+    pub advertise_snapcast: bool,
+}
+
+impl Default for MdnsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            advertise_snapcast: false,
+        }
+    }
+}
+
 /// Snapcast server connection and management.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SnapcastConfig {
@@ -536,12 +560,6 @@ pub struct SnapcastConfig {
     /// Default zone for unknown clients (when policy is `accept`).
     /// If not set, uses the first configured zone.
     pub default_zone: Option<String>,
-    /// mDNS service type (default: "_snapdog._tcp.local.").
-    #[serde(default = "default_mdns_service_type")]
-    pub mdns_service_type: String,
-    /// mDNS advertised name (default: "`SnapDog`").
-    #[serde(default = "default_mdns_name")]
-    pub mdns_name: String,
     /// Streaming codec: pcm, flac, f32lz4, f32lz4e.
     #[serde(default)]
     pub codec: AudioCodec,
@@ -563,8 +581,6 @@ impl Default for SnapcastConfig {
             verbose: false,
             unknown_clients: UnknownClientPolicy::default(),
             default_zone: None,
-            mdns_service_type: default_mdns_service_type(),
-            mdns_name: default_mdns_name(),
             codec: AudioCodec::default(),
             encryption_psk: None,
             group_volume_mode: GroupVolumeMode::default(),
@@ -918,6 +934,8 @@ pub struct AppConfig {
     pub http: HttpConfig,
     /// Snapcast connection settings.
     pub snapcast: SnapcastConfig,
+    /// mDNS/Bonjour service advertisement.
+    pub mdns: MdnsConfig,
     /// `AirPlay` receiver settings.
     pub airplay: AirplayConfig,
     /// Subsonic connection (if configured).
@@ -1179,12 +1197,6 @@ const fn default_jsonrpc_port() -> u16 {
 }
 const fn default_streaming_port() -> u16 {
     1704
-}
-fn default_mdns_service_type() -> String {
-    "_snapdog._tcp.local.".into()
-}
-fn default_mdns_name() -> String {
-    "SnapDog".into()
 }
 fn default_server_name() -> String {
     "SnapDog".into()

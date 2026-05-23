@@ -124,16 +124,7 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
         validate_presence(zone, radios.len())?;
     }
 
-    let name = if raw.name != "SnapDog" {
-        // Explicit top-level name takes priority
-        raw.name
-    } else if raw.snapcast.mdns_name != "SnapDog" {
-        // Deprecated fallback: [snapcast].mdns_name
-        tracing::warn!("`[snapcast].mdns_name` is deprecated — use top-level `name` instead");
-        raw.snapcast.mdns_name.clone()
-    } else {
-        raw.name
-    };
+    let name = raw.name;
 
     let mut config = AppConfig {
         name,
@@ -141,6 +132,7 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
         audio: raw.audio,
         http: raw.http,
         snapcast: raw.snapcast,
+        mdns: raw.mdns,
         airplay: raw.airplay,
         subsonic: raw.subsonic,
         spotify: raw.spotify,

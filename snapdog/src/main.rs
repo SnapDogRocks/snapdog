@@ -75,10 +75,6 @@ struct Cli {
     #[arg(long)]
     streaming_port: Option<u16>,
 
-    /// mDNS service type (default: _snapdog._tcp.local.)
-    #[arg(long)]
-    mdns_service_type: Option<String>,
-
     /// Server display name (`mDNS`, MQTT, KNX). Default: "`SnapDog`"
     #[arg(long)]
     name: Option<String>,
@@ -231,9 +227,6 @@ pub async fn run_app() -> Result<()> {
     }
     if let Some(port) = cli.streaming_port {
         app_config.snapcast.streaming_port = port;
-    }
-    if let Some(ref s) = cli.mdns_service_type {
-        app_config.snapcast.mdns_service_type = s.clone();
     }
     if let Some(ref s) = cli.name {
         app_config.name = s.clone();
@@ -481,6 +474,60 @@ pub async fn run_app() -> Result<()> {
         None
     };
 
+    // ── mDNS advertisement ──────────────────────────────────────
+    let _mdns = if config.mdns.enabled {
+        use std::collections::HashMap;
+        let mut txt = HashMap::new();
+        txt.insert("api_version".into(), "1".into());
+        txt.insert(
+            "snapcast_port".into(),
+            config.snapcast.streaming_port.to_string(),
+        );
+        txt.insert("auth".into(), (!config.http.api_keys.is_empty()).to_string());
+        if is_docker() {
+            txt.insert("docker".into(), "true".into());
+        }
+        if config.http.base_url != format!("http://localhost:{}", config.http.port) {
+            txt.insert("base_url".into(), config.http.base_url.clone());
+        }
+        let svc = astro_dnssd::DNSServiceBuilder::new("_snapdog._tcp", config.http.port)
+            .with_name(&config.name)
+            .with_txt_record(txt.clone())
+            .register();
+        match svc {
+            Ok(s) => {
+                tracing::info!(
+                    port = config.http.port,
+                    name = %config.name,
+                    ?txt,
+                    "mDNS: advertising _snapdog._tcp"
+                );
+                let snapcast_svc = if config.mdns.advertise_snapcast {
+                    astro_dnssd::DNSServiceBuilder::new(
+                        "_snapcast._tcp",
+                        config.snapcast.streaming_port,
+                    )
+                    .with_name(&config.name)
+                    .register()
+                    .map_err(|e| {
+                        tracing::warn!(error = %e, "mDNS: _snapcast._tcp advertisement failed");
+                    })
+                    .ok()
+                } else {
+                    None
+                };
+                Some((s, snapcast_svc))
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "mDNS advertisement failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+
     // ── Main loop ─────────────────────────────────────────────
     let mqtt_zone_cmds = zone_commands.clone();
     let mqtt_store = store.clone();
@@ -665,4 +712,11 @@ pub async fn run_app() -> Result<()> {
 
     tracing::info!("SnapDog server terminated");
     std::process::exit(0);
+}
+
+/// Detect if running inside a Docker container.
+fn is_docker() -> bool {
+    std::path::Path::new("/.dockerenv").exists()
+        || std::fs::read_to_string("/proc/1/cgroup")
+            .is_ok_and(|s| s.contains("docker") || s.contains("containerd"))
 }

@@ -76,9 +76,13 @@ managed = true
 unknown_clients = "accept"
 # Zone to assign unknown clients to (only used with "accept" policy)
 default_zone = "Ground Floor"
-# mDNS service type for client discovery
-# mdns_service_type = "_snapcast._tcp.local."
-# mDNS advertised name
+
+# ── mDNS / Bonjour ────────────────────────────────────────────────────────
+[mdns]
+# Enable mDNS service advertisement (default: true)
+# enabled = true
+# Additionally advertise _snapcast._tcp for standard Snapcast client discovery
+# advertise_snapcast = false
 
 # ── AirPlay ────────────────────────────────────────────────────────────────
 [airplay]

@@ -89,8 +89,6 @@ impl EmbeddedBackend {
             state_file: Some(
                 std::path::PathBuf::from(&config.system.state_dir).join("snapcast.json"),
             ),
-            mdns_service_type: config.snapcast.mdns_service_type.clone(),
-            mdns_name: config.name.clone(),
             ..ServerConfig::default()
         };
 

@@ -4028,12 +4028,22 @@ dependencies = [
  "rustls-native-certs",
  "serde",
  "sha2",
- "snapcast-proto",
+ "snapcast-proto 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "symphonia 0.5.5",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite 0.26.2",
  "tracing",
+]
+
+[[package]]
+name = "snapcast-proto"
+version = "0.14.0"
+dependencies = [
+ "byteorder",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -4051,11 +4061,8 @@ dependencies = [
 [[package]]
 name = "snapcast-server"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a63227fc77d49583fcd5178354a4ded2f3ba2c1a2429f7229695112c506a924"
 dependencies = [
  "anyhow",
- "astro-dnssd",
  "base64",
  "chacha20poly1305",
  "getrandom 0.4.2",
@@ -4066,7 +4073,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "snapcast-proto",
+ "snapcast-proto 0.14.0",
  "socket2 0.5.10",
  "subtle",
  "tokio",
@@ -4076,9 +4083,10 @@ dependencies = [
 
 [[package]]
 name = "snapdog"
-version = "0.12.4"
+version = "0.13.0"
 dependencies = [
  "anyhow",
+ "astro-dnssd",
  "axum",
  "biquad",
  "bytes",
@@ -4107,7 +4115,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shairplay",
- "snapcast-proto",
+ "snapcast-proto 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "snapcast-server",
  "snapdog-common",
  "subtle",
@@ -4127,7 +4135,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog-client"
-version = "0.12.4"
+version = "0.13.0"
 dependencies = [
  "alsa",
  "anyhow",
@@ -4140,7 +4148,7 @@ dependencies = [
  "sd-notify",
  "serde_json",
  "snapcast-client",
- "snapcast-proto",
+ "snapcast-proto 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "snapdog-common",
  "tokio",
  "tracing",
