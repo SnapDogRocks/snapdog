@@ -51,6 +51,10 @@ struct SnapDogServerApp: App {
             }
 
             Section {
+                Button("About SnapDog Server…") {
+                    openWindow(id: "about")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
                 Button("Quit SnapDog Server") {
                     if serverManager.isRunning {
                         serverManager.stop()
@@ -71,5 +75,10 @@ struct SnapDogServerApp: App {
         Window("Logs", id: "logs") {
             LogView(serverManager: serverManager)
         }
+
+        Window("About SnapDog Server", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
     }
 }
