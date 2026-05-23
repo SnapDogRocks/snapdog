@@ -279,3 +279,76 @@ pub(crate) fn detect_hwaddr() -> [u8; 6] {
         mac_address::MacAddress::bytes,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+    use shairplay::AudioHandler;
+
+    #[test]
+    fn test_detect_hwaddr_not_all_zeros() {
+        let addr = detect_hwaddr();
+        assert_ne!(addr, [0, 0, 0, 0, 0, 0]);
+    }
+
+    #[tokio::test]
+    async fn test_bridge_handler_volume_mapping() {
+        let (audio_tx, _) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let handler = BridgeHandler {
+            audio_tx,
+            event_tx,
+            sample_rate: AtomicU32::new(44100),
+        };
+
+        // Minimum (silence) dB -> 0%
+        handler.on_volume(-144.0);
+        if let Some(ReceiverEvent::Volume { percent }) = event_rx.recv().await {
+            assert_eq!(percent, 0);
+        } else {
+            panic!("Expected volume event");
+        }
+
+        // Below minimum dB -> 0%
+        handler.on_volume(-200.0);
+        if let Some(ReceiverEvent::Volume { percent }) = event_rx.recv().await {
+            assert_eq!(percent, 0);
+        } else {
+            panic!("Expected volume event");
+        }
+
+        // Scale -30 dB -> 0% (lower bound of 0-100 linear mapping)
+        handler.on_volume(-30.0);
+        if let Some(ReceiverEvent::Volume { percent }) = event_rx.recv().await {
+            assert_eq!(percent, 0);
+        } else {
+            panic!("Expected volume event");
+        }
+
+        // Mid-point volume: -15 dB should map to ~50%
+        handler.on_volume(-15.0);
+        if let Some(ReceiverEvent::Volume { percent }) = event_rx.recv().await {
+            assert_eq!(percent, 50);
+        } else {
+            panic!("Expected volume event");
+        }
+
+        // Maximum dB (30 dB) -> 100%
+        handler.on_volume(30.0);
+        if let Some(ReceiverEvent::Volume { percent }) = event_rx.recv().await {
+            assert_eq!(percent, 100);
+        } else {
+            panic!("Expected volume event");
+        }
+
+        // Above maximum dB -> 100%
+        handler.on_volume(50.0);
+        if let Some(ReceiverEvent::Volume { percent }) = event_rx.recv().await {
+            assert_eq!(percent, 100);
+        } else {
+            panic!("Expected volume event");
+        }
+    }
+}
+
