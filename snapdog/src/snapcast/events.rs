@@ -67,7 +67,9 @@ async fn handle_event(
                         client_name = %hello.client_name, version = %hello.version,
                         "Client connected"
                     );
-                    Some((client.zone_index, client_index))
+                    let res = Some((client.zone_index, client_index));
+                    drop(s);
+                    res
                 } else {
                     tracing::info!(
                         id = %id,
@@ -88,7 +90,6 @@ async fn handle_event(
                                 |z| z.index,
                             );
                         let client_index = {
-                            let mut s = store.write().await;
                             let next_idx = s.clients.keys().max().copied().unwrap_or(0) + 1;
                             s.clients.insert(
                                 next_idx,
@@ -113,8 +114,11 @@ async fn handle_event(
                             client = %hello.host_name, zone = zone_index,
                             "Unknown client accepted and assigned to zone"
                         );
-                        Some((zone_index, client_index))
+                        let res = Some((zone_index, client_index));
+                        drop(s);
+                        res
                     } else {
+                        drop(s);
                         None
                     }
                 }
