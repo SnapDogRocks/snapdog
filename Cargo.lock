@@ -3905,9 +3905,9 @@ dependencies = [
 
 [[package]]
 name = "shairplay"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ca93c0fc1cacd0537b9e36844a850e2b4898fb9198c57d712e090dad5133880"
+checksum = "81bd2eb0e7451569574d522524939cbf907f2da4ae134f5358ab62271c339453"
 dependencies = [
  "aes 0.9.0",
  "astro-dnssd",

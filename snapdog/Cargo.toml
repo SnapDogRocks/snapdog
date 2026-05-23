@@ -43,7 +43,7 @@ rust-embed = "8"
 mac_address = "1"
 crc32fast = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
-shairplay = "0.4.0"
+shairplay = "0.5"
 astro-dnssd = "0.3"
 librespot-core = { version = "0.8", optional = true }
 librespot-playback = { version = "0.8", default-features = false, optional = true }

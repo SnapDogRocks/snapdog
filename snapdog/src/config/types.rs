@@ -588,11 +588,25 @@ impl Default for SnapcastConfig {
     }
 }
 
+/// `AirPlay` protocol mode selection.
+#[derive(Debug, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AirplayMode {
+    /// Classic `AirPlay` 1: ALAC/AAC over RTP.
+    Airplay1,
+    /// `AirPlay` 2: buffered audio, `ChaCha20`, SRP pairing.
+    #[default]
+    Airplay2,
+}
+
 /// `AirPlay` receiver settings (shared across all zones).
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct AirplayConfig {
     /// Optional password for `AirPlay` connections.
     pub password: Option<String>,
+    /// `AirPlay` protocol mode: `"airplay1"` or `"airplay2"` (default).
+    #[serde(default)]
+    pub mode: AirplayMode,
     /// Path to persist `AirPlay` pairing keys (required for AP2 reconnects).
     pub pairing_store: Option<std::path::PathBuf>,
     /// Bind to specific addresses (default: all interfaces).

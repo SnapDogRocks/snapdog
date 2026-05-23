@@ -35,17 +35,26 @@ pub struct AirPlayReceiver {
     config: AirplayConfig,
     zone_index: usize,
     airplay_name: String,
+    #[cfg(feature = "ap2")]
+    state_dir: String,
     server: Option<RaopServer>,
 }
 
 impl AirPlayReceiver {
     /// Create a new (stopped) `AirPlay` receiver for the given zone.
     #[must_use]
-    pub const fn new(config: AirplayConfig, zone_index: usize, airplay_name: String) -> Self {
+    pub const fn new(
+        config: AirplayConfig,
+        zone_index: usize,
+        airplay_name: String,
+        #[cfg(feature = "ap2")] state_dir: String,
+    ) -> Self {
         Self {
             config,
             zone_index,
             airplay_name,
+            #[cfg(feature = "ap2")]
+            state_dir,
             server: None,
         }
     }
@@ -77,13 +86,26 @@ impl ReceiverProvider for AirPlayReceiver {
         }
 
         #[cfg(feature = "ap2")]
+        {
+            use crate::config::types::AirplayMode;
+            let mode = match self.config.mode {
+                AirplayMode::Airplay1 => shairplay::AirPlayMode::AirPlay1,
+                AirplayMode::Airplay2 => shairplay::AirPlayMode::AirPlay2,
+            };
+            builder = builder.mode(mode);
+        }
+
+        #[cfg(feature = "ap2")]
         if let Some(ref addrs) = self.config.bind {
             builder = builder.bind(BindConfig::new().addrs(addrs.clone()));
         }
 
         #[cfg(feature = "ap2")]
-        if let Some(ref path) = self.config.pairing_store {
-            builder = builder.pairing_store(Arc::new(FilePairingStore::new(path.clone())));
+        {
+            let path = self.config.pairing_store.clone().unwrap_or_else(|| {
+                std::path::PathBuf::from(&self.state_dir).join("airplay-pairing")
+            });
+            builder = builder.pairing_store(Arc::new(FilePairingStore::new(path)));
         }
 
         let mut server = builder.build(handler)?;

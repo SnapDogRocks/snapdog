@@ -86,6 +86,8 @@ default_zone = "Ground Floor"
 
 # ── AirPlay ────────────────────────────────────────────────────────────────
 [airplay]
+# Protocol mode: "airplay2" (default) or "airplay1" for legacy compatibility
+# mode = "airplay2"
 # Optional: require password for AirPlay connections
 # password = "1234"
 # Optional: persist AirPlay 2 pairing data (for HomeKit integration)

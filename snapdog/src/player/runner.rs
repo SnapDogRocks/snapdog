@@ -240,6 +240,7 @@ async fn run(
     let mut _airplay_receiver = {
         let ap_config = crate::config::AirplayConfig {
             password: config.airplay.password.clone(),
+            mode: config.airplay.mode,
             pairing_store: config.airplay.pairing_store.clone(),
             bind: config.airplay.bind.clone(),
         };
@@ -247,6 +248,8 @@ async fn run(
             ap_config,
             zone_index,
             zone_config.airplay_name.clone(),
+            #[cfg(feature = "ap2")]
+            config.system.state_dir.clone(),
         );
         match receiver.start(airplay_audio_tx, airplay_event_tx).await {
             Ok(()) => Some(receiver),
