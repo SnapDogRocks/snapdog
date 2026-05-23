@@ -198,6 +198,14 @@ export default function Home() {
   const zoneList = Array.from(zoneMap.values());
   const currentZone = zoneMap.get(selectedZone) ?? zoneList[0];
 
+  // At the xl breakpoint (1280px), the wide grid uses minWidth=480px cards with gap=16px.
+  // Available width ≈ 1280 - 32px padding = 1248px.
+  // n cards fit without scroll when: n*480 + (n-1)*16 ≤ 1248  →  n ≤ 2
+  // When all zones fit, the sidebar is redundant and should hide at xl.
+  // When there are 3+ zones, the grid overflows horizontally and the sidebar
+  // must remain visible so the user can navigate to off-screen zones.
+  const allZonesFitInGrid = zoneList.length <= 2;
+
   if (needsAuth) {
     return <ApiKeyPrompt onAuthenticated={() => loadAll()} />;
   }
@@ -243,8 +251,12 @@ export default function Home() {
         {t("app.skipToContent")}
       </a>
       <ConnectionStatus retryIn={retryIn} />
-      {/* ── Sidebar / Rail (tablet only) ──────────────────── */}
-      <aside className="hidden md:flex xl:hidden flex-col border-r border-border bg-card md:w-56 shrink-0" aria-label={t("zone.navigation")}>
+      {/* ── Sidebar / Rail ──────────────────────────────────
+           Visible at md+. Hides at xl only when all zones fit
+           simultaneously in the wide grid (≤ 2 zones). When there
+           are 3+ zones, the grid overflows so we keep the sidebar
+           as the primary navigation at all viewport sizes. */}
+      <aside className={`hidden md:flex flex-col border-r border-border bg-card md:w-56 shrink-0${allZonesFitInGrid ? ' xl:hidden' : ''}`} aria-label={t("zone.navigation")}>
         <div className="px-4 py-4 border-b border-border flex items-center gap-2">
           <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
@@ -280,7 +292,9 @@ export default function Home() {
         </header>
 
         {/* Wide header (xl+) */}
-        <header className="hidden xl:flex items-center gap-2 px-6 py-3 border-b border-border">
+        {/* Wide header: only shown at xl when the sidebar is hidden (≤ 2 zones).
+            When sidebar is visible (3+ zones) it already contains the logo/controls. */}
+        <header className={`hidden items-center gap-2 px-6 py-3 border-b border-border${allZonesFitInGrid ? ' xl:flex' : ''}`}>
           <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
             <h1 className="text-base font-semibold">SnapDog</h1>
