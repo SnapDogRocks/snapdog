@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/metaneutrons/snapdog/compare/v0.12.4...v0.13.0) (2026-05-23)
+
+
+### Features
+
+* **macos-helper:** add About SnapDog Server window ([77e4e25](https://github.com/metaneutrons/snapdog/commit/77e4e25d7f6258d9fd23e2fd5cec32152bc9dd07))
+* **macos-helper:** add Subsonic enable/disable toggle in ConfigView ([a483a37](https://github.com/metaneutrons/snapdog/commit/a483a379a1b9727f6d5c4a157f3d9a49ab0eeecc))
+
+
+### Bug Fixes
+
+* **release:** set MARKETING_VERSION from release tag in macOS app build ([f7699c5](https://github.com/metaneutrons/snapdog/commit/f7699c5a9359fb9adb33fbd234160504b7edb29d))
+
 ## [0.12.4](https://github.com/metaneutrons/snapdog/compare/v0.12.3...v0.12.4) (2026-05-23)
 
 
