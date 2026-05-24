@@ -254,6 +254,7 @@ SnapDog advertises `_snapdog._tcp` via the OS DNS-SD daemon (Avahi on Linux, mDN
 | Service type | `_snapdog._tcp` |
 | Port | REST API port (default 5555) |
 | TXT `api_version` | `1` |
+| TXT `server_id` | Persistent UUID v4 — identifies the same server across interfaces/restarts |
 | TXT `snapcast_port` | Binary audio streaming port (default `1704`) |
 | TXT `auth` | `true` if API keys are configured |
 | TXT `tls` | `true` if HTTPS is enabled (only present when active) |
