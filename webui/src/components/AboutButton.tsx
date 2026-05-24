@@ -31,11 +31,14 @@ export function AboutButton() {
 function AboutOverlay({ onClose }: { onClose: () => void }) {
   const [version, setVersion] = useState<string | null>(null);
   const [hostname, setHostname] = useState<string>("");
+  const [knxAvailable, setKnxAvailable] = useState(false);
+  const [progMode, setProgMode] = useState(false);
   const trapRef = useFocusTrap<HTMLDivElement>();
   const t = useTranslations("about");
 
   useEffect(() => {
     api.system.version().then((v) => setVersion(v.version)).catch(() => {});
+    api.knx.getProgrammingMode().then((mode) => { setProgMode(mode); setKnxAvailable(true); }).catch(() => setKnxAvailable(false));
     if (typeof window !== "undefined") {
       setTimeout(() => {
         setHostname(window.location.hostname);
@@ -189,6 +192,28 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             </span>
           </a>
         </div>
+
+        {/* KNX Programming Mode — only visible when KNX is configured */}
+        {knxAvailable && (
+          <div className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 font-mono">
+            <div className="flex flex-col">
+              <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">KNX</span>
+              <span className="font-semibold text-foreground text-xs sm:text-sm tracking-tight">Programming Mode</span>
+            </div>
+            <button
+              onClick={() => {
+                const next = !progMode;
+                api.knx.setProgrammingMode(next).then(() => setProgMode(next)).catch(() => {});
+              }}
+              className={`relative w-11 h-6 rounded-full transition-colors ${progMode ? "bg-red-500" : "bg-muted"}`}
+              role="switch"
+              aria-checked={progMode}
+              aria-label="KNX Programming Mode"
+            >
+              <span className={`absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform ${progMode ? "translate-x-5" : ""}`} />
+            </button>
+          </div>
+        )}
 
         {/* Footer Group (Copyright & Done Button) */}
         <div className="w-full flex flex-col items-center gap-3 mt-1 flex-shrink-0">

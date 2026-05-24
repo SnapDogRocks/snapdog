@@ -94,7 +94,7 @@ volumes:
 # Start as KNX/IP device — ETS programs zones, clients, group addresses
 snapdog --knx-device --knx-address 1.1.100
 
-# Programming mode can be enabled via CLI flag, WebUI button, or REST API
+# Programming mode can be enabled via CLI flag, About dialog in WebUI, or REST API
 snapdog --knx-device --knx-address 1.1.100 --knx-prog-mode
 
 # Dual-stack IPv4+IPv6
