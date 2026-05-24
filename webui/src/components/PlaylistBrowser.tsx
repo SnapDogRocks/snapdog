@@ -68,7 +68,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
   }
 
   return (
-    <div className="w-full space-y-4 pt-2 relative z-10">
+    <div className="w-full space-y-4 pt-2">
       <AnimatePresence mode="wait">
         {selectedId === null ? (
           <motion.div

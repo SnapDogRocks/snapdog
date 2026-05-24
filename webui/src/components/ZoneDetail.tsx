@@ -89,8 +89,24 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
   const [showEq, setShowEq] = useState(false);
   const t = useTranslations();
 
+  // Cover URL for ambient background glow — rendered at the ZoneDetail level
+  // so it is structurally behind ALL interactive children and can never
+  // intercept pointer events regardless of browser stacking quirks.
+  const glowUrl = zone.source !== "idle" ? (zone.track?.cover_url ?? null) : null;
+
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
+    <div className="relative flex flex-1 flex-col overflow-y-auto">
+      {/* Ambient cover glow — purely decorative, lives at -z-10 inside an
+          isolated stacking context so it can NEVER block any sibling interaction. */}
+      {glowUrl && (
+        <div className="absolute inset-0 pointer-events-none select-none overflow-hidden isolate" aria-hidden="true">
+          <img
+            src={glowUrl}
+            alt=""
+            className="absolute -top-8 -left-8 size-96 object-cover blur-3xl opacity-20 scale-125 -z-10"
+          />
+        </div>
+      )}
       <div className="w-full max-w-[calc(100%-2rem)] mx-auto sm:max-w-[600px] space-y-3 px-4 py-4 sm:px-5 sm:py-4">
         <div className="hidden sm:block"><ZoneHeader zone={zone} /></div>
         {/* Compact+: horizontal layout for cover + controls */}

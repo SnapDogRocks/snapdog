@@ -30,18 +30,7 @@ export function NowPlaying({ zone }: { zone: ZoneState }) {
   }
 
   return (
-    <div className="relative w-full aspect-square isolate">
-      {/* Color glow — decorative only, fully non-interactive */}
-      {!coverError && (
-        <div className="absolute -inset-4 -z-10 pointer-events-none" aria-hidden="true">
-          <img
-            key={`glow-${coverUrl}`}
-            src={coverUrl}
-            alt=""
-            className="size-full object-cover blur-3xl opacity-30 scale-110"
-          />
-        </div>
-      )}
+    <div className="relative w-full aspect-square">
       {/* Main cover */}
       <div className="relative w-full h-full rounded-2xl sm:rounded-xl overflow-hidden bg-muted shadow-lg">
         {coverError ? (
