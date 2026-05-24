@@ -74,7 +74,7 @@ tokio = { workspace = true, features = ["test-util"] }
 [package.metadata.deb]
 section = "sound"
 copyright = "2026 Fabian Schmieder"
-depends = "libasound2"
+depends = "libasound2, libavahi-compat-libdnssd1"
 conf-files = ["/etc/snapdog/snapdog.toml", "/etc/default/snapdog"]
 assets = [
   ["target/release/snapdog", "usr/bin/", "755"],

@@ -43,7 +43,7 @@ encryption = ["snapcast-client/encryption"]
 [package.metadata.deb]
 section = "sound"
 copyright = "2026 Fabian Schmieder"
-depends = "libasound2"
+depends = "libasound2, libavahi-compat-libdnssd1"
 assets = [
   ["target/release/snapdog-client", "usr/bin/", "755"],
   ["debian/snapdog-client.default", "etc/default/snapdog-client", "644"],
