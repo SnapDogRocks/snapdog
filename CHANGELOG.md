@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.2](https://github.com/metaneutrons/snapdog/compare/v0.14.1...v0.14.2) (2026-05-24)
+
+
+### Bug Fixes
+
+* **docker:** use webui/out path for radio-cover.png include_bytes ([2006a48](https://github.com/metaneutrons/snapdog/commit/2006a48b586d6b0315abce1d2236cd191cd838de))
+* move radio-cover.png to assets/ for include_bytes ([2d030c4](https://github.com/metaneutrons/snapdog/commit/2d030c4a55515a474155331c86ff2d9314e7da97))
+* **webui:** remove overflow-hidden from glow container (Safari artifact) ([1bcd250](https://github.com/metaneutrons/snapdog/commit/1bcd250e6ffa91d617e91cbaf2637736d5aa95d5))
+
 ## [0.14.1](https://github.com/metaneutrons/snapdog/compare/v0.14.0...v0.14.1) (2026-05-24)
 
 
