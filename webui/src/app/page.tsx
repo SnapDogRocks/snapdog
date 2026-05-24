@@ -194,6 +194,15 @@ export default function Home() {
   useEffect(() => { setConnected(wsConnected, serverGoingAway); }, [wsConnected, serverGoingAway, setConnected]);
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // Set document title from server name
+  const [serverName, setServerName] = useState("SnapDog");
+  useEffect(() => {
+    api.system.version().then((v) => {
+      setServerName(v.name);
+      document.title = v.name === "SnapDog" ? "SnapDog" : `SnapDog — ${v.name}`;
+    }).catch(() => {});
+  }, []);
+
   // Handle ?auth= URL parameter (from shared links)
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -277,7 +286,7 @@ export default function Home() {
             
           </div>
           <div className="flex items-center gap-1 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
-            <ThemeToggle /><LocalePicker /><AboutButton /><ConnectButton />
+            <AboutButton /><LocalePicker /><ThemeToggle /><ConnectButton />
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5" aria-label={t("zone.zones")}>
@@ -290,6 +299,9 @@ export default function Home() {
             />
           ))}
         </nav>
+        <div className="px-3 py-2 border-t border-border/30 text-[10px] font-mono text-muted-foreground/40 truncate text-center">
+          {serverName}
+        </div>
       </aside>
 
       {/* ── Main content ───────────────────────────────────── */}
@@ -301,7 +313,7 @@ export default function Home() {
             
           </div>
           <div className="flex items-center gap-1 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
-            <ThemeToggle /><LocalePicker /><AboutButton /><ConnectButton />
+            <AboutButton /><LocalePicker /><ThemeToggle /><ConnectButton />
           </div>
         </header>
 
@@ -314,7 +326,7 @@ export default function Home() {
             
           </div>
           <div className="flex items-center gap-1 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
-            <ThemeToggle /><LocalePicker /><AboutButton /><ConnectButton />
+            <AboutButton /><LocalePicker /><ThemeToggle /><ConnectButton />
           </div>
         </header>
 

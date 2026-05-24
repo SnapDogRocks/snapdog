@@ -22,6 +22,7 @@ struct SystemStatus {
 struct VersionInfo {
     version: &'static str,
     rust_version: &'static str,
+    name: String,
 }
 
 pub fn router(state: SharedState) -> Router {
@@ -40,9 +41,10 @@ async fn get_status(State(state): State<SharedState>) -> Json<SystemStatus> {
     })
 }
 
-async fn get_version(State(_state): State<SharedState>) -> Json<VersionInfo> {
+async fn get_version(State(state): State<SharedState>) -> Json<VersionInfo> {
     Json(VersionInfo {
         version: env!("CARGO_PKG_VERSION"),
         rust_version: env!("CARGO_PKG_RUST_VERSION"),
+        name: state.config.name.clone(),
     })
 }

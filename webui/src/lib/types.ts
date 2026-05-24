@@ -107,6 +107,7 @@ export interface SystemStatus {
 export interface VersionInfo {
   version: string;
   rust_version: string;
+  name: string;
 }
 
 export interface HealthResponse {

@@ -30,6 +30,7 @@ export function AboutButton() {
 
 function AboutOverlay({ onClose }: { onClose: () => void }) {
   const [version, setVersion] = useState<string | null>(null);
+  const [serverName, setServerName] = useState<string>("SnapDog");
   const [hostname, setHostname] = useState<string>("");
   const [knxAvailable, setKnxAvailable] = useState(false);
   const [progMode, setProgMode] = useState(false);
@@ -37,7 +38,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
   const t = useTranslations("about");
 
   useEffect(() => {
-    api.system.version().then((v) => setVersion(v.version)).catch(() => {});
+    api.system.version().then((v) => { setVersion(v.version); setServerName(v.name); }).catch(() => {});
     api.knx.getProgrammingMode().then((mode) => { setProgMode(mode); setKnxAvailable(true); }).catch(() => setKnxAvailable(false));
     if (typeof window !== "undefined") {
       setTimeout(() => {
@@ -117,7 +118,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
 
         {/* Host bar */}
         <div className="w-full flex items-center justify-center px-1 text-[10px] font-mono text-muted-foreground/60 border-b border-border/30 pb-2.5 flex-shrink-0">
-          <span>HOST: {hostname || "..."}</span>
+          <span>{serverName !== "SnapDog" ? serverName : hostname || "..."}</span>
         </div>
 
         {/* Header Group (Logo, Headings, Soundwave) */}
