@@ -59,6 +59,14 @@ struct Cli {
     #[arg(short, long)]
     bind: Option<String>,
 
+    /// TLS certificate path (PEM fullchain). Enables HTTPS.
+    #[arg(long)]
+    tls_cert: Option<std::path::PathBuf>,
+
+    /// TLS private key path (PEM, unencrypted).
+    #[arg(long)]
+    tls_key: Option<std::path::PathBuf>,
+
     /// Audio codec: pcm, flac, f32lz4, f32lz4e
     #[arg(long)]
     codec: Option<String>,
@@ -210,6 +218,12 @@ pub async fn run_app() -> Result<()> {
     if let Some(ref bind) = cli.bind {
         app_config.http.bind = bind.clone();
     }
+    if let Some(ref cert) = cli.tls_cert {
+        app_config.http.tls_cert = Some(cert.clone());
+    }
+    if let Some(ref key) = cli.tls_key {
+        app_config.http.tls_key = Some(key.clone());
+    }
     if let Some(ref codec) = cli.codec {
         app_config.snapcast.codec = match codec.as_str() {
             "pcm" => config::AudioCodec::Pcm,
@@ -242,6 +256,13 @@ pub async fn run_app() -> Result<()> {
                 "Unknown log level '{other}' — use trace, debug, info, warn, or error"
             ),
         };
+    }
+
+    // Validate TLS configuration
+    match (&app_config.http.tls_cert, &app_config.http.tls_key) {
+        (Some(_), None) => anyhow::bail!("tls_cert is set but tls_key is missing"),
+        (None, Some(_)) => anyhow::bail!("tls_key is set but tls_cert is missing"),
+        _ => {}
     }
 
     let config_label = cli
@@ -490,15 +511,25 @@ pub async fn run_app() -> Result<()> {
         if is_docker() {
             txt.insert("docker".into(), "true".into());
         }
+        let tls_enabled = config.http.tls_cert.is_some();
+        if tls_enabled {
+            txt.insert("tls".into(), "true".into());
+        }
         // Determine the effective base_url for mDNS advertisement:
         // - If explicitly configured (not the localhost default): use it
         // - If bind address is not wildcard: derive from bind address
-        //   (server is only reachable on that specific IP)
+        // - If TLS is enabled with wildcard bind: advertise https scheme
+        let scheme = if tls_enabled { "https" } else { "http" };
         let default_base = format!("http://localhost:{}", config.http.port);
         let effective_base_url = if config.http.base_url != default_base {
             Some(config.http.base_url.clone())
         } else if config.http.bind != "::" && config.http.bind != "0.0.0.0" {
-            Some(format!("http://{}:{}", config.http.bind, config.http.port))
+            Some(format!(
+                "{scheme}://{}:{}",
+                config.http.bind, config.http.port
+            ))
+        } else if tls_enabled {
+            Some(format!("https://localhost:{}", config.http.port))
         } else {
             None
         };

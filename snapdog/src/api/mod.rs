@@ -144,12 +144,28 @@ pub async fn serve<S: BuildHasher>(
 
     let local_addr = listener.local_addr()?;
     let port = local_addr.port();
+    let tls_enabled = state.config.http.tls_cert.is_some();
+    let scheme = if tls_enabled { "https" } else { "http" };
+
     if local_addr.ip().is_unspecified() {
-        tracing::info!("REST API listening on port {port} (all interfaces)");
-        tracing::info!("  → http://localhost:{port}");
+        tracing::info!("REST API listening on port {port} (all interfaces, {scheme})");
+        tracing::info!("  → {scheme}://localhost:{port}");
     } else {
-        tracing::info!("REST API listening on http://{local_addr}");
+        tracing::info!("REST API listening on {scheme}://{local_addr}");
     }
-    axum::serve(listener, app).await?;
+
+    if let (Some(cert_path), Some(key_path)) =
+        (&state.config.http.tls_cert, &state.config.http.tls_key)
+    {
+        let rustls_config =
+            axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
+                .await
+                .map_err(|e| anyhow::anyhow!("TLS configuration failed: {e}"))?;
+        axum_server::bind_rustls(local_addr, rustls_config)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        axum::serve(listener, app).await?;
+    }
     Ok(())
 }

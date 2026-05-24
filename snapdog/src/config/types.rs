@@ -486,6 +486,12 @@ pub struct HttpConfig {
     /// Used for absolute URLs in API responses. Defaults to `http://localhost:<port>`.
     #[serde(default = "default_base_url")]
     pub base_url: String,
+    /// TLS certificate path (PEM fullchain). If set with `tls_key`, enables HTTPS.
+    #[serde(default)]
+    pub tls_cert: Option<std::path::PathBuf>,
+    /// TLS private key path (PEM, unencrypted). Required when `tls_cert` is set.
+    #[serde(default)]
+    pub tls_key: Option<std::path::PathBuf>,
     /// Optional API keys. If set, all API endpoints require `Authorization: Bearer <key>`.
     #[serde(default)]
     pub api_keys: Vec<SecretString>,
@@ -497,6 +503,8 @@ impl Default for HttpConfig {
             port: default_http_port(),
             bind: default_bind_address(),
             base_url: default_base_url(),
+            tls_cert: None,
+            tls_key: None,
             api_keys: vec![],
         }
     }

@@ -164,6 +164,8 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 port = 5555
 bind = "0.0.0.0"                       # :: for dual-stack IPv4+IPv6
 base_url = "http://192.168.1.10:5555"  # Required for MQTT cover art URLs; REST API uses relative URLs
+# tls_cert = "/etc/snapdog/tls/fullchain.pem"  # Enables HTTPS
+# tls_key = "/etc/snapdog/tls/privkey.pem"
 
 [audio]
 sample_rate = 48000
@@ -254,6 +256,7 @@ SnapDog advertises `_snapdog._tcp` via the OS DNS-SD daemon (Avahi on Linux, mDN
 | TXT `api_version` | `1` |
 | TXT `snapcast_port` | Binary audio streaming port (default `1704`) |
 | TXT `auth` | `true` if API keys are configured |
+| TXT `tls` | `true` if HTTPS is enabled (only present when active) |
 | TXT `docker` | `true` if running in a container (only present when detected) |
 | TXT `base_url` | Canonical server URL (see below) |
 

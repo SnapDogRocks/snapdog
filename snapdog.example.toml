@@ -47,6 +47,10 @@ base_url = "http://192.168.1.10:5555"
 # Optional: restrict API access with bearer tokens.
 # If empty, all endpoints are open. WebUI and /health are always accessible.
 # api_keys = ["my-secret-token"]
+# Optional: TLS — enables HTTPS for REST API and WebUI.
+# Both tls_cert and tls_key must be set together.
+# tls_cert = "/etc/snapdog/tls/fullchain.pem"
+# tls_key = "/etc/snapdog/tls/privkey.pem"
 
 # ── Snapcast ───────────────────────────────────────────────────────────────
 [snapcast]
