@@ -5,7 +5,7 @@
 # All sections and fields are optional — sensible defaults are used.
 
 # Server display name — used for mDNS discovery, MQTT, KNX device name.
-name = "Living Room"
+# name = "SnapDog"
 
 # ── System ─────────────────────────────────────────────────────────────────
 [system]
@@ -215,7 +215,7 @@ icon = "🏠"
 # Clients are assigned to zones and can be moved at runtime via API/WebUI.
 
 [[client]]
-name = "Living Room"
+# name = "SnapDog"
 mac = "02:42:ac:11:00:10"            # Snapcast client MAC (lowercase)
 zone = "Ground Floor"                 # Initial zone assignment (by name)
 icon = "🛋️"

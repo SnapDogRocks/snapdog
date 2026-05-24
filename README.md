@@ -161,7 +161,7 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 
 ```toml
 # Server display name — used for mDNS, MQTT, browser title
-name = "Living Room"
+# name = "SnapDog"
 
 [http]
 port = 5555
@@ -214,7 +214,7 @@ url = "udp://192.168.1.50:3671"
 # individual_address = "1.1.100"
 
 [[zone]]
-name = "Living Room"
+# name = "SnapDog"
 
 [[client]]
 name = "Kitchen Speaker"
