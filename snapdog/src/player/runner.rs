@@ -241,7 +241,6 @@ async fn run(
         let ap_config = crate::config::AirplayConfig {
             password: config.airplay.password.clone(),
             mode: config.airplay.mode,
-            pairing_store: config.airplay.pairing_store.clone(),
             bind: config.airplay.bind.clone(),
         };
         let mut receiver = crate::receiver::airplay::AirPlayReceiver::new(

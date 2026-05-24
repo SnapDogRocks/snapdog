@@ -607,8 +607,6 @@ pub struct AirplayConfig {
     /// `AirPlay` protocol mode: `"airplay1"` or `"airplay2"` (default).
     #[serde(default)]
     pub mode: AirplayMode,
-    /// Path to persist `AirPlay` pairing keys (required for AP2 reconnects).
-    pub pairing_store: Option<std::path::PathBuf>,
     /// Bind to specific addresses (default: all interfaces).
     pub bind: Option<Vec<std::net::IpAddr>>,
 }

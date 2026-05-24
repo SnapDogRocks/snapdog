@@ -90,8 +90,6 @@ default_zone = "Ground Floor"
 # mode = "airplay2"
 # Optional: require password for AirPlay connections
 # password = "1234"
-# Optional: persist AirPlay 2 pairing data (for HomeKit integration)
-# pairing_store = "/var/lib/snapdog/airplay-pairing"
 # Optional: bind to specific network interfaces
 # bind = ["192.168.1.10"]
 

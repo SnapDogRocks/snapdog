@@ -102,9 +102,7 @@ impl ReceiverProvider for AirPlayReceiver {
 
         #[cfg(feature = "ap2")]
         {
-            let path = self.config.pairing_store.clone().unwrap_or_else(|| {
-                std::path::PathBuf::from(&self.state_dir).join("airplay-pairing")
-            });
+            let path = std::path::PathBuf::from(&self.state_dir).join("airplay-pairing");
             builder = builder.pairing_store(Arc::new(FilePairingStore::new(path)));
         }
 
