@@ -135,5 +135,14 @@
     "licenseLabel": "LICENSE",
     "licenseValue": "GPL-3.0 ↗",
     "done": "Done"
+  },
+  "connect": {
+    "title": "Connect",
+    "dialogLabel": "Connect to SnapDog",
+    "closeLabel": "Close dialog",
+    "description": "Scan with your phone to open the SnapDog app or WebUI",
+    "share": "Share Link",
+    "copied": "Copied!",
+    "securityNote": "This QR code contains your API key. Share only with trusted people."
   }
 }

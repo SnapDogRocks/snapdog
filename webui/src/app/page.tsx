@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, Component, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import Link from "next/link";
 import { useAppStore, type ZoneState } from "@/stores/useAppStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -16,6 +15,7 @@ import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { LocalePicker } from "@/components/LocalePicker";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AboutButton } from "@/components/AboutButton";
+import { ConnectButton } from "@/components/ConnectButton";
 import { ProgrammingMode } from "@/components/ProgrammingMode";
 import { ZoneRailItem } from "@/components/ZoneRailItem";
 import { ZoneDetail } from "@/components/ZoneDetail";
@@ -195,6 +195,21 @@ export default function Home() {
   useEffect(() => { setConnected(wsConnected, serverGoingAway); }, [wsConnected, serverGoingAway, setConnected]);
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // Handle ?auth= URL parameter (from shared links)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const authParam = params.get("auth");
+    if (authParam) {
+      sessionStorage.setItem("snapdog_api_key", authParam);
+      params.delete("auth");
+      const clean = params.toString();
+      const url = clean ? `${window.location.pathname}?${clean}` : window.location.pathname;
+      window.history.replaceState({}, "", url);
+      loadAll();
+    }
+  }, [loadAll]);
+
   const zoneList = Array.from(zoneMap.values());
   const currentZone = zoneMap.get(selectedZone) ?? zoneList[0];
 
@@ -258,12 +273,12 @@ export default function Home() {
            as the primary navigation at all viewport sizes. */}
       <aside className={`hidden md:flex flex-col border-r border-border bg-card md:w-56 shrink-0${allZonesFitInGrid ? ' xl:hidden' : ''}`} aria-label={t("zone.navigation")}>
         <div className="px-4 py-4 border-b border-border flex items-center gap-2">
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <div className="flex items-center gap-2">
             <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
             <h1 className="text-base font-semibold">SnapDog</h1>
-          </Link>
-          <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
-            <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
+          </div>
+          <div className="flex items-center gap-1 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
+            <ProgrammingMode /><LocalePicker /><ThemeToggle /><AboutButton /><ConnectButton />
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5" aria-label={t("zone.zones")}>
@@ -282,12 +297,12 @@ export default function Home() {
       <main className="flex flex-1 flex-col min-w-0" id="main-content">
         {/* Header (mobile + compact + wide — hidden when sidebar visible at lg–xl) */}
         <header className="flex md:hidden items-center gap-2 px-4 py-3 border-b border-border">
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <div className="flex items-center gap-2">
             <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
             <h1 className="text-base font-semibold">SnapDog</h1>
-          </Link>
-          <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
-            <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
+          </div>
+          <div className="flex items-center gap-1 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
+            <ProgrammingMode /><LocalePicker /><ThemeToggle /><AboutButton /><ConnectButton />
           </div>
         </header>
 
@@ -295,12 +310,12 @@ export default function Home() {
         {/* Wide header: only shown at xl when the sidebar is hidden (≤ 2 zones).
             When sidebar is visible (3+ zones) it already contains the logo/controls. */}
         <header className={`hidden items-center gap-2 px-6 py-3 border-b border-border${allZonesFitInGrid ? ' xl:flex' : ''}`}>
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <div className="flex items-center gap-2">
             <img src="/assets/snapdog-icon.svg" alt="" className="size-5 opacity-70" />
             <h1 className="text-base font-semibold">SnapDog</h1>
-          </Link>
-          <div className="flex items-center gap-0.5 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
-            <ProgrammingMode /><ThemeToggle /><LocalePicker /><AboutButton />
+          </div>
+          <div className="flex items-center gap-1 ml-auto [&>*]:flex [&>*]:items-center [&>*]:justify-center">
+            <ProgrammingMode /><LocalePicker /><ThemeToggle /><AboutButton /><ConnectButton />
           </div>
         </header>
 
