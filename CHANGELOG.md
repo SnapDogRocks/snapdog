@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/metaneutrons/snapdog/compare/v0.14.0...v0.14.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* **docker:** add libavahi-compat-libdnssd-dev to build stages, libavahi-client3 to runtime ([283d7f5](https://github.com/metaneutrons/snapdog/commit/283d7f53e0aff73328a2c95aaf3ee6a98c3e9361))
+
 ## [0.14.0](https://github.com/metaneutrons/snapdog/compare/v0.13.0...v0.14.0) (2026-05-24)
 
 
