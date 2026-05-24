@@ -166,7 +166,16 @@ async fn get_playlist_cover(
     Path(index): Path<usize>,
 ) -> impl IntoResponse {
     match resolve_playlist(&state, index).await? {
-        ResolvedPlaylist::Radio => Err(ApiError::NotFound("resource")),
+        ResolvedPlaylist::Radio => Ok((
+            [
+                (axum::http::header::CONTENT_TYPE, "image/png".to_string()),
+                (
+                    axum::http::header::CACHE_CONTROL,
+                    CACHE_CONTROL_1DAY.to_string(),
+                ),
+            ],
+            include_bytes!("../../../../webui/public/assets/radio-cover.png").to_vec(),
+        )),
         ResolvedPlaylist::Subsonic(_) => {
             let id = resolve_subsonic_id(&state, index).await?;
             let sub = subsonic(&state)?;
