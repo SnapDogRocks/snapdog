@@ -117,7 +117,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
         </motion.button>
 
         {/* Host bar */}
-        <div className="w-full flex items-center justify-center px-1 text-[10px] font-mono text-muted-foreground/60 border-b border-border/30 pb-2.5 flex-shrink-0">
+        <div className="w-full flex items-center justify-center px-1 text-xs font-mono text-muted-foreground/70 border-b border-border/30 pb-2.5 flex-shrink-0">
           <span>{serverName !== "SnapDog" ? serverName : hostname || "..."}</span>
         </div>
 
