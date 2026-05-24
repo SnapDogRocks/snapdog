@@ -160,6 +160,9 @@ cargo build --release
 Single file: [`snapdog.example.toml`](snapdog.example.toml)
 
 ```toml
+# Server display name — used for mDNS, MQTT, browser title
+name = "Living Room"
+
 [http]
 port = 5555
 bind = "0.0.0.0"                       # :: for dual-stack IPv4+IPv6
@@ -179,6 +182,14 @@ source_switch_fade_ms = 300          # Source change fade within a zone (0 to di
 streaming_port = 1704
 unknown_clients = "accept"           # accept | ignore | reject
 default_zone = "Living Room"         # Zone for unknown clients (accept only)
+
+[mdns]
+# enabled = true                     # Advertises _snapdog._tcp via OS daemon
+# advertise_snapcast = false         # Additionally advertise _snapcast._tcp
+
+[airplay]
+# mode = "airplay2"                  # airplay1 | airplay2
+# password = "1234"
 
 [mqtt]
 broker = "192.168.1.10:1883"

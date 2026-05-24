@@ -5,7 +5,7 @@
 # All sections and fields are optional — sensible defaults are used.
 
 # Server display name — used for mDNS discovery, MQTT, KNX device name.
-name = "Dev Test"
+name = "Living Room"
 
 # ── System ─────────────────────────────────────────────────────────────────
 [system]
