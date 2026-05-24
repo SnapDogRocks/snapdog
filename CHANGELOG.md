@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.15.0](https://github.com/metaneutrons/snapdog/compare/v0.14.2...v0.15.0) (2026-05-24)
+
+
+### Features
+
+* **http:** TLS support for REST API and WebUI ([4a9d5d3](https://github.com/metaneutrons/snapdog/commit/4a9d5d3d6203f25e4abbc5f4f54acdafa015427e))
+* **mdns:** add persistent server_id to TXT records ([f50f69c](https://github.com/metaneutrons/snapdog/commit/f50f69c0577ee2899f03f951fdac06a077481b70))
+* **mdns:** auto-derive base_url from bind address ([6ce913f](https://github.com/metaneutrons/snapdog/commit/6ce913fffe19ceeb68438486d32609797a360ee7))
+* **webui:** QR code connect dialog with share link ([06720df](https://github.com/metaneutrons/snapdog/commit/06720df99d9dce6c161de199466208247b7522ea))
+* **webui:** show custom server name above zones in sidebar ([5ece34c](https://github.com/metaneutrons/snapdog/commit/5ece34c5451ca8306fdf41de79b006eaf81c9e23))
+* **webui:** show server name in title, about dialog, and sidebar ([4712681](https://github.com/metaneutrons/snapdog/commit/471268122fa6e179b7d4916b33ef17d2b5f7ef03))
+
+
+### Bug Fixes
+
+* **ci:** correct YAML structure for concurrency block ([ae75d50](https://github.com/metaneutrons/snapdog/commit/ae75d50d0e2af0999c54f0c7dc05a320e6563d4a))
+* **packaging:** add avahi as runtime dependency ([5daaf72](https://github.com/metaneutrons/snapdog/commit/5daaf725c407c8f63675c48ddac793ca084f32a9))
+* **webui:** increase header icon to size-8, fix locale menu clipping ([f39d896](https://github.com/metaneutrons/snapdog/commit/f39d896f66b548d57d0c2cabe5768240f9a65ec5))
+* **webui:** resolve ESLint setState-in-effect error ([acb2651](https://github.com/metaneutrons/snapdog/commit/acb265124b66fb8972acf6f21b514a3cc00e3ba4))
+
 ## [0.14.2](https://github.com/metaneutrons/snapdog/compare/v0.14.1...v0.14.2) (2026-05-24)
 
 
