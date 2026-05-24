@@ -174,7 +174,7 @@ async fn get_playlist_cover(
                     CACHE_CONTROL_1DAY.to_string(),
                 ),
             ],
-            include_bytes!("../../../../webui/out/assets/radio-cover.png").to_vec(),
+            include_bytes!("../../../../assets/radio-cover.png").to_vec(),
         )),
         ResolvedPlaylist::Subsonic(_) => {
             let id = resolve_subsonic_id(&state, index).await?;
