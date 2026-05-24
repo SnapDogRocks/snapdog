@@ -53,7 +53,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
       - uses: actions/setup-node@v6
         with:
           node-version: 25
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
       - uses: actions/setup-node@v6
         with:
           node-version: 25
@@ -108,7 +108,7 @@ jobs:
       - name: Install snapserver + mosquitto
         run: |
           sudo apt-get update
-          sudo apt-get install -y snapserver libasound2-dev mosquitto
+          sudo apt-get install -y snapserver libasound2-dev libavahi-compat-libdnssd-dev mosquitto
           printf "listener 1883\nallow_anonymous true\n" | sudo tee /etc/mosquitto/conf.d/ci.conf
           sudo systemctl restart mosquitto
       - name: Create test env
@@ -142,7 +142,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
       - name: Generate knxprod
         run: |
           mkdir -p knx webui/out
