@@ -5,7 +5,7 @@
 # All sections and fields are optional — sensible defaults are used.
 
 # Server display name — used for mDNS discovery, MQTT, KNX device name.
-# name = "SnapDog"
+name = "Dev Test"
 
 # ── System ─────────────────────────────────────────────────────────────────
 [system]

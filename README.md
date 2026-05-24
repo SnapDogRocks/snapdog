@@ -255,7 +255,13 @@ SnapDog advertises `_snapdog._tcp` via the OS DNS-SD daemon (Avahi on Linux, mDN
 | TXT `snapcast_port` | Binary audio streaming port (default `1704`) |
 | TXT `auth` | `true` if API keys are configured |
 | TXT `docker` | `true` if running in a container (only present when detected) |
-| TXT `base_url` | External URL when behind reverse proxy (only present when configured) |
+| TXT `base_url` | Canonical server URL (see below) |
+
+**`base_url` resolution:** The `base_url` TXT record is included when the server is not reachable on all interfaces. Clients should prefer `base_url` over the mDNS hostname when present:
+
+- `base_url` explicitly configured → use configured value (reverse proxy, custom domain)
+- `[http].bind` set to a specific IP (not `::` or `0.0.0.0`) → auto-derived as `http://{bind}:{port}`
+- Otherwise → `base_url` omitted; clients use the mDNS hostname + port directly
 
 Optionally, `_snapcast._tcp` can be advertised on the streaming port for standard Snapcast client compatibility:
 

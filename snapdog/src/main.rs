@@ -490,8 +490,20 @@ pub async fn run_app() -> Result<()> {
         if is_docker() {
             txt.insert("docker".into(), "true".into());
         }
-        if config.http.base_url != format!("http://localhost:{}", config.http.port) {
-            txt.insert("base_url".into(), config.http.base_url.clone());
+        // Determine the effective base_url for mDNS advertisement:
+        // - If explicitly configured (not the localhost default): use it
+        // - If bind address is not wildcard: derive from bind address
+        //   (server is only reachable on that specific IP)
+        let default_base = format!("http://localhost:{}", config.http.port);
+        let effective_base_url = if config.http.base_url != default_base {
+            Some(config.http.base_url.clone())
+        } else if config.http.bind != "::" && config.http.bind != "0.0.0.0" {
+            Some(format!("http://{}:{}", config.http.bind, config.http.port))
+        } else {
+            None
+        };
+        if let Some(ref url) = effective_base_url {
+            txt.insert("base_url".into(), url.clone());
         }
         let svc = astro_dnssd::DNSServiceBuilder::new("_snapdog._tcp", config.http.port)
             .with_name(&config.name)
