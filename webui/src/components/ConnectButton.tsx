@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { api } from "@/lib/api";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, Share08Icon } from "@hugeicons/core-free-icons";
@@ -30,20 +29,15 @@ export function ConnectButton() {
 }
 
 function ConnectOverlay({ onClose }: { onClose: () => void }) {
-  const [baseUrl, setBaseUrl] = useState<string>("");
-  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [baseUrl] = useState(() =>
+    typeof window !== "undefined" ? window.location.origin : ""
+  );
+  const [apiKey] = useState(() =>
+    typeof window !== "undefined" ? sessionStorage.getItem("snapdog_api_key") : null
+  );
   const [copied, setCopied] = useState(false);
   const trapRef = useFocusTrap<HTMLDivElement>();
   const t = useTranslations("connect");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setBaseUrl(window.location.origin);
-    }
-    // Try to get the stored API key from sessionStorage
-    const stored = sessionStorage.getItem("snapdog_api_key");
-    if (stored) setApiKey(stored);
-  }, []);
 
   const deepLink = apiKey
     ? `snapdog://connect?url=${encodeURIComponent(baseUrl)}&token=${encodeURIComponent(apiKey)}`

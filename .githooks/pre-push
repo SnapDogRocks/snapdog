@@ -1,2 +1,15 @@
 #!/bin/sh
-exec cargo clippy -- -D warnings
+set -e
+
+echo "=== Running Pre-Push Hooks ==="
+
+echo "1. Checking code formatting (cargo fmt)..."
+cargo fmt --all -- --check
+
+echo "2. Running Clippy lints (cargo clippy)..."
+cargo clippy --all-targets -- -D warnings
+
+echo "3. Linting WebUI (next lint)..."
+(cd webui && npm run lint)
+
+echo "=== All pre-push checks passed successfully! ==="
