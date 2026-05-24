@@ -39,7 +39,10 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     api.system.version().then((v) => { setVersion(v.version); setServerName(v.name); }).catch(() => {});
-    api.knx.getProgrammingMode().then((mode) => { setProgMode(mode); setKnxAvailable(true); }).catch(() => setKnxAvailable(false));
+    api.knx.getProgrammingMode().then((mode) => {
+      setProgMode(mode);
+      setKnxAvailable(true);
+    }).catch(() => {});
     if (typeof window !== "undefined") {
       setTimeout(() => {
         setHostname(window.location.hostname);
