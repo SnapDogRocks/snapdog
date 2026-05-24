@@ -30,15 +30,17 @@ export function NowPlaying({ zone }: { zone: ZoneState }) {
   }
 
   return (
-    <div className="relative w-full aspect-square">
-      {/* Color glow — blurred cover bleeds outside the container */}
+    <div className="relative w-full aspect-square isolate">
+      {/* Color glow — decorative only, fully non-interactive */}
       {!coverError && (
-        <img
-          key={`glow-${coverUrl}`}
-          src={coverUrl}
-          alt=""
-          className="absolute -inset-4 w-[calc(100%+2rem)] h-[calc(100%+2rem)] object-cover blur-3xl opacity-30 scale-110 pointer-events-none transition-opacity duration-700"
-        />
+        <div className="absolute -inset-4 -z-10 pointer-events-none" aria-hidden="true">
+          <img
+            key={`glow-${coverUrl}`}
+            src={coverUrl}
+            alt=""
+            className="size-full object-cover blur-3xl opacity-30 scale-110"
+          />
+        </div>
       )}
       {/* Main cover */}
       <div className="relative w-full h-full rounded-2xl sm:rounded-xl overflow-hidden bg-muted shadow-lg">

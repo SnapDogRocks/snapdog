@@ -177,8 +177,8 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
           >
             {/* Detail Header */}
             <div className="flex items-center gap-3 border-b border-border/50 pb-4 px-1">
-              <Button variant="ghost" size="icon" onClick={() => setSelectedId(null)} className="rounded-full size-8 shrink-0">
-                <HugeiconsIcon icon={ArrowLeft01Icon} size={18} />
+              <Button variant="ghost" size="icon" onClick={() => setSelectedId(null)} className="rounded-full size-10 -ml-1 shrink-0">
+                <HugeiconsIcon icon={ArrowLeft01Icon} size={20} />
               </Button>
               <div className="size-12 rounded-lg overflow-hidden bg-primary/10 shadow-sm shrink-0">
                  <img
