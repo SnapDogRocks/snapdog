@@ -10,7 +10,7 @@ RUN npm run build
 # ── Rust build stage ──────────────────────────────────────────
 FROM rust:1-bookworm AS builder
 
-RUN apt-get update && apt-get install -y cmake pkg-config libasound2-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y cmake pkg-config libasound2-dev libavahi-compat-libdnssd-dev && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
@@ -30,7 +30,7 @@ LABEL org.opencontainers.image.description="Multi-room audio system with KNX int
 LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libasound2 ca-certificates dumb-init curl \
+    libasound2 libavahi-client3 ca-certificates dumb-init curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/snapdog /usr/local/bin/
