@@ -329,6 +329,19 @@ pub async fn run_app() -> Result<()> {
         .with_context(|| format!("Failed to create state directory: {}", state_dir.display()))?;
     tracing::info!(path = %state_dir.display(), "State directory");
 
+    // Stable server identity — persisted across restarts
+    let server_id = {
+        let id_path = state_dir.join("server_id");
+        match std::fs::read_to_string(&id_path) {
+            Ok(id) if !id.trim().is_empty() => id.trim().to_string(),
+            _ => {
+                let id = uuid::Uuid::new_v4().to_string();
+                std::fs::write(&id_path, &id).ok();
+                id
+            }
+        }
+    };
+
     let store = state::init(&config, Some(&state_dir.join(STATE_FILE)))?;
     state::spawn_auto_save(store.clone());
     let covers = state::cover::new_cache();
@@ -500,6 +513,7 @@ pub async fn run_app() -> Result<()> {
         use std::collections::HashMap;
         let mut txt = HashMap::new();
         txt.insert("api_version".into(), "1".into());
+        txt.insert("server_id".into(), server_id.clone());
         txt.insert(
             "snapcast_port".into(),
             config.snapcast.streaming_port.to_string(),
