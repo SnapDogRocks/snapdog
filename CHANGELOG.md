@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.14.0](https://github.com/metaneutrons/snapdog/compare/v0.13.0...v0.14.0) (2026-05-24)
+
+
+### Features
+
+* **airplay:** runtime protocol mode selection, default pairing persistence ([29863fd](https://github.com/metaneutrons/snapdog/commit/29863fd080f35cd6e8651205728939fff77749cb))
+* **airplay:** runtime protocol mode selection, default pairing persistence ([a06c2b7](https://github.com/metaneutrons/snapdog/commit/a06c2b71c09bf962766f1b95398a831bdc01c28a))
+* **client:** discover _snapdog._tcp via mDNS with TXT records ([7bab448](https://github.com/metaneutrons/snapdog/commit/7bab448b6f548a61fe52be9cdd2904d1e301e783))
+* **mdns:** enterprise-grade mDNS with docker detection ([669beec](https://github.com/metaneutrons/snapdog/commit/669beecfaf87382b3181f0d50b2289de391489c7))
+* **mdns:** upgrade snapcast-rs to 0.14 (OS-native mDNS) ([41704b5](https://github.com/metaneutrons/snapdog/commit/41704b5b43486818d9befb01aebe77991376df05))
+
+
+### Bug Fixes
+
+* **api:** serve radio-cover.png for /playlists/0/cover ([72c8811](https://github.com/metaneutrons/snapdog/commit/72c88118c29c022a5bd9208cc483395d4cbf8277))
+* **webui:** cover glow blocking playlist back button ([0593618](https://github.com/metaneutrons/snapdog/commit/0593618c84c8a3b15f575ba6755529d956e70f81))
+* **webui:** move cover glow to ZoneDetail background layer ([a3e8f26](https://github.com/metaneutrons/snapdog/commit/a3e8f26870ea98175924beb360fee68002440a96))
+* **webui:** stack PlaylistBrowser above cover glow to ensure back button clickability ([3f99b93](https://github.com/metaneutrons/snapdog/commit/3f99b933ae0b33c4af07bf2a388004f1df8f9336))
+
 ## [0.13.0](https://github.com/metaneutrons/snapdog/compare/v0.12.4...v0.13.0) (2026-05-23)
 
 
