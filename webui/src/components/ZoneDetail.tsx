@@ -99,7 +99,7 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
       {/* Ambient cover glow — purely decorative, lives at -z-10 inside an
           isolated stacking context so it can NEVER block any sibling interaction. */}
       {glowUrl && (
-        <div className="absolute inset-0 pointer-events-none select-none overflow-hidden isolate" aria-hidden="true">
+        <div className="absolute inset-0 pointer-events-none select-none isolate" aria-hidden="true">
           <img
             src={glowUrl}
             alt=""
