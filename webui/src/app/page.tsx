@@ -289,6 +289,11 @@ export default function Home() {
             <AboutButton /><LocalePicker /><ThemeToggle /><ConnectButton />
           </div>
         </div>
+        {serverName !== "SnapDog" && (
+          <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+            {serverName}
+          </div>
+        )}
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5" aria-label={t("zone.zones")}>
           {zoneList.map((z) => (
             <ZoneRailItem
@@ -299,9 +304,6 @@ export default function Home() {
             />
           ))}
         </nav>
-        <div className="px-3 py-2 border-t border-border/30 text-[10px] font-mono text-muted-foreground/40 truncate text-center">
-          {serverName}
-        </div>
       </aside>
 
       {/* ── Main content ───────────────────────────────────── */}
