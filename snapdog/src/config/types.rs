@@ -428,17 +428,38 @@ pub struct AudioConfig {
     #[serde(default)]
     pub source_conflict: SourceConflict,
     /// Fade duration in milliseconds when a client switches zones.
-    /// Set to 0 to disable. Only applies to `SnapDog` clients.
-    #[serde(default = "default_zone_switch_fade_ms")]
+    /// Set to 0 to disable. Only applies to `SnapDog` clients. Max: 1000ms.
+    #[serde(
+        default = "default_zone_switch_fade_ms",
+        deserialize_with = "deserialize_fade_ms"
+    )]
     pub zone_switch_fade_ms: u16,
     /// Fade duration in milliseconds when switching audio sources within a zone
-    /// (e.g., radio → subsonic). Set to 0 to disable.
-    #[serde(default = "default_zone_switch_fade_ms")]
+    /// (e.g., radio → subsonic). Set to 0 to disable. Max: 1000ms.
+    #[serde(
+        default = "default_zone_switch_fade_ms",
+        deserialize_with = "deserialize_fade_ms"
+    )]
     pub source_switch_fade_ms: u16,
 }
 
+/// Maximum fade duration in milliseconds.
+const MAX_FADE_MS: u16 = 1000;
+
 const fn default_zone_switch_fade_ms() -> u16 {
     snapdog_common::DEFAULT_FADE_MS
+}
+
+fn deserialize_fade_ms<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u16, D::Error> {
+    let v = u16::deserialize(deserializer)?;
+    if v > MAX_FADE_MS {
+        tracing::warn!(
+            value = v,
+            max = MAX_FADE_MS,
+            "Fade duration exceeds maximum, clamping"
+        );
+    }
+    Ok(v.min(MAX_FADE_MS))
 }
 
 /// Source conflict resolution policy.
