@@ -215,7 +215,7 @@ icon = "🏠"
 # Clients are assigned to zones and can be moved at runtime via API/WebUI.
 
 [[client]]
-# name = "SnapDog"
+name = "Living Room"
 mac = "02:42:ac:11:00:10"            # Snapcast client MAC (lowercase)
 zone = "Ground Floor"                 # Initial zone assignment (by name)
 icon = "🛋️"
