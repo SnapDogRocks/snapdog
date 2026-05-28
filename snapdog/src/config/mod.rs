@@ -144,13 +144,30 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
     };
 
     apply_env_overrides(&mut config);
-    validate(&mut config);
+    validate(&mut config)?;
 
     Ok(config)
 }
 
 /// Cross-field validation and normalization. Runs after all overrides are applied.
-fn validate(config: &mut AppConfig) {
+fn validate(config: &mut AppConfig) -> Result<()> {
+    // ── Audio format constraints ──────────────────────────────
+    if !(8_000..=384_000).contains(&config.audio.sample_rate) {
+        anyhow::bail!(
+            "sample_rate {} is out of range (8000–384000)",
+            config.audio.sample_rate
+        );
+    }
+    if !matches!(config.audio.bit_depth, 16 | 24 | 32) {
+        anyhow::bail!(
+            "bit_depth {} is invalid (must be 16, 24, or 32)",
+            config.audio.bit_depth
+        );
+    }
+    if !(1..=8).contains(&config.audio.channels) {
+        anyhow::bail!("channels {} is out of range (1–8)", config.audio.channels);
+    }
+
     // FLAC supports max 24-bit
     if config.snapcast.codec == AudioCodec::Flac && config.audio.bit_depth > 24 {
         tracing::warn!(
@@ -172,6 +189,36 @@ fn validate(config: &mut AppConfig) {
             "f32lz4 uses native 32-bit float — bit_depth setting is ignored"
         );
     }
+
+    // ── Port collision ────────────────────────────────────────
+    if config.http.port == config.snapcast.streaming_port {
+        anyhow::bail!(
+            "http.port ({}) and snapcast.streaming_port ({}) must not be the same",
+            config.http.port,
+            config.snapcast.streaming_port
+        );
+    }
+
+    // ── Client max_volume ─────────────────────────────────────
+    for client in &mut config.clients {
+        if client.max_volume > 100 {
+            tracing::warn!(
+                client = %client.name,
+                value = client.max_volume,
+                "max_volume exceeds 100, clamping"
+            );
+            client.max_volume = 100;
+        } else if client.max_volume < 0 {
+            tracing::warn!(
+                client = %client.name,
+                value = client.max_volume,
+                "max_volume below 0, clamping"
+            );
+            client.max_volume = 0;
+        }
+    }
+
+    Ok(())
 }
 
 /// Validate uniqueness of zone/client names and audio format parameters.
