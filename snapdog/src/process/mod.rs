@@ -111,7 +111,7 @@ fn render_config(config: &AppConfig) -> String {
     write!(
         out,
         "[tcp-control]\nenabled = true\nport = {}\n\n",
-        config.snapcast.jsonrpc_port
+        config.snapcast.jsonrpc_tcp_port
     )
     .unwrap();
     // Streaming server

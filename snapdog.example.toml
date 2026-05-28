@@ -57,7 +57,7 @@ base_url = "http://192.168.1.10:5555"
 # Snapcast server address (loopback for embedded server)
 address = "127.0.0.1"
 # JSON-RPC control port
-jsonrpc_port = 1780
+# jsonrpc_tcp_port = 1705
 # Audio streaming port (clients connect here)
 streaming_port = 1704
 # Streaming codec: "pcm", "flac", "f32lz4", "f32lz4e" (encrypted)
@@ -67,6 +67,7 @@ codec = "flac"
 # How zone volume changes affect individual client volumes:
 #   "absolute" = set all clients to the zone volume
 #   "relative" = scale proportionally: client_volume * zone_volume / 100
+#   "compressed" = compressed scaling with headroom preservation (default)
 group_volume_mode = "relative"
 # Whether SnapDog manages (starts/stops) the snapserver process.
 # Set to false if using an external snapserver.
@@ -182,11 +183,11 @@ icon = "🏠"
 # track_next = "1/1/13"            # DPT 1.001 — next track
 # track_previous = "1/1/14"        # DPT 1.001 — previous track
 # control_status = "1/1/15"        # DPT 1.001 — playing status
-# track_playing = "1/1/16"         # DPT 1.001 — track is playing
-# track_title = "1/1/20"           # DPT 16.001 — current title (14 chars)
-# track_artist = "1/1/21"          # DPT 16.001 — current artist
-# track_album = "1/1/22"           # DPT 16.001 — current album
-# track_progress = "1/1/23"        # DPT 5.001 — track progress (0–100%)
+# track_playing_status = "1/1/16"         # DPT 1.001 — track is playing
+# track_title_status = "1/1/20"           # DPT 16.001 — current title (14 chars)
+# track_artist_status = "1/1/21"          # DPT 16.001 — current artist
+# track_album_status = "1/1/22"           # DPT 16.001 — current album
+# track_progress_status = "1/1/23"        # DPT 5.001 — track progress (0–100%)
 # shuffle = "1/1/30"               # DPT 1.001 — set shuffle
 # shuffle_status = "1/1/31"        # DPT 1.001 — shuffle feedback
 # shuffle_toggle = "1/1/32"        # DPT 1.001 — toggle shuffle

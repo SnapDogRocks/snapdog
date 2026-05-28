@@ -56,7 +56,7 @@ mod process_impl {
 
         /// Connect using app config.
         pub async fn from_config(config: &AppConfig) -> Result<Self> {
-            let tcp_port = config.snapcast.jsonrpc_port;
+            let tcp_port = config.snapcast.jsonrpc_tcp_port;
             let host = &config.snapcast.address;
             let addr: SocketAddr = tokio::net::lookup_host(format!("{host}:{tcp_port}"))
                 .await

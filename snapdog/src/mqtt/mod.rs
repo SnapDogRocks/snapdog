@@ -49,7 +49,7 @@ impl MqttBridge {
             opts.set_credentials(&config.username, &*config.password);
         }
 
-        let status_topic = format!("{}/status", config.base_topic.trim_end_matches('/'));
+        let status_topic = format!("{}status", config.base_topic);
         opts.set_last_will(LastWill::new(
             &status_topic,
             "offline",
@@ -63,7 +63,7 @@ impl MqttBridge {
         Ok(Self {
             client,
             eventloop,
-            base_topic: config.base_topic.trim_end_matches('/').to_string(),
+            base_topic: config.base_topic.clone(),
             base_url: base_url.trim_end_matches('/').to_string(),
             name: name.to_string(),
         })
@@ -110,7 +110,7 @@ impl MqttBridge {
 
         for topic in &topics {
             self.client
-                .subscribe(format!("{}/{topic}", self.base_topic), QoS::AtLeastOnce)
+                .subscribe(format!("{}{topic}", self.base_topic), QoS::AtLeastOnce)
                 .await
                 .with_context(|| format!("Failed to subscribe to {topic}"))?;
         }
@@ -135,18 +135,18 @@ impl MqttBridge {
                 "unique_id": &unique_id,
                 "object_id": &unique_id,
                 "icon": "mdi:speaker-group",
-                "state_topic": format!("{base}/zones/{idx}/state"),
-                "volume_command_topic": format!("{base}/zones/{idx}/volume/set"),
-                "mute_command_topic": format!("{base}/zones/{idx}/mute/set"),
-                "media_position_command_topic": format!("{base}/zones/{idx}/position/set"),
+                "state_topic": format!("{base}zones/{idx}/state"),
+                "volume_command_topic": format!("{base}zones/{idx}/volume/set"),
+                "mute_command_topic": format!("{base}zones/{idx}/mute/set"),
+                "media_position_command_topic": format!("{base}zones/{idx}/position/set"),
                 "payload_play": "play",
                 "payload_pause": "pause",
                 "payload_stop": "stop",
                 "payload_next": "next",
                 "payload_previous": "previous",
-                "command_topic": format!("{base}/zones/{idx}/control/set"),
-                "shuffle_command_topic": format!("{base}/zones/{idx}/shuffle/set"),
-                "repeat_command_topic": format!("{base}/zones/{idx}/repeat/set"),
+                "command_topic": format!("{base}zones/{idx}/control/set"),
+                "shuffle_command_topic": format!("{base}zones/{idx}/shuffle/set"),
+                "repeat_command_topic": format!("{base}zones/{idx}/repeat/set"),
                 "volume_level_template": "{{ value_json.volume_level }}",
                 "is_volume_muted_template": "{{ value_json.is_volume_muted }}",
                 "state_template": "{{ value_json.state }}",
@@ -204,7 +204,7 @@ impl MqttBridge {
     pub async fn publish(&self, topic: &str, payload: &str) -> Result<()> {
         self.client
             .publish(
-                format!("{}/{topic}", self.base_topic),
+                format!("{}{topic}", self.base_topic),
                 QoS::AtLeastOnce,
                 true,
                 payload.as_bytes(),

@@ -572,8 +572,8 @@ pub struct SnapcastConfig {
     #[serde(default = "default_snapcast_address")]
     pub address: String,
     /// TCP JSON-RPC control port (default: 1705).
-    #[serde(default = "default_jsonrpc_port")]
-    pub jsonrpc_port: u16,
+    #[serde(default = "default_jsonrpc_port", alias = "jsonrpc_port")]
+    pub jsonrpc_tcp_port: u16,
     /// Audio streaming port (default: 1704).
     #[serde(default = "default_streaming_port")]
     pub streaming_port: u16,
@@ -604,7 +604,7 @@ impl Default for SnapcastConfig {
     fn default() -> Self {
         Self {
             address: default_snapcast_address(),
-            jsonrpc_port: default_jsonrpc_port(),
+            jsonrpc_tcp_port: default_jsonrpc_port(),
             streaming_port: default_streaming_port(),
             managed: true,
             verbose: false,
@@ -768,9 +768,22 @@ pub struct MqttConfig {
     /// MQTT password.
     #[serde(default)]
     pub password: SecretString,
-    /// Base topic prefix (e.g., "snapdog/").
-    #[serde(default = "default_mqtt_base_topic")]
+    /// Base topic prefix. Trailing slash is added automatically if missing.
+    #[serde(
+        default = "default_mqtt_base_topic",
+        deserialize_with = "deserialize_base_topic"
+    )]
     pub base_topic: String,
+}
+
+fn deserialize_base_topic<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    let mut v = String::deserialize(deserializer)?;
+    if !v.ends_with('/') {
+        v.push('/');
+    }
+    Ok(v)
 }
 
 fn default_mqtt_client_id() -> String {
