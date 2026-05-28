@@ -144,8 +144,34 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
     };
 
     apply_env_overrides(&mut config);
+    validate(&mut config);
 
     Ok(config)
+}
+
+/// Cross-field validation and normalization. Runs after all overrides are applied.
+fn validate(config: &mut AppConfig) {
+    // FLAC supports max 24-bit
+    if config.snapcast.codec == AudioCodec::Flac && config.audio.bit_depth > 24 {
+        tracing::warn!(
+            bit_depth = config.audio.bit_depth,
+            "FLAC supports max 24-bit, clamping"
+        );
+        config.audio.bit_depth = 24;
+    }
+
+    // f32lz4 always uses 32-bit float internally — bit_depth is ignored
+    if matches!(
+        config.snapcast.codec,
+        AudioCodec::F32lz4 | AudioCodec::F32lz4e
+    ) && config.audio.bit_depth != 32
+    {
+        tracing::info!(
+            codec = %config.snapcast.codec,
+            configured_bit_depth = config.audio.bit_depth,
+            "f32lz4 uses native 32-bit float — bit_depth setting is ignored"
+        );
+    }
 }
 
 /// Validate uniqueness of zone/client names and audio format parameters.

@@ -172,11 +172,11 @@ base_url = "http://192.168.1.10:5555"  # Required for MQTT cover art URLs; REST 
 
 [audio]
 sample_rate = 48000
-bit_depth = 16
+bit_depth = 16                       # FLAC: max 24; f32lz4: always 32 (setting ignored)
 channels = 2
 source_conflict = "last_wins"        # last_wins | receiver_wins
-zone_switch_fade_ms = 300            # Client zone switch fade (0 to disable)
-source_switch_fade_ms = 300          # Source change fade within a zone (0 to disable)
+zone_switch_fade_ms = 300            # Client zone switch fade (0 to disable, max 1000)
+source_switch_fade_ms = 300          # Source change fade within a zone (0 to disable, max 1000)
 
 [snapcast]
 streaming_port = 1704
