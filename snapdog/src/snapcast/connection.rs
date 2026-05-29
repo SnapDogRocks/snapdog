@@ -48,6 +48,8 @@ pub struct Connection {
 
 impl Connection {
     /// Connect to the Snapcast JSON-RPC server and spawn the background task.
+    /// # Errors
+    /// Returns an error if the request fails.
     pub async fn connect(addr: SocketAddr) -> Result<Self> {
         let stream = {
             let mut attempts = 0;
@@ -80,6 +82,8 @@ impl Connection {
     }
 
     /// Send a JSON-RPC request and await the response.
+    /// # Errors
+    /// Returns an error if the request fails.
     pub async fn request(&self, method: &'static str, params: Value) -> Result<Value> {
         let req = Request::new(method, params);
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -99,6 +103,7 @@ impl Connection {
     }
 
     /// Subscribe to Snapcast server notifications.
+    #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<Notification> {
         self.notification_tx.subscribe()
     }

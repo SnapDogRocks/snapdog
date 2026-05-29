@@ -87,7 +87,7 @@ impl ReceiverProvider for AirPlayReceiver {
 
         #[cfg(feature = "ap2")]
         {
-            use crate::config::types::AirplayMode;
+            use crate::config::AirplayMode;
             let mode = match self.config.mode {
                 AirplayMode::Airplay1 => shairplay::AirPlayMode::AirPlay1,
                 AirplayMode::Airplay2 => shairplay::AirPlayMode::AirPlay2,

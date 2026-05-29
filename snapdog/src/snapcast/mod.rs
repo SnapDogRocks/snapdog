@@ -49,19 +49,23 @@ mod process_impl {
 
     impl SnapcastClient {
         /// Connect to snapserver JSON-RPC.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn connect(addr: SocketAddr) -> Result<Self> {
             let conn = Connection::connect(addr).await?;
             Ok(Self { conn })
         }
 
         /// Connect using app config.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn from_config(config: &AppConfig) -> Result<Self> {
             let tcp_port = config.snapcast.jsonrpc_tcp_port;
             let host = &config.snapcast.address;
             let addr: SocketAddr = tokio::net::lookup_host(format!("{host}:{tcp_port}"))
                 .await
                 .context("Failed to resolve snapcast address")?
-                .find(|a| a.is_ipv4())
+                .find(std::net::SocketAddr::is_ipv4)
                 .or(tokio::net::lookup_host(format!("{host}:{tcp_port}"))
                     .await
                     .ok()
@@ -71,6 +75,7 @@ mod process_impl {
         }
 
         /// Subscribe to Snapcast server notifications.
+        #[must_use]
         pub fn subscribe(&self) -> broadcast::Receiver<Notification> {
             self.conn.subscribe()
         }
@@ -78,17 +83,23 @@ mod process_impl {
         // ── Server methods ────────────────────────────────────────
 
         /// Fetch full server status.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn server_get_status(&self) -> Result<ServerStatus> {
             let result = self.conn.request("Server.GetStatus", json!({})).await?;
             serde_json::from_value(result).context("Failed to parse ServerStatus")
         }
 
         /// Get JSON-RPC protocol version.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn server_get_rpc_version(&self) -> Result<serde_json::Value> {
             self.conn.request("Server.GetRPCVersion", json!({})).await
         }
 
         /// Delete a client from the server.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn server_delete_client(&self, id: &str) -> Result<()> {
             self.conn
                 .request("Server.DeleteClient", json!({ "id": id }))
@@ -99,20 +110,25 @@ mod process_impl {
         // ── Client methods ────────────────────────────────────────
 
         /// Get client status.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn client_get_status(&self, id: &str) -> Result<types::Client> {
-            let result = self
-                .conn
-                .request("Client.GetStatus", json!({ "id": id }))
-                .await?;
             #[derive(serde::Deserialize)]
             struct R {
                 client: types::Client,
             }
+            let result = self
+                .conn
+                .request("Client.GetStatus", json!({ "id": id }))
+                .await?;
             let r: R = serde_json::from_value(result)?;
+
             Ok(r.client)
         }
 
         /// Set client volume (preserves current mute state).
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn client_set_volume(&self, id: &str, percent: u8) -> Result<()> {
             self.conn
                 .request(
@@ -124,6 +140,8 @@ mod process_impl {
         }
 
         /// Set client mute only (preserves current volume).
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn client_set_mute(&self, id: &str, muted: bool) -> Result<()> {
             self.conn
                 .request(
@@ -135,6 +153,8 @@ mod process_impl {
         }
 
         /// Set client latency.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn client_set_latency(&self, id: &str, latency: i32) -> Result<()> {
             self.conn
                 .request("Client.SetLatency", json!({ "id": id, "latency": latency }))
@@ -143,6 +163,8 @@ mod process_impl {
         }
 
         /// Set client name.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn client_set_name(&self, id: &str, name: &str) -> Result<()> {
             self.conn
                 .request("Client.SetName", json!({ "id": id, "name": name }))
@@ -153,20 +175,25 @@ mod process_impl {
         // ── Group methods ─────────────────────────────────────────
 
         /// Get group status.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn group_get_status(&self, id: &str) -> Result<types::Group> {
-            let result = self
-                .conn
-                .request("Group.GetStatus", json!({ "id": id }))
-                .await?;
             #[derive(serde::Deserialize)]
             struct R {
                 group: types::Group,
             }
+            let result = self
+                .conn
+                .request("Group.GetStatus", json!({ "id": id }))
+                .await?;
             let r: R = serde_json::from_value(result)?;
+
             Ok(r.group)
         }
 
         /// Set group mute.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn group_set_mute(&self, id: &str, muted: bool) -> Result<()> {
             self.conn
                 .request("Group.SetMute", json!({ "id": id, "mute": muted }))
@@ -175,6 +202,8 @@ mod process_impl {
         }
 
         /// Set group stream.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn group_set_stream(&self, id: &str, stream_id: &str) -> Result<()> {
             self.conn
                 .request(
@@ -186,6 +215,8 @@ mod process_impl {
         }
 
         /// Set group clients.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn group_set_clients(&self, id: &str, clients: Vec<String>) -> Result<()> {
             self.conn
                 .request("Group.SetClients", json!({ "id": id, "clients": clients }))
@@ -194,6 +225,8 @@ mod process_impl {
         }
 
         /// Set group name.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn group_set_name(&self, id: &str, name: &str) -> Result<()> {
             self.conn
                 .request("Group.SetName", json!({ "id": id, "name": name }))
@@ -204,6 +237,8 @@ mod process_impl {
         // ── Stream methods ────────────────────────────────────────
 
         /// Add a stream.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn stream_add(&self, stream_uri: &str) -> Result<serde_json::Value> {
             self.conn
                 .request("Stream.AddStream", json!({ "streamUri": stream_uri }))
@@ -211,6 +246,8 @@ mod process_impl {
         }
 
         /// Remove a stream.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn stream_remove(&self, id: &str) -> Result<()> {
             self.conn
                 .request("Stream.RemoveStream", json!({ "id": id }))
@@ -219,6 +256,8 @@ mod process_impl {
         }
 
         /// Control a stream.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn stream_control(
             &self,
             id: &str,
@@ -235,6 +274,8 @@ mod process_impl {
         }
 
         /// Set stream property.
+        /// # Errors
+        /// Returns an error if the request fails.
         pub async fn stream_set_property(
             &self,
             id: &str,
@@ -253,6 +294,8 @@ mod process_impl {
     // ── TCP Audio Source ───────────────────────────────────────────
 
     /// Open a TCP audio source connection to snapserver.
+    /// # Errors
+    /// Returns an error if the request fails.
     pub async fn open_audio_source(port: u16) -> Result<TcpStream> {
         let stream = TcpStream::connect(format!("127.0.0.1:{port}"))
             .await
@@ -304,7 +347,7 @@ mod process_impl {
             .filter(|c| !c.connected && connected_macs.contains(&c.host.mac.to_lowercase()))
             .map(|c| c.id.clone())
             .collect();
-        for (_, c) in s.clients.iter() {
+        for c in s.clients.values() {
             tracing::info!(client = %c.name, zone = c.zone_index, connected = c.connected, "Client synced");
         }
         drop(s);
@@ -315,7 +358,7 @@ mod process_impl {
     }
 
     /// Match Snapcast groups to zones by stream ID (read-only, no commands).
-    /// Used at startup and on ServerOnUpdate.
+    /// Used at startup and on `ServerOnUpdate`\.
     fn sync_zones_from_groups(groups: &[types::Group], config: &AppConfig, s: &mut state::Store) {
         for zone_cfg in &config.zones {
             let group = groups
@@ -396,7 +439,7 @@ mod process_impl {
                 let mut expected_sorted = expected_snap_ids.clone();
                 expected_sorted.sort();
                 let mut current_sorted: Vec<&str> = current_ids.clone();
-                current_sorted.sort();
+                current_sorted.sort_unstable();
 
                 // Only send command if the client list differs
                 if expected_sorted != current_sorted {
@@ -417,7 +460,7 @@ mod process_impl {
         if let Ok(status) = snap.server_get_status().await {
             let mut s = store.write().await;
             sync_zones_from_groups(&status.server.groups, config, &mut s);
-            let notifs: Vec<_> = s
+            let ws_notifs: Vec<_> = s
                 .clients
                 .iter()
                 .map(|(&idx, c)| api::ws::Notification::ClientStateChanged {
@@ -430,13 +473,14 @@ mod process_impl {
                 })
                 .collect::<Vec<_>>();
             drop(s);
-            for n in notifs {
+            for n in ws_notifs {
                 api::ws::broadcast_notification(notify, &n);
             }
         }
     }
 
-    /// Build MAC → snapcast_id map from server status.
+    /// Build MAC → `snapcast_id` map from server status.
+    #[must_use]
     pub fn build_client_mac_map(status: &ServerStatus) -> HashMap<String, String> {
         status
             .server
@@ -448,11 +492,13 @@ mod process_impl {
     }
 
     /// Build list of group IDs from server status.
+    #[must_use]
     pub fn build_group_ids(status: &ServerStatus) -> Vec<String> {
         status.server.groups.iter().map(|g| g.id.clone()).collect()
     }
 
     /// Build group → client IDs map from server status.
+    #[must_use]
     pub fn build_group_clients(status: &ServerStatus) -> HashMap<String, Vec<String>> {
         status
             .server
@@ -468,6 +514,7 @@ mod process_impl {
     }
 
     /// Handle a Snapcast server notification — update state + send WebSocket notification.
+    #[allow(clippy::too_many_lines)]
     pub async fn handle_notification(
         notification: Notification,
         config: &AppConfig,
@@ -534,7 +581,7 @@ mod process_impl {
                 id: snap_id,
                 volume,
             } => {
-                let vol = volume.percent as i32;
+                let vol = i32::from(volume.percent);
                 let muted = volume.muted;
                 let mut s = store.write().await;
                 if let Some((&idx, client)) = s
@@ -562,6 +609,7 @@ mod process_impl {
                 id: snap_id,
                 latency,
             } => {
+                #[allow(clippy::cast_possible_wrap)]
                 let lat = latency as i32;
                 let mut s = store.write().await;
                 if let Some((&idx, client)) = s
@@ -594,7 +642,7 @@ mod process_impl {
                     .iter_mut()
                     .find(|(_, c)| c.snapcast_id.as_deref() == Some(&snap_id))
                 {
-                    client.name = new_name.clone();
+                    client.name.clone_from(&new_name);
                     let notif = api::ws::Notification::ClientStateChanged {
                         client: idx,
                         volume: client.volume,

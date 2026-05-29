@@ -157,7 +157,9 @@ fn main() -> anyhow::Result<()> {
         let event_mixer = mixer.clone();
         let event_sample_rate = stream_sample_rate.clone();
         tokio::spawn(async move {
+            #[allow(unused_mut)]
             let mut last_eq_config: Option<eq::EqConfig> = None;
+            #[allow(unused_mut)]
             let mut last_speaker_config: Option<eq::EqConfig> = None;
             while let Some(event) = events.recv().await {
                 match event {

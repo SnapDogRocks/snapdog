@@ -25,6 +25,7 @@ pub struct Request {
 
 impl Request {
     /// Create a new JSON-RPC 2.0 request with a random UUID.
+    #[must_use]
     pub fn new(method: &'static str, params: Value) -> Self {
         Self {
             jsonrpc: "2.0",
@@ -165,6 +166,8 @@ pub enum Notification {
 
 impl Notification {
     /// Parse a raw JSON-RPC notification into a typed Snapcast notification.
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn parse(method: &str, params: Value) -> Self {
         match method {
             "Client.OnConnect" => {

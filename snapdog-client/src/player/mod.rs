@@ -47,6 +47,7 @@ impl FadeState {
     }
 
     /// Trigger a fade-out over the given duration at the given sample rate.
+    #[allow(dead_code)]
     pub fn trigger_fade_out(&self, duration_ms: u16, sample_rate: u32) {
         let samples = (u64::from(sample_rate) * u64::from(duration_ms) / 1000) as u32;
         self.fade_samples.store(samples, Ordering::Relaxed);
