@@ -101,7 +101,7 @@ fn subsonic_config() -> Option<config::SubsonicConfig> {
         password: password.into(),
         format: snapdog::config::SubsonicFormat::Flac,
         tls_skip_verify: false,
-        cache: Default::default(),
+        cache: snapdog::config::SubsonicCacheConfig::default(),
     })
 }
 
@@ -434,7 +434,7 @@ mod broken_tests {
             password,
             format: snapdog::config::SubsonicFormat::Flac,
             tls_skip_verify: false,
-            cache: Default::default(),
+            cache: snapdog::config::SubsonicCacheConfig::default(),
         })
     }
 

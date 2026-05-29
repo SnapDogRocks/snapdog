@@ -30,6 +30,9 @@ pub struct ProcessBackend {
 
 impl ProcessBackend {
     /// Connect to an existing snapserver process.
+    ///
+    /// # Errors
+    /// Returns an error if the connection fails.
     pub async fn start(
         config: &AppConfig,
         snap: SnapcastClient,
@@ -57,7 +60,8 @@ impl ProcessBackend {
     }
 
     /// Get a reference to the underlying JSON-RPC client.
-    pub fn client(&self) -> &SnapcastClient {
+    #[must_use]
+    pub const fn client(&self) -> &SnapcastClient {
         &self.snap
     }
 }
@@ -72,8 +76,7 @@ impl SnapcastBackend for ProcessBackend {
     ) -> BoxFuture<'_, Result<()>> {
         let pcm = audio::resample::f32_to_pcm(samples, self.bit_depth);
         Box::pin(async move {
-            let mut sinks = self.sinks.write().await;
-            if let Some(tcp) = sinks.get_mut(&zone_index) {
+            if let Some(tcp) = self.sinks.write().await.get_mut(&zone_index) {
                 if let Err(e) = tcp.write_all(&pcm).await {
                     tracing::error!(zone = zone_index, error = %e, "TCP write failed");
                     // Reconnect
