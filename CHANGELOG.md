@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.16.0](https://github.com/metaneutrons/snapdog/compare/v0.15.0...v0.16.0) (2026-05-29)
+
+
+### Features
+
+* **config:** add validate() for cross-field constraints ([c168c10](https://github.com/metaneutrons/snapdog/commit/c168c10a430c0aebe95f8ddb4725e55979ea662b))
+* **config:** validate audio ranges, port collision, max_volume ([20c3769](https://github.com/metaneutrons/snapdog/commit/20c3769506124597a8a99e1513f5f6c2e9f04ffb))
+
+
+### Bug Fixes
+
+* **config:** audit fixes for TOML/struct consistency ([fe33643](https://github.com/metaneutrons/snapdog/commit/fe33643b282c7635b9599fbdfb9699c1e5c0e6c8))
+* **config:** clamp fade durations to 1000ms maximum ([16bc14f](https://github.com/metaneutrons/snapdog/commit/16bc14f574305736fd5a822dc00ec62ca77b5e36))
+* **config:** uncomment required client name in example config ([6a87b39](https://github.com/metaneutrons/snapdog/commit/6a87b39b80e4b239c71a3cf2c9d45a2425896f6b))
+
 ## [0.15.0](https://github.com/metaneutrons/snapdog/compare/v0.14.2...v0.15.0) (2026-05-24)
 
 
