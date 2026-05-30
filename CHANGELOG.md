@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/SnapDogRocks/snapdog/compare/v0.16.0...v0.16.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **ci:** use lowercase org name for Docker image tags ([b627dcb](https://github.com/SnapDogRocks/snapdog/commit/b627dcb09262e7a0a1dba8375b85937a4522bb78))
+
 ## [0.16.0](https://github.com/metaneutrons/snapdog/compare/v0.15.0...v0.16.0) (2026-05-29)
 
 
