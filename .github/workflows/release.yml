@@ -567,7 +567,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           provenance: false
-          tags: ghcr.io/${{ github.repository }}${{ matrix.image == 'snapdog-client' && '-client' || '' }}:${{ github.ref_name }}-${{ matrix.suffix }}
+          tags: ghcr.io/snapdogrocks/${{ matrix.image }}:${{ github.ref_name }}-${{ matrix.suffix }}
 
   docker-manifest:
     name: Docker Manifest (${{ matrix.image }})
@@ -577,9 +577,9 @@ jobs:
       matrix:
         include:
           - image: snapdog
-            repo: ghcr.io/metaneutrons/snapdog
+            repo: ghcr.io/snapdogrocks/snapdog
           - image: snapdog-client
-            repo: ghcr.io/metaneutrons/snapdog-client
+            repo: ghcr.io/snapdogrocks/snapdog-client
     permissions:
       packages: write
     steps:
