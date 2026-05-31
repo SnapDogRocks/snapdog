@@ -26,6 +26,126 @@ pub const MSG_TYPE_SPEAKER_EQ: u16 = 11;
 /// Payload: fade duration in milliseconds as u16 little-endian.
 pub const MSG_TYPE_FADE_OUT: u16 = 12;
 
+/// Snapcast custom message type ID for playback control (Client → Server).
+pub const MSG_TYPE_PLAYBACK_CONTROL: u16 = 13;
+
+/// Snapcast custom message type ID for track metadata (Server → Client).
+pub const MSG_TYPE_TRACK_METADATA: u16 = 14;
+
+/// Snapcast custom message type ID for cover art binary (Server → Client).
+/// Payload: raw JPEG/PNG bytes (no JSON wrapper).
+pub const MSG_TYPE_COVER_ART: u16 = 15;
+
+/// Playback control command sent from client to server.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "cmd", rename_all = "snake_case")]
+pub enum PlaybackControl {
+    /// Resume playback.
+    Play,
+    /// Pause playback.
+    Pause,
+    /// Stop playback and return to idle.
+    Stop,
+    /// Next track or station.
+    Next,
+    /// Previous track or station.
+    Previous,
+    /// Seek to absolute position or by relative offset.
+    Seek {
+        /// Absolute position in milliseconds.
+        position_ms: Option<i64>,
+        /// Relative offset in milliseconds (positive = forward).
+        offset_ms: Option<i64>,
+    },
+    /// Set shuffle mode.
+    Shuffle {
+        /// Whether shuffle is enabled.
+        enabled: bool,
+    },
+    /// Set repeat mode.
+    Repeat {
+        /// Repeat mode.
+        mode: RepeatMode,
+    },
+    /// Switch to a specific playlist.
+    Playlist {
+        /// Playlist index (0-based).
+        index: usize,
+        /// Track index within the playlist (0-based, default: 0).
+        #[serde(default)]
+        track: usize,
+    },
+    /// Switch to the next playlist.
+    PlaylistNext,
+    /// Switch to the previous playlist.
+    PlaylistPrevious,
+}
+
+/// Full zone state pushed from server to client via custom message.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct TrackMetadata {
+    // Playback
+    /// Playback state: "playing", "paused", "stopped".
+    pub playback: String,
+    /// Active source type.
+    pub source: String,
+    /// Whether shuffle is enabled.
+    pub shuffle: bool,
+    /// Repeat mode.
+    pub repeat: RepeatMode,
+
+    // Track metadata
+    /// Track title.
+    pub title: String,
+    /// Track artist.
+    pub artist: String,
+    /// Album name.
+    pub album: String,
+    /// Album artist (may differ from track artist).
+    pub album_artist: Option<String>,
+    /// Genre tag.
+    pub genre: Option<String>,
+    /// Release year.
+    pub year: Option<u32>,
+    /// Track number within the album.
+    pub track_number: Option<u32>,
+    /// Disc number.
+    pub disc_number: Option<u32>,
+    /// Total track duration in milliseconds.
+    pub duration_ms: i64,
+    /// Current playback position in milliseconds.
+    pub position_ms: i64,
+    /// Whether seeking is supported.
+    pub seekable: bool,
+    /// Absolute cover art URL.
+    pub cover_url: Option<String>,
+
+    // Stream info
+    /// Audio bitrate in kbps.
+    pub bitrate_kbps: Option<u32>,
+    /// MIME content type.
+    pub content_type: Option<String>,
+
+    // Playlist position
+    /// Current track index in playlist (0-based).
+    pub playlist_index: Option<usize>,
+    /// Total tracks in playlist.
+    pub playlist_count: Option<usize>,
+
+    // Navigation
+    /// Whether next track is available.
+    pub can_next: bool,
+    /// Whether previous track is available.
+    pub can_prev: bool,
+
+    // Volume
+    /// Zone volume (0–100).
+    pub volume: i32,
+    /// Whether the zone is muted.
+    pub muted: bool,
+}
+
 /// Default crossfade duration in milliseconds.
 pub const DEFAULT_FADE_MS: u16 = 300;
 
