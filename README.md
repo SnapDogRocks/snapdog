@@ -309,6 +309,21 @@ Each zone appears as `org.mpris.MediaPlayer2.snapdog.zone{N}` on the session bus
 enabled = false
 ```
 
+## Custom Protocol (snapdog-client ↔ server)
+
+SnapDog extends the Snapcast binary protocol with custom messages for metadata and playback control:
+
+| Type | Direction | Purpose |
+|------|-----------|---------|
+| 10 | Server → Client | EQ configuration |
+| 11 | Server → Client | Speaker correction profile |
+| 12 | Server → Client | Fade-out trigger |
+| 13 | Client → Server | Playback controls (play/pause/next/seek/shuffle/repeat) |
+| 14 | Server → Client | Full zone metadata (track, playback state, volume) |
+| 15 | Server → Client | Cover art binary (JPEG/PNG) |
+
+Standard Snapcast clients ignore these messages. Only `snapdog-client` sends/receives them.
+
 ## Ecosystem
 
 SnapDog builds on a family of Rust crates:
@@ -385,6 +400,7 @@ Available as binary and Docker image (`ghcr.io/metaneutrons/snapdog-client`).
 | `snapcast-embedded` | ✅ | In-process Snapcast server ([snapcast-server](https://crates.io/crates/snapcast-server)) |
 | `snapcast-process` | — | External snapserver binary + JSON-RPC |
 | `ap2` | — | AirPlay 2 (encrypted transport, HAP pairing) |
+| `dbus` | ✅ | MPRIS2 D-Bus interface per zone (Linux only) |
 | `spotify` | ✅ | Spotify Connect receiver ([librespot](https://github.com/librespot-org/librespot)) |
 
 See [Architecture Decision Records](docs/architecture/decisions.md) for design rationale.
