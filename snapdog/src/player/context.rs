@@ -156,9 +156,17 @@ pub async fn update_and_notify(
                     title: t.title.clone(),
                     artist: t.artist.clone(),
                     album: t.album.clone(),
+                    album_artist: t.album_artist.clone(),
+                    genre: t.genre.clone(),
+                    year: t.year,
+                    track_number: t.track_number,
                     duration_ms: t.duration_ms,
                     position_ms: t.position_ms,
                     seekable: t.seekable,
+                    can_next: zone
+                        .playlist_track_count
+                        .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
+                    can_prev: zone.playlist_track_index.is_some_and(|i| i > 0),
                     cover_url: zone.cover_url.clone(),
                 })
         } else {

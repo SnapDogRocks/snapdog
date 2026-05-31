@@ -63,12 +63,24 @@ pub enum Notification {
         artist: String,
         /// Track album.
         album: String,
+        /// Album artist (may differ from track artist on compilations).
+        album_artist: Option<String>,
+        /// Genre tag.
+        genre: Option<String>,
+        /// Release year.
+        year: Option<u32>,
+        /// Track number within the album.
+        track_number: Option<u32>,
         /// Total track duration in milliseconds.
         duration_ms: i64,
         /// Current playback position in milliseconds.
         position_ms: i64,
         /// Whether the track supports seeking.
         seekable: bool,
+        /// Whether next track is available.
+        can_next: bool,
+        /// Whether previous track is available.
+        can_prev: bool,
         /// Cover art URL, if available.
         cover_url: Option<String>,
     },
