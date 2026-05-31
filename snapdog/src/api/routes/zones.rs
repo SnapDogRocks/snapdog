@@ -727,3 +727,31 @@ async fn get_presence_timer(
         .map(|z| Json(z.auto_off_active))
         .ok_or(zone_not_found())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seek_request_absolute() {
+        let req: SeekRequest = serde_json::from_str(r#"{"position_ms":45000}"#).unwrap();
+        assert_eq!(req.position_ms, Some(45000));
+        assert_eq!(req.offset_ms, None);
+    }
+
+    #[test]
+    fn seek_request_relative() {
+        let req: SeekRequest = serde_json::from_str(r#"{"offset_ms":5000}"#).unwrap();
+        assert_eq!(req.position_ms, None);
+        assert_eq!(req.offset_ms, Some(5000));
+    }
+
+    #[test]
+    fn seek_request_both_fields() {
+        // Both fields set — struct allows it (validation is at handler level)
+        let req: SeekRequest =
+            serde_json::from_str(r#"{"position_ms":1000,"offset_ms":500}"#).unwrap();
+        assert_eq!(req.position_ms, Some(1000));
+        assert_eq!(req.offset_ms, Some(500));
+    }
+}

@@ -289,4 +289,131 @@ mod tests {
         assert_eq!(fade_gain(50, 100, false), 0.5);
         assert_eq!(fade_gain(0, 100, false), 1.0);
     }
+
+    // ── PlaybackControl serialization ─────────────────────────
+
+    #[test]
+    fn playback_control_serialize_play() {
+        let json = serde_json::to_value(PlaybackControl::Play).unwrap();
+        assert_eq!(json, serde_json::json!({"cmd": "play"}));
+    }
+
+    #[test]
+    fn playback_control_serialize_seek_absolute() {
+        let json = serde_json::to_value(PlaybackControl::Seek {
+            position_ms: Some(45000),
+            offset_ms: None,
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"cmd": "seek", "position_ms": 45000, "offset_ms": null})
+        );
+    }
+
+    #[test]
+    fn playback_control_serialize_seek_relative() {
+        let json = serde_json::to_value(PlaybackControl::Seek {
+            position_ms: None,
+            offset_ms: Some(-5000),
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"cmd": "seek", "position_ms": null, "offset_ms": -5000})
+        );
+    }
+
+    #[test]
+    fn playback_control_serialize_playlist() {
+        let json = serde_json::to_value(PlaybackControl::Playlist { index: 2, track: 0 }).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"cmd": "playlist", "index": 2, "track": 0})
+        );
+    }
+
+    #[test]
+    fn playback_control_deserialize_playlist_no_track() {
+        let input = r#"{"cmd":"playlist","index":2}"#;
+        let ctrl: PlaybackControl = serde_json::from_str(input).unwrap();
+        assert_eq!(ctrl, PlaybackControl::Playlist { index: 2, track: 0 });
+    }
+
+    #[test]
+    fn playback_control_roundtrip() {
+        let variants = [
+            PlaybackControl::Play,
+            PlaybackControl::Pause,
+            PlaybackControl::Stop,
+            PlaybackControl::Next,
+            PlaybackControl::Previous,
+            PlaybackControl::Seek {
+                position_ms: Some(1000),
+                offset_ms: None,
+            },
+            PlaybackControl::Seek {
+                position_ms: None,
+                offset_ms: Some(-500),
+            },
+            PlaybackControl::Shuffle { enabled: true },
+            PlaybackControl::Repeat {
+                mode: RepeatMode::Track,
+            },
+            PlaybackControl::Playlist { index: 3, track: 1 },
+            PlaybackControl::PlaylistNext,
+            PlaybackControl::PlaylistPrevious,
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: PlaybackControl = serde_json::from_str(&json).unwrap();
+            assert_eq!(v, back);
+        }
+    }
+
+    #[test]
+    fn track_metadata_roundtrip() {
+        let meta = TrackMetadata {
+            playback: "playing".into(),
+            source: "subsonic".into(),
+            shuffle: true,
+            repeat: RepeatMode::Playlist,
+            title: "Test Song".into(),
+            artist: "Test Artist".into(),
+            album: "Test Album".into(),
+            album_artist: Some("Album Artist".into()),
+            genre: Some("Rock".into()),
+            year: Some(2024),
+            track_number: Some(3),
+            disc_number: Some(1),
+            duration_ms: 240_000,
+            position_ms: 60_000,
+            seekable: true,
+            cover_url: Some("http://example.com/cover.jpg".into()),
+            bitrate_kbps: Some(320),
+            content_type: Some("audio/flac".into()),
+            playlist_index: Some(2),
+            playlist_count: Some(10),
+            can_next: true,
+            can_prev: false,
+            volume: 75,
+            muted: false,
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let back: TrackMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(meta, back);
+    }
+
+    #[test]
+    fn repeat_mode_serialize() {
+        assert_eq!(serde_json::to_string(&RepeatMode::Off).unwrap(), "\"off\"");
+        assert_eq!(
+            serde_json::to_string(&RepeatMode::Track).unwrap(),
+            "\"track\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RepeatMode::Playlist).unwrap(),
+            "\"playlist\""
+        );
+    }
 }
