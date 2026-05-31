@@ -116,6 +116,19 @@ pub struct PlayerInterface {
     cmd_tx: mpsc::Sender<ClientCommand>,
 }
 
+impl PlayerInterface {
+    fn send_control(&self, ctrl: snapdog_common::PlaybackControl) {
+        if let Ok(payload) = serde_json::to_vec(&ctrl) {
+            let _ = self.cmd_tx.try_send(ClientCommand::SendCustom(
+                snapcast_proto::CustomMessage::new(
+                    snapdog_common::MSG_TYPE_PLAYBACK_CONTROL,
+                    payload,
+                ),
+            ));
+        }
+    }
+}
+
 #[zbus::interface(name = "org.mpris.MediaPlayer2.Player")]
 impl PlayerInterface {
     #[zbus(property)]
@@ -208,13 +221,40 @@ impl PlayerInterface {
         1.0
     }
 
-    fn play(&self) {}
-    fn pause(&self) {}
-    fn play_pause(&self) {}
-    fn stop(&self) {}
-    fn next(&self) {}
-    fn previous(&self) {}
-    fn seek(&self, #[allow(unused)] offset: i64) {}
+    fn play(&self) {
+        self.send_control(snapdog_common::PlaybackControl::Play);
+    }
+    fn pause(&self) {
+        self.send_control(snapdog_common::PlaybackControl::Pause);
+    }
+    fn play_pause(&self) {
+        // Toggle based on current state
+        let state = self.state.blocking_lock();
+        if state.playing {
+            drop(state);
+            self.send_control(snapdog_common::PlaybackControl::Pause);
+        } else {
+            drop(state);
+            self.send_control(snapdog_common::PlaybackControl::Play);
+        }
+    }
+    fn stop(&self) {
+        self.send_control(snapdog_common::PlaybackControl::Stop);
+    }
+    fn next(&self) {
+        self.send_control(snapdog_common::PlaybackControl::Next);
+    }
+    fn previous(&self) {
+        self.send_control(snapdog_common::PlaybackControl::Previous);
+    }
+    fn seek(&self, offset: i64) {
+        // MPRIS2 offset is in microseconds, convert to milliseconds
+        let offset_ms = offset / 1000;
+        self.send_control(snapdog_common::PlaybackControl::Seek {
+            position_ms: None,
+            offset_ms: Some(offset_ms),
+        });
+    }
     fn set_position(
         &self,
         #[allow(unused)] track_id: zbus::zvariant::ObjectPath<'_>,

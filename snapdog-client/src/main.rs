@@ -279,6 +279,23 @@ fn main() -> anyhow::Result<()> {
                             event_sample_rate.load(std::sync::atomic::Ordering::Relaxed),
                         );
                     }
+                    #[cfg(feature = "custom-protocol")]
+                    ClientEvent::CustomMessage(msg)
+                        if msg.type_id == snapdog_common::MSG_TYPE_TRACK_METADATA =>
+                    {
+                        if let Ok(meta) =
+                            serde_json::from_slice::<snapdog_common::TrackMetadata>(&msg.payload)
+                        {
+                            tracing::debug!(title = %meta.title, artist = %meta.artist, "Metadata received");
+                            #[cfg(feature = "dbus")]
+                            if let Some(ref state) = dbus_state {
+                                let mut s = state.lock().await;
+                                s.volume = meta.volume as u16;
+                                s.muted = meta.muted;
+                                s.playing = meta.playback == "playing";
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
