@@ -296,6 +296,28 @@ fn main() -> anyhow::Result<()> {
                             }
                         }
                     }
+                    #[cfg(feature = "custom-protocol")]
+                    ClientEvent::CustomMessage(msg)
+                        if msg.type_id == snapdog_common::MSG_TYPE_COVER_ART =>
+                    {
+                        let ext = if msg.payload.starts_with(&[0xFF, 0xD8]) {
+                            "jpg"
+                        } else {
+                            "png"
+                        };
+                        let file_path = std::env::temp_dir().join(format!(
+                            "snapdog-cover-{:x}.{ext}",
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis()
+                        ));
+                        if let Err(e) = std::fs::write(&file_path, &msg.payload) {
+                            tracing::warn!(error = %e, "Failed to write cover art");
+                        } else {
+                            tracing::debug!(path = %file_path.display(), bytes = msg.payload.len(), "Cover art saved");
+                        }
+                    }
                     _ => {}
                 }
             }

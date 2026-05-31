@@ -622,7 +622,10 @@ pub async fn run_app() -> Result<()> {
         let mut meta_rx = notify_tx.subscribe();
         let meta_store = store.clone();
         let meta_backend = backend.clone();
+        let meta_covers = covers.clone();
         tokio::spawn(async move {
+            let mut last_cover_hash: std::collections::HashMap<usize, String> =
+                std::collections::HashMap::new();
             while let Ok(json) = meta_rx.recv().await {
                 let Ok(notif) = serde_json::from_str::<api::ws::Notification>(&json) else {
                     continue;
@@ -688,6 +691,39 @@ pub async fn run_app() -> Result<()> {
                                     },
                                 })
                                 .await;
+                        }
+                    }
+                }
+                // Send cover art (Type 15) if changed
+                let cover_cache = meta_covers.read().await;
+                let current_hash = cover_cache
+                    .get(zone_index)
+                    .map(|e| e.hash.clone())
+                    .unwrap_or_default();
+                let prev_hash = last_cover_hash
+                    .get(&zone_index)
+                    .cloned()
+                    .unwrap_or_default();
+                if current_hash != prev_hash {
+                    last_cover_hash.insert(zone_index, current_hash);
+                    let cover_payload = cover_cache
+                        .get(zone_index)
+                        .map(|e| e.bytes.clone())
+                        .unwrap_or_default();
+                    drop(cover_cache);
+                    for client in s.clients.values() {
+                        if client.is_snapdog && client.zone_index == zone_index {
+                            if let Some(ref snap_id) = client.snapcast_id {
+                                let _ = meta_backend
+                                    .execute(player::SnapcastCmd::Client {
+                                        client_id: snap_id.clone(),
+                                        action: player::ClientAction::SendCustom {
+                                            type_id: snapdog_common::MSG_TYPE_COVER_ART,
+                                            payload: cover_payload.clone(),
+                                        },
+                                    })
+                                    .await;
+                            }
                         }
                     }
                 }
