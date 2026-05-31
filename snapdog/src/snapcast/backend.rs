@@ -63,6 +63,15 @@ pub enum SnapcastEvent {
     },
     /// Server state changed (groups reorganized, etc.)
     ServerUpdated,
+    /// A custom protocol message received from a client.
+    CustomMessage {
+        /// Snapcast client ID that sent the message.
+        client_id: String,
+        /// Custom message type ID.
+        type_id: u16,
+        /// Message payload bytes.
+        payload: Vec<u8>,
+    },
 }
 
 /// Boxed future type for trait object safety.

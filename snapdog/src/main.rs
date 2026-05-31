@@ -377,15 +377,6 @@ pub async fn run_app() -> Result<()> {
     #[cfg(feature = "snapcast-embedded")]
     let backend: Arc<dyn snapcast::backend::SnapcastBackend> = Arc::new(embedded_backend);
     #[cfg(feature = "snapcast-embedded")]
-    snapcast::events::spawn_event_handler(
-        embedded_events,
-        config.clone(),
-        backend.clone(),
-        store.clone(),
-        notify_tx.clone(),
-        eq_store.clone(),
-    );
-
     #[cfg(all(feature = "snapcast-process", not(feature = "snapcast-embedded")))]
     let process_backend =
         Arc::new(snapcast::process::ProcessBackend::start(&config, snap, store.clone()).await?);
@@ -419,6 +410,18 @@ pub async fn run_app() -> Result<()> {
         group_clients: std::collections::HashMap::new(),
     })
     .await?;
+
+    // ── Snapcast event handler ────────────────────────────────
+    #[cfg(feature = "snapcast-embedded")]
+    snapcast::events::spawn_event_handler(
+        embedded_events,
+        config.clone(),
+        backend.clone(),
+        store.clone(),
+        notify_tx.clone(),
+        eq_store.clone(),
+        zone_commands.clone(),
+    );
 
     // ── KNX bridge ────────────────────────────────────────────
     let mut knx_device_control: Option<knx::DeviceControlHandle> = None;
@@ -613,6 +616,84 @@ pub async fn run_app() -> Result<()> {
     let mqtt_notify_store = store.clone();
     let mut mqtt_notifications = notify_tx.subscribe();
     let cmd_backend = backend.clone();
+
+    // Forward zone state to snapdog clients via Custom Message Type 14
+    {
+        let mut meta_rx = notify_tx.subscribe();
+        let meta_store = store.clone();
+        let meta_backend = backend.clone();
+        tokio::spawn(async move {
+            while let Ok(json) = meta_rx.recv().await {
+                let Ok(notif) = serde_json::from_str::<api::ws::Notification>(&json) else {
+                    continue;
+                };
+                let zone_index = match &notif {
+                    api::ws::Notification::ZoneChanged { zone, .. } => *zone,
+                    _ => continue,
+                };
+                let s = meta_store.read().await;
+                let Some(zone) = s.zones.get(&zone_index) else {
+                    continue;
+                };
+                let metadata = snapdog_common::TrackMetadata {
+                    playback: zone.playback.to_string(),
+                    source: zone.source.to_string(),
+                    shuffle: zone.shuffle,
+                    repeat: zone.repeat,
+                    title: zone
+                        .track
+                        .as_ref()
+                        .map_or_else(String::new, |t| t.title.clone()),
+                    artist: zone
+                        .track
+                        .as_ref()
+                        .map_or_else(String::new, |t| t.artist.clone()),
+                    album: zone
+                        .track
+                        .as_ref()
+                        .map_or_else(String::new, |t| t.album.clone()),
+                    album_artist: zone.track.as_ref().and_then(|t| t.album_artist.clone()),
+                    genre: zone.track.as_ref().and_then(|t| t.genre.clone()),
+                    year: zone.track.as_ref().and_then(|t| t.year),
+                    track_number: zone.track.as_ref().and_then(|t| t.track_number),
+                    disc_number: zone.track.as_ref().and_then(|t| t.disc_number),
+                    duration_ms: zone.track.as_ref().map_or(0, |t| t.duration_ms),
+                    position_ms: zone.track.as_ref().map_or(0, |t| t.position_ms),
+                    seekable: zone.track.as_ref().is_some_and(|t| t.seekable),
+                    cover_url: zone.cover_url.clone(),
+                    bitrate_kbps: zone.track.as_ref().and_then(|t| t.bitrate_kbps),
+                    content_type: zone.track.as_ref().and_then(|t| t.content_type.clone()),
+                    playlist_index: zone.playlist_track_index,
+                    playlist_count: zone.playlist_track_count,
+                    can_next: zone
+                        .playlist_track_count
+                        .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
+                    can_prev: zone.playlist_track_index.is_some_and(|i| i > 0),
+                    volume: zone.volume,
+                    muted: zone.muted,
+                };
+                let Ok(payload) = serde_json::to_vec(&metadata) else {
+                    continue;
+                };
+                // Send to all snapdog clients in this zone
+                for client in s.clients.values() {
+                    if client.is_snapdog && client.zone_index == zone_index {
+                        if let Some(ref snap_id) = client.snapcast_id {
+                            let _ = meta_backend
+                                .execute(player::SnapcastCmd::Client {
+                                    client_id: snap_id.clone(),
+                                    action: player::ClientAction::SendCustom {
+                                        type_id: snapdog_common::MSG_TYPE_TRACK_METADATA,
+                                        payload: payload.clone(),
+                                    },
+                                })
+                                .await;
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     // Volume coalescing: buffer rapid volume changes per client
     let mut coalescer = VolumeCoalescer::new(std::time::Duration::from_millis(VOLUME_COALESCE_MS));

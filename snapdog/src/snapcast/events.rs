@@ -24,11 +24,24 @@ pub fn spawn_event_handler(
     store: state::SharedState,
     notify: api::ws::NotifySender,
     eq_store: SharedEqStore,
+    zone_commands: std::collections::HashMap<
+        usize,
+        tokio::sync::mpsc::Sender<crate::player::ZoneCommand>,
+    >,
 ) {
     tokio::spawn(async move {
         tracing::info!("Snapcast event handler started");
         while let Some(event) = event_rx.recv().await {
-            handle_event(event, &config, &*backend, &store, &notify, &eq_store).await;
+            handle_event(
+                event,
+                &config,
+                &*backend,
+                &store,
+                &notify,
+                &eq_store,
+                &zone_commands,
+            )
+            .await;
         }
         tracing::info!("Snapcast event handler stopped");
     });
@@ -42,6 +55,10 @@ async fn handle_event(
     store: &state::SharedState,
     notify: &api::ws::NotifySender,
     eq_store: &SharedEqStore,
+    zone_commands: &std::collections::HashMap<
+        usize,
+        tokio::sync::mpsc::Sender<crate::player::ZoneCommand>,
+    >,
 ) {
     match event {
         SnapcastEvent::ClientConnected { id, hello } => {
@@ -265,6 +282,64 @@ async fn handle_event(
         }
         SnapcastEvent::ServerUpdated => {
             sync_group_ids(config, backend, store).await;
+        }
+        SnapcastEvent::CustomMessage {
+            client_id,
+            type_id,
+            payload,
+        } => {
+            if type_id == snapdog_common::MSG_TYPE_PLAYBACK_CONTROL {
+                if let Ok(ctrl) =
+                    serde_json::from_slice::<snapdog_common::PlaybackControl>(&payload)
+                {
+                    // Find the zone this client belongs to
+                    let zone_index = {
+                        let s = store.read().await;
+                        s.clients
+                            .iter()
+                            .find(|(_, c)| c.snapcast_id.as_deref() == Some(&client_id))
+                            .map(|(_, c)| c.zone_index)
+                    };
+                    if let Some(idx) = zone_index {
+                        use snapdog_common::PlaybackControl as PC;
+                        let cmd = match ctrl {
+                            PC::Play => Some(crate::player::ZoneCommand::Play),
+                            PC::Pause => Some(crate::player::ZoneCommand::Pause),
+                            PC::Stop => Some(crate::player::ZoneCommand::Stop),
+                            PC::Next => Some(crate::player::ZoneCommand::Next),
+                            PC::Previous => Some(crate::player::ZoneCommand::Previous),
+                            PC::Seek {
+                                position_ms,
+                                offset_ms,
+                            } => match (position_ms, offset_ms) {
+                                (Some(pos), _) => Some(crate::player::ZoneCommand::Seek(pos)),
+                                (_, Some(off)) => {
+                                    Some(crate::player::ZoneCommand::SeekRelative(off))
+                                }
+                                _ => None,
+                            },
+                            PC::Shuffle { enabled } => {
+                                Some(crate::player::ZoneCommand::SetShuffle(enabled))
+                            }
+                            PC::Repeat { mode } => {
+                                Some(crate::player::ZoneCommand::SetRepeat(mode))
+                            }
+                            PC::Playlist { index, track } => {
+                                Some(crate::player::ZoneCommand::SetPlaylist(index, track))
+                            }
+                            PC::PlaylistNext => Some(crate::player::ZoneCommand::NextPlaylist),
+                            PC::PlaylistPrevious => {
+                                Some(crate::player::ZoneCommand::PreviousPlaylist)
+                            }
+                        };
+                        if let Some(cmd) = cmd {
+                            if let Some(tx) = zone_commands.get(&idx) {
+                                let _ = tx.send(cmd).await;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -702,7 +777,15 @@ mod tests {
         // Wrapping in tokio::time::timeout ensures we fail quickly and safely instead of hanging tests.
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(2),
-            handle_event(event, &config, &MockBackend, &store, &notify, &eq_store),
+            handle_event(
+                event,
+                &config,
+                &MockBackend,
+                &store,
+                &notify,
+                &eq_store,
+                &std::collections::HashMap::new(),
+            ),
         )
         .await;
 

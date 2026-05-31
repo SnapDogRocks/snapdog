@@ -232,6 +232,13 @@ impl EmbeddedBackend {
             | ServerEvent::GroupNameChanged { .. }
             | ServerEvent::StreamStatus { .. }
             | ServerEvent::ServerUpdated => Some(SnapcastEvent::ServerUpdated),
+            ServerEvent::CustomMessage {
+                client_id, message, ..
+            } => Some(SnapcastEvent::CustomMessage {
+                client_id,
+                type_id: message.type_id,
+                payload: message.payload,
+            }),
             _ => None,
         }
     }
