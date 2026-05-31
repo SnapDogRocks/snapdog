@@ -27,6 +27,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
+#[cfg(feature = "dbus")]
+use snapdog::dbus;
 #[cfg(feature = "snapcast-process")]
 use snapdog::process;
 use snapdog::{api, audio, config, knx, mqtt, player, snapcast, state};
@@ -580,6 +582,23 @@ pub async fn run_app() -> Result<()> {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "mDNS advertisement failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // ── D-Bus MPRIS2 ──────────────────────────────────────────
+    #[cfg(feature = "dbus")]
+    let _dbus = if config.dbus.enabled {
+        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone()).await {
+            Ok(conns) => {
+                tracing::info!(zones = conns.len(), "MPRIS2 D-Bus interfaces registered");
+                Some(conns)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "D-Bus not available — MPRIS2 disabled");
                 None
             }
         }

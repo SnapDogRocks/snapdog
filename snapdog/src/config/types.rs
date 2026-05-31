@@ -193,6 +193,9 @@ pub struct FileConfig {
     /// mDNS/Bonjour service advertisement.
     #[serde(default)]
     pub mdns: MdnsConfig,
+    /// D-Bus MPRIS2 interface.
+    #[serde(default)]
+    pub dbus: DbusConfig,
     /// `AirPlay` receiver settings.
     #[serde(default)]
     pub airplay: AirplayConfig,
@@ -562,6 +565,20 @@ impl Default for MdnsConfig {
             enabled: true,
             advertise_snapcast: false,
         }
+    }
+}
+
+/// D-Bus MPRIS2 configuration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct DbusConfig {
+    /// Enable MPRIS2 D-Bus interface. Default: true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for DbusConfig {
+    fn default() -> Self {
+        Self { enabled: true }
     }
 }
 
@@ -990,6 +1007,8 @@ pub struct AppConfig {
     pub snapcast: SnapcastConfig,
     /// mDNS/Bonjour service advertisement.
     pub mdns: MdnsConfig,
+    /// D-Bus MPRIS2 interface.
+    pub dbus: DbusConfig,
     /// `AirPlay` receiver settings.
     pub airplay: AirplayConfig,
     /// Subsonic connection (if configured).

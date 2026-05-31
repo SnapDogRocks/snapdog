@@ -187,6 +187,9 @@ default_zone = "Living Room"         # Zone for unknown clients (accept only)
 # enabled = true                     # Advertises _snapdog._tcp via OS daemon
 # advertise_snapcast = false         # Additionally advertise _snapcast._tcp
 
+[dbus]
+# enabled = true                     # MPRIS2 per zone (Linux only)
+
 [airplay]
 # mode = "airplay2"                  # airplay1 | airplay2
 # password = "1234"
@@ -283,6 +286,27 @@ Optionally, `_snapcast._tcp` can be advertised on the streaming port for standar
 ```toml
 [mdns]
 advertise_snapcast = true
+```
+
+## D-Bus / MPRIS2
+
+On Linux, SnapDog registers an [MPRIS2](https://specifications.freedesktop.org/mpris-spec/latest/) D-Bus interface per zone. This enables desktop media widgets, `playerctl`, and Bluetooth AVRCP control.
+
+```
+$ playerctl -l
+snapdog.zone1
+snapdog.zone2
+
+$ playerctl -p snapdog.zone1 metadata
+$ playerctl -p snapdog.zone1 play
+$ playerctl -p snapdog.zone1 volume 0.8
+```
+
+Each zone appears as `org.mpris.MediaPlayer2.snapdog.zone{N}` on the session bus (or system bus when running as root). Disable with:
+
+```toml
+[dbus]
+enabled = false
 ```
 
 ## Ecosystem

@@ -46,6 +46,7 @@ crc32fast = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 shairplay = "0.5"
 astro-dnssd = "0.3"
+zbus = { version = "5", optional = true }
 librespot-core = { version = "0.8", optional = true }
 librespot-playback = { version = "0.8", default-features = false, optional = true }
 librespot-connect = { version = "0.8", optional = true }
@@ -58,10 +59,11 @@ snapdog-common = { workspace = true }
 subtle = "2"
 
 [features]
-default = ["snapcast-embedded", "spotify"]
+default = ["snapcast-embedded", "spotify", "dbus"]
 snapcast-embedded = ["dep:snapcast-server"]
 snapcast-process = []
 ap2 = ["shairplay/ap2"]
+dbus = ["dep:zbus"]
 spotify = ["dep:librespot-core", "dep:librespot-playback", "dep:librespot-connect", "dep:librespot-discovery", "dep:librespot-metadata"]
 
 [dev-dependencies]

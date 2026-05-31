@@ -133,6 +133,7 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
         http: raw.http,
         snapcast: raw.snapcast,
         mdns: raw.mdns,
+        dbus: raw.dbus,
         airplay: raw.airplay,
         subsonic: raw.subsonic,
         spotify: raw.spotify,

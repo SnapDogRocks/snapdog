@@ -89,6 +89,11 @@ default_zone = "Ground Floor"
 # Additionally advertise _snapcast._tcp for standard Snapcast client discovery
 # advertise_snapcast = false
 
+# ── D-Bus / MPRIS2 ────────────────────────────────────────────────────────
+[dbus]
+# Enable MPRIS2 D-Bus interface per zone (Linux only, default: true)
+# enabled = true
+
 # ── AirPlay ────────────────────────────────────────────────────────────────
 [airplay]
 # Protocol mode: "airplay2" (default) or "airplay1" for legacy compatibility

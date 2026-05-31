@@ -25,6 +25,8 @@
 pub mod api;
 pub mod audio;
 pub mod config;
+#[cfg(feature = "dbus")]
+pub mod dbus;
 pub mod knx;
 pub mod mqtt;
 pub mod player;
