@@ -57,14 +57,10 @@ pub enum ZoneCommand {
     SetShuffle(bool),
     /// Toggle playlist shuffle.
     ToggleShuffle,
-    /// Set playlist repeat on or off.
-    SetRepeat(bool),
-    /// Toggle playlist repeat.
-    ToggleRepeat,
-    /// Set single-track repeat on or off.
-    SetTrackRepeat(bool),
-    /// Toggle single-track repeat.
-    ToggleTrackRepeat,
+    /// Set repeat mode.
+    SetRepeat(snapdog_common::RepeatMode),
+    /// Cycle repeat mode: Off → Playlist → Track → Off.
+    CycleRepeat,
 
     // ── Presence ──────────────────────────────────────────────
     /// Set presence state (from KNX occupancy sensor, MQTT, or API).

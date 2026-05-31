@@ -73,10 +73,8 @@ pub struct ZoneState {
     pub playback: PlaybackState,
     /// Shuffle mode for playlist playback.
     pub shuffle: bool,
-    /// Playlist repeat (loop entire playlist).
-    pub repeat: bool,
-    /// Single-track repeat.
-    pub track_repeat: bool,
+    /// Repeat mode (off, track, playlist).
+    pub repeat: snapdog_common::RepeatMode,
     /// Currently playing track metadata, if any.
     pub track: Option<TrackInfo>,
     /// Active unified playlist index (0 = radio, 1+ = Subsonic playlists).
@@ -265,8 +263,7 @@ impl Store {
                         muted: false,
                         playback: PlaybackState::Stopped,
                         shuffle: false,
-                        repeat: false,
-                        track_repeat: false,
+                        repeat: snapdog_common::RepeatMode::Off,
                         track: None,
                         playlist_index: None,
                         playlist_name: None,
@@ -360,7 +357,6 @@ impl Store {
                 zone.muted = saved_zone.muted;
                 zone.shuffle = saved_zone.shuffle;
                 zone.repeat = saved_zone.repeat;
-                zone.track_repeat = saved_zone.track_repeat;
                 zone.playlist_index = saved_zone.playlist_index;
                 zone.playlist_name = saved_zone.playlist_name;
                 // Don't restore playback/track — those are transient
@@ -516,8 +512,7 @@ mod tests {
                 muted: false,
                 playback: PlaybackState::Stopped,
                 shuffle: false,
-                repeat: false,
-                track_repeat: false,
+                repeat: snapdog_common::RepeatMode::Off,
                 track: None,
                 playlist_index: None,
                 playlist_name: None,

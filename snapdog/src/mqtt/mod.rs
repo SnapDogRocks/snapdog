@@ -236,7 +236,7 @@ impl MqttBridge {
             "volume_level": f64::from(zone.volume) / 100.0,
             "is_volume_muted": zone.muted,
             "shuffle": zone.shuffle,
-            "repeat": if zone.track_repeat { "one" } else if zone.repeat { "all" } else { "off" },
+            "repeat": match zone.repeat { snapdog_common::RepeatMode::Track => "one", snapdog_common::RepeatMode::Playlist => "all", snapdog_common::RepeatMode::Off => "off" },
             "source": zone.source.to_string(),
             "presence": zone.presence,
         });
@@ -406,23 +406,12 @@ impl MqttBridge {
             }
             ["zones", idx, "repeat", "set"] => {
                 let index: usize = idx.parse()?;
-                match payload.trim() {
-                    "off" => {
-                        send_zone_cmd(zone_commands, index, ZoneCommand::SetRepeat(false)).await;
-                        send_zone_cmd(zone_commands, index, ZoneCommand::SetTrackRepeat(false))
-                            .await;
-                    }
-                    "one" => {
-                        send_zone_cmd(zone_commands, index, ZoneCommand::SetTrackRepeat(true))
-                            .await;
-                    }
-                    "all" => {
-                        send_zone_cmd(zone_commands, index, ZoneCommand::SetTrackRepeat(false))
-                            .await;
-                        send_zone_cmd(zone_commands, index, ZoneCommand::SetRepeat(true)).await;
-                    }
-                    _ => {}
-                }
+                let mode = match payload.trim() {
+                    "one" | "track" => snapdog_common::RepeatMode::Track,
+                    "all" | "playlist" => snapdog_common::RepeatMode::Playlist,
+                    _ => snapdog_common::RepeatMode::Off,
+                };
+                send_zone_cmd(zone_commands, index, ZoneCommand::SetRepeat(mode)).await;
             }
             ["zones", idx, "presence", "set"] => {
                 let index: usize = idx.parse()?;
@@ -570,8 +559,8 @@ mod tests {
     fn test_state_with_client() -> state::SharedState {
         let store: state::Store = serde_json::from_value(serde_json::json!({
             "zones": {
-                "1": { "name": "Zone 1", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": false, "track_repeat": false, "track": null, "playlist_index": null, "playlist_name": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 },
-                "2": { "name": "Zone 2", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": false, "track_repeat": false, "track": null, "playlist_index": null, "playlist_name": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 }
+                "1": { "name": "Zone 1", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": "off", "track": null, "playlist_index": null, "playlist_name": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 },
+                "2": { "name": "Zone 2", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": "off", "track": null, "playlist_index": null, "playlist_name": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 }
             },
             "clients": {
                 "1": {

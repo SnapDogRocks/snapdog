@@ -50,8 +50,7 @@ struct ZoneInfo {
     playback: String,
     source: String,
     shuffle: bool,
-    repeat: bool,
-    track_repeat: bool,
+    repeat: snapdog_common::RepeatMode,
     presence: bool,
     presence_enabled: bool,
     presence_timer_active: bool,
@@ -96,14 +95,6 @@ pub fn router(state: SharedState) -> Router {
             get(get_track_progress).put(seek_progress),
         )
         .route("/{zone_index}/track/playing", get(get_track_playing))
-        .route(
-            "/{zone_index}/track/repeat",
-            get(get_track_repeat).put(set_track_repeat),
-        )
-        .route(
-            "/{zone_index}/track/repeat/toggle",
-            post(toggle_track_repeat),
-        )
         .route("/{zone_index}/play/track", post(play_track))
         .route("/{zone_index}/play/url", post(play_url))
         .route("/{zone_index}/play/playlist", post(play_subsonic_playlist))
@@ -194,8 +185,7 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ZoneInfo>> {
                     playback: zs.map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
                     source: zs.map_or_else(|| "idle".into(), |s| s.source.to_string()),
                     shuffle: zs.is_some_and(|s| s.shuffle),
-                    repeat: zs.is_some_and(|s| s.repeat),
-                    track_repeat: zs.is_some_and(|s| s.track_repeat),
+                    repeat: zs.map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
                     presence: zs.is_some_and(|s| s.presence),
                     presence_enabled: zs.is_none_or(|s| s.presence_enabled),
                     presence_timer_active: zs.is_some_and(|s| s.auto_off_active),
@@ -226,8 +216,9 @@ async fn get_zone(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
             .as_ref()
             .map_or_else(|| "idle".into(), |s| s.source.to_string()),
         shuffle: zs.as_ref().is_some_and(|s| s.shuffle),
-        repeat: zs.as_ref().is_some_and(|s| s.repeat),
-        track_repeat: zs.as_ref().is_some_and(|s| s.track_repeat),
+        repeat: zs
+            .as_ref()
+            .map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
         presence: zs.as_ref().is_some_and(|s| s.presence),
         presence_enabled: zs.as_ref().is_none_or(|s| s.presence_enabled),
         presence_timer_active: zs.as_ref().is_some_and(|s| s.auto_off_active),
@@ -370,7 +361,7 @@ async fn get_repeat(State(state): State<SharedState>, Path(idx): Path<usize>) ->
 async fn set_repeat(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
-    Json(v): Json<bool>,
+    Json(v): Json<snapdog_common::RepeatMode>,
 ) -> impl IntoResponse {
     send_cmd(&state, idx, ZoneCommand::SetRepeat(v)).await
 }
@@ -378,7 +369,7 @@ async fn toggle_repeat(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
 ) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::ToggleRepeat).await
+    send_cmd(&state, idx, ZoneCommand::CycleRepeat).await
 }
 
 // ── Track info ────────────────────────────────────────────────
@@ -544,28 +535,6 @@ async fn get_track_playing(
         .await
         .map(|z| Json(z.playback == state::PlaybackState::Playing))
         .ok_or(zone_not_found())
-}
-async fn get_track_repeat(
-    State(state): State<SharedState>,
-    Path(idx): Path<usize>,
-) -> impl IntoResponse {
-    read_zone(&state, idx)
-        .await
-        .map(|z| Json(z.track_repeat))
-        .ok_or(zone_not_found())
-}
-async fn set_track_repeat(
-    State(state): State<SharedState>,
-    Path(idx): Path<usize>,
-    Json(v): Json<bool>,
-) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::SetTrackRepeat(v)).await
-}
-async fn toggle_track_repeat(
-    State(state): State<SharedState>,
-    Path(idx): Path<usize>,
-) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::ToggleTrackRepeat).await
 }
 
 // ── Play specific content ─────────────────────────────────────

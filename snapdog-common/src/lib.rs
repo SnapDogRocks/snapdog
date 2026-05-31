@@ -35,6 +35,21 @@ pub const DEFAULT_SAMPLE_RATE: u32 = 48000;
 /// Maximum number of EQ bands per zone/client.
 pub const MAX_EQ_BANDS: usize = 10;
 
+// ── Playback types ────────────────────────────────────────────
+
+/// Repeat mode for zone playback.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RepeatMode {
+    /// No repeat.
+    #[default]
+    Off,
+    /// Repeat the current track.
+    Track,
+    /// Repeat the entire playlist.
+    Playlist,
+}
+
 // ── EQ types ──────────────────────────────────────────────────
 
 /// Filter type for an EQ band.

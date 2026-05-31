@@ -33,56 +33,75 @@ use crate::api::SharedState;
 /// Notification broadcast to all connected WebSocket clients.
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum Notification {
-    /// Zone playback state changed (play/pause/stop, volume, mute, source, shuffle, repeat).
-    ZoneStateChanged {
+    /// Full zone state update.
+    ZoneChanged {
         /// Zone index (1-based).
         zone: usize,
+        // Playback
         /// Playback state: "playing", "paused", or "stopped".
         playback: String,
-        /// Zone volume (0–100).
-        volume: i32,
-        /// Whether the zone is muted.
-        muted: bool,
-        /// Active source name (e.g. radio station, playlist, "airplay").
+        /// Active source name.
         source: String,
         /// Whether shuffle is enabled.
         shuffle: bool,
-        /// Whether playlist repeat is enabled.
-        repeat: bool,
-        /// Whether single-track repeat is enabled.
-        track_repeat: bool,
-    },
-    /// Current track metadata changed for a zone.
-    ZoneTrackChanged {
-        /// Zone index (1-based).
-        zone: usize,
+        /// Repeat mode.
+        repeat: snapdog_common::RepeatMode,
+        // Track metadata
         /// Track title.
         title: String,
         /// Track artist.
         artist: String,
         /// Track album.
         album: String,
-        /// Album artist (may differ from track artist on compilations).
+        /// Album artist.
         album_artist: Option<String>,
         /// Genre tag.
         genre: Option<String>,
         /// Release year.
         year: Option<u32>,
-        /// Track number within the album.
+        /// Track number.
         track_number: Option<u32>,
+        /// Disc number.
+        disc_number: Option<u32>,
         /// Total track duration in milliseconds.
         duration_ms: i64,
         /// Current playback position in milliseconds.
         position_ms: i64,
         /// Whether the track supports seeking.
         seekable: bool,
+        /// Cover art URL.
+        cover_url: Option<String>,
+        // Stream info
+        /// Audio bitrate in kbps.
+        bitrate_kbps: Option<u32>,
+        /// MIME content type.
+        content_type: Option<String>,
+        // Playlist position
+        /// Current playlist index.
+        playlist_index: Option<usize>,
+        /// Total playlist count.
+        playlist_count: Option<usize>,
+        // Navigation
         /// Whether next track is available.
         can_next: bool,
         /// Whether previous track is available.
         can_prev: bool,
-        /// Cover art URL, if available.
-        cover_url: Option<String>,
+        // Volume
+        /// Zone volume (0–100).
+        volume: i32,
+        /// Whether the zone is muted.
+        muted: bool,
+    },
+    /// Zone volume changed (high-frequency, lightweight).
+    ZoneVolumeChanged {
+        /// Zone index (1-based).
+        zone: usize,
+        /// Zone volume (0–100).
+        volume: i32,
+        /// Whether the zone is muted.
+        muted: bool,
     },
     /// Periodic playback position update for a zone.
     ZoneProgress {

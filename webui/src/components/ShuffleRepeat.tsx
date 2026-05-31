@@ -13,17 +13,17 @@ interface ShuffleRepeatProps {
 export function ShuffleRepeat({ zone }: ShuffleRepeatProps) {
   const t = useTranslations("shuffle");
   const enabled = zone.source === "subsonic_playlist";
+  const isRepeatPlaylist = zone.repeat === "playlist";
+  const isRepeatTrack = zone.repeat === "track";
+  const isRepeatAny = zone.repeat !== "off";
 
   return (
     <div className="flex items-center justify-center gap-1">
       <Button variant="ghost" size="icon" disabled={!enabled} onClick={() => api.zones.toggleShuffle(zone.index).catch(logApiError)} className={`size-8 rounded-full ${zone.shuffle ? "text-primary" : "text-muted-foreground"}`} aria-label={zone.shuffle ? t("on") : t("off")} aria-pressed={zone.shuffle}>
         <HugeiconsIcon icon={ShuffleIcon} size={16} />
       </Button>
-      <Button variant="ghost" size="icon" disabled={!enabled} onClick={() => api.zones.toggleRepeat(zone.index).catch(logApiError)} className={`size-8 rounded-full ${zone.repeat ? "text-primary" : "text-muted-foreground"}`} aria-label={zone.repeat ? t("repeatOn") : t("repeatOff")} aria-pressed={zone.repeat}>
-        <HugeiconsIcon icon={RepeatIcon} size={16} />
-      </Button>
-      <Button variant="ghost" size="icon" disabled={!enabled} onClick={() => api.zones.toggleTrackRepeat(zone.index).catch(logApiError)} className={`size-8 rounded-full ${zone.track_repeat ? "text-primary" : "text-muted-foreground"}`} aria-label={zone.track_repeat ? t("trackRepeatOn") : t("trackRepeatOff")} aria-pressed={zone.track_repeat}>
-        <HugeiconsIcon icon={RepeatOneIcon} size={16} />
+      <Button variant="ghost" size="icon" disabled={!enabled} onClick={() => api.zones.toggleRepeat(zone.index).catch(logApiError)} className={`size-8 rounded-full ${isRepeatPlaylist ? "text-primary" : isRepeatTrack ? "text-primary" : "text-muted-foreground"}`} aria-label={isRepeatAny ? t("repeatOn") : t("repeatOff")} aria-pressed={isRepeatAny}>
+        <HugeiconsIcon icon={isRepeatTrack ? RepeatOneIcon : RepeatIcon} size={16} />
       </Button>
     </div>
   );

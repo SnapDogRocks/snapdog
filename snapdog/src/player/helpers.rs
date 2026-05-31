@@ -302,7 +302,7 @@ pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
                     .await
                     .zones
                     .get(&ctx.zone_index)
-                    .is_some_and(|z| z.repeat);
+                    .is_some_and(|z| z.repeat == snapdog_common::RepeatMode::Playlist);
                 if repeat {
                     advance_playlist_track(ds, &playlist_id, 0, track_count, ctx).await;
                 } else {
@@ -378,10 +378,11 @@ pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
 }
 
 pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
-    let (track_repeat, shuffle) = {
+    let (repeat_track, shuffle) = {
         let z = ctx.store.read().await.zones.get(&ctx.zone_index).cloned();
         (
-            z.as_ref().is_some_and(|z| z.track_repeat),
+            z.as_ref()
+                .is_some_and(|z| z.repeat == snapdog_common::RepeatMode::Track),
             z.as_ref().is_some_and(|z| z.shuffle),
         )
     };
@@ -392,7 +393,7 @@ pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'
             track_index,
             track_count,
         } => {
-            if track_repeat {
+            if repeat_track {
                 advance_playlist_track(ds, &playlist_id, track_index, track_count, ctx).await;
             } else if shuffle {
                 let next = fastrand::usize(..track_count);

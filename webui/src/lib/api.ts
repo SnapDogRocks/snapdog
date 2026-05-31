@@ -119,15 +119,10 @@ export const zones = {
   setShuffle: (id: number, v: boolean) => putVoid(`${Z}/${id}/shuffle`, v),
   toggleShuffle: (id: number) => postVoid(`${Z}/${id}/shuffle/toggle`),
 
-  // Repeat (playlist)
-  getRepeat: (id: number) => get<boolean>(`${Z}/${id}/repeat`),
-  setRepeat: (id: number, v: boolean) => putVoid(`${Z}/${id}/repeat`, v),
+  // Repeat
+  getRepeat: (id: number) => get<string>(`${Z}/${id}/repeat`),
+  setRepeat: (id: number, v: string) => putVoid(`${Z}/${id}/repeat`, v),
   toggleRepeat: (id: number) => postVoid(`${Z}/${id}/repeat/toggle`),
-
-  // Track repeat
-  getTrackRepeat: (id: number) => get<boolean>(`${Z}/${id}/track/repeat`),
-  setTrackRepeat: (id: number, v: boolean) => putVoid(`${Z}/${id}/track/repeat`, v),
-  toggleTrackRepeat: (id: number) => postVoid(`${Z}/${id}/track/repeat/toggle`),
 
   // Track info
   getTrackMetadata: (id: number) => get<TrackMetadata>(`${Z}/${id}/track/metadata`),

@@ -189,11 +189,12 @@ async fn publisher(
                     continue;
                 };
                 match notif {
-                    crate::api::ws::Notification::ZoneStateChanged { zone, .. } => {
+                    crate::api::ws::Notification::ZoneChanged { zone, .. } => {
                         publish_zone_state(zone, &config, &store, &transport).await;
-                    }
-                    crate::api::ws::Notification::ZoneTrackChanged { zone, .. } => {
                         publish_zone_track(zone, &config, &store, &transport).await;
+                    }
+                    crate::api::ws::Notification::ZoneVolumeChanged { zone, .. } => {
+                        publish_zone_state(zone, &config, &store, &transport).await;
                     }
                     crate::api::ws::Notification::ZoneProgress { zone, .. } => {
                         publish_zone_progress(zone, &config, &store, &transport).await;
@@ -247,13 +248,15 @@ async fn publish_zone_state(
         write(transport, ga, DPT_SWITCH, &zone.shuffle.into()).await;
     }
     if let Some(ref ga) = knx.repeat_status {
-        write(transport, ga, DPT_SWITCH, &zone.repeat.into()).await;
+        let repeat_on = zone.repeat == snapdog_common::RepeatMode::Playlist;
+        write(transport, ga, DPT_SWITCH, &repeat_on.into()).await;
     }
     if let Some(ref ga) = knx.track_playing_status {
         write(transport, ga, DPT_SWITCH, &playing.into()).await;
     }
     if let Some(ref ga) = knx.track_repeat_status {
-        write(transport, ga, DPT_SWITCH, &zone.track_repeat.into()).await;
+        let track_repeat_on = zone.repeat == snapdog_common::RepeatMode::Track;
+        write(transport, ga, DPT_SWITCH, &track_repeat_on.into()).await;
     }
     if let Some(ref ga) = knx.control_status {
         write(transport, ga, DPT_SWITCH, &playing.into()).await;
@@ -513,6 +516,7 @@ pub(crate) fn build_client_ga_map(config: &AppConfig) -> HashMap<String, (usize,
     map
 }
 
+#[allow(clippy::too_many_lines)] // Match dispatcher for KNX group addresses — splitting would obscure control flow
 pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
     ga: GroupAddress,
     data: &[u8],
@@ -534,12 +538,25 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
                 "previous" => Some(ZoneCommand::Previous),
                 "mute_toggle" => Some(ZoneCommand::ToggleMute),
                 "shuffle_toggle" => Some(ZoneCommand::ToggleShuffle),
-                "repeat_toggle" => Some(ZoneCommand::ToggleRepeat),
-                "track_repeat_toggle" => Some(ZoneCommand::ToggleTrackRepeat),
+                "repeat_toggle" | "track_repeat_toggle" => Some(ZoneCommand::CycleRepeat),
                 "mute" => Some(ZoneCommand::SetMute(decode_bool(data))),
                 "shuffle" => Some(ZoneCommand::SetShuffle(decode_bool(data))),
-                "repeat" => Some(ZoneCommand::SetRepeat(decode_bool(data))),
-                "track_repeat" => Some(ZoneCommand::SetTrackRepeat(decode_bool(data))),
+                "repeat" => {
+                    let on = decode_bool(data);
+                    Some(ZoneCommand::SetRepeat(if on {
+                        snapdog_common::RepeatMode::Playlist
+                    } else {
+                        snapdog_common::RepeatMode::Off
+                    }))
+                }
+                "track_repeat" => {
+                    let on = decode_bool(data);
+                    Some(ZoneCommand::SetRepeat(if on {
+                        snapdog_common::RepeatMode::Track
+                    } else {
+                        snapdog_common::RepeatMode::Off
+                    }))
+                }
                 "volume" => decode_percent(data).map(|v| ZoneCommand::SetVolume(i32::from(v))),
                 "volume_dim" => decode_dim(data).map(ZoneCommand::AdjustVolume),
                 "playlist" => decode_u8(data).map(|v| ZoneCommand::SetPlaylist(v as usize, 0)),
@@ -746,8 +763,8 @@ mod tests {
     fn test_state() -> state::SharedState {
         let store: state::Store = serde_json::from_value(serde_json::json!({
             "zones": {
-                "1": { "name": "Zone 1", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": false, "track_repeat": false, "track": null, "playlist_index": null, "playlist_name": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 },
-                "2": { "name": "Zone 2", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": false, "track_repeat": false, "track": null, "playlist_index": null, "playlist_name": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 }
+                "1": { "name": "Zone 1", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": "off", "track": null, "playlist_index": null, "playlist_name": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 },
+                "2": { "name": "Zone 2", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": "off", "track": null, "playlist_index": null, "playlist_name": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 }
             },
             "clients": {
                 "1": {

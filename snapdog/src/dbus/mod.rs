@@ -130,40 +130,13 @@ mod mpris {
             };
 
             match notif {
-                Notification::ZoneStateChanged {
+                Notification::ZoneChanged {
                     zone,
                     playback,
                     volume,
                     muted,
                     shuffle,
                     repeat,
-                    track_repeat,
-                    ..
-                } if zone == zone_index => {
-                    {
-                        let mut s = state.lock().await;
-                        s.playback = match playback.as_str() {
-                            "playing" => "Playing",
-                            "paused" => "Paused",
-                            _ => "Stopped",
-                        }
-                        .into();
-                        s.volume = volume;
-                        s.muted = muted;
-                        s.shuffle = shuffle;
-                        s.repeat = repeat;
-                        s.track_repeat = track_repeat;
-                    }
-                    {
-                        let iface = iface_ref.get().await;
-                        let _ = iface.playback_status_changed(emitter).await;
-                        let _ = iface.volume_changed(emitter).await;
-                        let _ = iface.shuffle_changed(emitter).await;
-                        let _ = iface.loop_status_changed(emitter).await;
-                    }
-                }
-                Notification::ZoneTrackChanged {
-                    zone,
                     title,
                     artist,
                     album,
@@ -177,6 +150,17 @@ mod mpris {
                 } if zone == zone_index => {
                     {
                         let mut s = state.lock().await;
+                        s.playback = match playback.as_str() {
+                            "playing" => "Playing",
+                            "paused" => "Paused",
+                            _ => "Stopped",
+                        }
+                        .into();
+                        s.volume = volume;
+                        s.muted = muted;
+                        s.shuffle = shuffle;
+                        s.repeat = repeat == snapdog_common::RepeatMode::Playlist;
+                        s.track_repeat = repeat == snapdog_common::RepeatMode::Track;
                         s.title = title;
                         s.artist = artist;
                         s.album = album;
@@ -189,10 +173,29 @@ mod mpris {
                     }
                     {
                         let iface = iface_ref.get().await;
+                        let _ = iface.playback_status_changed(emitter).await;
+                        let _ = iface.volume_changed(emitter).await;
+                        let _ = iface.shuffle_changed(emitter).await;
+                        let _ = iface.loop_status_changed(emitter).await;
                         let _ = iface.metadata_changed(emitter).await;
                         let _ = iface.can_seek_changed(emitter).await;
                         let _ = iface.can_go_next_changed(emitter).await;
                         let _ = iface.can_go_previous_changed(emitter).await;
+                    }
+                }
+                Notification::ZoneVolumeChanged {
+                    zone,
+                    volume,
+                    muted,
+                } if zone == zone_index => {
+                    {
+                        let mut s = state.lock().await;
+                        s.volume = volume;
+                        s.muted = muted;
+                    }
+                    {
+                        let iface = iface_ref.get().await;
+                        let _ = iface.volume_changed(emitter).await;
                     }
                 }
                 Notification::ZoneProgress {

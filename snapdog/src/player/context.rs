@@ -123,95 +123,72 @@ pub async fn update_and_notify(
     notify: &NotifySender,
     f: impl FnOnce(&mut state::ZoneState),
 ) {
-    let notifications = {
+    let notification = {
         let mut s = store.write().await;
         let Some(zone) = s.zones.get_mut(&zone_index) else {
             return;
         };
-        let old_track_title = zone.track.as_ref().map(|t| t.title.clone());
-        let old_track_artist = zone.track.as_ref().map(|t| t.artist.clone());
-        let old_position = zone.track.as_ref().map(|t| t.position_ms);
-        let old_cover_url = zone.cover_url.clone();
         f(zone);
-        let playback = zone.playback.to_string();
-        let volume = zone.volume;
-        let muted = zone.muted;
-        let source = zone.source.to_string();
-        let shuffle = zone.shuffle;
-        let repeat = zone.repeat;
-        let track_repeat = zone.track_repeat;
-
-        // Send track changed if title, artist, or cover changed
-        let new_track_title = zone.track.as_ref().map(|t| t.title.clone());
-        let new_track_artist = zone.track.as_ref().map(|t| t.artist.clone());
-
-        let track_changed_notif = if old_track_title != new_track_title
-            || old_track_artist != new_track_artist
-            || old_cover_url != zone.cover_url
-        {
-            zone.track
-                .as_ref()
-                .map(|t| crate::api::ws::Notification::ZoneTrackChanged {
-                    zone: zone_index,
-                    title: t.title.clone(),
-                    artist: t.artist.clone(),
-                    album: t.album.clone(),
-                    album_artist: t.album_artist.clone(),
-                    genre: t.genre.clone(),
-                    year: t.year,
-                    track_number: t.track_number,
-                    duration_ms: t.duration_ms,
-                    position_ms: t.position_ms,
-                    seekable: t.seekable,
-                    can_next: zone
-                        .playlist_track_count
-                        .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
-                    can_prev: zone.playlist_track_index.is_some_and(|i| i > 0),
-                    cover_url: zone.cover_url.clone(),
-                })
-        } else {
-            None
+        let track = zone.track.as_ref();
+        let n = crate::api::ws::Notification::ZoneChanged {
+            zone: zone_index,
+            playback: zone.playback.to_string(),
+            source: zone.source.to_string(),
+            shuffle: zone.shuffle,
+            repeat: zone.repeat,
+            title: track.map_or_else(String::new, |t| t.title.clone()),
+            artist: track.map_or_else(String::new, |t| t.artist.clone()),
+            album: track.map_or_else(String::new, |t| t.album.clone()),
+            album_artist: track.and_then(|t| t.album_artist.clone()),
+            genre: track.and_then(|t| t.genre.clone()),
+            year: track.and_then(|t| t.year),
+            track_number: track.and_then(|t| t.track_number),
+            disc_number: track.and_then(|t| t.disc_number),
+            duration_ms: track.map_or(0, |t| t.duration_ms),
+            position_ms: track.map_or(0, |t| t.position_ms),
+            seekable: track.is_some_and(|t| t.seekable),
+            cover_url: zone.cover_url.clone(),
+            bitrate_kbps: track.and_then(|t| t.bitrate_kbps),
+            content_type: track.and_then(|t| t.content_type.clone()),
+            playlist_index: zone.playlist_track_index,
+            playlist_count: zone.playlist_track_count,
+            can_next: zone
+                .playlist_track_count
+                .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
+            can_prev: zone.playlist_track_index.is_some_and(|i| i > 0),
+            volume: zone.volume,
+            muted: zone.muted,
         };
-
-        // Send progress if position changed
-        let new_position = zone.track.as_ref().map(|t| t.position_ms);
-        let progress_notif = if old_position == new_position {
-            None
-        } else {
-            zone.track
-                .as_ref()
-                .map(|t| crate::api::ws::Notification::ZoneProgress {
-                    zone: zone_index,
-                    position_ms: t.position_ms,
-                    duration_ms: t.duration_ms,
-                    buffered_ms: zone.buffered_ms,
-                })
-        };
-
         s.dirty = true;
         drop(s);
-
-        let mut notifications = vec![crate::api::ws::Notification::ZoneStateChanged {
-            zone: zone_index,
-            playback,
-            volume,
-            muted,
-            source,
-            shuffle,
-            repeat,
-            track_repeat,
-        }];
-        if let Some(n) = track_changed_notif {
-            notifications.push(n);
-        }
-        if let Some(n) = progress_notif {
-            notifications.push(n);
-        }
-        notifications
+        n
     };
-    for n in notifications {
-        crate::api::ws::broadcast_notification(notify, &n);
-    }
+    crate::api::ws::broadcast_notification(notify, &notification);
+}
+
+/// Update zone volume/mute and broadcast a lightweight `ZoneVolumeChanged` notification.
+pub async fn update_volume_and_notify(
+    store: &state::SharedState,
+    zone_index: usize,
+    notify: &NotifySender,
+    f: impl FnOnce(&mut state::ZoneState),
+) {
+    let notification = {
+        let mut s = store.write().await;
+        let Some(zone) = s.zones.get_mut(&zone_index) else {
+            return;
+        };
+        f(zone);
+        let n = crate::api::ws::Notification::ZoneVolumeChanged {
+            zone: zone_index,
+            volume: zone.volume,
+            muted: zone.muted,
+        };
+        s.dirty = true;
+        drop(s);
+        n
+    };
+    crate::api::ws::broadcast_notification(notify, &notification);
 }
 
 /// Set up Snapcast group for a zone: find clients by MAC, assign to group, set stream.

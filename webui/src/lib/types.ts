@@ -11,6 +11,8 @@ export type SourceType =
   | "airplay"
   | "spotify";
 
+export type RepeatMode = "off" | "track" | "playlist";
+
 // ── Zone ──────────────────────────────────────────────────────
 
 export interface ZoneInfo {
@@ -22,8 +24,7 @@ export interface ZoneInfo {
   playback: PlaybackState;
   source: SourceType;
   shuffle: boolean;
-  repeat: boolean;
-  track_repeat: boolean;
+  repeat: RepeatMode;
   presence: boolean;
   presence_enabled: boolean;
   presence_timer_active: boolean;
@@ -120,21 +121,13 @@ export interface HealthResponse {
 
 // ── WebSocket ─────────────────────────────────────────────────
 
-export interface WsZoneStateChanged {
-  type: "zone_state_changed";
+export interface WsZoneChanged {
+  type: "zone_changed";
   zone: number;
   playback: PlaybackState;
-  volume: number;
-  muted: boolean;
   source: SourceType;
   shuffle: boolean;
-  repeat: boolean;
-  track_repeat: boolean;
-}
-
-export interface WsZoneTrackChanged {
-  type: "zone_track_changed";
-  zone: number;
+  repeat: RepeatMode;
   title: string;
   artist: string;
   album: string;
@@ -142,12 +135,26 @@ export interface WsZoneTrackChanged {
   genre: string | null;
   year: number | null;
   track_number: number | null;
+  disc_number: number | null;
   duration_ms: number;
   position_ms: number;
   seekable: boolean;
+  cover_url: string | null;
+  bitrate_kbps: number | null;
+  content_type: string | null;
+  playlist_index: number | null;
+  playlist_count: number | null;
   can_next: boolean;
   can_prev: boolean;
-  cover_url: string | null;
+  volume: number;
+  muted: boolean;
+}
+
+export interface WsZoneVolumeChanged {
+  type: "zone_volume_changed";
+  zone: number;
+  volume: number;
+  muted: boolean;
 }
 
 export interface WsZoneProgress {
@@ -185,8 +192,8 @@ export interface WsZoneEqChanged {
 }
 
 export type WsNotification =
-  | WsZoneStateChanged
-  | WsZoneTrackChanged
+  | WsZoneChanged
+  | WsZoneVolumeChanged
   | WsZoneProgress
   | WsClientStateChanged
   | WsZonePresenceChanged

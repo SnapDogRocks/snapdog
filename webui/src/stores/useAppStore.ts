@@ -3,6 +3,7 @@ import type {
   ZoneInfo,
   TrackMetadata,
   ClientInfo,
+  RepeatMode,
 } from "@/lib/types";
 import { api, type EqConfig } from "@/lib/api";
 
@@ -58,12 +59,9 @@ interface AppState {
   setZones: (zones: ZoneInfo[]) => void;
   updateZone: (
     id: number,
-    patch: Partial<Pick<ZoneState, "playback" | "volume" | "muted" | "source" | "shuffle" | "repeat" | "track_repeat">>,
+    patch: Partial<Pick<ZoneState, "playback" | "volume" | "muted" | "source" | "shuffle" | "repeat"> & { track: Partial<TrackMetadata> | null }>,
   ) => void;
-  updateZoneTrack: (
-    id: number,
-    track: Pick<TrackMetadata, "title" | "artist" | "album" | "album_artist" | "genre" | "year" | "track_number" | "duration_ms" | "position_ms" | "seekable" | "can_next" | "can_prev" | "cover_url">,
-  ) => void;
+  updateZoneVolume: (id: number, volume: number, muted: boolean) => void;
   updateZoneProgress: (id: number, position_ms: number, duration_ms: number, buffered_ms: number | null) => void;
   updateZonePresence: (id: number, presence: boolean, enabled: boolean, timerActive: boolean) => void;
   updateZoneEq: (id: number, enabled: boolean, bands?: Array<{ filter_type: string; frequency: number; gain: number; q: number }>, preset?: string) => void;
@@ -152,19 +150,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateZone: (id, patch) => {
     const zones = new Map(get().zones);
     const z = zones.get(id);
-    if (z) zones.set(id, { ...z, ...patch });
+    if (z) {
+      const { track: trackPatch, ...rest } = patch;
+      const updatedTrack = trackPatch === null ? null : trackPatch ? { ...DEFAULT_TRACK, ...z.track, ...trackPatch } : z.track;
+      zones.set(id, { ...z, ...rest, track: updatedTrack });
+    }
     set({ zones });
   },
 
-  updateZoneTrack: (id, track) => {
+  updateZoneVolume: (id, volume, muted) => {
     const zones = new Map(get().zones);
     const z = zones.get(id);
-    if (z) {
-      zones.set(id, {
-        ...z,
-        track: { ...DEFAULT_TRACK, ...z.track, ...track },
-      });
-    }
+    if (z) zones.set(id, { ...z, volume, muted });
     set({ zones });
   },
 

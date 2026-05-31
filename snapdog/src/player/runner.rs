@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use super::commands::{ActiveSource, ZoneCommand};
 use super::context::{
     GroupAction, SnapcastCmd, ZoneCommandSender, ZonePlayerContext, setup_zone_group, stop_decode,
-    update_and_notify,
+    update_and_notify, update_volume_and_notify,
 };
 
 use super::helpers::{DecodeState, PlaybackCtx};
@@ -826,7 +826,7 @@ async fn run(
                         }
                     }
                     ZoneCommand::SetVolume(v) => {
-                        update_and_notify(store, zone_index, notify, |z| z.volume = v.clamp(0, 100)).await;
+                        update_volume_and_notify(store, zone_index, notify, |z| z.volume = v.clamp(0, 100)).await;
                         let gid = store.read().await.zones.get(&zone_index).and_then(|z| z.snapcast_group_id.clone());
                         if let Some(gid) = gid {
                             let _ = ctx.snap_tx.send(SnapcastCmd::Group { group_id: gid, action: GroupAction::Volume(v) }).await;
@@ -837,7 +837,7 @@ async fn run(
                             let s = store.read().await;
                             s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| (z.volume + delta).clamp(0, 100))
                         };
-                        update_and_notify(store, zone_index, notify, |z| z.volume = new_vol).await;
+                        update_volume_and_notify(store, zone_index, notify, |z| z.volume = new_vol).await;
                         let gid = store.read().await.zones.get(&zone_index).and_then(|z| z.snapcast_group_id.clone());
                         if let Some(gid) = gid {
                             let _ = ctx.snap_tx.send(SnapcastCmd::Group { group_id: gid, action: GroupAction::Volume(new_vol) }).await;
@@ -858,10 +858,16 @@ async fn run(
                     }
                     ZoneCommand::SetShuffle(v) => { update_and_notify(store, zone_index, notify, |z| z.shuffle = v).await; }
                     ZoneCommand::ToggleShuffle => { update_and_notify(store, zone_index, notify, |z| z.shuffle = !z.shuffle).await; }
-                    ZoneCommand::SetRepeat(v) => { update_and_notify(store, zone_index, notify, |z| z.repeat = v).await; }
-                    ZoneCommand::ToggleRepeat => { update_and_notify(store, zone_index, notify, |z| z.repeat = !z.repeat).await; }
-                    ZoneCommand::SetTrackRepeat(v) => { update_and_notify(store, zone_index, notify, |z| z.track_repeat = v).await; }
-                    ZoneCommand::ToggleTrackRepeat => { update_and_notify(store, zone_index, notify, |z| z.track_repeat = !z.track_repeat).await; }
+                    ZoneCommand::SetRepeat(mode) => { update_and_notify(store, zone_index, notify, |z| z.repeat = mode).await; }
+                    ZoneCommand::CycleRepeat => {
+                        update_and_notify(store, zone_index, notify, |z| {
+                            z.repeat = match z.repeat {
+                                snapdog_common::RepeatMode::Off => snapdog_common::RepeatMode::Playlist,
+                                snapdog_common::RepeatMode::Playlist => snapdog_common::RepeatMode::Track,
+                                snapdog_common::RepeatMode::Track => snapdog_common::RepeatMode::Off,
+                            };
+                        }).await;
+                    }
                     ZoneCommand::SetEq(eq_config) => {
                         zone_eq.set_config(&eq_config);
                         ctx.eq_store.lock().unwrap_or_else(std::sync::PoisonError::into_inner).set(zone_index, eq_config.clone());

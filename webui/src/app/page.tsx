@@ -142,7 +142,7 @@ export default function Home() {
     setConnected,
     loadAll,
     updateZone,
-    updateZoneTrack,
+    updateZoneVolume,
     updateZoneProgress,
     updateZonePresence,
     updateClient,
@@ -151,7 +151,7 @@ export default function Home() {
   const handleNotification = useCallback(
     (n: WsNotification) => {
       switch (n.type) {
-        case "zone_state_changed":
+        case "zone_changed":
           updateZone(n.zone, {
             playback: n.playback,
             volume: n.volume,
@@ -159,11 +159,31 @@ export default function Home() {
             source: n.source,
             shuffle: n.shuffle,
             repeat: n.repeat,
-            track_repeat: n.track_repeat,
+            track: {
+              title: n.title,
+              artist: n.artist,
+              album: n.album,
+              album_artist: n.album_artist,
+              genre: n.genre,
+              year: n.year,
+              track_number: n.track_number,
+              disc_number: n.disc_number,
+              duration_ms: n.duration_ms,
+              position_ms: n.position_ms,
+              seekable: n.seekable,
+              cover_url: n.cover_url,
+              bitrate_kbps: n.bitrate_kbps,
+              content_type: n.content_type,
+              playlist_index: n.playlist_index,
+              playlist_track_index: n.playlist_index,
+              playlist_track_count: n.playlist_count,
+              can_next: n.can_next,
+              can_prev: n.can_prev,
+            },
           });
           break;
-        case "zone_track_changed":
-          updateZoneTrack(n.zone, { ...n, cover_url: n.cover_url });
+        case "zone_volume_changed":
+          updateZoneVolume(n.zone, n.volume, n.muted);
           break;
         case "zone_progress":
           updateZoneProgress(n.zone, n.position_ms, n.duration_ms, n.buffered_ms ?? null);
@@ -185,7 +205,7 @@ export default function Home() {
           break;
       }
     },
-    [updateZone, updateZoneTrack, updateZoneProgress, updateZonePresence, updateClient],
+    [updateZone, updateZoneVolume, updateZoneProgress, updateZonePresence, updateClient],
   );
 
   const { isConnected: wsConnected, serverGoingAway, retryIn } = useWebSocket(handleNotification);

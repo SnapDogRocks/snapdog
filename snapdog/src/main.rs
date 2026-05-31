@@ -681,8 +681,8 @@ pub async fn run_app() -> Result<()> {
                             if let Ok(notif) = serde_json::from_str::<api::ws::Notification>(&json) {
                                 let s = mqtt_notify_store.read().await;
                                 match notif {
-                                    api::ws::Notification::ZoneStateChanged { zone, .. }
-                                    | api::ws::Notification::ZoneTrackChanged { zone, .. }
+                                    api::ws::Notification::ZoneChanged { zone, .. }
+                                    | api::ws::Notification::ZoneVolumeChanged { zone, .. }
                                     | api::ws::Notification::ZoneProgress { zone, .. } => {
                                         if let Some(z) = s.zones.get(&zone) {
                                             let _ = bridge.publish_zone_state(zone, z).await;

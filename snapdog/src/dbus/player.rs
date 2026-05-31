@@ -276,20 +276,12 @@ impl PlayerInterface {
 
     #[zbus(property)]
     async fn set_loop_status(&self, val: &str) {
-        match val {
-            "Track" => {
-                let _ = self.cmd_tx.send(ZoneCommand::SetTrackRepeat(true)).await;
-                let _ = self.cmd_tx.send(ZoneCommand::SetRepeat(false)).await;
-            }
-            "Playlist" => {
-                let _ = self.cmd_tx.send(ZoneCommand::SetTrackRepeat(false)).await;
-                let _ = self.cmd_tx.send(ZoneCommand::SetRepeat(true)).await;
-            }
-            _ => {
-                let _ = self.cmd_tx.send(ZoneCommand::SetTrackRepeat(false)).await;
-                let _ = self.cmd_tx.send(ZoneCommand::SetRepeat(false)).await;
-            }
-        }
+        let mode = match val {
+            "Track" => snapdog_common::RepeatMode::Track,
+            "Playlist" => snapdog_common::RepeatMode::Playlist,
+            _ => snapdog_common::RepeatMode::Off,
+        };
+        let _ = self.cmd_tx.send(ZoneCommand::SetRepeat(mode)).await;
     }
 
     #[zbus(property)]
