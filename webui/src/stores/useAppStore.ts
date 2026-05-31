@@ -26,6 +26,8 @@ const DEFAULT_TRACK: TrackMetadata = {
   playlist_index: null,
   playlist_track_index: null,
   playlist_track_count: null,
+  can_next: false,
+  can_prev: false,
 };
 
 // ── Zone with track metadata merged ───────────────────────────
@@ -60,7 +62,7 @@ interface AppState {
   ) => void;
   updateZoneTrack: (
     id: number,
-    track: Pick<TrackMetadata, "title" | "artist" | "album" | "duration_ms" | "position_ms" | "seekable" | "cover_url">,
+    track: Pick<TrackMetadata, "title" | "artist" | "album" | "album_artist" | "genre" | "year" | "track_number" | "duration_ms" | "position_ms" | "seekable" | "can_next" | "can_prev" | "cover_url">,
   ) => void;
   updateZoneProgress: (id: number, position_ms: number, duration_ms: number, buffered_ms: number | null) => void;
   updateZonePresence: (id: number, presence: boolean, enabled: boolean, timerActive: boolean) => void;

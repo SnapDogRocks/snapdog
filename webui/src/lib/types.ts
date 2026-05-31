@@ -50,6 +50,8 @@ export interface TrackMetadata {
   playlist_index: number | null;
   playlist_track_index: number | null;
   playlist_track_count: number | null;
+  can_next: boolean;
+  can_prev: boolean;
 }
 
 export interface PlaylistState {
@@ -136,9 +138,15 @@ export interface WsZoneTrackChanged {
   title: string;
   artist: string;
   album: string;
+  album_artist: string | null;
+  genre: string | null;
+  year: number | null;
+  track_number: number | null;
   duration_ms: number;
   position_ms: number;
   seekable: boolean;
+  can_next: boolean;
+  can_prev: boolean;
   cover_url: string | null;
 }
 

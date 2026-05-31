@@ -29,9 +29,8 @@ export function TransportControls({ zone }: TransportControlsProps) {
   const tap = reduced ? {} : { scale: 0.9 };
   const isPlaying = playback === "playing";
   const isIdle = source === "idle";
-  const isAirPlay = source === "airplay";
-  const isUrl = source === "url";
-  const hasNavigation = source === "radio" || source === "subsonic_playlist" || isAirPlay;
+  const canNext = zone.track?.can_next ?? false;
+  const canPrev = zone.track?.can_prev ?? false;
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,7 +76,7 @@ export function TransportControls({ zone }: TransportControlsProps) {
   return (
     <div className="flex items-center justify-center gap-2">
       <motion.div whileTap={tap}>
-        <Button variant="ghost" size="icon" disabled={isIdle || isAirPlay || isUrl || !hasNavigation} onClick={() => cmd("previous")} className="size-10 rounded-full" aria-label={t("previous")}>
+        <Button variant="ghost" size="icon" disabled={isIdle || !canPrev} onClick={() => cmd("previous")} className="size-10 rounded-full" aria-label={t("previous")}>
           <HugeiconsIcon icon={PreviousIcon} size={20} />
         </Button>
       </motion.div>
@@ -98,7 +97,7 @@ export function TransportControls({ zone }: TransportControlsProps) {
         </Button>
       </motion.div>
       <motion.div whileTap={tap}>
-        <Button variant="ghost" size="icon" disabled={isIdle || isAirPlay || isUrl || !hasNavigation} onClick={() => cmd("next")} className="size-10 rounded-full" aria-label={t("next")}>
+        <Button variant="ghost" size="icon" disabled={isIdle || !canNext} onClick={() => cmd("next")} className="size-10 rounded-full" aria-label={t("next")}>
           <HugeiconsIcon icon={NextIcon} size={20} />
         </Button>
       </motion.div>
