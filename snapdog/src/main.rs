@@ -27,7 +27,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-#[cfg(feature = "dbus")]
+#[cfg(all(feature = "dbus", target_os = "linux"))]
 use snapdog::dbus;
 #[cfg(feature = "snapcast-process")]
 use snapdog::process;
@@ -593,7 +593,7 @@ pub async fn run_app() -> Result<()> {
     };
 
     // ── D-Bus MPRIS2 ──────────────────────────────────────────
-    #[cfg(feature = "dbus")]
+    #[cfg(all(feature = "dbus", target_os = "linux"))]
     let _dbus = if config.dbus.enabled {
         match dbus::start_mpris(&config, &zone_commands, notify_tx.clone()).await {
             Ok(conns) => {
