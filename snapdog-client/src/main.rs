@@ -8,6 +8,8 @@
 #![allow(clippy::cast_precision_loss)]
 
 mod cli;
+#[cfg(feature = "dbus")]
+mod dbus;
 mod eq;
 mod logging;
 mod player;
@@ -151,6 +153,16 @@ fn main() -> anyhow::Result<()> {
         }
 
         // Event handler
+        // D-Bus MPRIS2 interface
+        #[cfg(feature = "dbus")]
+        let (_dbus_conn, dbus_state, _dbus_iface) = match dbus::start(cmd.clone()).await {
+            Ok(v) => (Some(v.0), Some(v.1), Some(v.2)),
+            Err(e) => {
+                tracing::warn!(error = %e, "D-Bus not available — MPRIS2 disabled");
+                (None, None, None)
+            }
+        };
+
         let event_eq = eq.clone();
         let event_speaker_eq = speaker_eq.clone();
         let event_fade = fade.clone();
@@ -168,6 +180,10 @@ fn main() -> anyhow::Result<()> {
                     ClientEvent::VolumeChanged { volume, muted } => {
                         tracing::info!(volume, muted, "Volume changed");
                         event_mixer.set_volume(volume as u8, muted);
+                        #[cfg(feature = "dbus")]
+                        if let Some(ref state) = dbus_state {
+                            state.lock().await.set_volume(volume, muted);
+                        }
                         #[cfg(target_os = "linux")]
                         {
                             let status =

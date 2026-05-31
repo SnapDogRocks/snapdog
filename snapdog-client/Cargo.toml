@@ -29,10 +29,12 @@ biquad = { workspace = true }
 serde_json = "1"
 midir = "0.11.0"
 mdns-sd = { workspace = true, optional = true }
+zbus = { version = "5", optional = true }
 
 [features]
-default = ["mdns", "f32lz4", "encryption", "custom-protocol"]
+default = ["mdns", "f32lz4", "encryption", "custom-protocol", "dbus"]
 mdns = ["dep:mdns-sd"]
+dbus = ["dep:zbus"]
 f32lz4 = ["snapcast-client/f32lz4"]
 websocket = ["snapcast-client/websocket"]
 tls = ["snapcast-client/tls"]
