@@ -496,9 +496,24 @@ async fn get_track_position(
 async fn seek_position(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
-    Json(v): Json<i64>,
+    Json(body): Json<SeekRequest>,
 ) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::Seek(v)).await
+    let cmd = match (body.position_ms, body.offset_ms) {
+        (Some(pos), None) => ZoneCommand::Seek(pos),
+        (None, Some(offset)) => ZoneCommand::SeekRelative(offset),
+        _ => {
+            return Err(ApiError::BadRequest(
+                "provide exactly one of position_ms or offset_ms".into(),
+            ));
+        }
+    };
+    send_cmd(&state, idx, cmd).await
+}
+
+#[derive(serde::Deserialize)]
+struct SeekRequest {
+    position_ms: Option<i64>,
+    offset_ms: Option<i64>,
 }
 async fn get_track_progress(
     State(state): State<SharedState>,

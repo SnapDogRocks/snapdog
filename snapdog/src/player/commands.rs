@@ -39,6 +39,8 @@ pub enum ZoneCommand {
     // ── Seek ──────────────────────────────────────────────────
     /// Seek to an absolute position in milliseconds.
     Seek(i64),
+    /// Seek by a relative offset in milliseconds (positive = forward, negative = backward).
+    SeekRelative(i64),
     /// Seek to a relative position (0.0–1.0 of total duration).
     SeekProgress(f64),
 
