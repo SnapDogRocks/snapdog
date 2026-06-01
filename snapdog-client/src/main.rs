@@ -289,10 +289,7 @@ fn main() -> anyhow::Result<()> {
                             tracing::debug!(title = %meta.title, artist = %meta.artist, "Metadata received");
                             #[cfg(feature = "dbus")]
                             if let Some(ref state) = dbus_state {
-                                let mut s = state.lock().await;
-                                s.volume = meta.volume as u16;
-                                s.muted = meta.muted;
-                                s.playing = meta.playback == "playing";
+                                state.lock().await.set_metadata(&meta);
                             }
                         }
                     }
@@ -316,6 +313,11 @@ fn main() -> anyhow::Result<()> {
                             tracing::warn!(error = %e, "Failed to write cover art");
                         } else {
                             tracing::debug!(path = %file_path.display(), bytes = msg.payload.len(), "Cover art saved");
+                            #[cfg(feature = "dbus")]
+                            if let Some(ref state) = dbus_state {
+                                state.lock().await.cover_path =
+                                    Some(file_path.to_string_lossy().into_owned());
+                            }
                         }
                     }
                     _ => {}

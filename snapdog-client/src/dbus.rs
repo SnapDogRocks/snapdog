@@ -28,6 +28,7 @@ use snapcast_client::ClientCommand;
 const BUS_NAME_PREFIX: &str = "org.mpris.MediaPlayer2.snapdog_client";
 
 /// Shared state between the D-Bus interface and the event loop.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct ClientDbusState {
     pub volume: u16,
@@ -35,6 +36,18 @@ pub struct ClientDbusState {
     pub playing: bool,
     /// Remembered volume before mute (for unmute restore).
     pre_mute_volume: u16,
+    // Metadata from Type 14
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration_ms: i64,
+    pub position_ms: i64,
+    pub seekable: bool,
+    pub can_next: bool,
+    pub can_prev: bool,
+    pub shuffle: bool,
+    pub repeat: snapdog_common::RepeatMode,
+    pub cover_path: Option<String>,
 }
 
 impl Default for ClientDbusState {
@@ -44,6 +57,17 @@ impl Default for ClientDbusState {
             muted: false,
             playing: false,
             pre_mute_volume: 100,
+            title: String::new(),
+            artist: String::new(),
+            album: String::new(),
+            duration_ms: 0,
+            position_ms: 0,
+            seekable: false,
+            can_next: false,
+            can_prev: false,
+            shuffle: false,
+            repeat: snapdog_common::RepeatMode::Off,
+            cover_path: None,
         }
     }
 }
@@ -56,6 +80,23 @@ impl ClientDbusState {
         if !muted {
             self.pre_mute_volume = volume;
         }
+    }
+
+    /// Update from Type 14 metadata.
+    pub fn set_metadata(&mut self, meta: &snapdog_common::TrackMetadata) {
+        self.volume = meta.volume as u16;
+        self.muted = meta.muted;
+        self.playing = meta.playback == "playing";
+        self.title.clone_from(&meta.title);
+        self.artist.clone_from(&meta.artist);
+        self.album.clone_from(&meta.album);
+        self.duration_ms = meta.duration_ms;
+        self.position_ms = meta.position_ms;
+        self.seekable = meta.seekable;
+        self.can_next = meta.can_next;
+        self.can_prev = meta.can_prev;
+        self.shuffle = meta.shuffle;
+        self.repeat = meta.repeat;
     }
 
     /// MPRIS2 volume: 0.0 when muted, otherwise 0.0–1.0.
@@ -173,37 +214,108 @@ impl PlayerInterface {
 
     #[zbus(property)]
     fn can_play(&self) -> bool {
-        false
+        true
     }
 
     #[zbus(property)]
     fn can_pause(&self) -> bool {
-        false
+        true
     }
 
     #[zbus(property)]
-    fn can_seek(&self) -> bool {
-        false
+    async fn can_seek(&self) -> bool {
+        self.state.lock().await.seekable
     }
 
     #[zbus(property)]
-    fn can_go_next(&self) -> bool {
-        false
+    async fn can_go_next(&self) -> bool {
+        self.state.lock().await.can_next
     }
 
     #[zbus(property)]
-    fn can_go_previous(&self) -> bool {
-        false
+    async fn can_go_previous(&self) -> bool {
+        self.state.lock().await.can_prev
+    }
+
+    #[zbus(property)]
+    async fn shuffle(&self) -> bool {
+        self.state.lock().await.shuffle
+    }
+
+    #[zbus(property)]
+    async fn set_shuffle(&self, enabled: bool) {
+        self.send_control(snapdog_common::PlaybackControl::Shuffle { enabled });
+    }
+
+    #[zbus(property)]
+    async fn loop_status(&self) -> String {
+        let repeat = self.state.lock().await.repeat;
+        match repeat {
+            snapdog_common::RepeatMode::Off => "None".into(),
+            snapdog_common::RepeatMode::Track => "Track".into(),
+            snapdog_common::RepeatMode::Playlist => "Playlist".into(),
+        }
+    }
+
+    #[zbus(property)]
+    async fn set_loop_status(&self, status: &str) {
+        let mode = match status {
+            "Track" => snapdog_common::RepeatMode::Track,
+            "Playlist" => snapdog_common::RepeatMode::Playlist,
+            _ => snapdog_common::RepeatMode::Off,
+        };
+        self.send_control(snapdog_common::PlaybackControl::Repeat { mode });
     }
 
     #[zbus(property)]
     async fn metadata(&self) -> std::collections::HashMap<String, zbus::zvariant::Value<'_>> {
-        std::collections::HashMap::new()
+        let (title, artist, album, duration_us, cover_path) = {
+            let s = self.state.lock().await;
+            (
+                s.title.clone(),
+                s.artist.clone(),
+                s.album.clone(),
+                s.duration_ms * 1000,
+                s.cover_path.clone(),
+            )
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert(
+            "mpris:trackid".into(),
+            zbus::zvariant::Value::from(
+                zbus::zvariant::ObjectPath::try_from("/org/snapdog/track").unwrap(),
+            ),
+        );
+        if !title.is_empty() {
+            map.insert("xesam:title".into(), zbus::zvariant::Value::from(title));
+        }
+        if !artist.is_empty() {
+            map.insert(
+                "xesam:artist".into(),
+                zbus::zvariant::Value::from(vec![artist]),
+            );
+        }
+        if !album.is_empty() {
+            map.insert("xesam:album".into(), zbus::zvariant::Value::from(album));
+        }
+        if duration_us > 0 {
+            map.insert(
+                "mpris:length".into(),
+                zbus::zvariant::Value::from(duration_us),
+            );
+        }
+        if let Some(path) = cover_path {
+            map.insert(
+                "mpris:artUrl".into(),
+                zbus::zvariant::Value::from(format!("file://{path}")),
+            );
+        }
+        map
     }
 
     #[zbus(property)]
-    fn position(&self) -> i64 {
-        0
+    async fn position(&self) -> i64 {
+        self.state.lock().await.position_ms * 1000 // µs
     }
 
     #[zbus(property)]
