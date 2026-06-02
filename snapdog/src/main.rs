@@ -666,8 +666,16 @@ pub async fn run_app() -> Result<()> {
                     cover_url: zone.cover_url.clone(),
                     bitrate_kbps: zone.track.as_ref().and_then(|t| t.bitrate_kbps),
                     content_type: zone.track.as_ref().and_then(|t| t.content_type.clone()),
-                    playlist_index: zone.playlist_track_index,
-                    playlist_count: zone.playlist_track_count,
+                    track_index: zone.playlist_track_index,
+                    track_count: zone.playlist_track_count,
+                    playlist: zone.playlist_index,
+                    playlist_name: zone.playlist_name.clone(),
+                    playlist_total: zone.playlist_total,
+                    can_playlist_next: zone
+                        .playlist_index
+                        .zip(zone.playlist_total)
+                        .is_some_and(|(p, t)| p + 1 < t),
+                    can_playlist_prev: zone.playlist_index.is_some_and(|p| p > 0),
                     can_next: zone
                         .playlist_track_count
                         .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),

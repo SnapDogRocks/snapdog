@@ -49,8 +49,12 @@ export interface TrackMetadata {
   /** Injected from zone state by the API, not from the track source. */
   cover_url: string | null;
   playlist_index: number | null;
+  playlist_name: string | null;
+  playlist_total: number | null;
   playlist_track_index: number | null;
   playlist_track_count: number | null;
+  can_playlist_next: boolean;
+  can_playlist_prev: boolean;
   can_next: boolean;
   can_prev: boolean;
 }
@@ -58,6 +62,7 @@ export interface TrackMetadata {
 export interface PlaylistState {
   index: number | null;
   name: string | null;
+  total: number | null;
   track_index: number | null;
   track_count: number | null;
 }
@@ -142,8 +147,13 @@ export interface WsZoneChanged {
   cover_url: string | null;
   bitrate_kbps: number | null;
   content_type: string | null;
-  playlist_index: number | null;
-  playlist_count: number | null;
+  track_index: number | null;
+  track_count: number | null;
+  playlist: number | null;
+  playlist_name: string | null;
+  playlist_total: number | null;
+  can_playlist_next: boolean;
+  can_playlist_prev: boolean;
   can_next: boolean;
   can_prev: boolean;
   volume: number;

@@ -407,8 +407,12 @@ async fn get_track_metadata(
         "source": zone.source.to_string(),
         "cover_url": zone.cover_url,
         "playlist_index": zone.playlist_index,
+        "playlist_name": zone.playlist_name,
+        "playlist_total": zone.playlist_total,
         "playlist_track_index": zone.playlist_track_index,
         "playlist_track_count": zone.playlist_track_count,
+        "can_next": zone.playlist_track_count.is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
+        "can_prev": zone.playlist_track_index.is_some_and(|i| i > 0),
     })))
 }
 async fn get_zone_cover(
@@ -626,6 +630,7 @@ async fn get_playlist_info(
     Ok::<_, ApiError>(Json(serde_json::json!({
         "index": zone.playlist_index,
         "name": zone.playlist_name,
+        "total": zone.playlist_total,
         "track_index": zone.playlist_track_index,
         "track_count": zone.playlist_track_count,
     })))

@@ -129,9 +129,21 @@ pub struct TrackMetadata {
 
     // Playlist position
     /// Current track index in playlist (0-based).
-    pub playlist_index: Option<usize>,
+    pub track_index: Option<usize>,
     /// Total tracks in playlist.
-    pub playlist_count: Option<usize>,
+    pub track_count: Option<usize>,
+
+    // Playlist navigation
+    /// Current playlist index (0-based).
+    pub playlist: Option<usize>,
+    /// Name of the active playlist.
+    pub playlist_name: Option<String>,
+    /// Total number of playlists available.
+    pub playlist_total: Option<usize>,
+    /// Whether there's a next playlist.
+    pub can_playlist_next: bool,
+    /// Whether there's a previous playlist.
+    pub can_playlist_prev: bool,
 
     // Navigation
     /// Whether next track is available.
@@ -392,8 +404,13 @@ mod tests {
             cover_url: Some("http://example.com/cover.jpg".into()),
             bitrate_kbps: Some(320),
             content_type: Some("audio/flac".into()),
-            playlist_index: Some(2),
-            playlist_count: Some(10),
+            track_index: Some(2),
+            track_count: Some(10),
+            playlist: Some(1),
+            playlist_name: Some("My Playlist".into()),
+            playlist_total: Some(5),
+            can_playlist_next: true,
+            can_playlist_prev: true,
             can_next: true,
             can_prev: false,
             volume: 75,

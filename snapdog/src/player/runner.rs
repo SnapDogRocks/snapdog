@@ -710,6 +710,7 @@ async fn run(
                                     z.source = SourceType::Radio;
                                     z.playlist_index = Some(0);
                                     z.playlist_name = Some("Radio".into());
+                                    z.playlist_total = Some(total_count);
                                     z.playlist_track_index = Some(radio_idx);
                                     z.playlist_track_count = Some(config.radios.len());
                                     z.track = Some(radio_track_info(&radio.name));
@@ -736,6 +737,7 @@ async fn run(
                                                 z.source = SourceType::SubsonicPlaylist;
                                                 z.playlist_index = Some(target_unified);
                                                 z.playlist_name = Some(playlist.name.clone());
+                                                z.playlist_total = Some(total_count);
                                                 z.playlist_track_index = Some(track_idx);
                                                 z.playlist_track_count = Some(playlist.entry.len());
                                                 z.track = Some(subsonic_track_info(track));

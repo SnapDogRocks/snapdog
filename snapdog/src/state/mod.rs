@@ -81,6 +81,8 @@ pub struct ZoneState {
     pub playlist_index: Option<usize>,
     /// Display name of the active playlist.
     pub playlist_name: Option<String>,
+    /// Total number of playlists available.
+    pub playlist_total: Option<usize>,
     /// Current track position within the active playlist.
     pub playlist_track_index: Option<usize>,
     /// Total number of tracks in the active playlist.
@@ -267,6 +269,7 @@ impl Store {
                         track: None,
                         playlist_index: None,
                         playlist_name: None,
+                        playlist_total: None,
                         playlist_track_index: None,
                         playlist_track_count: None,
                         source: SourceType::Idle,
@@ -516,6 +519,7 @@ mod tests {
                 track: None,
                 playlist_index: None,
                 playlist_name: None,
+                playlist_total: None,
                 playlist_track_index: None,
                 playlist_track_count: None,
                 source: SourceType::Idle,

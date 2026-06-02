@@ -79,10 +79,21 @@ pub enum Notification {
         /// MIME content type.
         content_type: Option<String>,
         // Playlist position
-        /// Current playlist index.
-        playlist_index: Option<usize>,
-        /// Total playlist count.
-        playlist_count: Option<usize>,
+        /// Current track index in playlist.
+        track_index: Option<usize>,
+        /// Total tracks in playlist.
+        track_count: Option<usize>,
+        // Playlist navigation
+        /// Current playlist index (0-based).
+        playlist: Option<usize>,
+        /// Name of the active playlist.
+        playlist_name: Option<String>,
+        /// Total number of playlists available.
+        playlist_total: Option<usize>,
+        /// Whether there's a next playlist.
+        can_playlist_next: bool,
+        /// Whether there's a previous playlist.
+        can_playlist_prev: bool,
         // Navigation
         /// Whether next track is available.
         can_next: bool,
