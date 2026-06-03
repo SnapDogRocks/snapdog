@@ -1,0 +1,48 @@
+name: Sync OpenAPI & Docs to Web Portal
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'snapdog/src/api/**'
+      - 'xtask/**'
+      - 'docs/**'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SnapDog Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Generate OpenAPI Spec
+        run: cargo run --package xtask -- gen-api-spec openapi.json
+
+      - name: Checkout SnapDog Web Repo
+        uses: actions/checkout@v4
+        with:
+          repository: SnapDogRocks/snapdog-web
+          token: ${{ secrets.SNAPDOG_WEB_SYNC_TOKEN }}
+          path: snapdog-web
+
+      - name: Copy Spec and Commit
+        run: |
+          mkdir -p snapdog-web/src/assets
+          cp openapi.json snapdog-web/src/assets/openapi.json
+          cd snapdog-web
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git add src/assets/openapi.json
+            git commit -m "chore(docs): sync API OpenAPI specification"
+            git push origin main
+          else
+            echo "No schema changes detected. Skipping commit."
+          fi
