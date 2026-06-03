@@ -32,6 +32,7 @@ fn main() {
     let cmd = std::env::args().nth(1).unwrap_or_default();
     match cmd.as_str() {
         "ci" => ci(),
+        "gen-api-spec" => gen_api_spec(),
         "knxprod" | "" => knxprod(),
         arg if std::path::Path::new(arg)
             .extension()
@@ -43,10 +44,34 @@ fn main() {
             eprintln!("Usage: cargo xtask <command>");
             eprintln!("Commands:");
             eprintln!("  knxprod [path]  Generate ETS XML and .knxprod (default)");
+            eprintln!("  gen-api-spec    Generate OpenAPI JSON specification");
             eprintln!("  ci              Run all CI checks locally");
             std::process::exit(1);
         }
     }
+}
+
+/// Generate `OpenAPI` specification file using `utoipa` from `snapdog` crate.
+fn gen_api_spec() {
+    use snapdog::api::openapi::ApiDoc;
+    use utoipa::OpenApi;
+
+    let json = ApiDoc::openapi()
+        .to_pretty_json()
+        .expect("failed to serialize OpenAPI JSON");
+    let out_path = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "openapi.json".to_string());
+
+    if let Some(parent) = std::path::Path::new(&out_path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).expect("failed to create output directory");
+    }
+
+    std::fs::write(&out_path, json).expect("failed to write OpenAPI JSON file");
+    eprintln!("✅ Generated OpenAPI specification at: {out_path}");
 }
 
 /// Run all CI checks locally (mirrors .github/workflows/ci.yml).
