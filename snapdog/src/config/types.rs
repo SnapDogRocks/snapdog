@@ -519,6 +519,10 @@ pub struct HttpConfig {
     /// Optional API keys. If set, all API endpoints require `Authorization: Bearer <key>`.
     #[serde(default)]
     pub api_keys: Vec<SecretString>,
+    /// Enable embedded Scalar API documentation (only if feature `api-docs` is enabled).
+    /// Default: true.
+    #[serde(default = "default_true")]
+    pub api_docs: bool,
 }
 
 impl Default for HttpConfig {
@@ -530,6 +534,7 @@ impl Default for HttpConfig {
             tls_cert: None,
             tls_key: None,
             api_keys: vec![],
+            api_docs: true,
         }
     }
 }

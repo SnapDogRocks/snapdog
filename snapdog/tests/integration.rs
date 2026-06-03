@@ -507,6 +507,7 @@ mod broken_tests {
         api_config.zones[0].tcp_source_port = config.zones[0].tcp_source_port;
         api_config.zones[1].tcp_source_port = config.zones[1].tcp_source_port;
         api_config.snapcast.managed = true;
+        api_config.http.api_docs = config.http.api_docs;
 
         let snapserver = SnapserverHandle::start(&api_config).await.unwrap();
         tokio::time::sleep(Duration::from_secs(2)).await;
@@ -560,6 +561,26 @@ mod broken_tests {
 
         let base = format!("http://127.0.0.1:{api_port}");
         (snapserver, store, base)
+    }
+
+    #[tokio::test]
+    #[ignore = "needs SnapcastClient API update"]
+    #[cfg(feature = "api-docs")]
+    async fn api_docs_configuration_toggle() {
+        // Test with api_docs = true (default)
+        let (mut config, _, _, _) = test_config().await;
+        config.http.api_docs = true;
+        let (mut snapserver1, _, base1) = start_system_with_api(config.clone()).await;
+        let resp1 = reqwest::get(format!("{base1}/docs")).await.unwrap();
+        assert_eq!(resp1.status(), 200);
+        snapserver1.stop().await.unwrap();
+
+        // Test with api_docs = false
+        config.http.api_docs = false;
+        let (mut snapserver2, _, base2) = start_system_with_api(config).await;
+        let resp2 = reqwest::get(format!("{base2}/docs")).await.unwrap();
+        assert_eq!(resp2.status(), 404);
+        snapserver2.stop().await.unwrap();
     }
 
     #[tokio::test]

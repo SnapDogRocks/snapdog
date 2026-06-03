@@ -142,10 +142,12 @@ pub async fn serve<S: BuildHasher>(
         .fallback(webui::fallback);
 
     #[cfg(feature = "api-docs")]
-    let app = {
+    let app = if state.config.http.api_docs {
         use utoipa::OpenApi;
         use utoipa_scalar::{Scalar, Servable};
         app.merge(Scalar::with_url("/docs", openapi::ApiDoc::openapi()))
+    } else {
+        app
     };
 
     let app = app

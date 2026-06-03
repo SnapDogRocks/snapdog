@@ -51,6 +51,8 @@ base_url = "http://192.168.1.10:5555"
 # Both tls_cert and tls_key must be set together.
 # tls_cert = "/etc/snapdog/tls/fullchain.pem"
 # tls_key = "/etc/snapdog/tls/privkey.pem"
+# Enable embedded Scalar API documentation (only if feature api-docs is compiled in).
+# api_docs = true
 
 # ── Snapcast ───────────────────────────────────────────────────────────────
 [snapcast]
