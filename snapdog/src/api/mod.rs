@@ -139,7 +139,16 @@ pub async fn serve<S: BuildHasher>(
     let app = Router::new()
         .merge(health::router(state.clone()))
         .merge(protected)
-        .fallback(webui::fallback)
+        .fallback(webui::fallback);
+
+    #[cfg(feature = "api-docs")]
+    let app = {
+        use utoipa::OpenApi;
+        use utoipa_scalar::{Scalar, Servable};
+        app.merge(Scalar::with_url("/docs", openapi::ApiDoc::openapi()))
+    };
+
+    let app = app
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http());
 

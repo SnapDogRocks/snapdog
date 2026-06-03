@@ -26,6 +26,7 @@ mdns-sd = "0.12"
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-full"] }
 utoipa = { version = "5", features = ["uuid", "chrono"] }
+utoipa-scalar = { version = "0.3.0", features = ["axum"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

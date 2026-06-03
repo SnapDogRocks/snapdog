@@ -58,6 +58,7 @@ snapcast-server = { workspace = true, optional = true }
 snapcast-proto = { workspace = true }
 snapdog-common = { workspace = true }
 subtle = "2"
+utoipa-scalar = { workspace = true, optional = true }
 
 [features]
 default = ["snapcast-embedded", "spotify", "dbus"]
@@ -66,6 +67,7 @@ snapcast-process = []
 ap2 = ["shairplay/ap2"]
 dbus = ["dep:zbus"]
 spotify = ["dep:librespot-core", "dep:librespot-playback", "dep:librespot-connect", "dep:librespot-discovery", "dep:librespot-metadata"]
+api-docs = ["dep:utoipa-scalar"]
 
 [dev-dependencies]
 mockall = { workspace = true }
