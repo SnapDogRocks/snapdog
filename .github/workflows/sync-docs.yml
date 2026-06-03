@@ -22,6 +22,9 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
+
       - name: Generate OpenAPI Spec
         run: cargo run --package xtask -- gen-api-spec openapi.json
 
