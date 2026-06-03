@@ -17,6 +17,7 @@ tokio = { workspace = true }
 axum = { workspace = true }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
 tower-http = { workspace = true }
+utoipa = { workspace = true }
 serde = { workspace = true }
 image = { version = "0.25.10", default-features = false, features = ["ico", "png"] }
 serde_json = { workspace = true }

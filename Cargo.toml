@@ -25,6 +25,7 @@ mdns-sd = "0.12"
 # Web framework
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-full"] }
+utoipa = { version = "5", features = ["uuid", "chrono"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

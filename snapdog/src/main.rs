@@ -376,7 +376,6 @@ pub async fn run_app() -> Result<()> {
         snapcast::embedded::EmbeddedBackend::start(&config, store.clone())?;
     #[cfg(feature = "snapcast-embedded")]
     let backend: Arc<dyn snapcast::backend::SnapcastBackend> = Arc::new(embedded_backend);
-    #[cfg(feature = "snapcast-embedded")]
     #[cfg(all(feature = "snapcast-process", not(feature = "snapcast-embedded")))]
     let process_backend =
         Arc::new(snapcast::process::ProcessBackend::start(&config, snap, store.clone()).await?);
