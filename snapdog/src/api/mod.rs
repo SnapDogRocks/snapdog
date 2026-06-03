@@ -6,6 +6,7 @@
 mod auth;
 pub mod error;
 mod health;
+pub mod openapi;
 mod routes;
 mod webui;
 pub mod ws;
