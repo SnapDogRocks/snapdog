@@ -127,7 +127,7 @@ export const zones = {
   // Track info
   getTrackMetadata: (id: number) => get<TrackMetadata>(`${Z}/${id}/track/metadata`),
   getTrackPosition: (id: number) => get<number>(`${Z}/${id}/track/position`),
-  seekPosition: (id: number, ms: number) => putVoid(`${Z}/${id}/track/position`, ms),
+  seekPosition: (id: number, ms: number) => putVoid(`${Z}/${id}/track/position`, { position_ms: ms }),
   getTrackProgress: (id: number) => get<number>(`${Z}/${id}/track/progress`),
   seekProgress: (id: number, v: number) => putVoid(`${Z}/${id}/track/progress`, v),
 
