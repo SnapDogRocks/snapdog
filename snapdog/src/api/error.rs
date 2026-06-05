@@ -8,10 +8,13 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
-#[derive(Serialize)]
-struct ErrorBody {
-    error: &'static str,
-    message: String,
+/// Standard REST API error response body.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ErrorBody {
+    /// High-level machine-readable error classification.
+    pub error: &'static str,
+    /// Detailed human-readable explanation of the error.
+    pub message: String,
 }
 
 /// API error with JSON body.

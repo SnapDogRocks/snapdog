@@ -10,13 +10,13 @@ use axum::{Json, Router};
 use serde::Serialize;
 
 use crate::api::SharedState;
-use crate::api::error::ApiError;
+use crate::api::error::{ApiError, ErrorBody};
 use crate::api::routes::zones::VolumeValue;
 use crate::player::{ClientAction, SnapcastCmd};
 use crate::state;
 
-#[derive(Serialize)]
-struct ClientInfo {
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ClientInfo {
     index: usize,
     name: String,
     mac: String,
@@ -53,10 +53,32 @@ const fn not_found() -> ApiError {
     ApiError::NotFound("client")
 }
 
+/// Get total number of clients
+///
+/// Returns the number of configured clients in the system.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/count",
+    responses(
+        (status = 200, description = "Total client count", body = usize)
+    ),
+    tag = "clients"
+)]
 async fn get_count(State(state): State<SharedState>) -> Json<usize> {
     Json(state.config.clients.len())
 }
 
+/// Get all clients details
+///
+/// Returns a list of all clients, including their volume, mute, connection status, and assigned zone.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients",
+    responses(
+        (status = 200, description = "List of all client details", body = Vec<ClientInfo>)
+    ),
+    tag = "clients"
+)]
 async fn get_all(State(state): State<SharedState>) -> Json<Vec<ClientInfo>> {
     let store = state.store.read().await;
     Json(
@@ -83,6 +105,21 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ClientInfo>> {
     )
 }
 
+/// Get client details by index
+///
+/// Returns the details of a single client specified by its 1-based index.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Client details", body = ClientInfo),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn get_client(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
     let cfg = idx
         .checked_sub(1)
@@ -105,6 +142,21 @@ async fn get_client(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     }))
 }
 
+/// Get client volume level
+///
+/// Returns the current volume level (0-100) of the specified client.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/volume",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Current client volume", body = i32),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
     read_client(&state, idx)
         .await
@@ -112,6 +164,23 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
         .ok_or(not_found())
 }
 
+/// Set client volume level
+///
+/// Updates the volume level of the specified client. Supports absolute or relative values (e.g. "+5", "-5", or "45").
+#[utoipa::path(
+    put,
+    path = "/api/v1/clients/{client_index}/volume",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    request_body = VolumeValue,
+    responses(
+        (status = 200, description = "Updated client volume", body = i32),
+        (status = 400, description = "Invalid volume value", body = ErrorBody),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn set_volume(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -137,6 +206,21 @@ async fn set_volume(
     Ok::<_, ApiError>(Json(volume))
 }
 
+/// Get client mute status
+///
+/// Returns whether the specified client is currently muted.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/mute",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Client mute status", body = bool),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn get_mute(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
     read_client(&state, idx)
         .await
@@ -144,6 +228,22 @@ async fn get_mute(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
         .ok_or(not_found())
 }
 
+/// Set client mute status
+///
+/// Mutes or unmutes the specified client.
+#[utoipa::path(
+    put,
+    path = "/api/v1/clients/{client_index}/mute",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    request_body = bool,
+    responses(
+        (status = 200, description = "Updated client mute status", body = bool),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn set_mute(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -164,6 +264,21 @@ async fn set_mute(
     Ok::<_, ApiError>(Json(v))
 }
 
+/// Toggle client mute status
+///
+/// Toggles the mute status of the specified client and returns the new status.
+#[utoipa::path(
+    post,
+    path = "/api/v1/clients/{client_index}/mute/toggle",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "New client mute status after toggling", body = bool),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn toggle_mute(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -183,6 +298,21 @@ async fn toggle_mute(
     Ok::<_, ApiError>(Json(muted))
 }
 
+/// Get client latency setting
+///
+/// Returns the manual latency correction in milliseconds for the specified client.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/latency",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Current client latency in milliseconds", body = i32),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn get_latency(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -193,6 +323,22 @@ async fn get_latency(
         .ok_or(not_found())
 }
 
+/// Set client latency setting
+///
+/// Updates the manual latency correction (in milliseconds) for the specified client.
+#[utoipa::path(
+    put,
+    path = "/api/v1/clients/{client_index}/latency",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    request_body = i32,
+    responses(
+        (status = 200, description = "Updated client latency in milliseconds", body = i32),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn set_latency(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -213,6 +359,21 @@ async fn set_latency(
     Ok::<_, ApiError>(Json(v))
 }
 
+/// Get client zone assignment
+///
+/// Returns the index of the zone that the specified client is currently playing from.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/zone",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Assigned zone index", body = usize),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn get_zone(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
     read_client(&state, idx)
         .await
@@ -220,6 +381,22 @@ async fn get_zone(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
         .ok_or(not_found())
 }
 
+/// Set client zone assignment
+///
+/// Assigns the specified client to a target zone.
+#[utoipa::path(
+    put,
+    path = "/api/v1/clients/{client_index}/zone",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    request_body = usize,
+    responses(
+        (status = 200, description = "Assigned zone index", body = usize),
+        (status = 404, description = "Client or Zone not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn set_zone(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -279,6 +456,21 @@ async fn set_zone(
     Ok::<_, ApiError>(Json(target_zone))
 }
 
+/// Get client friendly name
+///
+/// Returns the display name of the specified client.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/name",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Client friendly name", body = String),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn get_name(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
     read_client(&state, idx)
         .await
@@ -286,6 +478,22 @@ async fn get_name(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
         .ok_or(not_found())
 }
 
+/// Set client friendly name
+///
+/// Updates the friendly name of the specified client.
+#[utoipa::path(
+    put,
+    path = "/api/v1/clients/{client_index}/name",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    request_body = String,
+    responses(
+        (status = 200, description = "Updated friendly name", body = String),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn set_name(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -298,6 +506,21 @@ async fn set_name(
     Ok::<_, ApiError>(Json(name))
 }
 
+/// Get client icon name
+///
+/// Returns the icon identifier string configured for the specified client.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/icon",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Client icon name", body = String),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn get_icon(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
     read_client(&state, idx)
         .await
@@ -305,6 +528,21 @@ async fn get_icon(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
         .ok_or(not_found())
 }
 
+/// Get client connection status
+///
+/// Returns whether the specified client is currently online and connected to the Snapcast server.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/connected",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Connection status", body = bool),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "clients"
+)]
 async fn get_connected(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,

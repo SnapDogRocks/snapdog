@@ -38,6 +38,7 @@ pub const MSG_TYPE_COVER_ART: u16 = 15;
 
 /// Playback control command sent from client to server.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum PlaybackControl {
     /// Resume playback.
@@ -83,6 +84,7 @@ pub enum PlaybackControl {
 
 /// Full zone state pushed from server to client via custom message.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[allow(clippy::struct_excessive_bools)]
 pub struct TrackMetadata {
     // Playback
@@ -171,6 +173,7 @@ pub const MAX_EQ_BANDS: usize = 10;
 
 /// Repeat mode for zone playback.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum RepeatMode {
     /// No repeat.
@@ -186,6 +189,7 @@ pub enum RepeatMode {
 
 /// Filter type for an EQ band.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FilterType {
     /// Boosts or cuts frequencies below the cutoff.
@@ -202,6 +206,7 @@ pub enum FilterType {
 
 /// Single EQ band configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EqBand {
     /// Center frequency in Hz.
     pub freq: f32,
@@ -216,6 +221,7 @@ pub struct EqBand {
 
 /// Full EQ configuration for a zone.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EqConfig {
     /// Whether the EQ is active. When `false`, audio passes through unmodified.
     pub enabled: bool,

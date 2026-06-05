@@ -9,7 +9,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 
 use crate::api::SharedState;
-use crate::api::error::ApiError;
+use crate::api::error::{ApiError, ErrorBody};
 use crate::audio::eq::{EqBand, EqConfig, TYPE_EQ_CONFIG};
 use crate::player::{ClientAction, SnapcastCmd};
 
@@ -65,6 +65,22 @@ async fn send_eq(state: &SharedState, idx: usize, config: &EqConfig) -> Result<(
     Ok(())
 }
 
+/// Get client Equalizer configuration
+///
+/// Returns the current active 10-band parametric Equalizer configuration for the specified client.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/eq",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Current equalizer configuration", body = EqConfig),
+        (status = 400, description = "Client does not support EQ", body = ErrorBody),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "equalizer"
+)]
 async fn get_eq(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
     require_snapdog(&state, idx).await?;
     let config = state
@@ -75,6 +91,23 @@ async fn get_eq(State(state): State<SharedState>, Path(idx): Path<usize>) -> imp
     Ok::<_, ApiError>(Json(config))
 }
 
+/// Set client Equalizer configuration
+///
+/// Updates the full 10-band parametric Equalizer configuration for the specified client.
+#[utoipa::path(
+    put,
+    path = "/api/v1/clients/{client_index}/eq",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    request_body = EqConfig,
+    responses(
+        (status = 200, description = "Updated equalizer configuration", body = EqConfig),
+        (status = 400, description = "Too many bands or validation error", body = ErrorBody),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "equalizer"
+)]
 async fn set_eq(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -93,6 +126,24 @@ async fn set_eq(
     Ok::<_, ApiError>(Json(config))
 }
 
+/// Update specific client Equalizer band
+///
+/// Modifies a single filter band at the specified index within a client's Equalizer configuration.
+#[utoipa::path(
+    put,
+    path = "/api/v1/clients/{client_index}/eq/{band_index}",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client"),
+        ("band_index" = usize, Path, description = "0-based index of the filter band to edit")
+    ),
+    request_body = EqBand,
+    responses(
+        (status = 200, description = "Updated full equalizer configuration", body = EqConfig),
+        (status = 400, description = "Validation error", body = ErrorBody),
+        (status = 404, description = "Client or band not found", body = ErrorBody)
+    ),
+    tag = "equalizer"
+)]
 async fn set_band(
     State(state): State<SharedState>,
     Path((idx, band_idx)): Path<(usize, usize)>,
@@ -118,6 +169,24 @@ async fn set_band(
     Ok::<_, ApiError>(Json(config))
 }
 
+/// Apply client Equalizer preset
+///
+/// Overwrites the client's Equalizer settings with a predefined preset curve.
+/// Supported values: "flat", `bass_boost`, "loudness", "vocals", `treble_boost`.
+#[utoipa::path(
+    post,
+    path = "/api/v1/clients/{client_index}/eq/preset",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    request_body = String,
+    responses(
+        (status = 200, description = "Updated full equalizer configuration from preset", body = EqConfig),
+        (status = 400, description = "Unknown preset name", body = ErrorBody),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "equalizer"
+)]
 async fn apply_preset(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,

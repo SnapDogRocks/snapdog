@@ -11,18 +11,36 @@ use serde::Serialize;
 
 use crate::api::CACHE_CONTROL_1DAY;
 use crate::api::SharedState;
-use crate::api::error::ApiError;
+use crate::api::error::{ApiError, ErrorBody};
 use crate::config::ResolvedPlaylist;
 use crate::subsonic::{PlaylistEntry, SubsonicClient};
 
 const PLAYLIST_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 
-#[derive(Serialize)]
-struct PlaylistInfo {
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct PlaylistInfo {
     id: usize,
     name: String,
     song_count: u32,
     duration: u64,
+    cover_art: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct PlaylistDetails {
+    id: usize,
+    name: String,
+    tracks: usize,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct MediaTrackInfo {
+    id: String,
+    title: String,
+    artist: String,
+    album: String,
+    duration: u64,
+    track: usize,
     cover_art: Option<String>,
 }
 
@@ -77,6 +95,17 @@ async fn cached_playlists(state: &SharedState) -> Vec<PlaylistEntry> {
 
 const MEDIA_PATH: &str = "/api/v1/media/playlists";
 
+/// Get all media playlists
+///
+/// Returns a list of all playlists available on the system, including local Radio stations and Subsonic playlists.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/playlists",
+    responses(
+        (status = 200, description = "List of all media playlists", body = Vec<PlaylistInfo>)
+    ),
+    tag = "media"
+)]
 async fn get_playlists(State(state): State<SharedState>) -> impl IntoResponse {
     let mut result: Vec<PlaylistInfo> = Vec::new();
     let mut idx: usize = 0;
@@ -133,25 +162,41 @@ async fn resolve_subsonic_id(state: &SharedState, index: usize) -> Result<String
     }
 }
 
+/// Get playlist details
+///
+/// Returns details (name, track count) of a unified playlist by its index.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/playlists/{playlist_index}",
+    params(
+        ("playlist_index" = usize, Path, description = "0-based unified playlist index")
+    ),
+    responses(
+        (status = 200, description = "Playlist details", body = PlaylistDetails),
+        (status = 404, description = "Playlist not found", body = ErrorBody),
+        (status = 502, description = "Upstream request failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
 async fn get_playlist(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
 ) -> impl IntoResponse {
     match resolve_playlist(&state, index).await? {
-        ResolvedPlaylist::Radio => Ok(Json(serde_json::json!({
-            "id": index,
-            "name": "Radio",
-            "tracks": state.config.radios.len(),
-        }))),
+        ResolvedPlaylist::Radio => Ok(Json(PlaylistDetails {
+            id: index,
+            name: "Radio".into(),
+            tracks: state.config.radios.len(),
+        })),
         ResolvedPlaylist::Subsonic(_) => {
             let id = resolve_subsonic_id(&state, index).await?;
             let sub = subsonic(&state)?;
             match sub.get_playlist(&id).await {
-                Ok(playlist) => Ok(Json(serde_json::json!({
-                    "id": index,
-                    "name": playlist.name,
-                    "tracks": playlist.entry.len(),
-                }))),
+                Ok(playlist) => Ok(Json(PlaylistDetails {
+                    id: index,
+                    name: playlist.name,
+                    tracks: playlist.entry.len(),
+                })),
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to fetch playlist");
                     Err(ApiError::BadGateway("upstream request failed".into()))
@@ -161,6 +206,21 @@ async fn get_playlist(
     }
 }
 
+/// Get playlist cover image
+///
+/// Returns the cover art image binary for the specified playlist.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/playlists/{playlist_index}/cover",
+    params(
+        ("playlist_index" = usize, Path, description = "0-based unified playlist index")
+    ),
+    responses(
+        (status = 200, description = "Playlist cover image", content_type = "image/*"),
+        (status = 404, description = "Playlist or cover not found", body = ErrorBody)
+    ),
+    tag = "media"
+)]
 async fn get_playlist_cover(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
@@ -205,6 +265,22 @@ async fn get_playlist_cover(
     }
 }
 
+/// Get playlist tracks
+///
+/// Returns a list of all tracks in the specified playlist.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/playlists/{playlist_index}/tracks",
+    params(
+        ("playlist_index" = usize, Path, description = "0-based unified playlist index")
+    ),
+    responses(
+        (status = 200, description = "List of tracks in the playlist", body = Vec<MediaTrackInfo>),
+        (status = 404, description = "Playlist not found", body = ErrorBody),
+        (status = 502, description = "Upstream request failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
 async fn get_playlist_tracks(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
@@ -218,15 +294,15 @@ async fn get_playlist_tracks(
                 .enumerate()
                 .map(|(i, r)| {
                     let cover = format!("{MEDIA_PATH}/{index}/tracks/{i}/cover");
-                    serde_json::json!({
-                        "id": format!("radio_{i}"),
-                        "title": r.name,
-                        "artist": "Radio",
-                        "album": "",
-                        "duration": 0,
-                        "track": i + 1,
-                        "cover_art": cover,
-                    })
+                    MediaTrackInfo {
+                        id: format!("radio_{i}"),
+                        title: r.name.clone(),
+                        artist: "Radio".into(),
+                        album: String::new(),
+                        duration: 0,
+                        track: i + 1,
+                        cover_art: Some(cover),
+                    }
                 })
                 .collect::<Vec<_>>(),
         )),
@@ -244,15 +320,15 @@ async fn get_playlist_tracks(
                                 .cover_art
                                 .as_ref()
                                 .map(|_| format!("{MEDIA_PATH}/{index}/tracks/{i}/cover"));
-                            serde_json::json!({
-                                "id": t.id,
-                                "title": t.title,
-                                "artist": t.artist,
-                                "album": t.album,
-                                "duration": t.duration,
-                                "track": t.track,
-                                "cover_art": cover,
-                            })
+                            MediaTrackInfo {
+                                id: t.id.clone(),
+                                title: t.title.clone(),
+                                artist: t.artist.clone().unwrap_or_default(),
+                                album: t.album.clone().unwrap_or_default(),
+                                duration: t.duration,
+                                track: t.track.map_or(i + 1, |v| v as usize),
+                                cover_art: cover,
+                            }
                         })
                         .collect::<Vec<_>>(),
                 )),
@@ -265,6 +341,23 @@ async fn get_playlist_tracks(
     }
 }
 
+/// Get track details
+///
+/// Returns details of a specific track within a playlist.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/playlists/{playlist_index}/tracks/{track_index}",
+    params(
+        ("playlist_index" = usize, Path, description = "0-based unified playlist index"),
+        ("track_index" = usize, Path, description = "0-based track index within the playlist")
+    ),
+    responses(
+        (status = 200, description = "Track details", body = MediaTrackInfo),
+        (status = 404, description = "Playlist or track not found", body = ErrorBody),
+        (status = 502, description = "Upstream request failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
 async fn get_playlist_track(
     State(state): State<SharedState>,
     Path((index, track_index)): Path<(usize, usize)>,
@@ -275,14 +368,16 @@ async fn get_playlist_track(
             .radios
             .get(track_index)
             .map(|r| {
-                Json(serde_json::json!({
-                    "id": format!("radio_{track_index}"),
-                    "title": r.name,
-                    "artist": "Radio",
-                    "album": "",
-                    "duration": 0,
-                    "track": track_index + 1,
-                }))
+                let cover = format!("{MEDIA_PATH}/{index}/tracks/{track_index}/cover");
+                Json(MediaTrackInfo {
+                    id: format!("radio_{track_index}"),
+                    title: r.name.clone(),
+                    artist: "Radio".into(),
+                    album: String::new(),
+                    duration: 0,
+                    track: track_index + 1,
+                    cover_art: Some(cover),
+                })
             })
             .ok_or(ApiError::NotFound("resource")),
         ResolvedPlaylist::Subsonic(_) => {
@@ -292,15 +387,19 @@ async fn get_playlist_track(
                 Ok(playlist) => playlist.entry.get(track_index).map_or(
                     Err(ApiError::NotFound("resource")),
                     |t| {
-                        Ok(Json(serde_json::json!({
-                            "id": t.id,
-                            "title": t.title,
-                            "artist": t.artist,
-                            "album": t.album,
-                            "duration": t.duration,
-                            "track": t.track,
-                            "cover_art": t.cover_art,
-                        })))
+                        let cover = t
+                            .cover_art
+                            .as_ref()
+                            .map(|_| format!("{MEDIA_PATH}/{index}/tracks/{track_index}/cover"));
+                        Ok(Json(MediaTrackInfo {
+                            id: t.id.clone(),
+                            title: t.title.clone(),
+                            artist: t.artist.clone().unwrap_or_default(),
+                            album: t.album.clone().unwrap_or_default(),
+                            duration: t.duration,
+                            track: t.track.map_or(track_index + 1, |v| v as usize),
+                            cover_art: cover,
+                        }))
                     },
                 ),
                 Err(_) => Err(ApiError::BadGateway("upstream request failed".into())),
@@ -309,11 +408,22 @@ async fn get_playlist_track(
     }
 }
 
-/// Cover art for a specific track in a playlist.
-/// GET /`api/v1/media/playlists/{playlist_index}/tracks/{track_index}/cover`
+/// Get track cover image
 ///
-/// For radio (playlist 0): fetches the station's cover from config URL.
-/// For Subsonic (playlist 1+): fetches via Subsonic getCoverArt API.
+/// Returns the cover art image binary for a specific track.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/playlists/{playlist_index}/tracks/{track_index}/cover",
+    params(
+        ("playlist_index" = usize, Path, description = "0-based unified playlist index"),
+        ("track_index" = usize, Path, description = "0-based track index within the playlist")
+    ),
+    responses(
+        (status = 200, description = "Track cover image", content_type = "image/*"),
+        (status = 404, description = "Track or cover not found", body = ErrorBody)
+    ),
+    tag = "media"
+)]
 async fn get_track_cover_art(
     State(state): State<SharedState>,
     Path((index, track_index)): Path<(usize, usize)>,

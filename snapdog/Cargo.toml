@@ -56,7 +56,7 @@ librespot-metadata = { version = "0.8", optional = true }
 
 snapcast-server = { workspace = true, optional = true }
 snapcast-proto = { workspace = true }
-snapdog-common = { workspace = true }
+snapdog-common = { workspace = true, features = ["openapi"] }
 subtle = "2"
 utoipa-scalar = { workspace = true, optional = true }
 

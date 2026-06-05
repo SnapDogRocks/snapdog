@@ -10,7 +10,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 
 use crate::api::SharedState;
-use crate::api::error::ApiError;
+use crate::api::error::{ApiError, ErrorBody};
 use crate::audio::eq::EqConfig;
 use crate::player::{ClientAction, SnapcastCmd};
 
@@ -32,7 +32,18 @@ pub fn client_speaker_router(state: SharedState) -> Router {
         .with_state(state)
 }
 
-/// GET /api/v1/speakers — list available speaker profiles.
+/// List available speaker profiles
+///
+/// Returns a list of all speaker profiles available in the spinorama database.
+#[utoipa::path(
+    get,
+    path = "/api/v1/speakers",
+    responses(
+        (status = 200, description = "List of speaker profiles", body = Vec<String>),
+        (status = 503, description = "Speaker database unavailable")
+    ),
+    tag = "speakers"
+)]
 async fn list(State(state): State<SharedState>) -> Result<Json<Vec<String>>, StatusCode> {
     state
         .speaker_db
@@ -45,7 +56,21 @@ async fn list(State(state): State<SharedState>) -> Result<Json<Vec<String>>, Sta
         })
 }
 
-/// GET /api/v1/speakers/:name/profile — get PEQ filters for a speaker.
+/// Get speaker correction profile
+///
+/// Returns the parametric Equalizer configuration (PEQ bands) for the specified speaker profile name.
+#[utoipa::path(
+    get,
+    path = "/api/v1/speakers/{name}/profile",
+    params(
+        ("name" = String, Path, description = "Name of the speaker profile")
+    ),
+    responses(
+        (status = 200, description = "Speaker PEQ profile bands", body = EqConfig),
+        (status = 404, description = "Speaker profile not found")
+    ),
+    tag = "speakers"
+)]
 async fn get_profile(
     State(state): State<SharedState>,
     Path(name): Path<String>,
@@ -61,7 +86,23 @@ async fn get_profile(
         })
 }
 
-/// PUT /api/v1/clients/:id/speaker — apply a speaker correction profile.
+/// Apply speaker correction profile
+///
+/// Configures speaker correction for a client using either a named spinorama profile or custom EQ bands.
+#[utoipa::path(
+    put,
+    path = "/api/v1/clients/{client_index}/speaker",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    request_body = ApplySpeakerRequest,
+    responses(
+        (status = 200, description = "Applied speaker correction configuration", body = EqConfig),
+        (status = 400, description = "Invalid request payload (e.g., mutually exclusive options, validation failed)", body = ErrorBody),
+        (status = 404, description = "Client or speaker profile not found", body = ErrorBody)
+    ),
+    tag = "speakers"
+)]
 async fn apply_speaker(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -96,7 +137,21 @@ async fn apply_speaker(
     Ok::<_, ApiError>(Json(config))
 }
 
-/// GET /api/v1/clients/:id/speaker — get current speaker correction for a client.
+/// Get client speaker correction
+///
+/// Returns the current active speaker correction configuration (PEQ bands) applied to the specified client.
+#[utoipa::path(
+    get,
+    path = "/api/v1/clients/{client_index}/speaker",
+    params(
+        ("client_index" = usize, Path, description = "1-based index of the target client")
+    ),
+    responses(
+        (status = 200, description = "Active speaker correction configuration", body = EqConfig),
+        (status = 404, description = "Client not found", body = ErrorBody)
+    ),
+    tag = "speakers"
+)]
 async fn get_speaker(
     State(state): State<SharedState>,
     Path(idx): Path<usize>,
@@ -111,7 +166,7 @@ async fn get_speaker(
 }
 
 /// Request body for applying a speaker correction.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
 pub struct ApplySpeakerRequest {
     /// Speaker name (from spinorama). Mutually exclusive with `custom`.
     pub speaker: Option<String>,
