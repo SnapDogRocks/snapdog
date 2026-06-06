@@ -20,7 +20,7 @@ authors = ["Fabian Schmieder"]
 tokio = { version = "1", features = ["full"] }
 
 # mDNS discovery
-mdns-sd = "0.12"
+mdns-sd = "0.20"
 
 # Web framework
 axum = { version = "0.8", features = ["ws"] }
