@@ -1006,6 +1006,24 @@ async fn run(
                             }
                         }
                     }
+                    Some(audio::PcmMessage::Error { message, details }) => {
+                        tracing::error!(zone = zone_index, error = %message, details = ?details, "Playback error in decoder");
+                        stop_decode(&mut current_decode, &mut decode_rx).await;
+                        update_and_notify(store, zone_index, notify, |z| {
+                            z.playback = PlaybackState::Stopped;
+                            z.source = SourceType::Idle;
+                            z.track = None;
+                            z.cover_url = None;
+                            z.buffered_ms = None;
+                        }).await;
+                        let err_notif = crate::api::ws::Notification::PlaybackError {
+                            zone: zone_index,
+                            message,
+                            details,
+                            recoverable: false,
+                        };
+                        crate::api::ws::broadcast_notification(notify, &err_notif);
+                    }
                     None => {
                         current_decode = None;
                         decode_rx = None;

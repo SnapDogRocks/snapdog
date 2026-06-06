@@ -45,6 +45,13 @@ pub enum PcmMessage {
         /// Total expected bytes (from Content-Length), if known.
         total_bytes: Option<u64>,
     },
+    /// Playback error (e.g. HTTP timeout, symphonia probing/decoding failure).
+    Error {
+        /// Primary error description.
+        message: String,
+        /// Technical/detailed description.
+        details: Option<String>,
+    },
 }
 
 /// Sending half of a PCM channel.
@@ -88,6 +95,8 @@ const MAX_SEEKABLE_AUDIO_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_PLAYLIST_BYTES: u64 = 1024 * 1024;
 /// Maximum single HLS segment size.
 const MAX_HLS_SEGMENT_BYTES: u64 = 64 * 1024 * 1024;
+/// Consecutive packet/decode failures tolerated before treating the stream as broken.
+const MAX_CONSECUTIVE_DECODE_ERRORS: u32 = 64;
 
 /// Build a reqwest client with User-Agent and timeout.
 fn http_client() -> Result<reqwest::Client> {
@@ -168,6 +177,28 @@ pub async fn decode_http_stream(
     audio_config: AudioConfig,
     icy_meta_tx: Option<tokio::sync::mpsc::Sender<icy::IcyMetadata>>,
 ) -> Result<()> {
+    match decode_http_stream_impl(url, tx.clone(), audio_config, icy_meta_tx).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            let details = e.source().map(std::string::ToString::to_string);
+            let _ = tx
+                .send(PcmMessage::Error {
+                    message: msg,
+                    details,
+                })
+                .await;
+            Err(e)
+        }
+    }
+}
+
+async fn decode_http_stream_impl(
+    url: String,
+    tx: PcmSender,
+    audio_config: AudioConfig,
+    icy_meta_tx: Option<tokio::sync::mpsc::Sender<icy::IcyMetadata>>,
+) -> Result<()> {
     validate_http_url(&url)?;
     // Resolve playlist URLs (.m3u/.m3u8/.pls) to the actual stream URL
     let resolved = resolve_playlist_url(&url).await;
@@ -231,43 +262,44 @@ pub async fn decode_http_stream(
 
     // Task: read HTTP chunks, strip ICY metadata, write audio to pipe
     let url_clone = url.clone();
-    let http_task = tokio::spawn(async move {
+    let mut http_task = tokio::spawn(async move {
         use futures_util::StreamExt;
         use tokio::io::AsyncWriteExt;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(bytes) => {
-                    let audio = if let Some(ref mut proc) = icy_processor {
-                        proc.process(bytes)
-                    } else {
-                        bytes.to_vec()
-                    };
-                    if !audio.is_empty() && pipe_tx.write_all(&audio).await.is_err() {
-                        break; // Decoder closed
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, url = %url_clone, "Stream read error");
-                    break;
-                }
+            let bytes = chunk.with_context(|| format!("Stream read error for {url_clone}"))?;
+            let audio = if let Some(ref mut proc) = icy_processor {
+                proc.process(bytes)
+            } else {
+                bytes.to_vec()
+            };
+            if !audio.is_empty() && pipe_tx.write_all(&audio).await.is_err() {
+                return Ok::<_, anyhow::Error>(()); // Decoder closed
             }
         }
         // Explicitly shut down the pipe so the decoder sees EOF immediately
         // instead of waiting to drain the remaining buffer.
-        let _ = pipe_tx.shutdown().await;
+        pipe_tx
+            .shutdown()
+            .await
+            .context("Failed to close HTTP decode pipe")?;
+        Ok::<_, anyhow::Error>(())
     });
 
     // Decode in blocking thread (symphonia is sync + CPU-bound)
-    let decode_task = tokio::task::spawn_blocking(move || {
+    let mut decode_task = tokio::task::spawn_blocking(move || {
         let reader = SyncReader(tokio::runtime::Handle::current(), pipe_rx);
         decode_to_pcm(reader, &content_type, &tx)
     });
 
-    // Wait for either task to finish
+    // Wait for either task to finish, then surface its error and clean up the sibling task.
     tokio::select! {
-        _ = http_task => tracing::debug!("HTTP stream ended"),
-        result = decode_task => {
+        result = &mut http_task => {
+            result.context("HTTP stream task panicked")??;
+            decode_task.await.context("Decoder task panicked")??;
+        }
+        result = &mut decode_task => {
+            http_task.abort();
             result.context("Decoder task panicked")??;
         }
     }
@@ -286,6 +318,28 @@ pub async fn decode_http_stream(
 /// Returns an error if the HTTP request, cache write, or audio decoding fails.
 #[tracing::instrument(skip(tx, cache))]
 pub async fn decode_http_stream_cached(
+    url: String,
+    tx: PcmSender,
+    cache: &cache::TrackCache,
+    track_id: &str,
+) -> Result<()> {
+    match decode_http_stream_cached_impl(url, tx.clone(), cache, track_id).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            let details = e.source().map(std::string::ToString::to_string);
+            let _ = tx
+                .send(PcmMessage::Error {
+                    message: msg,
+                    details,
+                })
+                .await;
+            Err(e)
+        }
+    }
+}
+
+async fn decode_http_stream_cached_impl(
     url: String,
     tx: PcmSender,
     cache: &cache::TrackCache,
@@ -331,7 +385,7 @@ pub async fn decode_http_stream_cached(
             .await;
         let path = cache_writer.complete()?;
         let ct = content_type.clone();
-        tokio::task::spawn_blocking(move || decode_cached_file(&path, &ct, None, &tx))
+        tokio::task::spawn_blocking(move || decode_cached_file_impl(&path, &ct, None, &tx))
             .await
             .context("Decoder task panicked")??;
         return Ok(());
@@ -343,56 +397,57 @@ pub async fn decode_http_stream_cached(
     let total_bytes = content_length;
 
     let url_clone = url.clone();
-    let http_task = tokio::spawn(async move {
+    let mut http_task = tokio::spawn(async move {
         use futures_util::StreamExt;
         use tokio::io::AsyncWriteExt;
         let mut stream = response.bytes_stream();
         let mut write_failed = false;
         while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(bytes) => {
-                    // Tee to cache (abort on first failure)
-                    if !write_failed {
-                        if let Err(e) = cache_writer.write(&bytes) {
-                            tracing::warn!(error = %e, "Cache write failed, aborting cache");
-                            write_failed = true;
-                        } else {
-                            let _ = progress_tx
-                                .send(PcmMessage::BufferProgress {
-                                    buffered_bytes: cache_writer.bytes_written(),
-                                    total_bytes,
-                                })
-                                .await;
-                        }
-                    }
-                    // Write to decode pipe
-                    if pipe_tx.write_all(&bytes).await.is_err() {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, url = %url_clone, "Stream read error");
-                    break;
+            let bytes = chunk.with_context(|| format!("Stream read error for {url_clone}"))?;
+            // Tee to cache (abort on first failure)
+            if !write_failed {
+                if let Err(e) = cache_writer.write(&bytes) {
+                    tracing::warn!(error = %e, "Cache write failed, aborting cache");
+                    write_failed = true;
+                } else {
+                    let _ = progress_tx
+                        .send(PcmMessage::BufferProgress {
+                            buffered_bytes: cache_writer.bytes_written(),
+                            total_bytes,
+                        })
+                        .await;
                 }
             }
+            // Write to decode pipe
+            if pipe_tx.write_all(&bytes).await.is_err() {
+                return Ok::<_, anyhow::Error>(());
+            }
         }
-        let _ = pipe_tx.shutdown().await;
+        pipe_tx
+            .shutdown()
+            .await
+            .context("Failed to close cached HTTP decode pipe")?;
         if !write_failed {
             if let Err(e) = cache_writer.complete() {
                 tracing::warn!(error = %e, "Failed to finalize cache entry");
             }
         }
         // If write_failed, Drop will clean up the partial file
+        Ok::<_, anyhow::Error>(())
     });
 
-    let decode_task = tokio::task::spawn_blocking(move || {
+    let mut decode_task = tokio::task::spawn_blocking(move || {
         let reader = SyncReader(tokio::runtime::Handle::current(), pipe_rx);
         decode_to_pcm(reader, &content_type, &tx)
     });
 
     tokio::select! {
-        _ = http_task => tracing::debug!("Cached HTTP stream ended"),
-        result = decode_task => {
+        result = &mut http_task => {
+            result.context("Cached HTTP stream task panicked")??;
+            decode_task.await.context("Decoder task panicked")??;
+        }
+        result = &mut decode_task => {
+            http_task.abort();
             result.context("Decoder task panicked")??;
         }
     }
@@ -419,7 +474,7 @@ async fn decode_hls_stream(
 
     let (mut pipe_tx, pipe_rx) = tokio::io::duplex(PIPE_BUFFER_SIZE);
 
-    let hls_task = tokio::spawn(async move {
+    let mut hls_task = tokio::spawn(async move {
         use tokio::io::AsyncWriteExt;
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut first_fetch = true;
@@ -443,7 +498,7 @@ async fn decode_hls_stream(
                     Ok(b) => b,
                     Err(e) => {
                         tracing::error!(error = %e, "HLS playlist fetch failed after retries");
-                        break;
+                        return Err(e.context("HLS playlist fetch failed after retries"));
                     }
                 }
             };
@@ -451,7 +506,7 @@ async fn decode_hls_stream(
             // Detect encrypted HLS
             if body.contains("#EXT-X-KEY") && !body.contains("METHOD=NONE") {
                 tracing::error!(url = %playlist_url, "Encrypted HLS detected (EXT-X-KEY) — not supported");
-                break;
+                anyhow::bail!("Encrypted HLS streams are not supported");
             }
 
             // Parse segments with their #EXTINF metadata
@@ -521,7 +576,7 @@ async fn decode_hls_stream(
                     Ok(bytes) => {
                         consecutive_failures = 0;
                         if pipe_tx.write_all(&bytes).await.is_err() {
-                            return;
+                            return Ok::<_, anyhow::Error>(());
                         }
                     }
                     Err(e) => {
@@ -529,7 +584,7 @@ async fn decode_hls_stream(
                         tracing::warn!(error = %e, consecutive_failures, "HLS segment failed after retries");
                         if consecutive_failures >= MAX_HLS_FAILURES {
                             tracing::error!("Too many consecutive HLS failures");
-                            break;
+                            anyhow::bail!("Too many consecutive HLS segment failures");
                         }
                     }
                 }
@@ -542,16 +597,27 @@ async fn decode_hls_stream(
             }
             tokio::time::sleep(std::time::Duration::from_secs(target_duration / 2)).await;
         }
+        pipe_tx
+            .shutdown()
+            .await
+            .context("Failed to close HLS decode pipe")?;
+        Ok::<_, anyhow::Error>(())
     });
 
-    let decode_task = tokio::task::spawn_blocking(move || {
+    let mut decode_task = tokio::task::spawn_blocking(move || {
         let reader = SyncReader(tokio::runtime::Handle::current(), pipe_rx);
         decode_to_pcm(reader, &content_type, &tx)
     });
 
     tokio::select! {
-        _ = hls_task => tracing::debug!("HLS stream ended"),
-        result = decode_task => { result.context("HLS decoder panicked")??; }
+        result = &mut hls_task => {
+            result.context("HLS stream task panicked")??;
+            decode_task.await.context("HLS decoder panicked")??;
+        }
+        result = &mut decode_task => {
+            hls_task.abort();
+            result.context("HLS decoder panicked")??;
+        }
     }
 
     Ok(())
@@ -589,7 +655,7 @@ fn decode_to_pcm(
         .make(&track.codec_params, &DecoderOptions::default())
         .context("Failed to create decoder")?;
 
-    run_decode_loop(&mut format, &mut decoder, track_id, tx);
+    run_decode_loop(&mut format, &mut decoder, track_id, tx)?;
     Ok(())
 }
 
@@ -602,6 +668,26 @@ fn decode_to_pcm(
 ///
 /// Returns an error if the file cannot be opened or the audio format is unsupported.
 pub fn decode_cached_file(
+    path: &std::path::Path,
+    content_type: &str,
+    seek_ms: Option<i64>,
+    tx: &PcmSender,
+) -> Result<()> {
+    match decode_cached_file_impl(path, content_type, seek_ms, tx) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            let details = e.source().map(std::string::ToString::to_string);
+            let _ = tx.blocking_send(PcmMessage::Error {
+                message: msg,
+                details,
+            });
+            Err(e)
+        }
+    }
+}
+
+fn decode_cached_file_impl(
     path: &std::path::Path,
     content_type: &str,
     seek_ms: Option<i64>,
@@ -658,7 +744,7 @@ pub fn decode_cached_file(
         }
     }
 
-    run_decode_loop(&mut format, &mut decoder, track_id, tx);
+    run_decode_loop(&mut format, &mut decoder, track_id, tx)?;
     Ok(())
 }
 
@@ -682,12 +768,14 @@ fn run_decode_loop(
     decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
     track_id: u32,
     tx: &PcmSender,
-) {
+) -> Result<()> {
     let time_base = format
         .default_track()
         .and_then(|t| t.codec_params.time_base);
     let mut format_sent = false;
     let mut last_position_sec: i64 = -1;
+    let mut decoded_any_audio = false;
+    let mut consecutive_errors = 0u32;
 
     loop {
         let packet = match format.next_packet() {
@@ -700,6 +788,10 @@ fn run_decode_loop(
             }
             Err(e) => {
                 tracing::warn!(error = %e, "Packet read error, skipping");
+                consecutive_errors += 1;
+                if consecutive_errors >= MAX_CONSECUTIVE_DECODE_ERRORS {
+                    anyhow::bail!("Too many consecutive audio packet read errors");
+                }
                 continue;
             }
         };
@@ -712,9 +804,14 @@ fn run_decode_loop(
             Ok(d) => d,
             Err(e) => {
                 tracing::debug!(error = %e, "Decode error, skipping packet");
+                consecutive_errors += 1;
+                if consecutive_errors >= MAX_CONSECUTIVE_DECODE_ERRORS {
+                    anyhow::bail!("Too many consecutive audio decode errors");
+                }
                 continue;
             }
         };
+        consecutive_errors = 0;
 
         let spec = *audio_buf.spec();
         let num_frames = audio_buf.frames();
@@ -735,8 +832,9 @@ fn run_decode_loop(
             .is_err()
         {
             tracing::debug!("PCM consumer dropped, stopping decode");
-            break;
+            return Ok(());
         }
+        decoded_any_audio = true;
 
         if let Some(tb) = time_base {
             let time = tb.calc_time(packet.ts());
@@ -750,6 +848,12 @@ fn run_decode_loop(
             }
         }
     }
+
+    if !decoded_any_audio {
+        anyhow::bail!("Audio stream ended before producing decodable audio");
+    }
+
+    Ok(())
 }
 
 /// Bridge from async tokio `DuplexStream` to sync Read for symphonia.

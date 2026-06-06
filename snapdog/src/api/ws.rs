@@ -160,6 +160,17 @@ pub enum Notification {
         /// Whether the auto-off timer is running.
         timer_active: bool,
     },
+    /// Playback error occurred.
+    PlaybackError {
+        /// Zone index (1-based).
+        zone: usize,
+        /// Primary user-facing error message.
+        message: String,
+        /// Technical details (e.g. source error description).
+        details: Option<String>,
+        /// Whether the error is recoverable.
+        recoverable: bool,
+    },
 }
 
 /// Create a broadcast channel for notifications.
