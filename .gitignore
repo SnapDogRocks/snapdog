@@ -4,6 +4,9 @@
 /target/
 .cargo/
 
+# Local Xcode/Swift build output
+/build_local/
+
 # Editor / OS
 *.swp
 *.swo
