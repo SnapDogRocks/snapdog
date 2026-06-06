@@ -189,10 +189,10 @@ ZonePlayer (one per zone, runs as tokio task)
 ```rust
 enum ZoneCommand {
     // Source selection
-    PlayRadio(usize),                        // Radio station index from config
     PlaySubsonicPlaylist(String, usize),     // Playlist ID, start track index
     PlaySubsonicTrack(String),               // Single track ID
     PlayUrl(String),                         // Arbitrary HTTP stream URL
+    PlayPlaylist(usize, usize),              // Unified playlist index, start track index
     SetTrack(usize),                         // Jump to track N in current playlist
 
     // Transport
@@ -205,7 +205,7 @@ enum ZoneCommand {
     // Playlist navigation
     NextPlaylist,
     PreviousPlaylist,
-    SetPlaylist(usize),                      // Switch to playlist by index
+    SetPlaylist(usize, usize),               // Select/switch unified playlist by index and track
 
     // Seek
     Seek(i64),                               // Absolute position in ms
@@ -512,7 +512,8 @@ deferred as a future optional path.
 **Phase 2 — Active Spotify Client (credentials):**
 - When optional credentials are configured, SnapDog can actively browse and play Spotify playlists
 - Spotify playlists appear in the unified playlist index alongside Radio and Subsonic
-- Same `SetPlaylist(index, track)` command, same cover endpoint pattern
+- Same unified playlist command model (`SetPlaylist(index, track)` for selection,
+  `PlayPlaylist(index, track)` for immediate playback), same cover endpoint pattern
 - Config adds optional credentials:
   ```toml
   [spotify]
