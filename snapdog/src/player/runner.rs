@@ -461,16 +461,24 @@ async fn run(
                         }
                         fade_transition(&mut current_decode, &mut decode_rx, &mut position_offset_ms, &mut zone_fade, config.audio.source_switch_fade_ms, config.audio.sample_rate, &mut zone_eq, ctx.backend.as_ref(), zone_index, config.audio.channels, &mut resampler).await;
                         if let Some(sub) = &subsonic {
+                            let playlist_entries = sub.get_playlists().await.unwrap_or_default();
+                            let playlist_index = playlist_entries
+                                .iter()
+                                .position(|p| p.id == playlist_id)
+                                .map(|sub_idx| if config.has_radio_playlist() { sub_idx + 1 } else { sub_idx });
+                            let playlist_total = config.unified_playlist_count(playlist_entries.len());
                             if let Ok(playlist) = sub.get_playlist(&playlist_id).await {
                                 let track_count = playlist.entry.len();
+                                let track_idx = track_idx.min(track_count.saturating_sub(1));
                                 if let Some(track) = playlist.entry.get(track_idx) {
                                     start_subsonic_track_decode(sub, track, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                                     source = ActiveSource::SubsonicPlaylist { playlist_id, track_index: track_idx, track_count };
                                     update_and_notify(store, zone_index, notify, |z| {
                                         z.playback = PlaybackState::Playing;
                                         z.source = SourceType::SubsonicPlaylist;
-                                        z.playlist_index = Some(track_idx);
+                                        z.playlist_index = playlist_index;
                                         z.playlist_name = Some(playlist.name.clone());
+                                        z.playlist_total = Some(playlist_total);
                                         z.playlist_track_index = Some(track_idx);
                                         z.playlist_track_count = Some(track_count);
                                         z.track = Some(subsonic_track_info(track));
@@ -528,7 +536,11 @@ async fn run(
                                     start_radio_decode(radio, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                                     source = ActiveSource::Radio { index: track_idx };
                                     update_and_notify(store, zone_index, notify, |z| {
+                                        z.playback = PlaybackState::Playing;
+                                        z.source = SourceType::Radio;
                                         z.playlist_index = Some(0);
+                                        z.playlist_name = Some("Radio".into());
+                                        z.playlist_track_count = Some(config.radios.len());
                                         z.playlist_track_index = Some(track_idx);
                                         z.track = Some(radio_track_info(&radio.name));
                                     }).await;
@@ -544,7 +556,12 @@ async fn run(
                                         if let Some(track) = playlist.entry.get(track_idx) {
                                             start_subsonic_track_decode(sub, track, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                                             source = ActiveSource::SubsonicPlaylist { playlist_id: pid, track_index: track_idx, track_count };
-                                            update_and_notify(store, zone_index, notify, |z| { z.playlist_track_index = Some(track_idx); z.track = Some(subsonic_track_info(track)); }).await;
+                                            update_and_notify(store, zone_index, notify, |z| {
+                                                z.playback = PlaybackState::Playing;
+                                                z.source = SourceType::SubsonicPlaylist;
+                                                z.playlist_track_index = Some(track_idx);
+                                                z.track = Some(subsonic_track_info(track));
+                                            }).await;
                                         }
                                     }
                                 }
@@ -623,15 +640,17 @@ async fn run(
                             drop(z_state);
                             if let Some(radio) = config.radios.get(radio_idx) {
                                 reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
-                                let (tx, rx) = audio::pcm_channel(PCM_DECODE_CHANNEL_SIZE);
-                                decode_rx = Some(rx);
-                                let url = radio.url.clone();
-                                let ac = audio_config.clone();
-                                current_decode = Some(tokio::spawn(async move {
-                                    if let Err(e) = audio::decode_http_stream(url, tx, ac, None).await { tracing::error!(error = %e, "Radio decode failed"); }
-                                }));
+                                start_radio_decode(radio, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                                 source = ActiveSource::Radio { index: radio_idx };
-                                update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::Radio; }).await;
+                                update_and_notify(store, zone_index, notify, |z| {
+                                    z.playback = PlaybackState::Playing;
+                                    z.source = SourceType::Radio;
+                                    z.playlist_index = Some(0);
+                                    z.playlist_name = Some("Radio".into());
+                                    z.playlist_track_index = Some(radio_idx);
+                                    z.playlist_track_count = Some(config.radios.len());
+                                    z.track = Some(radio_track_info(&radio.name));
+                                }).await;
                             }
                         }
                     }
@@ -664,11 +683,12 @@ async fn run(
                             handle_previous(&mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                         }
                     }
-                    ZoneCommand::NextPlaylist | ZoneCommand::PreviousPlaylist | ZoneCommand::SetPlaylist(..) => {
+                    ZoneCommand::NextPlaylist | ZoneCommand::PreviousPlaylist | ZoneCommand::SetPlaylist(..) | ZoneCommand::PlayPlaylist(..) => {
                         if !may_start_local_playback(&source, config.audio.source_conflict) {
                             tracing::info!(zone = zone_index, "Playback blocked: receiver has priority");
                             continue;
                         }
+
                         // Unified playlist model: index 0 = radio (from config), index 1+ = Subsonic playlists
                         let subsonic_playlists = if let Some(sub) = &subsonic {
                             sub.get_playlists().await.unwrap_or_default()
@@ -681,7 +701,6 @@ async fn run(
                             continue;
                         }
 
-                        // Determine current unified index
                         let has_radio = config.has_radio_playlist();
                         let current_unified = match &source {
                             ActiveSource::SubsonicPlaylist { playlist_id, .. } => {
@@ -691,78 +710,94 @@ async fn run(
                             _ => 0,
                         };
 
+                        let force_play = matches!(&cmd, ZoneCommand::PlayPlaylist(..));
                         let (target_unified, start_track) = match cmd {
                             ZoneCommand::NextPlaylist => ((current_unified + 1) % total_count, 0),
                             ZoneCommand::PreviousPlaylist => (if current_unified == 0 { total_count - 1 } else { current_unified - 1 }, 0),
-                            ZoneCommand::SetPlaylist(i, t) => (i.min(total_count - 1), t),
+                            ZoneCommand::SetPlaylist(i, t) | ZoneCommand::PlayPlaylist(i, t) => (i.min(total_count - 1), t),
                             _ => continue,
                         };
 
-                        let is_playing = store.read().await.zones.get(&zone_index)
+                        let should_start = force_play || store.read().await.zones.get(&zone_index)
                             .is_some_and(|z| z.playback == PlaybackState::Playing);
 
                         match config.resolve_playlist_index(target_unified, subsonic_playlists.len()) {
                             Some(crate::config::ResolvedPlaylist::Radio) => {
-                            // Radio: always stop and select (user picks a station manually)
-                            reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
-                            source = ActiveSource::Idle;
-                            update_and_notify(store, zone_index, notify, |z| {
-                                z.playback = PlaybackState::Stopped;
-                                z.source = SourceType::Radio;
-                                z.playlist_index = Some(target_unified);
-                                z.playlist_name = Some("Radio".into());
-                                z.playlist_total = Some(total_count);
-                                z.playlist_track_index = None;
-                                z.playlist_track_count = Some(config.radios.len());
-                                z.track = None;
-                            }).await;
-                            tracing::info!(zone = %zone_config.name, "Radio playlist selected (stopped)");
-                        }
+                                let radio_idx = start_track.min(config.radios.len().saturating_sub(1));
+                                if let Some(radio) = config.radios.get(radio_idx) {
+                                    reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
+                                    if should_start {
+                                        start_radio_decode(radio, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
+                                    }
+                                    source = ActiveSource::Radio { index: radio_idx };
+                                    update_and_notify(store, zone_index, notify, |z| {
+                                        z.playback = if should_start { PlaybackState::Playing } else { PlaybackState::Stopped };
+                                        z.source = SourceType::Radio;
+                                        z.playlist_index = Some(target_unified);
+                                        z.playlist_name = Some("Radio".into());
+                                        z.playlist_total = Some(total_count);
+                                        z.playlist_track_index = Some(radio_idx);
+                                        z.playlist_track_count = Some(config.radios.len());
+                                        z.track = Some(radio_track_info(&radio.name));
+                                    }).await;
+                                    if should_start {
+                                        tracing::info!(zone = %zone_config.name, radio = %radio.name, "Radio playlist started");
+                                    } else {
+                                        tracing::info!(zone = %zone_config.name, radio = %radio.name, "Radio playlist selected (stopped)");
+                                    }
+                                }
+                            }
                             Some(crate::config::ResolvedPlaylist::Subsonic(sub_idx)) => {
-                            if let Some(sub) = &subsonic {
-                                if let Some(pl) = subsonic_playlists.get(sub_idx) {
-                                    if is_playing {
-                                        // Currently playing → start first track of new playlist
-                                        tracing::info!(zone = %zone_config.name, playlist = %pl.name, "Playlist switched (playing)");
-                                        reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
-                                        if let Ok(playlist) = sub.get_playlist(&pl.id).await {
-                                            let track_idx = start_track.min(playlist.entry.len().saturating_sub(1));
-                                            if let Some(track) = playlist.entry.get(track_idx) {
-                                                start_subsonic_track_decode(sub, track, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
+                                if let Some(sub) = &subsonic {
+                                    if let Some(pl) = subsonic_playlists.get(sub_idx) {
+                                        let playlist_id = pl.id.clone();
+                                        let playlist_name = pl.name.clone();
+                                        match sub.get_playlist(&playlist_id).await {
+                                            Ok(playlist) => {
+                                                let track_count = playlist.entry.len();
+                                                let track_idx = if track_count == 0 {
+                                                    0
+                                                } else {
+                                                    start_track.min(track_count - 1)
+                                                };
+                                                let track = playlist.entry.get(track_idx);
+                                                if should_start {
+                                                    reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
+                                                    if let Some(track) = track {
+                                                        start_subsonic_track_decode(sub, track, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
+                                                    }
+                                                }
                                                 source = ActiveSource::SubsonicPlaylist {
-                                                    playlist_id: pl.id.clone(),
+                                                    playlist_id,
                                                     track_index: track_idx,
-                                                    track_count: playlist.entry.len(),
+                                                    track_count,
                                                 };
                                                 update_and_notify(store, zone_index, notify, |z| {
-                                                    z.playback = PlaybackState::Playing;
+                                                    z.playback = if should_start && track.is_some() { PlaybackState::Playing } else { PlaybackState::Stopped };
                                                     z.source = SourceType::SubsonicPlaylist;
                                                     z.playlist_index = Some(target_unified);
                                                     z.playlist_name = Some(playlist.name.clone());
                                                     z.playlist_total = Some(total_count);
                                                     z.playlist_track_index = Some(track_idx);
-                                                    z.playlist_track_count = Some(playlist.entry.len());
-                                                    z.track = Some(subsonic_track_info(track));
+                                                    z.playlist_track_count = Some(track_count);
+                                                    z.track = track.map(subsonic_track_info);
                                                 }).await;
+                                                if should_start && track.is_some() {
+                                                    if let Some(ref cache) = track_cache {
+                                                        prefetch_next_tracks(sub, &playlist.entry, track_idx, cache, crate::config::CACHE_LOOKAHEAD);
+                                                    }
+                                                    tracing::info!(zone = %zone_config.name, playlist = %playlist.name, "Playlist switched (playing)");
+                                                } else {
+                                                    tracing::info!(zone = %zone_config.name, playlist = %playlist.name, "Playlist selected (stopped)");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(zone = %zone_config.name, playlist = %playlist_name, error = %e, "Playlist fetch failed");
                                             }
                                         }
-                                    } else {
-                                        // Paused/Stopped → select playlist without starting playback
-                                        tracing::info!(zone = %zone_config.name, playlist = %pl.name, "Playlist selected (stopped)");
-                                        let track_count = sub.get_playlist(&pl.id).await
-                                            .map_or(0, |p| p.entry.len());
-                                        update_and_notify(store, zone_index, notify, |z| {
-                                            z.source = SourceType::SubsonicPlaylist;
-                                            z.playlist_index = Some(target_unified);
-                                            z.playlist_name = Some(pl.name.clone());
-                                            z.playlist_total = Some(total_count);
-                                            z.playlist_track_index = Some(start_track);
-                                            z.playlist_track_count = Some(track_count);
-                                        }).await;
                                     }
                                 }
                             }
-                        }
                             _ => {}
                         }
                     }
@@ -913,7 +948,7 @@ async fn run(
                                     Some(crate::config::PresenceSource::Radio(idx)) => {
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
                                         // Unified index 0 = radio, idx = station within radio
-                                        let _ = self_tx.send(ZoneCommand::SetPlaylist(0, idx)).await;
+                                        let _ = self_tx.send(ZoneCommand::PlayPlaylist(0, idx)).await;
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                     Some(crate::config::PresenceSource::Playlist(ref id)) => {
