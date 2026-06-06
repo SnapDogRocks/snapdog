@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { useClientDrop } from "@/hooks/useClientDrop";
 import type { ZoneState } from "@/stores/useAppStore";
 import { Marquee } from "@/components/Marquee";
@@ -59,7 +61,14 @@ export function ZoneRailItem({ zone, selected, onSelect }: ZoneRailItemProps) {
         </Marquee>
       </div>
       <div className="flex flex-col items-end gap-1.5 shrink-0">
-        <div className="text-xs text-muted-foreground tabular-nums">{zone.volume}</div>
+        {zone.error ? (
+          <div className="text-destructive" title={zone.error.message}>
+            <HugeiconsIcon icon={AlertCircleIcon} size={14} aria-hidden="true" />
+            <span className="sr-only">Playback error</span>
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground tabular-nums">{zone.volume}</div>
+        )}
         {zone.eqEnabled && (
           <span className="text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.5 rounded uppercase tracking-wider scale-90" aria-label="EQ Active">
             EQ
