@@ -201,13 +201,22 @@ export interface WsZoneEqChanged {
   preset?: string;
 }
 
+export interface WsPlaybackError {
+  type: "playback_error";
+  zone: number;
+  message: string;
+  details: string | null;
+  recoverable: boolean;
+}
+
 export type WsNotification =
   | WsZoneChanged
   | WsZoneVolumeChanged
   | WsZoneProgress
   | WsClientStateChanged
   | WsZonePresenceChanged
-  | WsZoneEqChanged;
+  | WsZoneEqChanged
+  | WsPlaybackError;
 
 export interface WsCommand {
   zone: number;

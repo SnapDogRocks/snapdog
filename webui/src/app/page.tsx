@@ -146,6 +146,7 @@ export default function Home() {
     updateZoneProgress,
     updateZonePresence,
     updateClient,
+    setZoneError,
   } = useAppStore();
 
   const handleNotification = useCallback(
@@ -207,9 +208,16 @@ export default function Home() {
         case "zone_eq_changed":
           useAppStore.getState().updateZoneEq(n.zone, n.enabled, n.bands, n.preset);
           break;
+        case "playback_error":
+          setZoneError(n.zone, {
+            message: n.message,
+            details: n.details,
+            recoverable: n.recoverable,
+          });
+          break;
       }
     },
-    [updateZone, updateZoneVolume, updateZoneProgress, updateZonePresence, updateClient],
+    [updateZone, updateZoneVolume, updateZoneProgress, updateZonePresence, updateClient, setZoneError],
   );
 
   const { isConnected: wsConnected, serverGoingAway, retryIn } = useWebSocket(handleNotification);

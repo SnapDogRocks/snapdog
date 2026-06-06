@@ -43,6 +43,13 @@ export interface ZoneState extends ZoneInfo {
   presenceTimerActive: boolean;
   buffered_ms: number | null;
   eqEnabled?: boolean;
+  error: PlaybackErrorState | null;
+}
+
+export interface PlaybackErrorState {
+  message: string;
+  details: string | null;
+  recoverable: boolean;
 }
 
 // ── Store shape ───────────────────────────────────────────────
@@ -69,6 +76,7 @@ interface AppState {
   updateZoneProgress: (id: number, position_ms: number, duration_ms: number, buffered_ms: number | null) => void;
   updateZonePresence: (id: number, presence: boolean, enabled: boolean, timerActive: boolean) => void;
   updateZoneEq: (id: number, enabled: boolean, bands?: Array<{ filter_type: string; frequency: number; gain: number; q: number }>, preset?: string) => void;
+  setZoneError: (id: number, error: PlaybackErrorState | null) => void;
 
   // Client updates
   setClients: (clients: ClientInfo[]) => void;
@@ -101,7 +109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const zones = new Map<number, ZoneState>();
       for (const z of zoneList) {
-        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled ?? true, presenceTimerActive: z.presence_timer_active ?? false, buffered_ms: null });
+        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled ?? true, presenceTimerActive: z.presence_timer_active ?? false, buffered_ms: null, error: null });
       }
 
       // Fetch track metadata and EQ state for each zone in parallel
@@ -146,6 +154,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         presenceTimerActive: existing?.presenceTimerActive ?? false,
         buffered_ms: existing?.buffered_ms ?? null,
         eqEnabled: existing?.eqEnabled ?? false,
+        error: existing?.error ?? null,
       });
     }
     set({ zones });
@@ -157,7 +166,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (z) {
       const { track: trackPatch, ...rest } = patch;
       const updatedTrack = trackPatch === null ? null : trackPatch ? { ...DEFAULT_TRACK, ...z.track, ...trackPatch } : z.track;
-      zones.set(id, { ...z, ...rest, track: updatedTrack });
+      const clearsError = rest.playback === "playing" || (trackPatch !== undefined && trackPatch !== null);
+      zones.set(id, { ...z, ...rest, track: updatedTrack, error: clearsError ? null : z.error });
     }
     set({ zones });
   },
@@ -192,6 +202,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const z = zones.get(id);
     if (z) {
       zones.set(id, { ...z, eqEnabled: enabled });
+    }
+    set({ zones });
+  },
+
+  setZoneError: (id, error) => {
+    const zones = new Map(get().zones);
+    const z = zones.get(id);
+    if (z) {
+      zones.set(id, { ...z, error });
     }
     set({ zones });
   },
