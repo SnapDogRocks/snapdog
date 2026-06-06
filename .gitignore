@@ -30,3 +30,8 @@ sparkle_private.key
 # Generated OpenAPI spec
 /openapi.json
 .kiro/
+
+# Dev container generated files
+devcontainer/music/*/
+devcontainer/music/album_covers/
+devcontainer/navidrome/navidrome.db
