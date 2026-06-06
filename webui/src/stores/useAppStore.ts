@@ -3,7 +3,6 @@ import type {
   ZoneInfo,
   TrackMetadata,
   ClientInfo,
-  RepeatMode,
 } from "@/lib/types";
 import { api, type EqConfig } from "@/lib/api";
 
