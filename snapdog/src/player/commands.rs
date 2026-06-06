@@ -13,6 +13,8 @@ pub enum ZoneCommand {
     PlaySubsonicTrack(String),
     /// Start playing an arbitrary audio URL.
     PlayUrl(String),
+    /// Start a unified playlist by index, beginning at the given track.
+    PlayPlaylist(usize, usize),
     /// Jump to track N in the current playlist.
     SetTrack(usize),
 

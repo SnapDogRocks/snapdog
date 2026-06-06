@@ -516,7 +516,8 @@ async fn get_playlist(
 
 /// Set zone playlist
 ///
-/// Overwrites the currently playing playlist in the zone with the specified unified playlist index.
+/// Selects the specified unified playlist index. If the zone is already playing, playback switches
+/// to the selected playlist; otherwise the playlist is loaded and can be started with transport play.
 #[utoipa::path(
     put,
     path = "/api/v1/zones/{zone_index}/playlist",
@@ -1154,9 +1155,9 @@ pub struct PlaylistPayload {
     track: usize,
 }
 
-/// Play Subsonic playlist
+/// Play unified playlist
 ///
-/// Switches the zone to a Subsonic playlist index and starts playing at the specified track index.
+/// Switches the zone to a unified playlist index and starts playing at the specified track index.
 #[utoipa::path(
     post,
     path = "/api/v1/zones/{zone_index}/play/playlist",
@@ -1175,14 +1176,12 @@ async fn play_subsonic_playlist(
     Path(idx): Path<usize>,
     Json(v): Json<PlaylistPayload>,
 ) -> impl IntoResponse {
-    // Single command: SetPlaylist with playlist index and starting track
-    let _ = send_cmd(&state, idx, ZoneCommand::SetPlaylist(v.id, v.track)).await;
-    Ok::<_, ApiError>(())
+    send_cmd(&state, idx, ZoneCommand::PlayPlaylist(v.id, v.track)).await
 }
 
 /// Play track in a playlist
 ///
-/// Starts playback of the specified track index in the active playlist.
+/// Starts playback of the specified track index in the specified unified playlist.
 #[utoipa::path(
     post,
     path = "/api/v1/zones/{zone_index}/play/playlist/{playlist_index}/track",
@@ -1199,10 +1198,12 @@ async fn play_subsonic_playlist(
 )]
 async fn play_playlist_track(
     State(state): State<SharedState>,
-    Path((zone, _playlist)): Path<(usize, usize)>,
+    Path((zone, playlist)): Path<(usize, usize)>,
     Json(v): Json<i32>,
 ) -> impl IntoResponse {
-    send_cmd(&state, zone, ZoneCommand::SetTrack(v as usize)).await
+    let track = usize::try_from(v)
+        .map_err(|_| ApiError::BadRequest("track index must be non-negative".into()))?;
+    send_cmd(&state, zone, ZoneCommand::PlayPlaylist(playlist, track)).await
 }
 
 /// Play Subsonic track by ID
@@ -1650,5 +1651,19 @@ mod tests {
             serde_json::from_str(r#"{"position_ms":1000,"offset_ms":500}"#).unwrap();
         assert_eq!(req.position_ms, Some(1000));
         assert_eq!(req.offset_ms, Some(500));
+    }
+
+    #[test]
+    fn playlist_payload_defaults_to_first_track() {
+        let req: PlaylistPayload = serde_json::from_str(r#"{"id":2}"#).unwrap();
+        assert_eq!(req.id, 2);
+        assert_eq!(req.track, 0);
+    }
+
+    #[test]
+    fn playlist_payload_accepts_start_track() {
+        let req: PlaylistPayload = serde_json::from_str(r#"{"id":2,"track":7}"#).unwrap();
+        assert_eq!(req.id, 2);
+        assert_eq!(req.track, 7);
     }
 }
