@@ -130,7 +130,7 @@ sudo apt install snapdog snapdog-client
 ### Homebrew (macOS)
 
 ```bash
-brew tap metaneutrons/tap
+brew tap snapdogrocks/tap
 brew install snapdog
 brew install snapdog-client
 ```

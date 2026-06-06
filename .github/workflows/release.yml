@@ -250,7 +250,7 @@ jobs:
 
           LENGTH=$(stat -f%z "$DMG")
 
-          printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>SnapDog Server</title>\n    <item>\n      <title>Version %s</title>\n      <sparkle:version>%s</sparkle:version>\n      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>\n      <enclosure url="https://github.com/metaneutrons/snapdog/releases/download/%s/%s"\n        sparkle:edSignature="%s"\n        length="%s"\n        type="application/octet-stream"/>\n    </item>\n  </channel>\n</rss>\n' "$VERSION" "$VERSION" "$TAG" "$DMG" "$SIGNATURE" "$LENGTH" > appcast.xml
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>SnapDog Server</title>\n    <item>\n      <title>Version %s</title>\n      <sparkle:version>%s</sparkle:version>\n      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>\n      <enclosure url="https://github.com/SnapDogRocks/snapdog/releases/download/%s/%s"\n        sparkle:edSignature="%s"\n        length="%s"\n        type="application/octet-stream"/>\n    </item>\n  </channel>\n</rss>\n' "$VERSION" "$VERSION" "$TAG" "$DMG" "$SIGNATURE" "$LENGTH" > appcast.xml
       - uses: actions/upload-artifact@v7
         with:
           name: snapdog-macos-app
@@ -380,23 +380,22 @@ jobs:
           CLIENT_X64_SHA=$(sha256sum artifacts/snapdog-${TAG}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
           CLIENT_ARM_SHA=$(sha256sum artifacts/snapdog-${TAG}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
 
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/metaneutrons/homebrew-tap.git"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/SnapDogRocks/homebrew-tap.git"
           cd homebrew-tap
           mkdir -p Formula
 
           cat > Formula/snapdog.rb << EOF
           class Snapdog < Formula
             desc "Multi-zone audio controller with AirPlay, Snapcast, MQTT, and KNX"
-            homepage "https://github.com/metaneutrons/snapdog"
-            version "${VERSION}"
-            license "GPL-3.0"
+            homepage "https://github.com/SnapDogRocks/snapdog"
+            license "GPL-3.0-only"
 
             on_macos do
               if Hardware::CPU.intel?
-                url "https://github.com/metaneutrons/snapdog/releases/download/${TAG}/snapdog-${TAG}-x86_64-apple-darwin.tar.gz"
+                url "https://github.com/SnapDogRocks/snapdog/releases/download/${TAG}/snapdog-${TAG}-x86_64-apple-darwin.tar.gz"
                 sha256 "${SNAPDOG_X64_SHA}"
               else
-                url "https://github.com/metaneutrons/snapdog/releases/download/${TAG}/snapdog-${TAG}-aarch64-apple-darwin.tar.gz"
+                url "https://github.com/SnapDogRocks/snapdog/releases/download/${TAG}/snapdog-${TAG}-aarch64-apple-darwin.tar.gz"
                 sha256 "${SNAPDOG_ARM_SHA}"
               end
             end
@@ -404,28 +403,35 @@ jobs:
             def install
               bin.install "snapdog"
             end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/snapdog --version")
+            end
           end
           EOF
 
           cat > Formula/snapdog-client.rb << EOF
           class SnapdogClient < Formula
             desc "SnapDog multiroom audio client"
-            homepage "https://github.com/metaneutrons/snapdog"
-            version "${VERSION}"
-            license "GPL-3.0"
+            homepage "https://github.com/SnapDogRocks/snapdog"
+            license "GPL-3.0-only"
 
             on_macos do
               if Hardware::CPU.intel?
-                url "https://github.com/metaneutrons/snapdog/releases/download/${TAG}/snapdog-${TAG}-x86_64-apple-darwin.tar.gz"
+                url "https://github.com/SnapDogRocks/snapdog/releases/download/${TAG}/snapdog-${TAG}-x86_64-apple-darwin.tar.gz"
                 sha256 "${CLIENT_X64_SHA}"
               else
-                url "https://github.com/metaneutrons/snapdog/releases/download/${TAG}/snapdog-${TAG}-aarch64-apple-darwin.tar.gz"
+                url "https://github.com/SnapDogRocks/snapdog/releases/download/${TAG}/snapdog-${TAG}-aarch64-apple-darwin.tar.gz"
                 sha256 "${CLIENT_ARM_SHA}"
               end
             end
 
             def install
               bin.install "snapdog-client"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/snapdog-client --version")
             end
           end
           EOF
