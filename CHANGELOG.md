@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.17.0](https://github.com/SnapDogRocks/snapdog/compare/v0.16.1...v0.17.0) (2026-06-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ws:** rename playlist fields, add playlist navigation
+
+### Features
+
+* annotate system status endpoints and register ApiDoc OpenAPI specs ([3f42400](https://github.com/SnapDogRocks/snapdog/commit/3f42400a7c743092f20998a0542b0dddc5564756))
+* **api:** add PlayPlaylist command for explicit playlist playback ([61de429](https://github.com/SnapDogRocks/snapdog/commit/61de429fb28e37b03ad8004a704a350111dc08e7))
+* **api:** add relative seek (offset_ms) to position endpoint ([86c2361](https://github.com/SnapDogRocks/snapdog/commit/86c2361281627155523ca8ccd5c15c54caf116e8))
+* **api:** catch audio decoding errors and propagate via websockets ([dee5e0b](https://github.com/SnapDogRocks/snapdog/commit/dee5e0bb2735bca68854435070b4b09b89b2bc03))
+* **api:** embed Scalar documentation behind api-docs compile feature ([dbc2d29](https://github.com/SnapDogRocks/snapdog/commit/dbc2d29e5c234a304835492bec682699e20010eb))
+* **client/dbus:** complete MPRIS2 wiring with metadata and controls ([28f68da](https://github.com/SnapDogRocks/snapdog/commit/28f68da2c6bafffc73f1acccb21160f79b9c3663))
+* **client/dbus:** MPRIS2 Volume interface for snapdog-client ([ade5019](https://github.com/SnapDogRocks/snapdog/commit/ade5019356746121d02f633d4f71e30f34fbd461))
+* **client:** receive Type 14 metadata, send Type 13 controls via D-Bus ([37475fe](https://github.com/SnapDogRocks/snapdog/commit/37475fe81e1b74c594f7dfa54d0abed416f2fa95))
+* **common:** define Custom Message types 13/14/15 ([85f02f9](https://github.com/SnapDogRocks/snapdog/commit/85f02f9fbcde3dca4e5ecd886805849b04aeef26))
+* **config:** add api_docs TOML key to dynamically toggle Scalar API docs route ([317f95f](https://github.com/SnapDogRocks/snapdog/commit/317f95f598feab430a94848894ac0410e0bdeedc))
+* **dbus:** MPRIS2 interface per zone ([b8c350f](https://github.com/SnapDogRocks/snapdog/commit/b8c350f2a324d38c60fa3a1c191f7272d58b5193))
+* implement gen-api-spec subcommand in xtask tool ([4083129](https://github.com/SnapDogRocks/snapdog/commit/40831299958f7630a226daa53d9c051845def128))
+* server sends Type 14 metadata to snapdog clients, receives Type 13 controls ([cea7389](https://github.com/SnapDogRocks/snapdog/commit/cea7389daa167e924818bf52deb0cd14956b4873))
+* Type 15 cover art binary push to snapdog clients ([5cb4bce](https://github.com/SnapDogRocks/snapdog/commit/5cb4bcec0d1be107f81b4c99bee6e29445434e26))
+* **webui:** handle websocket playback errors and manage store error state ([28d4ea7](https://github.com/SnapDogRocks/snapdog/commit/28d4ea77cb97c49a8111635944370636b28a726f))
+* **webui:** render warning banner in zone detail and error icon in sidebar ([f982c80](https://github.com/SnapDogRocks/snapdog/commit/f982c804c8b7f210afe28711295330263e23ebe8))
+* **webui:** use server-provided can_next/can_prev for nav buttons ([27fe953](https://github.com/SnapDogRocks/snapdog/commit/27fe953481ba0510a4c73f580ca72c582c8bf35a))
+* **ws:** add metadata and navigation fields to ZoneTrackChanged ([fe9f0da](https://github.com/SnapDogRocks/snapdog/commit/fe9f0dab23b536219a23758f1f459b2435bf77b2))
+
+
+### Bug Fixes
+
+* **dbus:** only attempt D-Bus on Linux (macOS has no D-Bus) ([14ab5df](https://github.com/SnapDogRocks/snapdog/commit/14ab5df47aa9fd5b716b22864bba6926590b5284))
+* **player:** Apple UX for playlist switching ([1cf6318](https://github.com/SnapDogRocks/snapdog/commit/1cf6318cdd027c910d5cdc1851c1c4997ab1ae28))
+* **player:** track playlist state on auto-advance and radio next ([12e3b1a](https://github.com/SnapDogRocks/snapdog/commit/12e3b1aaa0d7e7c67affa99f5bc239951e177a59))
+* **webui:** wrap seek position value in SeekPayload object ([4b09f46](https://github.com/SnapDogRocks/snapdog/commit/4b09f46cbe02ac7af81119d2727cd543b0e4bcc8))
+
+
+### Code Refactoring
+
+* **ws:** rename playlist fields, add playlist navigation ([ccab89a](https://github.com/SnapDogRocks/snapdog/commit/ccab89ad8df09ae9dd16c0e29f960ac98fa5f76e))
+
 ## [0.16.1](https://github.com/SnapDogRocks/snapdog/compare/v0.16.0...v0.16.1) (2026-05-30)
 
 
