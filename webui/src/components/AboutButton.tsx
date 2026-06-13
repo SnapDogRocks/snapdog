@@ -171,7 +171,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
           </div>
 
           <a
-            href="https://github.com/metaneutrons/snapdog"
+            href="https://github.com/SnapDogRocks/snapdog"
             target="_blank"
             rel="noopener noreferrer"
             className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
