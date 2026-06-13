@@ -14,16 +14,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ── Mock Unsplash Images for Cover Art ────────────────────────
 // Using specific, aesthetic Unsplash images for our playlists and radio stations
 const COVERS = {
-  lofi: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=500&auto=format&fit=crop&q=60', // cozy sunbeam/room
-  synth: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60', // abstract neon wave
-  jazz: 'https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=500&auto=format&fit=crop&q=60', // neon jazz sax/club
-  focus: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=500&auto=format&fit=crop&q=60', // misty forest road
-  acoustic: 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=500&auto=format&fit=crop&q=60', // bonfire under stars
-  cyber: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=500&auto=format&fit=crop&q=60', // neon wet city street
-  classical: 'https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=500&auto=format&fit=crop&q=60', // grand piano keys
-  summer: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=500&auto=format&fit=crop&q=60', // tropical beach sunset
-  metal: 'https://images.unsplash.com/photo-1508614589041-895b88991e3e?w=500&auto=format&fit=crop&q=60', // electric guitar wall
-  midnight: 'https://images.unsplash.com/photo-1492496913980-50134c307287?w=500&auto=format&fit=crop&q=60', // rainy window view
+  lofi: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=1024&h=1024&auto=format&fit=crop&q=80', // cozy sunbeam/room
+  synth: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1024&h=1024&auto=format&fit=crop&q=80', // abstract neon wave
+  jazz: 'https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=1024&h=1024&auto=format&fit=crop&q=80', // neon jazz sax/club
+  focus: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=1024&h=1024&auto=format&fit=crop&q=80', // misty forest road
+  acoustic: 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=1024&h=1024&auto=format&fit=crop&q=80', // bonfire under stars
+  cyber: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=1024&h=1024&auto=format&fit=crop&q=80', // neon wet city street
+  classical: 'https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=1024&h=1024&auto=format&fit=crop&q=80', // grand piano keys
+  summer: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1024&h=1024&auto=format&fit=crop&q=80', // tropical beach sunset
+  metal: 'https://images.unsplash.com/photo-1508614589041-895b88991e3e?w=1024&h=1024&auto=format&fit=crop&q=80', // electric guitar wall
+  midnight: 'https://images.unsplash.com/photo-1492496913980-50134c307287?w=1024&h=1024&auto=format&fit=crop&q=80', // rainy window view
 };
 
 // ── Mock Playlists & Tracks (Including Radio Playlist 0) ──────
@@ -214,11 +214,105 @@ const defaultEqBands = [
   { filter_type: 'high_shelf', frequency: 16000, gain: 0, q: 0.7 },
 ];
 
-const mockEqConfig = (enabled = false, preset = null) => ({
-  enabled,
-  bands: JSON.parse(JSON.stringify(defaultEqBands)),
-  preset,
-});
+const PRESET_GAINS = {
+  flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  bass_boost: [6, 6, 5, 3, 1, 0, 0, 0, 0, 0],
+  treble_boost: [0, 0, 0, 0, 0, 1, 2, 4, 5, 6],
+  vocal: [-3, -2, -2, -1, 1, 3, 4, 4, 2, 0],
+  rock: [4, 4, 3, -1, -2, -1, 1, 3, 4, 4],
+  jazz: [3, 3, 2, 1, 2, -1, -1, 0, 1, 2],
+  classical: [4, 4, 3, 2, 2, 0, -1, -1, 1, 3],
+  electronic: [5, 5, 4, 0, -2, 2, -1, 1, 3, 5],
+  loudness: [6, 6, 4, 0, -2, -3, -2, 0, 3, 5],
+  late_night: [-4, -3, -2, 0, 1, 2, 2, 1, -1, -3]
+};
+
+const SPEAKER_PROFILES = {
+  'Custom Flat EQ': [
+    { filter_type: 'low_shelf', frequency: 31, gain: 0, q: 0.7 },
+    { filter_type: 'peaking', frequency: 62, gain: 0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 125, gain: 0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 250, gain: 0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 500, gain: 0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 1000, gain: 0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 2000, gain: 0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 4000, gain: 0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 8000, gain: 0, q: 1.0 },
+    { filter_type: 'high_shelf', frequency: 16000, gain: 0, q: 0.7 }
+  ],
+  'Genelec 8030C': [
+    { filter_type: 'low_shelf', frequency: 31, gain: -4.0, q: 0.7 },
+    { filter_type: 'peaking', frequency: 62, gain: -2.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 125, gain: 1.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 250, gain: -0.8, q: 1.0 },
+    { filter_type: 'peaking', frequency: 500, gain: 0.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 1000, gain: -0.3, q: 1.0 },
+    { filter_type: 'peaking', frequency: 2000, gain: 1.2, q: 1.0 },
+    { filter_type: 'peaking', frequency: 4000, gain: -0.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 8000, gain: 0.8, q: 1.0 },
+    { filter_type: 'high_shelf', frequency: 16000, gain: -1.0, q: 0.7 }
+  ],
+  'Sonos One (Gen 2)': [
+    { filter_type: 'low_shelf', frequency: 31, gain: 5.0, q: 0.7 },
+    { filter_type: 'peaking', frequency: 62, gain: 3.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 125, gain: -2.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 250, gain: 1.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 500, gain: -1.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 1000, gain: 2.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 2000, gain: -1.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 4000, gain: 1.8, q: 1.0 },
+    { filter_type: 'peaking', frequency: 8000, gain: -2.0, q: 1.0 },
+    { filter_type: 'high_shelf', frequency: 16000, gain: 3.0, q: 0.7 }
+  ],
+  'JBL Control 1 Pro': [
+    { filter_type: 'low_shelf', frequency: 31, gain: -8.0, q: 0.7 },
+    { filter_type: 'peaking', frequency: 62, gain: -5.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 125, gain: 3.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 250, gain: -2.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 500, gain: 1.8, q: 1.0 },
+    { filter_type: 'peaking', frequency: 1000, gain: -3.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 2000, gain: 2.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 4000, gain: -1.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 8000, gain: 4.0, q: 1.0 },
+    { filter_type: 'high_shelf', frequency: 16000, gain: 6.0, q: 0.7 }
+  ],
+  'KEF Q150 Bookcase': [
+    { filter_type: 'low_shelf', frequency: 31, gain: -1.5, q: 0.7 },
+    { filter_type: 'peaking', frequency: 62, gain: 1.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 125, gain: -1.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 250, gain: 0.8, q: 1.0 },
+    { filter_type: 'peaking', frequency: 500, gain: -1.2, q: 1.0 },
+    { filter_type: 'peaking', frequency: 1000, gain: 1.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 2000, gain: -0.5, q: 1.0 },
+    { filter_type: 'peaking', frequency: 4000, gain: 1.0, q: 1.0 },
+    { filter_type: 'peaking', frequency: 8000, gain: -0.5, q: 1.0 },
+    { filter_type: 'high_shelf', frequency: 16000, gain: 1.0, q: 0.7 }
+  ]
+};
+
+const mockEqConfig = (enabled = false, preset = null, bands = null) => {
+  let activeBands = bands ? JSON.parse(JSON.stringify(bands)) : JSON.parse(JSON.stringify(defaultEqBands));
+  
+  if (preset) {
+    if (preset.startsWith('spinorama:')) {
+      const spName = preset.slice('spinorama:'.length);
+      if (SPEAKER_PROFILES[spName]) {
+        activeBands = JSON.parse(JSON.stringify(SPEAKER_PROFILES[spName]));
+      }
+    } else if (PRESET_GAINS[preset]) {
+      const gains = PRESET_GAINS[preset];
+      activeBands.forEach((b, idx) => {
+        if (gains[idx] !== undefined) b.gain = gains[idx];
+      });
+    }
+  }
+  
+  return {
+    enabled,
+    bands: activeBands,
+    preset,
+  };
+};
 
 // Zones state
 const zones = {
@@ -243,7 +337,7 @@ const zones = {
       title: 'AirPlay Audio Stream',
       artist: "Fabian's iPhone",
       album: 'AirPlay Connection',
-      cover_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=60', // micro/headphone
+      cover_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1024&h=1024&auto=format&fit=crop&q=80', // micro/headphone
       duration_ms: 0,
       seekable: false,
     }
@@ -301,7 +395,7 @@ const clients = {
     is_snapdog: true,
     latency: 0,
     speaker: 'Genelec 8030C',
-    eq: mockEqConfig(true),
+    eq: mockEqConfig(true, 'spinorama:Genelec 8030C'),
   },
   2: {
     index: 2,
@@ -316,7 +410,7 @@ const clients = {
     is_snapdog: true,
     latency: 0,
     speaker: 'Genelec 8030C',
-    eq: mockEqConfig(true),
+    eq: mockEqConfig(true, 'spinorama:Genelec 8030C'),
   },
   3: {
     index: 3,
@@ -331,7 +425,7 @@ const clients = {
     is_snapdog: true,
     latency: 20,
     speaker: 'Sonos One (Gen 2)',
-    eq: mockEqConfig(false),
+    eq: mockEqConfig(false, 'spinorama:Sonos One (Gen 2)'),
   },
   4: {
     index: 4,
@@ -346,7 +440,7 @@ const clients = {
     is_snapdog: true,
     latency: 0,
     speaker: 'Custom Flat EQ',
-    eq: mockEqConfig(false),
+    eq: mockEqConfig(false, 'spinorama:Custom Flat EQ'),
   }
 };
 
@@ -1180,18 +1274,18 @@ app.post('/api/v1/zones/:id/eq/preset', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
-  const preset = req.body;
-  z.eq.preset = preset;
-  z.eq.enabled = true;
-  z.eq.bands.forEach((b, idx) => {
-    if (preset === 'Bass Boost') {
-      b.gain = idx < 3 ? 6 : (idx < 6 ? 2 : 0);
-    } else if (preset === 'Vocal') {
-      b.gain = idx >= 4 && idx <= 7 ? 4 : -2;
-    } else {
-      b.gain = 0;
-    }
+  const preset = typeof req.body === 'string' ? req.body : (req.body.preset || Object.keys(req.body)[0] || 'flat');
+  
+  z.eq = mockEqConfig(true, preset);
+  res.json(z.eq);
+  broadcast({
+    type: 'zone_eq_changed',
+    zone: z.index,
+    enabled: z.eq.enabled,
+    bands: z.eq.bands,
+    preset: z.eq.preset,
   });
+});
 
   res.json(z.eq);
   broadcast({
@@ -1359,18 +1453,8 @@ app.post('/api/v1/clients/:id/eq/preset', (req, res) => {
   const c = clients[req.params.id];
   if (!c) return res.status(404).json({ error: 'Client not found' });
   
-  const preset = req.body;
-  c.eq.preset = preset;
-  c.eq.enabled = true;
-  c.eq.bands.forEach((b, idx) => {
-    if (preset === 'Bass Boost') {
-      b.gain = idx < 3 ? 6 : (idx < 6 ? 2 : 0);
-    } else if (preset === 'Vocal') {
-      b.gain = idx >= 4 && idx <= 7 ? 4 : -2;
-    } else {
-      b.gain = 0;
-    }
-  });
+  const preset = typeof req.body === 'string' ? req.body : (req.body.preset || Object.keys(req.body)[0] || 'flat');
+  c.eq = mockEqConfig(true, preset);
   res.json(c.eq);
 });
 
@@ -1378,7 +1462,12 @@ app.post('/api/v1/clients/:id/eq/preset', (req, res) => {
 app.get('/api/v1/clients/:id/speaker', (req, res) => {
   const c = clients[req.params.id];
   if (!c) return res.status(404).json({ error: 'Client not found' });
-  res.json(mockEqConfig(true, c.speaker));
+  
+  if (c.speaker && c.speaker !== 'Custom Profile') {
+    res.json(mockEqConfig(c.eq ? c.eq.enabled : true, `spinorama:${c.speaker}`));
+  } else {
+    res.json(c.eq || mockEqConfig(false, 'flat'));
+  }
 });
 
 app.put('/api/v1/clients/:id/speaker', (req, res) => {
@@ -1387,15 +1476,21 @@ app.put('/api/v1/clients/:id/speaker', (req, res) => {
   
   if (req.body.speaker) {
     c.speaker = req.body.speaker;
+    c.eq = mockEqConfig(true, `spinorama:${c.speaker}`);
   } else if (req.body.custom) {
     c.speaker = 'Custom Profile';
+    c.eq = req.body.custom;
+  } else {
+    c.speaker = null;
+    c.eq = mockEqConfig(false, 'flat');
   }
-  res.json(mockEqConfig(true, c.speaker));
+  res.json(c.eq);
 });
 
 // Speaker Profile lookup
 app.get('/api/v1/speakers/:name/profile', (req, res) => {
-  res.json(mockEqConfig(true, req.params.name));
+  const name = req.params.name;
+  res.json(mockEqConfig(true, `spinorama:${name}`));
 });
 
 // Fallback: Catch-all for Next.js routing (client-side routing)

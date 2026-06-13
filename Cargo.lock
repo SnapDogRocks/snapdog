@@ -4325,7 +4325,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog"
-version = "0.16.1"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "astro-dnssd",
@@ -4381,7 +4381,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog-client"
-version = "0.16.1"
+version = "0.17.0"
 dependencies = [
  "alsa",
  "anyhow",

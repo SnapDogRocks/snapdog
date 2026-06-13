@@ -79,9 +79,9 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
             className="space-y-4"
           >
             {/* Header: Title + Search */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+            <div className="flex flex-col @sm:flex-row @sm:items-center justify-between gap-3 px-1">
               <h3 className="text-sm font-bold tracking-wider text-muted-foreground/70">{t("title")}</h3>
-              <div className="relative w-full sm:w-48">
+              <div className="relative w-full @sm:w-48">
                 <HugeiconsIcon icon={Search01Icon} size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder={t("search")}
@@ -93,7 +93,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
             </div>
 
             {/* Carousel-like Grid */}
-            <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-3 @sm:grid-cols-3 @md:grid-cols-3 @lg:grid-cols-4 @xl:grid-cols-6 gap-3">
               {visiblePlaylists.map((pl) => (
                 <div key={pl.id} className="group relative space-y-1.5">
                   <button

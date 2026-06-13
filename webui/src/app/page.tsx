@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Component, type ReactNode } from "react";
+import { useState, useEffect, useCallback, Component, useRef, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useAppStore, type ZoneState } from "@/stores/useAppStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -121,7 +121,9 @@ function ZoneDropTarget({ zoneIndex, children }: { zoneIndex: number; children: 
 
   return (
     <div
-      className={`border rounded-xl bg-card overflow-hidden transition-colors ${dragOver ? "border-primary border-2" : "border-border"}`}
+      className={`flex flex-col h-full border rounded-[2rem] bg-card/45 border-border/40 backdrop-blur-xl shadow-2xl transition-all duration-300 overflow-hidden ${
+        dragOver ? "border-primary ring-4 ring-primary/15" : "hover:border-border/60 hover:shadow-[0_25px_60px_rgba(0,0,0,0.35)]"
+      }`}
       {...dragHandlers}
     >
       {children}
@@ -148,6 +150,45 @@ export default function Home() {
     updateClient,
     setZoneError,
   } = useAppStore();
+
+  const [activeDot, setActiveDot] = useState(0);
+  const carouselRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = useCallback(() => {
+    if (!carouselRef.current) return;
+    const container = carouselRef.current;
+    const innerWrapper = container.firstElementChild;
+    if (!innerWrapper) return;
+    const containerCenter = container.scrollLeft + container.clientWidth / 2;
+    
+    let closestIndex = 0;
+    let closestDistance = Infinity;
+    
+    const children = innerWrapper.children;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i] as HTMLElement;
+      const childCenter = child.offsetLeft + child.clientWidth / 2;
+      const distance = Math.abs(containerCenter - childCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = i;
+      }
+    }
+    setActiveDot(closestIndex);
+  }, [zoneMap.size]);
+
+  const scrollCarousel = (direction: "left" | "right") => {
+    if (carouselRef.current) {
+      const el = carouselRef.current;
+      const innerWrapper = el.firstElementChild;
+      if (!innerWrapper) return;
+      const targetIndex = direction === "left" ? activeDot - 1 : activeDot + 1;
+      const children = innerWrapper.children;
+      if (children[targetIndex]) {
+        (children[targetIndex] as HTMLElement).scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      }
+    }
+  };
 
   const handleNotification = useCallback(
     (n: WsNotification) => {
@@ -253,13 +294,8 @@ export default function Home() {
   const zoneList = Array.from(zoneMap.values());
   const currentZone = zoneMap.get(selectedZone) ?? zoneList[0];
 
-  // At the xl breakpoint (1280px), the wide grid uses minWidth=480px cards with gap=16px.
-  // Available width ≈ 1280 - 32px padding = 1248px.
-  // n cards fit without scroll when: n*480 + (n-1)*16 ≤ 1248  →  n ≤ 2
-  // When all zones fit, the sidebar is redundant and should hide at xl.
-  // When there are 3+ zones, the grid overflows horizontally and the sidebar
-  // must remain visible so the user can navigate to off-screen zones.
-  const allZonesFitInGrid = zoneList.length <= 2;
+  // The sidebar is hidden at xl to show the elegant horizontal zone carousel
+  const allZonesFitInGrid = true;
 
   if (needsAuth) {
     return <ApiKeyPrompt onAuthenticated={() => loadAll()} />;
@@ -371,17 +407,86 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Desktop: all zones in responsive grid (xl+) */}
-        <div className="hidden xl:flex xl:flex-wrap xl:gap-4 xl:p-4 xl:justify-center flex-1 overflow-y-auto">
-          {zoneList.map((z) => (
-            <ZoneErrorBoundary key={z.index}>
-              <div className="w-full" style={{ minWidth: '480px', maxWidth: '600px', flex: '1 1 480px' }}>
-                <ZoneDropTarget zoneIndex={z.index}>
-                  <ZoneDetail zone={z} />
-                </ZoneDropTarget>
-              </div>
-            </ZoneErrorBoundary>
-          ))}
+        {/* Desktop: all zones in elegant horizontal snap-scroll carousel (xl+) */}
+        <div className="hidden xl:flex flex-col flex-1 min-h-0 relative bg-gradient-to-b from-background/10 via-background/5 to-background/2">
+          {/* Scrollable Container */}
+          <div
+            ref={carouselRef}
+            onScroll={handleScroll}
+            className="flex flex-1 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory py-10 px-6 min-w-0"
+          >
+            <div className="flex items-center gap-10 mx-auto min-w-max px-16 h-full">
+              {zoneList.map((z) => {
+                const glowUrl = z.source !== "idle" ? (z.track?.cover_url ?? null) : null;
+                return (
+                  <ZoneErrorBoundary key={z.index}>
+                    <div className="relative w-[480px] xl:w-[520px] h-[calc(100vh-160px)] max-h-[780px] shrink-0 snap-center snap-always transition-all duration-300 group">
+                      {/* Ambient outer glow */}
+                      {glowUrl && (
+                        <div className="absolute -inset-6 pointer-events-none select-none z-0 opacity-20 blur-3xl transition-opacity duration-1000 group-hover:opacity-35" aria-hidden="true">
+                          <img
+                            src={glowUrl}
+                            alt=""
+                            className="size-full object-cover rounded-full scale-[0.85]"
+                          />
+                        </div>
+                      )}
+                      <div className="relative z-10 h-full">
+                        <ZoneDropTarget zoneIndex={z.index}>
+                          <ZoneDetail zone={z} isCarouselCard={true} />
+                        </ZoneDropTarget>
+                      </div>
+                    </div>
+                  </ZoneErrorBoundary>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Left Navigation Arrow */}
+          {activeDot > 0 && (
+            <button
+              onClick={() => scrollCarousel("left")}
+              className="absolute left-6 top-1/2 -translate-y-1/2 size-12 rounded-full bg-black/60 hover:bg-black/80 border border-white/10 flex items-center justify-center text-white transition-all shadow-xl z-20 group hover:scale-105"
+              aria-label="Previous Zone"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:-translate-x-0.5 transition-transform"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+          )}
+
+          {/* Right Navigation Arrow */}
+          {activeDot < zoneList.length - 1 && (
+            <button
+              onClick={() => scrollCarousel("right")}
+              className="absolute right-6 top-1/2 -translate-y-1/2 size-12 rounded-full bg-black/60 hover:bg-black/80 border border-white/10 flex items-center justify-center text-white transition-all shadow-xl z-20 group hover:scale-105"
+              aria-label="Next Zone"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:translate-x-0.5 transition-transform"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          )}
+
+          {/* Bottom Indicators (Dots) */}
+          <div className="flex justify-center gap-2 pb-6">
+            {zoneList.map((z, idx) => (
+              <button
+                key={z.index}
+                onClick={() => {
+                  if (carouselRef.current) {
+                    const el = carouselRef.current;
+                    const innerWrapper = el.firstElementChild;
+                    if (innerWrapper) {
+                      const children = innerWrapper.children;
+                      if (children[idx]) {
+                        (children[idx] as HTMLElement).scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+                      }
+                    }
+                  }
+                }}
+                className={`h-2 rounded-full transition-all duration-300 ${idx === activeDot ? "w-6 bg-primary" : "w-2 bg-muted-foreground/30 hover:bg-muted-foreground/60"}`}
+                aria-label={`Go to zone ${z.name}`}
+              />
+            ))}
+          </div>
         </div>
 
         {/* Mobile/Tablet: single selected zone */}
