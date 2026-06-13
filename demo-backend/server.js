@@ -2,10 +2,25 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
+
+// Trust first proxy for correct client IP detection under Render/Cloudflare
+app.set('trust proxy', 1);
+
+const limiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  limit: 100, // Limit each IP to 100 requests per `window`
+  standardHeaders: 'draft-7', // Use RFC 9421 RateLimit headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+// Apply the rate limiting middleware to all requests
+app.use(limiter);
 
 app.use(express.json());
 // Serve Next.js static files from 'public' directory
