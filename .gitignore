@@ -35,3 +35,7 @@ sparkle_private.key
 devcontainer/music/*/
 devcontainer/music/album_covers/
 devcontainer/navidrome/navidrome.db
+
+# Demo Backend
+/demo-backend/node_modules/
+

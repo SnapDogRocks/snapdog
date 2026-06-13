@@ -1,0 +1,27 @@
+# ── Stage 1: Build the Web UI ──
+FROM node:25-slim AS frontend-builder
+WORKDIR /app/webui
+COPY webui/package.json webui/package-lock.json ./
+RUN npm ci --force
+COPY webui/ ./
+RUN npm run build
+
+# ── Stage 2: Create runtime container ──
+FROM node:25-slim
+WORKDIR /app
+
+# Install production dependencies for the mock backend
+COPY demo-backend/package.json demo-backend/package-lock.json* ./
+RUN npm install --production
+
+# Copy static Web UI build from Stage 1
+COPY --from=frontend-builder /app/webui/out ./public
+
+# Copy mock server code
+COPY demo-backend/ ./
+
+EXPOSE 5555
+ENV PORT=5555
+ENV NODE_ENV=production
+
+CMD ["node", "server.js"]

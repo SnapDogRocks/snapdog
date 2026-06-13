@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: snapdog-demo
+    env: docker
+    plan: free # Deploys on Render's Free Hobby plan
+    dockerfilePath: Dockerfile.demo
+    envVars:
+      - key: PORT
+        value: 5555
+      - key: NODE_ENV
+        value: production
