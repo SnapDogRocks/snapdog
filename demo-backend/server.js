@@ -1287,16 +1287,6 @@ app.post('/api/v1/zones/:id/eq/preset', (req, res) => {
   });
 });
 
-  res.json(z.eq);
-  broadcast({
-    type: 'zone_eq_changed',
-    zone: z.index,
-    enabled: z.eq.enabled,
-    bands: z.eq.bands,
-    preset: z.eq.preset,
-  });
-});
-
 // ── Clients REST API ──────────────────────────────────────────
 
 app.get('/api/v1/clients', (req, res) => {
