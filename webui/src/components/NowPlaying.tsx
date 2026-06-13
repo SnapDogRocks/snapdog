@@ -44,7 +44,7 @@ export function NowPlaying({ zone }: { zone: ZoneState }) {
             src={coverUrl}
             alt={`${track.title} cover`}
             loading="lazy"
-            className="w-full h-full object-contain animate-fade-in"
+            className="w-full h-full object-cover animate-fade-in"
             onError={() => setCoverError(true)}
           />
         )}

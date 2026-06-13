@@ -1293,10 +1293,11 @@ app.put('/api/v1/clients/:id/zone', (req, res) => {
   const c = clients[req.params.id];
   if (!c) return res.status(404).json({ error: 'Client not found' });
   const zoneId = parseInt(req.body);
-  if (zones[zoneId]) {
-    c.zone_index = zoneId;
+  if (!zones[zoneId]) {
+    return res.status(404).json({ error: 'Zone not found' });
   }
-  res.sendStatus(204);
+  c.zone_index = zoneId;
+  res.json(c.zone_index);
   broadcast(buildWsClientStateChanged(c.index));
 });
 
