@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.18.0](https://github.com/SnapDogRocks/snapdog/compare/v0.17.0...v0.18.0) (2026-06-13)
+
+
+### Features
+
+* add unified snapdog mock demo backend for Render deployment ([a464a18](https://github.com/SnapDogRocks/snapdog/commit/a464a18bfc1a3be4191437d7b8b3a86119f2e227))
+* make cover art 1:1 aspect-ratio, update client zone routing to match production API ([3cc677f](https://github.com/SnapDogRocks/snapdog/commit/3cc677f6f7b2c86ad51efc43ea9ae176e0c1ad02))
+* set initial mock zone presence to false ([d89398b](https://github.com/SnapDogRocks/snapdog/commit/d89398b7b5546a711ea4238ba7587ae7f9f35d43))
+* **webui:** premium multi-zone layout refinements and EQ presets ([10d5143](https://github.com/SnapDogRocks/snapdog/commit/10d5143633c5ebe3d55c7a50a882645bf1211a67))
+
+
+### Bug Fixes
+
+* **demo:** resolve syntax error in zone EQ preset endpoint ([3463a7f](https://github.com/SnapDogRocks/snapdog/commit/3463a7ff1e898e83f1ead95a2d3a2bb259688a0f))
+* **webui:** update github repository link in AboutButton ([9b1a833](https://github.com/SnapDogRocks/snapdog/commit/9b1a833d6e1b12d5878f0448651bf9b8f5ebc014))
+
 ## [0.17.0](https://github.com/SnapDogRocks/snapdog/compare/v0.16.1...v0.17.0) (2026-06-06)
 
 
