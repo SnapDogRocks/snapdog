@@ -142,7 +142,7 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
   const isEndless = duration === 0 && !isIdle && isPlaying;
 
   if (isIdle) return (
-    <div className="w-full sm:max-w-xs space-y-1">
+    <div className="w-full space-y-1">
       <Slider value={[0]} max={1} step={1} disabled className="w-full" aria-label={t("label")} />
       <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums">
         <span>--:--</span>
@@ -152,7 +152,7 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
   );
 
   return (
-    <div className="w-full sm:max-w-xs space-y-1">
+    <div className="w-full space-y-1">
       <div className="relative">
         {bufferedMs != null && duration > 0 && bufferedMs < duration && (
           <div

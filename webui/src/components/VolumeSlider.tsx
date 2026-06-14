@@ -74,7 +74,7 @@ export function VolumeSlider({
 
   return (
     <div
-      className={`flex items-center gap-${compact ? "1.5" : "3"} w-full ${compact ? "" : "sm:max-w-xs"}`}
+      className={`flex items-center gap-${compact ? "1.5" : "3"} w-full`}
       onWheel={(e) => {
         e.preventDefault();
         const delta = e.deltaY < 0 ? 5 : -5;
