@@ -217,91 +217,124 @@ const SPEAKERS = [
 
 // Initial mock EQ bands (10 bands)
 const defaultEqBands = [
-  { filter_type: 'low_shelf', frequency: 31, gain: 0, q: 0.7 },
-  { filter_type: 'peaking', frequency: 62, gain: 0, q: 1.0 },
-  { filter_type: 'peaking', frequency: 125, gain: 0, q: 1.0 },
-  { filter_type: 'peaking', frequency: 250, gain: 0, q: 1.0 },
-  { filter_type: 'peaking', frequency: 500, gain: 0, q: 1.0 },
-  { filter_type: 'peaking', frequency: 1000, gain: 0, q: 1.0 },
-  { filter_type: 'peaking', frequency: 2000, gain: 0, q: 1.0 },
-  { filter_type: 'peaking', frequency: 4000, gain: 0, q: 1.0 },
-  { filter_type: 'peaking', frequency: 8000, gain: 0, q: 1.0 },
-  { filter_type: 'high_shelf', frequency: 16000, gain: 0, q: 0.7 },
+  { type: 'low_shelf', freq: 31, gain: 0, q: 0.7 },
+  { type: 'peaking', freq: 62, gain: 0, q: 1.0 },
+  { type: 'peaking', freq: 125, gain: 0, q: 1.0 },
+  { type: 'peaking', freq: 250, gain: 0, q: 1.0 },
+  { type: 'peaking', freq: 500, gain: 0, q: 1.0 },
+  { type: 'peaking', freq: 1000, gain: 0, q: 1.0 },
+  { type: 'peaking', freq: 2000, gain: 0, q: 1.0 },
+  { type: 'peaking', freq: 4000, gain: 0, q: 1.0 },
+  { type: 'peaking', freq: 8000, gain: 0, q: 1.0 },
+  { type: 'high_shelf', freq: 16000, gain: 0, q: 0.7 },
 ];
 
-const PRESET_GAINS = {
-  flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  bass_boost: [6, 6, 5, 3, 1, 0, 0, 0, 0, 0],
-  treble_boost: [0, 0, 0, 0, 0, 1, 2, 4, 5, 6],
-  vocal: [-3, -2, -2, -1, 1, 3, 4, 4, 2, 0],
-  rock: [4, 4, 3, -1, -2, -1, 1, 3, 4, 4],
-  jazz: [3, 3, 2, 1, 2, -1, -1, 0, 1, 2],
-  classical: [4, 4, 3, 2, 2, 0, -1, -1, 1, 3],
-  electronic: [5, 5, 4, 0, -2, 2, -1, 1, 3, 5],
-  loudness: [6, 6, 4, 0, -2, -3, -2, 0, 3, 5],
-  late_night: [-4, -3, -2, 0, 1, 2, 2, 1, -1, -3]
+const PRESETS = {
+  flat: [],
+  bass_boost: [
+    { type: 'low_shelf', freq: 100, gain: 6.0, q: 0.7 }
+  ],
+  treble_boost: [
+    { type: 'high_shelf', freq: 8000, gain: 4.0, q: 0.7 }
+  ],
+  vocal: [
+    { type: 'peaking', freq: 200, gain: -2.0, q: 1.0 },
+    { type: 'peaking', freq: 2500, gain: 3.0, q: 1.0 }
+  ],
+  loudness: [
+    { type: 'low_shelf', freq: 60, gain: 4.0, q: 0.7 },
+    { type: 'peaking', freq: 1000, gain: 1.0, q: 0.5 },
+    { type: 'high_shelf', freq: 10000, gain: 3.0, q: 0.7 }
+  ],
+  rock: [
+    { type: 'peaking', freq: 80, gain: 3.0, q: 0.8 },
+    { type: 'peaking', freq: 400, gain: -1.5, q: 1.0 },
+    { type: 'peaking', freq: 3000, gain: 2.0, q: 1.2 },
+    { type: 'high_shelf', freq: 10000, gain: 1.5, q: 0.7 }
+  ],
+  jazz: [
+    { type: 'low_shelf', freq: 100, gain: 2.0, q: 0.7 },
+    { type: 'peaking', freq: 1000, gain: -1.0, q: 0.8 },
+    { type: 'peaking', freq: 4000, gain: 1.5, q: 1.0 }
+  ],
+  classical: [
+    { type: 'low_shelf', freq: 60, gain: 1.5, q: 0.7 },
+    { type: 'peaking', freq: 500, gain: -0.5, q: 0.8 },
+    { type: 'peaking', freq: 8000, gain: 1.0, q: 0.7 },
+    { type: 'high_shelf', freq: 14000, gain: 1.5, q: 0.7 }
+  ],
+  electronic: [
+    { type: 'peaking', freq: 50, gain: 4.0, q: 0.8 },
+    { type: 'peaking', freq: 300, gain: -2.0, q: 1.0 },
+    { type: 'peaking', freq: 5000, gain: 2.5, q: 1.2 }
+  ],
+  late_night: [
+    { type: 'low_shelf', freq: 50, gain: -3.0, q: 0.7 },
+    { type: 'peaking', freq: 2000, gain: 2.0, q: 1.0 },
+    { type: 'high_shelf', freq: 10000, gain: -2.0, q: 0.7 }
+  ]
 };
 
 const SPEAKER_PROFILES = {
   'Custom Flat EQ': [
-    { filter_type: 'low_shelf', frequency: 31, gain: 0, q: 0.7 },
-    { filter_type: 'peaking', frequency: 62, gain: 0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 125, gain: 0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 250, gain: 0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 500, gain: 0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 1000, gain: 0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 2000, gain: 0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 4000, gain: 0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 8000, gain: 0, q: 1.0 },
-    { filter_type: 'high_shelf', frequency: 16000, gain: 0, q: 0.7 }
+    { type: 'low_shelf', freq: 31, gain: 0, q: 0.7 },
+    { type: 'peaking', freq: 62, gain: 0, q: 1.0 },
+    { type: 'peaking', freq: 125, gain: 0, q: 1.0 },
+    { type: 'peaking', freq: 250, gain: 0, q: 1.0 },
+    { type: 'peaking', freq: 500, gain: 0, q: 1.0 },
+    { type: 'peaking', freq: 1000, gain: 0, q: 1.0 },
+    { type: 'peaking', freq: 2000, gain: 0, q: 1.0 },
+    { type: 'peaking', freq: 4000, gain: 0, q: 1.0 },
+    { type: 'peaking', freq: 8000, gain: 0, q: 1.0 },
+    { type: 'high_shelf', freq: 16000, gain: 0, q: 0.7 }
   ],
   'Genelec 8030C': [
-    { filter_type: 'low_shelf', frequency: 31, gain: -4.0, q: 0.7 },
-    { filter_type: 'peaking', frequency: 62, gain: -2.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 125, gain: 1.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 250, gain: -0.8, q: 1.0 },
-    { filter_type: 'peaking', frequency: 500, gain: 0.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 1000, gain: -0.3, q: 1.0 },
-    { filter_type: 'peaking', frequency: 2000, gain: 1.2, q: 1.0 },
-    { filter_type: 'peaking', frequency: 4000, gain: -0.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 8000, gain: 0.8, q: 1.0 },
-    { filter_type: 'high_shelf', frequency: 16000, gain: -1.0, q: 0.7 }
+    { type: 'low_shelf', freq: 31, gain: -4.0, q: 0.7 },
+    { type: 'peaking', freq: 62, gain: -2.0, q: 1.0 },
+    { type: 'peaking', freq: 125, gain: 1.5, q: 1.0 },
+    { type: 'peaking', freq: 250, gain: -0.8, q: 1.0 },
+    { type: 'peaking', freq: 500, gain: 0.5, q: 1.0 },
+    { type: 'peaking', freq: 1000, gain: -0.3, q: 1.0 },
+    { type: 'peaking', freq: 2000, gain: 1.2, q: 1.0 },
+    { type: 'peaking', freq: 4000, gain: -0.5, q: 1.0 },
+    { type: 'peaking', freq: 8000, gain: 0.8, q: 1.0 },
+    { type: 'high_shelf', freq: 16000, gain: -1.0, q: 0.7 }
   ],
   'Sonos One (Gen 2)': [
-    { filter_type: 'low_shelf', frequency: 31, gain: 5.0, q: 0.7 },
-    { filter_type: 'peaking', frequency: 62, gain: 3.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 125, gain: -2.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 250, gain: 1.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 500, gain: -1.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 1000, gain: 2.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 2000, gain: -1.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 4000, gain: 1.8, q: 1.0 },
-    { filter_type: 'peaking', frequency: 8000, gain: -2.0, q: 1.0 },
-    { filter_type: 'high_shelf', frequency: 16000, gain: 3.0, q: 0.7 }
+    { type: 'low_shelf', freq: 31, gain: 5.0, q: 0.7 },
+    { type: 'peaking', freq: 62, gain: 3.5, q: 1.0 },
+    { type: 'peaking', freq: 125, gain: -2.0, q: 1.0 },
+    { type: 'peaking', freq: 250, gain: 1.0, q: 1.0 },
+    { type: 'peaking', freq: 500, gain: -1.5, q: 1.0 },
+    { type: 'peaking', freq: 1000, gain: 2.5, q: 1.0 },
+    { type: 'peaking', freq: 2000, gain: -1.0, q: 1.0 },
+    { type: 'peaking', freq: 4000, gain: 1.8, q: 1.0 },
+    { type: 'peaking', freq: 8000, gain: -2.0, q: 1.0 },
+    { type: 'high_shelf', freq: 16000, gain: 3.0, q: 0.7 }
   ],
   'JBL Control 1 Pro': [
-    { filter_type: 'low_shelf', frequency: 31, gain: -8.0, q: 0.7 },
-    { filter_type: 'peaking', frequency: 62, gain: -5.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 125, gain: 3.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 250, gain: -2.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 500, gain: 1.8, q: 1.0 },
-    { filter_type: 'peaking', frequency: 1000, gain: -3.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 2000, gain: 2.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 4000, gain: -1.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 8000, gain: 4.0, q: 1.0 },
-    { filter_type: 'high_shelf', frequency: 16000, gain: 6.0, q: 0.7 }
+    { type: 'low_shelf', freq: 31, gain: -8.0, q: 0.7 },
+    { type: 'peaking', freq: 62, gain: -5.0, q: 1.0 },
+    { type: 'peaking', freq: 125, gain: 3.0, q: 1.0 },
+    { type: 'peaking', freq: 250, gain: -2.5, q: 1.0 },
+    { type: 'peaking', freq: 500, gain: 1.8, q: 1.0 },
+    { type: 'peaking', freq: 1000, gain: -3.5, q: 1.0 },
+    { type: 'peaking', freq: 2000, gain: 2.0, q: 1.0 },
+    { type: 'peaking', freq: 4000, gain: -1.5, q: 1.0 },
+    { type: 'peaking', freq: 8000, gain: 4.0, q: 1.0 },
+    { type: 'high_shelf', freq: 16000, gain: 6.0, q: 0.7 }
   ],
   'KEF Q150 Bookcase': [
-    { filter_type: 'low_shelf', frequency: 31, gain: -1.5, q: 0.7 },
-    { filter_type: 'peaking', frequency: 62, gain: 1.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 125, gain: -1.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 250, gain: 0.8, q: 1.0 },
-    { filter_type: 'peaking', frequency: 500, gain: -1.2, q: 1.0 },
-    { filter_type: 'peaking', frequency: 1000, gain: 1.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 2000, gain: -0.5, q: 1.0 },
-    { filter_type: 'peaking', frequency: 4000, gain: 1.0, q: 1.0 },
-    { filter_type: 'peaking', frequency: 8000, gain: -0.5, q: 1.0 },
-    { filter_type: 'high_shelf', frequency: 16000, gain: 1.0, q: 0.7 }
+    { type: 'low_shelf', freq: 31, gain: -1.5, q: 0.7 },
+    { type: 'peaking', freq: 62, gain: 1.5, q: 1.0 },
+    { type: 'peaking', freq: 125, gain: -1.0, q: 1.0 },
+    { type: 'peaking', freq: 250, gain: 0.8, q: 1.0 },
+    { type: 'peaking', freq: 500, gain: -1.2, q: 1.0 },
+    { type: 'peaking', freq: 1000, gain: 1.5, q: 1.0 },
+    { type: 'peaking', freq: 2000, gain: -0.5, q: 1.0 },
+    { type: 'peaking', freq: 4000, gain: 1.0, q: 1.0 },
+    { type: 'peaking', freq: 8000, gain: -0.5, q: 1.0 },
+    { type: 'high_shelf', freq: 16000, gain: 1.0, q: 0.7 }
   ]
 };
 
@@ -314,11 +347,8 @@ const mockEqConfig = (enabled = false, preset = null, bands = null) => {
       if (SPEAKER_PROFILES[spName]) {
         activeBands = JSON.parse(JSON.stringify(SPEAKER_PROFILES[spName]));
       }
-    } else if (PRESET_GAINS[preset]) {
-      const gains = PRESET_GAINS[preset];
-      activeBands.forEach((b, idx) => {
-        if (gains[idx] !== undefined) b.gain = gains[idx];
-      });
+    } else if (PRESETS[preset]) {
+      activeBands = JSON.parse(JSON.stringify(PRESETS[preset]));
     }
   }
   
