@@ -399,7 +399,7 @@ const zones = {
 const clients = {
   1: {
     index: 1,
-    name: 'Living Room Gallery',
+    name: 'Media Console',
     mac: '00:11:22:33:44:55',
     zone_index: 1,
     icon: 'speaker-center',
@@ -414,7 +414,7 @@ const clients = {
   },
   2: {
     index: 2,
-    name: 'Living Room Sofa',
+    name: 'Living Room Bookshelf',
     mac: '00:11:22:33:44:56',
     zone_index: 1,
     icon: 'speaker-center',
@@ -424,8 +424,8 @@ const clients = {
     connected: true,
     is_snapdog: true,
     latency: 0,
-    speaker: 'Genelec 8030C',
-    eq: mockEqConfig(true, 'spinorama:Genelec 8030C'),
+    speaker: 'KEF Q150 Bookcase',
+    eq: mockEqConfig(true, 'spinorama:KEF Q150 Bookcase'),
   },
   3: {
     index: 3,
@@ -444,7 +444,7 @@ const clients = {
   },
   4: {
     index: 4,
-    name: 'Patio Deck',
+    name: 'Patio Pergola',
     mac: '00:11:22:33:44:58',
     zone_index: 3,
     icon: 'speaker-outdoor',
@@ -454,8 +454,8 @@ const clients = {
     connected: true,
     is_snapdog: true,
     latency: 0,
-    speaker: 'Custom Flat EQ',
-    eq: mockEqConfig(false, 'spinorama:Custom Flat EQ'),
+    speaker: 'JBL Control 1 Pro',
+    eq: mockEqConfig(false, 'spinorama:JBL Control 1 Pro'),
   },
   5: {
     index: 5,
