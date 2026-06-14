@@ -618,6 +618,8 @@ jobs:
           VERSION=${{ needs.meta.outputs.version }}
           sed -i "s/^SNAPDOG_SERVER_VERSION = .*/SNAPDOG_SERVER_VERSION = ${VERSION}/" \
             buildroot/package/snapdog-server/snapdog-server.mk
+          sed -i "s/^SNAPDOG_CLIENT_VERSION = .*/SNAPDOG_CLIENT_VERSION = ${VERSION}/" \
+            buildroot/package/snapdog-client/snapdog-client.mk
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
