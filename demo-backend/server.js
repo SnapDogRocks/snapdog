@@ -22,7 +22,7 @@ const limiter = rateLimit({
 // Apply the rate limiting middleware to all requests
 app.use(limiter);
 
-app.use(express.json());
+app.use(express.json({ strict: false }));
 // Serve Next.js static files from 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
