@@ -66,14 +66,14 @@ function EmptyState() {
   };
 
   return (
-    <div className="flex flex-1 items-center justify-center p-8">
-      <div className="max-w-sm text-center space-y-6">
+    <div className="fixed inset-0 flex min-w-0 items-center justify-center overflow-hidden px-6 py-10">
+      <div className="mx-auto flex w-full max-w-xs min-w-0 flex-col items-center space-y-6 text-center">
         <div className="animate-pulse-slow">
           <img src="/assets/snapdog-icon.svg" alt="SnapDog" className="size-24 mx-auto opacity-40" />
         </div>
         <div className="space-y-2">
           <h2 className="text-lg font-semibold">{t("title")}</h2>
-          <p className="text-sm text-muted-foreground">{t("description")}</p>
+          <p className="mx-auto max-w-[18rem] text-sm leading-relaxed text-muted-foreground">{t("description")}</p>
         </div>
         {knxAvailable && (
           <div className="flex items-center justify-center gap-3">
