@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.20.0](https://github.com/SnapDogRocks/snapdog/compare/v0.19.0...v0.20.0) (2026-06-14)
+
+
+### Features
+
+* **demo-backend:** align EQ presets and bands structure with Rust binary ([7c926fa](https://github.com/SnapDogRocks/snapdog/commit/7c926faa791627f50685787f4c64fcc83bb254f4))
+* **demo-backend:** rename clients to realistic speakers and assign KEF/JBL profiles ([b102fdf](https://github.com/SnapDogRocks/snapdog/commit/b102fdfd5909fd550422f538b1c2ba8c6d77f0db))
+
+
+### Bug Fixes
+
+* **ci:** also bump snapdog-client version in snapdog-os PR ([1632a1a](https://github.com/SnapDogRocks/snapdog/commit/1632a1aebd761d284c3041ff26be9721df03dfdb))
+* **webui:** bundle brand fonts locally ([59a2889](https://github.com/SnapDogRocks/snapdog/commit/59a2889a686d421a2de4833f45899f96380c5d27))
+* **webui:** center EmptyState layout and constrain text width ([893a722](https://github.com/SnapDogRocks/snapdog/commit/893a7220dedea6692719c72c9a71c67937753940))
+* **webui:** expand progress and volume sliders to full zone width ([772bafc](https://github.com/SnapDogRocks/snapdog/commit/772bafc2499fa2a6d0d3d524109cf1d1f0a6030f))
+* **webui:** pin sidebar to viewport using overflow-hidden on body ([c9615c3](https://github.com/SnapDogRocks/snapdog/commit/c9615c3a2429d750870718c0062e051e32218172))
+* **webui:** remove max-width clamp from sliders to fill controls column ([168cd6f](https://github.com/SnapDogRocks/snapdog/commit/168cd6f84053049a46aecf23b8279439e89d3085))
+
 ## [0.19.0](https://github.com/SnapDogRocks/snapdog/compare/v0.18.0...v0.19.0) (2026-06-14)
 
 
