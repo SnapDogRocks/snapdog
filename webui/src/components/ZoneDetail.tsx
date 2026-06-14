@@ -153,16 +153,15 @@ export function ZoneDetail({ zone, isCarouselCard = false }: { zone: ZoneState; 
           <PlaybackErrorBanner zone={zone} />
           
           {/* Horizontal split layout if container width >= @sm (384px), else vertical stacked for mobile */}
-          <div className="flex flex-col @sm:flex-row @sm:gap-6 @sm:items-start justify-center">
+          <div className="flex flex-col @sm:flex-row @sm:gap-6 @sm:items-center justify-center">
             {/* Cover Art */}
             <div className="w-full max-w-[280px] @sm:max-w-none @sm:w-44 @md:w-48 @lg:w-56 aspect-square mx-auto @sm:mx-0 shrink-0 shadow-lg rounded-2xl overflow-hidden transition-transform duration-500 hover:scale-[1.02] border border-white/5 bg-muted">
               <NowPlaying zone={zone} />
             </div>
 
             {/* Controls & Metadata */}
-            <div className="flex flex-col justify-between flex-1 min-w-0 @sm:max-w-[360px] @md:max-w-[380px] @lg:max-w-[400px] space-y-3.5 @sm:space-y-0 @sm:h-44 @md:h-48 @lg:h-56 mt-4 @sm:mt-0">
+            <div className="flex flex-col justify-between flex-1 min-w-0 @sm:h-44 @md:h-48 @lg:h-56 mt-4 @sm:mt-0 space-y-3.5 @sm:space-y-0">
               <TrackInfo zone={zone} forceCenter={false} />
-              <SeekBar zone={zone} />
               <div className="flex items-center justify-center gap-3 relative w-full">
                 <div className="mx-auto"><TransportControls zone={zone} /></div>
                 <Button
@@ -176,14 +175,19 @@ export function ZoneDetail({ zone, isCarouselCard = false }: { zone: ZoneState; 
                 </Button>
               </div>
               <ShuffleRepeat zone={zone} />
-              <VolumeSlider
-                volume={zone.volume}
-                muted={zone.muted}
-                onVolumeChange={(v) => api.zones.setVolume(zone.index, v).catch(logApiError)}
-                onMuteToggle={() => api.zones.toggleMute(zone.index).catch(logApiError)}
-                onUnmute={() => api.zones.setMute(zone.index, false).catch(logApiError)}
-              />
             </div>
+          </div>
+
+          {/* Sliders row - spans full width of the zone details card */}
+          <div className="space-y-4 pt-2.5 w-full">
+            <SeekBar zone={zone} />
+            <VolumeSlider
+              volume={zone.volume}
+              muted={zone.muted}
+              onVolumeChange={(v) => api.zones.setVolume(zone.index, v).catch(logApiError)}
+              onMuteToggle={() => api.zones.toggleMute(zone.index).catch(logApiError)}
+              onUnmute={() => api.zones.setMute(zone.index, false).catch(logApiError)}
+            />
           </div>
         </div>
 
