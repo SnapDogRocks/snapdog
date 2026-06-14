@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.19.0](https://github.com/SnapDogRocks/snapdog/compare/v0.18.0...v0.19.0) (2026-06-14)
+
+
+### Features
+
+* **demo-backend:** add express-rate-limit middleware and configure trust proxy ([9615a80](https://github.com/SnapDogRocks/snapdog/commit/9615a80d0c9b12c99f78ba25ceef51885a7065f2))
+* **demo-backend:** expand zones with premium clients and update client count ([7901ec9](https://github.com/SnapDogRocks/snapdog/commit/7901ec9896d6579dfa783340a78da1214fdcaac5))
+
+
+### Bug Fixes
+
+* **demo:** disable strict parsing in express json to support primitives ([75ee0f1](https://github.com/SnapDogRocks/snapdog/commit/75ee0f12b051cf36289e2b2447b3fc4c751e0448))
+
 ## [0.18.0](https://github.com/SnapDogRocks/snapdog/compare/v0.17.0...v0.18.0) (2026-06-13)
 
 
