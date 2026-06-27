@@ -125,7 +125,7 @@ function PlaybackErrorBanner({ zone }: { zone: ZoneState }) {
   );
 }
 
-export function ZoneDetail({ zone, isCarouselCard = false }: { zone: ZoneState; isCarouselCard?: boolean }) {
+export function ZoneDetail({ zone }: { zone: ZoneState }) {
   const [showEq, setShowEq] = useState(false);
   const t = useTranslations();
 

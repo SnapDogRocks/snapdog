@@ -175,7 +175,7 @@ export default function Home() {
       }
     }
     setActiveDot(closestIndex);
-  }, [zoneMap.size]);
+  }, []);
 
   const scrollCarousel = (direction: "left" | "right") => {
     if (carouselRef.current) {
@@ -433,7 +433,7 @@ export default function Home() {
                       )}
                       <div className="relative z-10 h-full">
                         <ZoneDropTarget zoneIndex={z.index}>
-                          <ZoneDetail zone={z} isCarouselCard={true} />
+                          <ZoneDetail zone={z} />
                         </ZoneDropTarget>
                       </div>
                     </div>
