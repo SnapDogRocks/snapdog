@@ -2,11 +2,12 @@
 rfc: BT-0001
 title: Bluetooth (A2DP sink) audio source
 status: draft            # draft | accepted | in-progress | done | superseded
-version: 1.2.0           # v1.2: adapters addressed by stable index, not MAC (BT-DEC-23)
+version: 2.1.0           # v2.1: MVP = autodetect/passive take-over only; explicit selection + discovery API → Roadmap (§15)
 created: 2026-06-21
 updated: 2026-06-21
 target_repo: snapdog
 target_branch: main
+related: [LI-0002]       # PCM/Line-In reuses this RFC's live-input core
 linux_only: true
 feature_flags: [bluetooth, bt-aptx]
 owners: [metaneutrons]
@@ -14,7 +15,8 @@ progress:                # keep in sync with the BT-LEDGER block at the bottom
   total_tasks: 35
   done: 0
   in_progress: 0
-  todo: 35
+  todo: 26
+  deferred: 9            # Roadmap (§15): explicit selection, discovery, runtime routing, secured pairing
 ---
 
 # RFC BT-0001 — Bluetooth (A2DP sink) audio source
@@ -39,6 +41,19 @@ plane (D-Bus), PCM capture, routing, metadata, and AVRCP control. A single
 **`BluetoothHub`** owns all adapters and fans each adapter's stream out to a
 configurable set of zones; per-zone integration reuses the existing
 `ReceiverProvider` channels so the zone player is largely untouched.
+
+This RFC also defines the **shared live-input core** (`LiveInputHub` and the
+`activation` model) that **RFC LI-0002 (PCM / Line-In)** builds on — Bluetooth is
+its first input *kind*.
+
+> **MVP scope (v2.1, `BT-DEC-27`):** ship Bluetooth as **autodetect / passive
+> take-over only** — exactly like AirPlay/Spotify. A config-**bound** adapter
+> takes over its zone(s) when a device connects; metadata/codec/transport surface
+> in the existing zone state. **Deferred to the Roadmap (§15):** explicit runtime
+> selection (`play/bluetooth`), the discovery endpoint (`/inputs` vs per-kind —
+> still an open API question), runtime routing/fan-out, the KNX/MQTT *selection*
+> surfaces, and secured pairing. This ships the audio path on the proven pattern
+> and leaves the selection API for a dedicated design pass.
 
 ## 2. Goals / Non-goals
 
@@ -194,7 +209,7 @@ at aptX HD (lossy 24/48). `BT-REQ-08` surfaces the codec so users see reality.
 | `BT-DEC-09` | Bonds | **Ephemeral** — forget device on disconnect (avoid unbounded guest-bond growth). |
 | `BT-DEC-10` | Pairing modes | Support **both** `open` (just-works, zero friction) and `secured` (timed window + agent/app confirmation). Config-selectable, **default `open`**. |
 | `BT-DEC-11` | Config granularity | Global defaults with **per-adapter override** for pairing/concurrency/take-over/name. |
-| `BT-DEC-12` | Adapter identity | Key **config/persistence** by **MAC address** (stable), never `hciN`. The **API/MQTT/KNX address adapters by a stable index** (`BT-DEC-23`); MAC is surfaced as a field in `GET /bluetooth/adapters`. |
+| `BT-DEC-12` | Adapter identity | Key **config/persistence** by **MAC address** (stable), never `hciN`. The **API/MQTT/KNX address adapters by a stable index** (`BT-DEC-23`); MAC is surfaced as a field in `GET /api/v1/inputs`. |
 | `BT-DEC-13` | Cover art | **Best-effort** via AVRCP; ship if not a showstopper, else defer (non-blocking). |
 | `BT-DEC-14` | Transport controls | Implement `RemoteControl` (AVRCP) in v1 — parity with AirPlay/Spotify. |
 | `BT-DEC-15` | Quality signal | Expose negotiated codec (from `MediaTransport1`) as a badge in webui/apps + a subtle "lossy" hint. |
@@ -207,7 +222,11 @@ at aptX HD (lossy 24/48). `BT-REQ-08` surfaces the codec so users see reality.
 | `BT-DEC-20` | Adapter/device/pairing surface | Lives under a **new `/bluetooth` subsystem resource** (REST + WS + MQTT). **Not** per-zone, **not** KNX — device lists & pairing flows have no GA/DPT analog. KNX gets only per-zone select + status. |
 | `BT-DEC-21` | Codec is a new field | No codec/quality field exists today. Add `codec: Option<String>` to `TrackInfo` and propagate to REST + MQTT + WS (optional KNX string GA) — a 4–5 surface change, not a free status cell. |
 | `BT-DEC-22` | Fan-out vs one-source-per-zone | Fan-out = each target zone independently holds `ActiveSource::Bluetooth(adapter)`. **No change** to the one-active-source-per-zone model; only the routing command is new. |
-| `BT-DEC-23` | Adapter addressing in the API | Adapters are addressed by a **stable index** in REST/MQTT/KNX (consistent with zones/clients; KNX needs DPT 5.010 indices, MACs can't traverse KNX). MAC (`BT-DEC-12`) stays the internal/config key and appears as a field in `GET /bluetooth/adapters`. Supersedes the `{mac}`-in-path from v1.1. |
+| `BT-DEC-23` | Adapter addressing in the API | Adapters are addressed by a **stable index** in REST/MQTT/KNX (consistent with zones/clients; KNX needs DPT 5.010 indices, MACs can't traverse KNX). MAC (`BT-DEC-12`) stays the internal/config key and appears as a field in `GET /api/v1/inputs`. Supersedes the `{mac}`-in-path from v1.1. |
+| `BT-DEC-24` | Shared live-input core | Generalize `BluetoothHub` → a reusable **`LiveInputHub`** (input registry, routing matrix, `activation`, fan-out, `/inputs` discovery). Bluetooth is the first **input kind**; **RFC LI-0002 (PCM/Line-In)** is the second. Only the *capture* layer is per-kind (BlueALSA for BT, cpal for Line-In). |
+| `BT-DEC-25` | Inputs vs content (no `play/input`) | Two source **categories** (AV-receiver model): **content** (radio/subsonic/url — navigable, `play/url\|playlist\|subsonic`) and **inputs/receivers** (airplay/spotify/bluetooth/line-in). Selection stays **type-specific `play/*`** — a generic `play/input` verb was rejected as a leaky, incomplete abstraction (radio isn't an "input"). Unification lives in: the core, the `GET /api/v1/inputs` discovery (whole inputs category; airplay/spotify as passive `selectable:false` entries → complete), and the UI's merged picker — **not** a verb. Supersedes `GET /bluetooth/adapters` as the discovery surface (`/bluetooth/*` keeps BT-only *actions*). |
+| `BT-DEC-26` | Activation model | Shared `activation = auto \| manual` per input (default `auto`). The *trigger* is per-kind: BT = device **connects**; Line-In = **signal detected** (`LI-0002`). Auto fires take-over (`SessionStarted`); inactivity → `SessionEnded` → Idle (`BT-DEC-02`). |
+| `BT-DEC-27` | MVP scope: autodetect-only | **Ship Bluetooth as passive take-over only**, exactly like AirPlay/Spotify: a config-**bound** adapter (`bind_zones`) auto-takes-over on connect (`BT-DEC-01`); metadata/codec/transport ride existing zone state (`BT-T20/21/22`). **Deferred to Roadmap (§15):** explicit runtime selection (`play/bluetooth`, `BT-DEC-19`), the **discovery API** (the `/inputs`-vs-per-kind question of `BT-DEC-23/24/25` is **left open**), runtime routing/fan-out (the runtime layer of `BT-DEC-07`), KNX/MQTT *selection* surfaces, and secured pairing (`BT-DEC-10` `secured`). Refines `BT-REQ-05` to its config-binding layer for MVP. |
 
 **Legal note (aptX):** libfreeaptx is reverse-engineered; the `bt-aptx` feature
 flag lets the **official SnapDog OS image** ship without it if legal advises,
@@ -240,6 +259,12 @@ bind_zones = ["Living Room"]    # default route(s) (BT-DEC-07); [] = unbound
 
 ## 8. Control surfaces (reworked to match verified conventions, §3)
 
+> **MVP vs Roadmap (`BT-DEC-27`):** for the autodetect-only MVP, the only *active*
+> surfaces are **passive take-over** (no command), **transport**, and the
+> **`codec`/status** fields below (shipped via `BT-T20/21/22` + zone state). The
+> **route/select** command in (A) and the entire **discovery** block (B) are
+> **deferred to the Roadmap (§15)** — kept here as the eventual design, not MVP work.
+
 Two distinct layers — do **not** model everything as "endpoint + topic + GA per
 action" (that was the v1.0 mistake):
 
@@ -259,22 +284,22 @@ Passive take-over for a bound adapter needs **no** route command. Fan-out is jus
 several zones each holding `ActiveSource::Bluetooth(mac)` — no state-model change
 (`BT-DEC-22`).
 
-**(B) Bluetooth subsystem — NEW `/bluetooth` resource (REST + WS + MQTT; NOT KNX).**
-Adapter/device/pairing are not per-zone source concerns.
+**(B) Discovery via the unified `/inputs` category; BT-only *actions* under `/bluetooth`** (REST + WS + MQTT; NOT KNX). `BT-DEC-24/25`.
 
 | Action | REST | MQTT | WS |
 |---|---|---|---|
-| List adapters (**index**, mac, name, bound zones, connected device, codec) | `GET /bluetooth/adapters` | `bluetooth/adapters/{adapter}/state` (retained; payload carries mac+name) | `BluetoothChanged` (push) |
-| List connected devices | `GET /bluetooth/devices` | (in adapter state) | `BluetoothChanged` |
-| Disconnect current device | `POST /bluetooth/adapters/{adapter}/disconnect` | `bluetooth/adapters/{adapter}/disconnect/set` | — |
-| Start `secured` pairing window | `POST /bluetooth/adapters/{adapter}/pairing` | `bluetooth/adapters/{adapter}/pairing/set` | `BluetoothChanged` (state) |
+| List inputs — the *inputs/receivers* category (airplay, spotify, bluetooth adapters, line-in ports), each `{index, kind, name, selectable, active, mac?, connected_device?, codec?}` | `GET /api/v1/inputs` | `inputs/{index}/state` (retained) | `InputsChanged` (push) |
+| Disconnect current device (BT) | `POST /bluetooth/adapters/{adapter}/disconnect` | `bluetooth/adapters/{adapter}/disconnect/set` | — |
+| Start `secured` pairing window (BT) | `POST /bluetooth/adapters/{adapter}/pairing` | `bluetooth/adapters/{adapter}/pairing/set` | `InputsChanged` (state) |
 
-> `{adapter}` is the stable index from `GET /bluetooth/adapters` (which maps
-> index ↔ mac ↔ name); MAC never appears in a path/topic/GA (`BT-DEC-23`).
+> `{adapter}`/`{index}` is the stable input index from `GET /api/v1/inputs` (maps
+> index ↔ kind ↔ mac/name); MAC never appears in a path/topic/GA (`BT-DEC-23`).
+> AirPlay/Spotify appear as **passive** entries (`selectable:false`) so the inputs
+> category is complete (`BT-DEC-25`); they're activated by their device, not by API.
 
 **KNX is deliberately scope-limited** (`BT-DEC-20`): per-zone select + status
-(BT-active / device-name / optional codec) only. Device lists, multi-adapter
-inventory, and pairing flows are **not** exposed over KNX (no DPT/GA analog).
+(BT-active / device-name / optional codec) only. Input inventories and pairing
+flows are **not** exposed over KNX (no DPT/GA analog).
 
 ## 9. SnapDog OS / buildroot
 
@@ -298,7 +323,7 @@ inventory, and pairing flows are **not** exposed over KNX (no DPT/GA analog).
 - [ ] `BT-T04` Module skeleton `receiver/bluetooth/` (`mod.rs`, `hub.rs`, `bluez.rs`, `bluealsa.rs`, `avrcp.rs`), `cfg(all(feature="bluetooth", target_os="linux"))`. `status: todo` · deps: BT-T01.
 
 ### Phase 1 — Single-adapter MVP (audio end-to-end, open pairing)
-- [ ] `BT-T10` `BluetoothHub` skeleton (adapter registry by MAC, routing matrix, lifecycle). `status: todo` · files: `receiver/bluetooth/hub.rs` · deps: BT-T04.
+- [ ] `BT-T10` **`LiveInputHub` core** (shared input registry, routing matrix, `activation`, lifecycle) — Bluetooth is the first input *kind*; reused by LI-0002 (`BT-DEC-24/26`). `status: todo` · files: `receiver/live_input/hub.rs` · deps: BT-T04.
 - [ ] `BT-T11` BlueALSA capture loop: ALSA `bluealsa` PCM → native depth → F32. `status: todo` · files: `…/bluealsa.rs` · deps: BT-T10 · **AC:** decoded PCM observed for a connected phone.
 - [ ] `BT-T12` BlueZ control plane via `zbus`: adapter discoverable/pairable, just-works `Agent1`, connect/disconnect events. `status: todo` · files: `…/bluez.rs` · deps: BT-T10 · **AC:** phone pairs+connects with no prompt (`open`).
 - [ ] `BT-T13` `BluetoothReceiver` (`ReceiverProvider`) per-zone shim registering channels with the hub. `status: todo` · files: `…/mod.rs` · deps: BT-T10.
@@ -315,20 +340,22 @@ inventory, and pairing flows are **not** exposed over KNX (no DPT/GA analog).
 - [ ] `BT-T22` Add **new `codec` field** to `TrackInfo` (from `MediaTransport1`) and propagate to REST + MQTT + WS (+opt KNX) (`BT-DEC-15/21`). `status: todo` · deps: BT-T12 · **AC:** codec visible per-zone across REST/WS/MQTT.
 - [ ] `BT-T23` Cover art via AVRCP (best-effort) (`BT-DEC-13`). `status: todo` · deps: BT-T20 · **AC:** ships if non-disruptive, else `status: cancelled` with note.
 
-### Phase 3 — Routing (runtime selection + fan-out)
-- [ ] `BT-T30` Routing matrix runtime API in hub (set/clear input→zone). `status: todo` · deps: BT-T14.
-- [ ] `BT-T31` Zone routing via `Play*` convention (`ZoneCommand::PlayBluetooth` route + passive take-over for bound adapters); fan-out = independent per-zone selection (`BT-DEC-19/22`, `BT-REQ-04`). `status: todo` · deps: BT-T30.
-- [ ] `BT-T32` Per-zone control surfaces §8(A): REST `play/bluetooth` + WS `ZoneChanged`(+codec). `status: todo` · deps: BT-T31.
-- [ ] `BT-T33` MQTT (per-zone + `bluetooth/adapters/*`) and **KNX scope-limited** (per-zone select + BT-active/device/codec status; no device-list/pairing) §8 (`BT-DEC-20`). `status: todo` · deps: BT-T31, BT-T34.
-- [ ] `BT-T34` **`/bluetooth` subsystem resource** §8(B): REST `GET /bluetooth/adapters` & `/devices`, `POST …/disconnect`, `POST …/pairing`; `BluetoothChanged` WS push (`BT-DEC-20`). `status: todo` · deps: BT-T12, BT-T30.
+### Phase 3 — Routing, selection & discovery  ⟶ **ROADMAP (deferred, §15)**
+> Deferred per `BT-DEC-27` — the explicit selection/discovery API needs a dedicated design pass. Kept for traceability.
+- [ ] `BT-T30` Routing matrix runtime API in hub (set/clear input→zone). `status: deferred` · deps: BT-T14.
+- [ ] `BT-T31` Zone routing via `Play*` convention (`ZoneCommand::PlayBluetooth` route + passive take-over for bound adapters); fan-out = independent per-zone selection (`BT-DEC-19/22`, `BT-REQ-04`). `status: deferred` · deps: BT-T30.
+- [ ] `BT-T32` Per-zone control surfaces §8(A): REST `play/bluetooth` + WS `ZoneChanged`(+codec). `status: deferred` · deps: BT-T31.
+- [ ] `BT-T33` MQTT (per-zone + `bluetooth/adapters/*`) and **KNX scope-limited** (per-zone select + BT-active/device/codec status; no device-list/pairing) §8 (`BT-DEC-20`). `status: deferred` · deps: BT-T31, BT-T34.
+- [ ] `BT-T34` Discovery endpoint — **the `/inputs`-vs-per-kind question is OPEN** (`BT-DEC-23/24/25`) — + BT-only actions (`/bluetooth/.../disconnect|pairing`) + change WS push. `status: deferred` · deps: BT-T12, BT-T30.
 
 ### Phase 4 — Multi-adapter
 - [ ] `BT-T40` Adapter enumeration via BlueZ; per-adapter capture/control instances. `status: todo` · deps: BT-T11, BT-T12 · **AC:** 2 dongles → 2 independent inputs.
 - [ ] `BT-T41` Per-adapter config + overrides + naming (`BT-DEC-11`). `status: todo` · deps: BT-T17, BT-T40.
 
-### Phase 5 — Secured pairing
-- [ ] `BT-T50` `secured` mode: timed discoverable window + agent confirmation; per-adapter (`BT-DEC-10/11`). `status: todo` · deps: BT-T12.
-- [ ] `BT-T51` App-mediated allow/deny over WS (surface incoming request). `status: todo` · deps: BT-T50, BT-T32.
+### Phase 5 — Secured pairing  ⟶ **ROADMAP (deferred, §15)**
+> Deferred per `BT-DEC-27` — MVP ships `open` (just-works) pairing only.
+- [ ] `BT-T50` `secured` mode: timed discoverable window + agent confirmation; per-adapter (`BT-DEC-10/11`). `status: deferred` · deps: BT-T12.
+- [ ] `BT-T51` App-mediated allow/deny over WS (surface incoming request). `status: deferred` · deps: BT-T50, BT-T32.
 
 ### Phase 6 — SnapDog OS build
 - [ ] `BT-T60` Buildroot packages: bluez5_utils, bluez-alsa, sbc, fdk-aac, libfreeaptx (gated). `status: todo` · repo: **snapdog-os** · deps: BT-T01.
@@ -336,20 +363,23 @@ inventory, and pairing flows are **not** exposed over KNX (no DPT/GA analog).
 - [ ] `BT-T62` `/var/lib/bluetooth` → `/data` symlink + data-init seed (`BT-DEC-18`). `status: todo` · repo: snapdog-os · files: `board/raspberrypi/post-build.sh`, `package/snapdog-server/snapdog-data-init`.
 
 ### Phase 7 — UI (webui + apps)
-- [ ] `BT-T70` Source selector exposes BT inputs + connected device names. `status: todo` · repo: snapdog-web / apps · deps: BT-T32.
-- [ ] `BT-T71` Codec quality badge + lossy hint (`BT-DEC-15`). `status: todo` · deps: BT-T22, BT-T32.
-- [ ] `BT-T72` Disconnect-device + (secured) pairing controls. `status: todo` · deps: BT-T32, BT-T50.
+- [ ] `BT-T70` Source **selector** exposes BT inputs (selection UI) ⟶ **ROADMAP (§15)**. `status: deferred` · repo: snapdog-web / apps · deps: BT-T32.
+- [ ] `BT-T71` Codec quality badge + lossy hint + connected-device name in now-playing (`BT-DEC-15`). `status: todo` · repo: snapdog-web · deps: BT-T22.
+- [ ] `BT-T72` Disconnect-device + (secured) pairing controls ⟶ **ROADMAP (§15)**. `status: deferred` · repo: snapdog-web · deps: BT-T32, BT-T50.
 
 ### Cross-cutting
 - [ ] `BT-T80` Tests: PCM-format conversion, routing-matrix logic, config parse, take-over/disconnect state. `status: todo` · deps: phase 1–3.
 - [ ] `BT-T81` Docs: README source list, `snapdog.example.toml` `[bluetooth]`, hardware note (USB dongle, dongle-per-room for guest self-serve). `status: todo` · deps: BT-T17.
 
-## 11. Definition of done (MVP = phases 0–3 + 6 + minimal 7)
-- A phone connects to the device (open pairing), audio plays in the bound zone,
-  preempting the prior source; disconnect → Idle.
-- The same input is selectable on multiple zones (fan-out) at runtime.
-- Now-playing + negotiated codec visible in webui; transport controls work.
+## 11. Definition of done (MVP = autodetect-only; phases 0–2, 4, 6 + minimal 7)
+- A phone connects to the device (open pairing), audio **auto-takes-over** the
+  config-bound zone(s), preempting the prior source; disconnect → Idle.
+- Multiple adapters each auto-serve their bound zone(s) (config-level fan-out).
+- Now-playing + negotiated codec + connected device visible in webui; transport
+  controls work.
 - Runs on a SnapDog OS image with bonds persisted across reboot.
+
+> Runtime selection/fan-out, the discovery API, and secured pairing are **Roadmap (§15)**.
 
 ## 12. Progress-tracking protocol (for AI agents)
 1. Pick a task whose `depends_on` are all `done`/`cancelled`.
@@ -384,26 +414,50 @@ tasks:
   - { id: BT-T21, phase: 2, status: todo, depends_on: [BT-T20] }
   - { id: BT-T22, phase: 2, status: todo, depends_on: [BT-T12] }
   - { id: BT-T23, phase: 2, status: todo, depends_on: [BT-T20] }
-  - { id: BT-T30, phase: 3, status: todo, depends_on: [BT-T14] }
-  - { id: BT-T31, phase: 3, status: todo, depends_on: [BT-T30] }
-  - { id: BT-T32, phase: 3, status: todo, depends_on: [BT-T31] }
-  - { id: BT-T33, phase: 3, status: todo, depends_on: [BT-T31, BT-T34] }
-  - { id: BT-T34, phase: 3, status: todo, depends_on: [BT-T12, BT-T30] }
+  - { id: BT-T30, phase: 3, status: deferred, depends_on: [BT-T14] }      # Roadmap §15
+  - { id: BT-T31, phase: 3, status: deferred, depends_on: [BT-T30] }      # Roadmap §15
+  - { id: BT-T32, phase: 3, status: deferred, depends_on: [BT-T31] }      # Roadmap §15
+  - { id: BT-T33, phase: 3, status: deferred, depends_on: [BT-T31, BT-T34] }  # Roadmap §15
+  - { id: BT-T34, phase: 3, status: deferred, depends_on: [BT-T12, BT-T30] }  # Roadmap §15 (discovery API open)
   - { id: BT-T40, phase: 4, status: todo, depends_on: [BT-T11, BT-T12] }
   - { id: BT-T41, phase: 4, status: todo, depends_on: [BT-T17, BT-T40] }
-  - { id: BT-T50, phase: 5, status: todo, depends_on: [BT-T12] }
-  - { id: BT-T51, phase: 5, status: todo, depends_on: [BT-T50, BT-T32] }
+  - { id: BT-T50, phase: 5, status: deferred, depends_on: [BT-T12] }      # Roadmap §15
+  - { id: BT-T51, phase: 5, status: deferred, depends_on: [BT-T50, BT-T32] }  # Roadmap §15
   - { id: BT-T60, phase: 6, status: todo, repo: snapdog-os, depends_on: [BT-T01] }
   - { id: BT-T61, phase: 6, status: todo, repo: snapdog-os, depends_on: [BT-T60] }
   - { id: BT-T62, phase: 6, status: todo, repo: snapdog-os, depends_on: [] }
-  - { id: BT-T70, phase: 7, status: todo, repo: snapdog-web, depends_on: [BT-T32] }
-  - { id: BT-T71, phase: 7, status: todo, repo: snapdog-web, depends_on: [BT-T22, BT-T32] }
-  - { id: BT-T72, phase: 7, status: todo, repo: snapdog-web, depends_on: [BT-T32, BT-T50] }
+  - { id: BT-T70, phase: 7, status: deferred, repo: snapdog-web, depends_on: [BT-T32] }  # Roadmap §15
+  - { id: BT-T71, phase: 7, status: todo, repo: snapdog-web, depends_on: [BT-T22] }
+  - { id: BT-T72, phase: 7, status: deferred, repo: snapdog-web, depends_on: [BT-T32, BT-T50] }  # Roadmap §15
   - { id: BT-T80, phase: x, status: todo, depends_on: [] }
   - { id: BT-T81, phase: x, status: todo, depends_on: [BT-T17] }
 ```
 <!-- BT-LEDGER-END -->
 
 ## 14. Open questions
-None blocking — all design decisions in §6 are resolved. `BT-T23` (cover art) is
-the only conditional item and is non-blocking by definition.
+None blocking the MVP — design decisions in §6 are resolved. `BT-T23` (cover art)
+is the only conditional MVP item (non-blocking). The one **open** design question
+is deferred with its feature (discovery API shape — see §15).
+
+## 15. Roadmap (deferred — explicit selection & discovery API)
+
+Deferred from the MVP per `BT-DEC-27`, for a dedicated design pass. The **MVP ships
+the audio path** (autodetect / passive take-over, like AirPlay/Spotify); these add
+user-driven control on top:
+
+- **Explicit runtime selection** — `play/bluetooth[/{adapter}]` (`BT-DEC-19`) + the
+  runtime routing layer of `BT-DEC-07`. Tasks: `BT-T30`, `BT-T31`, `BT-T32`.
+- **Discovery API — OPEN QUESTION.** Unified `GET /api/v1/inputs` (`BT-DEC-24/25`)
+  **vs per-kind** endpoints (`GET /bluetooth/adapters`, `GET /linein/ports`) is
+  **unresolved**. The per-kind option is the discovery twin of the type-specific
+  `play/*` verbs; the aggregate raises a per-kind-vs-unified **index** question
+  (`BT-DEC-23`). Decide here. Task: `BT-T34`.
+- **KNX/MQTT *selection*** surfaces — status surfaces already ship in MVP via
+  `BT-T22` + zone state. Task: `BT-T33`.
+- **Secured pairing** — timed window + app allow/deny (`BT-DEC-10`). Tasks:
+  `BT-T50`, `BT-T51`.
+- **Selection UI** — source picker + disconnect/pairing controls. Tasks: `BT-T70`,
+  `BT-T72`.
+
+These IDs stay in the ledger with `status: deferred`; promoting one to MVP = flip
+it to `todo` and proceed per §12.
