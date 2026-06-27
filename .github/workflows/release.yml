@@ -620,6 +620,16 @@ jobs:
             buildroot/package/snapdog-server/snapdog-server.mk
           sed -i "s/^SNAPDOG_CLIENT_VERSION = .*/SNAPDOG_CLIENT_VERSION = ${VERSION}/" \
             buildroot/package/snapdog-client/snapdog-client.mk
+          
+          # Fetch the checksum of the new release tarball and update the hash file
+          URL="https://github.com/SnapDogRocks/snapdog/releases/download/v${VERSION}/SHA256SUMS"
+          HASH=$(curl -fsSL "$URL" | grep "snapdog-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
+          if [ -z "$HASH" ]; then
+            echo "::error::Failed to retrieve hash from ${URL}"
+            exit 1
+          fi
+          printf '# Remote SnapDog release artifact.\nsha256  %s  snapdog-v%s-aarch64-unknown-linux-gnu.tar.gz\n' "$HASH" "$VERSION" \
+            > buildroot/package/snapdog-client/snapdog-client.hash
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
