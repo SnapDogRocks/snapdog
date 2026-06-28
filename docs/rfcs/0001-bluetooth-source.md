@@ -2,7 +2,7 @@
 rfc: BT-0001
 title: Bluetooth (A2DP sink) audio source
 status: draft            # draft | accepted | in-progress | done | superseded
-version: 2.1.0           # v2.1: MVP = autodetect/passive take-over only; explicit selection + discovery API → Roadmap (§15)
+version: 2.3.0           # v2.3: config aligned to snapdog conventions (lowercase MAC, Raw→resolve via convention.rs)
 created: 2026-06-21
 updated: 2026-06-21
 target_repo: snapdog
@@ -158,7 +158,7 @@ at aptX HD (lossy 24/48). `BT-REQ-08` surfaces the codec so users see reality.
    │           │  • ROUTING MATRIX: adapter → {zone set}                      │
    │           └───────┬───────────────────────────────────────────────────  │
    │   per-zone shim   │ fan-out: forwards PCM + ReceiverEvent to each        │
-   │  BluetoothReceiver│ subscribed zone's (audio_tx, event_tx)               │
+   │  LiveInputReceiver│ subscribed zone's (audio_tx, event_tx)               │
    │  (ReceiverProvider)▼                                                      │
    │            ZonePlayer select loop (UNCHANGED pattern; new arms)          │
    └──────────────────────────────────────────────────────────────────────────┘
@@ -167,11 +167,13 @@ at aptX HD (lossy 24/48). `BT-REQ-08` surfaces the codec so users see reality.
 ### 5.2 Why a hub + per-zone shim
 - The **`BluetoothHub`** is the shared source: it owns adapters, the BlueZ/BlueALSA
   plumbing, AVRCP, and the routing matrix. One instance per process.
-- The **`BluetoothReceiver`** (implements existing `ReceiverProvider`) is a thin
-  per-zone shim. On `start(audio_tx, event_tx)` it registers
-  `(zone_index, audio_tx, event_tx)` with the hub. The hub forwards a routed
-  adapter's PCM/events into those channels — so `runner.rs` only gains two
-  `select!` arms (mirroring AirPlay/Spotify) and no other zone-player changes.
+- The **`LiveInputReceiver`** (implements existing `ReceiverProvider`) is a thin,
+  **kind-agnostic** per-zone shim (`BT-DEC-28`). On `start(audio_tx, event_tx)` it
+  registers `(zone_index, audio_tx, event_tx)` with the hub; the hub **multiplexes**
+  whichever input is routed+active for that zone (BT today, PCM next, any future
+  kind) into those channels — so `runner.rs` gains **one** generic live-input
+  `select!` arm pair (alongside AirPlay/Spotify), and adding a new input kind needs
+  **no** zone-player changes.
 - **Take-over:** when an adapter with a route to zone Z gets a connection, the hub
   emits `SessionStarted{format}` into Z's event channel → existing take-over logic
   switches Z's `ActiveSource` to Bluetooth, exactly like AirPlay (`BT-DEC-01`).
@@ -209,7 +211,7 @@ at aptX HD (lossy 24/48). `BT-REQ-08` surfaces the codec so users see reality.
 | `BT-DEC-09` | Bonds | **Ephemeral** — forget device on disconnect (avoid unbounded guest-bond growth). |
 | `BT-DEC-10` | Pairing modes | Support **both** `open` (just-works, zero friction) and `secured` (timed window + agent/app confirmation). Config-selectable, **default `open`**. |
 | `BT-DEC-11` | Config granularity | Global defaults with **per-adapter override** for pairing/concurrency/take-over/name. |
-| `BT-DEC-12` | Adapter identity | Key **config/persistence** by **MAC address** (stable), never `hciN`. The **API/MQTT/KNX address adapters by a stable index** (`BT-DEC-23`); MAC is surfaced as a field in `GET /api/v1/inputs`. |
+| `BT-DEC-12` | Adapter identity | Key **config/persistence** by **MAC address** (stable), never `hciN`; MAC is **stored/compared lowercase** (snapdog convention — cf. `[[client]].mac`). The **API/MQTT/KNX address adapters by a stable index** (`BT-DEC-23`); MAC stays the internal/config key (surfaced in the discovery payload — deferred, §15). |
 | `BT-DEC-13` | Cover art | **Best-effort** via AVRCP; ship if not a showstopper, else defer (non-blocking). |
 | `BT-DEC-14` | Transport controls | Implement `RemoteControl` (AVRCP) in v1 — parity with AirPlay/Spotify. |
 | `BT-DEC-15` | Quality signal | Expose negotiated codec (from `MediaTransport1`) as a badge in webui/apps + a subtle "lossy" hint. |
@@ -227,6 +229,7 @@ at aptX HD (lossy 24/48). `BT-REQ-08` surfaces the codec so users see reality.
 | `BT-DEC-25` | Inputs vs content (no `play/input`) | Two source **categories** (AV-receiver model): **content** (radio/subsonic/url — navigable, `play/url\|playlist\|subsonic`) and **inputs/receivers** (airplay/spotify/bluetooth/line-in). Selection stays **type-specific `play/*`** — a generic `play/input` verb was rejected as a leaky, incomplete abstraction (radio isn't an "input"). Unification lives in: the core, the `GET /api/v1/inputs` discovery (whole inputs category; airplay/spotify as passive `selectable:false` entries → complete), and the UI's merged picker — **not** a verb. Supersedes `GET /bluetooth/adapters` as the discovery surface (`/bluetooth/*` keeps BT-only *actions*). |
 | `BT-DEC-26` | Activation model | Shared `activation = auto \| manual` per input (default `auto`). The *trigger* is per-kind: BT = device **connects**; Line-In = **signal detected** (`LI-0002`). Auto fires take-over (`SessionStarted`); inactivity → `SessionEnded` → Idle (`BT-DEC-02`). |
 | `BT-DEC-27` | MVP scope: autodetect-only | **Ship Bluetooth as passive take-over only**, exactly like AirPlay/Spotify: a config-**bound** adapter (`bind_zones`) auto-takes-over on connect (`BT-DEC-01`); metadata/codec/transport ride existing zone state (`BT-T20/21/22`). **Deferred to Roadmap (§15):** explicit runtime selection (`play/bluetooth`, `BT-DEC-19`), the **discovery API** (the `/inputs`-vs-per-kind question of `BT-DEC-23/24/25` is **left open**), runtime routing/fan-out (the runtime layer of `BT-DEC-07`), KNX/MQTT *selection* surfaces, and secured pairing (`BT-DEC-10` `secured`). Refines `BT-REQ-05` to its config-binding layer for MVP. |
+| `BT-DEC-28` | Routing-ready core (build now, even with the API deferred) | Keep the abstractions that make the §15 routing API **purely additive**, instead of hardcoding the autodetect path: **(1)** routing flows **only** through the hub's `input→{zones}` matrix — config `bind_zones` *seeds* it, take-over & fan-out *read* it, nothing downstream hardcodes adapter→zone; **(2)** fan-out is dynamic **subscribe/unsubscribe** of zones to an input stream (MVP subscribes from config; the API later subscribes at runtime — same path); **(3)** **one generic per-zone `LiveInputReceiver`** shim (NOT per-kind) into which the hub *multiplexes* whichever input is routed+active — so PCM (`LI-0002`) and any future kind add **zero** zone/runner code, and routing any-kind→any-zone is a hub map change (AirPlay/Spotify keep their per-zone-instance pattern — not shared/routable); **(4)** each input gets a **stable id/index** in the registry now (`BT-DEC-12/23`), unused externally until the API exists; **(5)** activation/conflict policy stays in the hub (`BT-DEC-05`) so runtime routing respects most-recent-wins. Refines `BT-DEC-24`; runtime API + surface stay deferred (`BT-DEC-27`, §15). |
 
 **Legal note (aptX):** libfreeaptx is reverse-engineered; the `bt-aptx` feature
 flag lets the **official SnapDog OS image** ship without it if legal advises,
@@ -243,19 +246,25 @@ take_over = "auto"              # "auto" | "manual"             (BT-DEC-01)
 on_second_device = "reject"     # "reject" | "replace"          (BT-DEC-08)
 idle_timeout_s = 300            # 0 = disabled                  (BT-DEC-08)
 
-# One block per physical adapter, keyed by MAC (BT-DEC-12).
-# Omit [[bluetooth.adapter]] entirely to auto-use the single present adapter.
+# One block per physical adapter, keyed by MAC (lowercase — snapdog convention,
+# cf. [[client]].mac) (BT-DEC-12). Omit [[bluetooth.adapter]] to auto-use the
+# single present adapter (name + index then derived by convention.rs).
 [[bluetooth.adapter]]
-mac = "AA:BB:CC:DD:EE:FF"
+mac = "aa:bb:cc:dd:ee:ff"       # lowercase (BT-DEC-12)
 enabled = true
-name = "SnapDog Living Room"    # advertised BT name; default "SnapDog <zone>"
-bind_zones = ["Living Room"]    # default route(s) (BT-DEC-07); [] = unbound
+name = "SnapDog Ground Floor"   # advertised BT name; default "SnapDog <zone>" (derived)
+bind_zones = ["Ground Floor"]   # default route(s) (BT-DEC-07); [] = unbound
 # pairing/take_over/on_second_device/idle_timeout_s overridable here
 ```
 
-`BluetoothConfig` mirrors `AirplayConfig`/`SpotifyConfig` in
-`config/types.rs:655`; add `bluetooth: Option<BluetoothConfig>` to both
-`FileConfig` (:176) and resolved `Config` (~:1008).
+The top-level `BluetoothConfig` mirrors `AirplayConfig`/`SpotifyConfig`
+(`config/types.rs:655`); add `bluetooth: Option<BluetoothConfig>` to both
+`FileConfig` (:176) and resolved `Config` (~:1008). Each `[[bluetooth.adapter]]`
+is an **array entity like `[[zone]]`/`[[client]]`**, so parse it as a
+**`RawBluetoothAdapterConfig`** and resolve via **`config/convention.rs`** — that's
+where the **name default** (`"SnapDog <bound zone>"`) and the **stable index**
+(`BT-DEC-23`) are derived (mirroring how zones get `stream_name`/`sink`/KNX GAs and
+clients get their index).
 
 ## 8. Control surfaces (reworked to match verified conventions, §3)
 
@@ -318,7 +327,7 @@ flows are **not** exposed over KNX (no DPT/GA analog).
 
 ### Phase 0 — Scaffolding
 - [ ] `BT-T01` Add Cargo features `bluetooth`, `bt-aptx` (+ `alsa` dep, optional). `status: todo` · files: `snapdog/Cargo.toml` · deps: — · **AC:** builds with/without features; `default` includes `bluetooth` (Linux).
-- [ ] `BT-T02` `BluetoothConfig` + wire into `FileConfig`/`Config`. `status: todo` · files: `config/types.rs` · deps: — · **AC:** §7 TOML parses; absent section = disabled.
+- [ ] `BT-T02` `BluetoothConfig` + `RawBluetoothAdapterConfig`→resolved via `convention.rs` (derive name default + stable index, like `[[zone]]`/`[[client]]`); wire into `FileConfig`/`Config`. `status: todo` · files: `config/types.rs`, `config/convention.rs` · deps: — · **AC:** §7 TOML parses (lowercase MAC); absent section = disabled.
 - [ ] `BT-T03` Add `Bluetooth` to `SourceType` + `ActiveSource` (carry adapter id). `status: todo` · files: `state/mod.rs:183`, `player/commands.rs:82` · deps: — · **AC:** matches exhaustively; serializes to API.
 - [ ] `BT-T04` Module skeleton `receiver/bluetooth/` (`mod.rs`, `hub.rs`, `bluez.rs`, `bluealsa.rs`, `avrcp.rs`), `cfg(all(feature="bluetooth", target_os="linux"))`. `status: todo` · deps: BT-T01.
 
@@ -326,9 +335,9 @@ flows are **not** exposed over KNX (no DPT/GA analog).
 - [ ] `BT-T10` **`LiveInputHub` core** (shared input registry, routing matrix, `activation`, lifecycle) — Bluetooth is the first input *kind*; reused by LI-0002 (`BT-DEC-24/26`). `status: todo` · files: `receiver/live_input/hub.rs` · deps: BT-T04.
 - [ ] `BT-T11` BlueALSA capture loop: ALSA `bluealsa` PCM → native depth → F32. `status: todo` · files: `…/bluealsa.rs` · deps: BT-T10 · **AC:** decoded PCM observed for a connected phone.
 - [ ] `BT-T12` BlueZ control plane via `zbus`: adapter discoverable/pairable, just-works `Agent1`, connect/disconnect events. `status: todo` · files: `…/bluez.rs` · deps: BT-T10 · **AC:** phone pairs+connects with no prompt (`open`).
-- [ ] `BT-T13` `BluetoothReceiver` (`ReceiverProvider`) per-zone shim registering channels with the hub. `status: todo` · files: `…/mod.rs` · deps: BT-T10.
+- [ ] `BT-T13` Generic **`LiveInputReceiver`** (`ReceiverProvider`) per-zone shim — registers `(zone, audio_tx, event_tx)` with the hub, which multiplexes any input kind into it (`BT-DEC-28`; reused by LI-0002, no per-kind shim). `status: todo` · files: `receiver/live_input/mod.rs` · deps: BT-T10.
 - [ ] `BT-T14` Hub→zone fan-out of PCM + `SessionStarted`/`SessionEnded`. `status: todo` · deps: BT-T11, BT-T13 · **AC:** audio plays in the bound zone.
-- [ ] `BT-T15` Wire receiver + select-loop arms into `runner.rs` (mirror AirPlay/Spotify). `status: todo` · files: `player/runner.rs:236–293,1070` · deps: BT-T13.
+- [ ] `BT-T15` Wire the generic `LiveInputReceiver` + **one** live-input `select!` arm pair into `runner.rs` (alongside AirPlay/Spotify; reused by all input kinds — PCM adds none) (`BT-DEC-28`). `status: todo` · files: `player/runner.rs:236–293,1070` · deps: BT-T13.
 - [ ] `BT-T16` Take-over on connect + `Idle` on disconnect (`BT-DEC-01/02`). `status: todo` · deps: BT-T14, BT-T15 · **AC:** connecting preempts current source; disconnect → Idle.
 - [ ] `BT-T17` Config binding (single adapter → zone), MAC-keyed (`BT-DEC-12`). `status: todo` · deps: BT-T02, BT-T14.
 - [ ] `BT-T18` Concurrency policy: reject/replace + idle timeout (`BT-DEC-08`). `status: todo` · deps: BT-T12 · **AC:** 2nd device rejected (default); idle frees adapter.
@@ -443,7 +452,9 @@ is deferred with its feature (discovery API shape — see §15).
 
 Deferred from the MVP per `BT-DEC-27`, for a dedicated design pass. The **MVP ships
 the audio path** (autodetect / passive take-over, like AirPlay/Spotify); these add
-user-driven control on top:
+user-driven control on top. The MVP core is already **routing-ready** (`BT-DEC-28`:
+matrix + dynamic fan-out + generic shim + stable ids), so the items below are
+**additive** — runtime mutation + API surface, not a refactor:
 
 - **Explicit runtime selection** — `play/bluetooth[/{adapter}]` (`BT-DEC-19`) + the
   runtime routing layer of `BT-DEC-07`. Tasks: `BT-T30`, `BT-T31`, `BT-T32`.

@@ -2,7 +2,7 @@
 rfc: LI-0002
 title: PCM / Line-In audio source (USB ADC, S/PDIF, analog capture)
 status: draft            # draft | accepted | in-progress | done | superseded
-version: 1.1.0           # v1.1: MVP = signal-sensing autodetect only; manual selection + discovery API → Roadmap (§15)
+version: 1.3.0           # v1.3: config aligned to snapdog conventions (Raw→resolve port via convention.rs)
 created: 2026-06-21
 updated: 2026-06-21
 target_repo: snapdog
@@ -72,7 +72,10 @@ it's **not Linux-only** — `cpal` covers ALSA/CoreAudio/WASAPI.
 
 This RFC adds **one input kind** to the core BT-0001 establishes. Reused as-is:
 - **`LiveInputHub`** (`BT-DEC-24`): input registry, routing matrix (input→{zones}),
-  fan-out, per-zone `ReceiverProvider` shim, take-over via `SessionStarted`.
+  fan-out, take-over via `SessionStarted`.
+- **Generic per-zone `LiveInputReceiver` shim** (`BT-DEC-28`): the hub multiplexes
+  Line-In into the **same** per-zone shim BT uses — **PCM adds no per-zone shim and
+  no zone/runner changes** (only a capture backend + an input-kind registration).
 - **Categories & selection** (`BT-DEC-25`): Line-In is in the **inputs/receivers**
   category; the eventual selection verb is **type-specific `play/linein`** (no
   `play/input`) — **deferred to Roadmap (§15)** for MVP (`LI-DEC-12`).
@@ -136,7 +139,7 @@ shows. Capture at the device's **native bit depth** (don't truncate 24→16).
 
 | ID | Decision | Resolution |
 |---|---|---|
-| `LI-DEC-01` | Reuse the live-input core | Build on BT-0001's `LiveInputHub`/routing/activation/`/inputs` (`BT-DEC-24`). Only *capture* is kind-specific. |
+| `LI-DEC-01` | Reuse the live-input core | Build on BT-0001's `LiveInputHub` — routing matrix, activation, fan-out, and the **generic per-zone `LiveInputReceiver`** (`BT-DEC-24/28`). Only *capture* is kind-specific (cpal); PCM adds **no** per-zone shim. |
 | `LI-DEC-02` | Platform | **Cross-platform** via `cpal` (ALSA/CoreAudio/WASAPI). Not Linux-only (unlike BT). Feature `linein`, default **on**. |
 | `LI-DEC-03` | Activation default | **`auto` (signal detection)** so Line-In can take over like BT/AirPlay; user-configurable `auto\|manual` (shared `activation`, `BT-DEC-26`). |
 | `LI-DEC-04` | Detection method + tunables | **Level/RMS** with per-port `threshold_db`, `hold_ms`, `release_ms` (defaults ≈ −50 dBFS, 300 ms, 5 s). Auto ports are **continuously monitored** (capture stays open — small CPU cost). S/PDIF hardware-lock = opt-in augmentation where exposed. |
@@ -161,18 +164,22 @@ threshold_db = -50              # auto trigger threshold                (LI-DEC-
 hold_ms      = 300              # attack debounce
 release_ms   = 5000             # silence → release
 
-# One block per input port, keyed by a STABLE device id (LI-DEC-08).
-# Omit [[linein.port]] to auto-use the single detected capture device.
+# One block per input port, keyed by a STABLE device id (LI-DEC-08). Omit
+# [[linein.port]] to auto-use the single detected device (name + index then
+# derived by convention.rs).
 [[linein.port]]
 id = "alsa:hw:CARD=Scarlett,DEV=0"   # stable id (by-id/name/USB path), NOT card number
-name = "Turntable"                    # friendly name (LI-REQ-06)
+name = "Turntable"                    # friendly name (LI-REQ-06); default derived
 enabled = true
-bind_zones = ["Living Room"]          # default route(s); [] = unbound
+bind_zones = ["Ground Floor"]         # default route(s); [] = unbound
 # activation/threshold_db/hold_ms/release_ms overridable per port
 ```
 
-`LineInConfig` mirrors `BluetoothConfig`; add `linein: Option<LineInConfig>` to
-`FileConfig` and resolved `Config`.
+The top-level `LineInConfig` mirrors `BluetoothConfig`; add
+`linein: Option<LineInConfig>` to `FileConfig` and resolved `Config`. Each
+`[[linein.port]]` is an **array entity like `[[zone]]`/`[[client]]`**, so parse it
+as a **`RawLineInPortConfig`** and resolve via **`config/convention.rs`** — where
+the **friendly-name default** and **stable index** (`BT-DEC-23`) are derived.
 
 ## 8. Control surfaces (follows BT-0001 conventions)
 
@@ -215,13 +222,13 @@ no port inventory over KNX.
 
 ### Phase 0 — Scaffolding
 - [ ] `LI-T01` Cargo feature `linein` + `cpal` dep (cross-platform). `status: todo` · files: `snapdog/Cargo.toml` · deps: — · **AC:** builds with/without; default on.
-- [ ] `LI-T02` `LineInConfig` + wire into `FileConfig`/`Config`. `status: todo` · files: `config/types.rs` · deps: — · **AC:** §7 TOML parses; absent = disabled.
+- [ ] `LI-T02` `LineInConfig` + `RawLineInPortConfig`→resolved via `convention.rs` (derive name default + stable index, like `[[zone]]`/`[[client]]`); wire into `FileConfig`/`Config`. `status: todo` · files: `config/types.rs`, `config/convention.rs` · deps: — · **AC:** §7 TOML parses; absent = disabled.
 - [ ] `LI-T03` Add `LineIn` to `SourceType` + `ActiveSource` (carry port index). `status: todo` · files: `state/mod.rs`, `player/commands.rs` · deps: —.
 - [ ] `LI-T04` Module `receiver/linein/` (capture via cpal) registering as a `LiveInputHub` input kind. `status: todo` · deps: LI-T01.
 
 ### Phase 1 — Single-port MVP (capture + bind; autodetect path)
 - [ ] `LI-T10` cpal capture loop: open device → native depth → F32 → hub; emit `SessionStarted{format}`. `status: todo` · files: `receiver/linein/capture.rs` · deps: LI-T04 · **AC:** captured PCM observed from a real ADC/SPDIF.
-- [ ] `LI-T11` Register Line-In ports as hub input kind (registry + routing). `status: todo` · deps: LI-T10.
+- [ ] `LI-T11` Register Line-In ports as hub input kind (registry + routing) — **no per-zone shim**, reuses the generic `LiveInputReceiver` (`BT-DEC-28`). `status: todo` · deps: LI-T10.
 - [ ] `LI-T12` Manual selection `play/linein[/{port}]` (`ZoneCommand::PlayLineIn`) → take-over via core ⟶ **ROADMAP (§15)**. `status: deferred` · deps: LI-T11, LI-T03.
 - [ ] `LI-T13` Config binding (port → zone(s)), stable-id keyed (`LI-DEC-08`); core fans to bound zones. `status: todo` · deps: LI-T02, LI-T11.
 - [ ] `LI-T14` Report PCM **format** via the `codec` field (`LI-DEC-10`). `status: todo` · deps: LI-T10 · **AC:** zone shows `PCM <rate>/<bits>`.
