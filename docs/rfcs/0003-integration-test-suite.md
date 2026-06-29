@@ -13,8 +13,8 @@ owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
   done: 6
-  in_progress: 2
-  todo: 39
+  in_progress: 5
+  todo: 36
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -415,8 +415,8 @@ tasks:
   - { id: IT-T08, phase: 0, status: todo, depends_on: [] }
   - { id: IT-T10, phase: 1, status: done, depends_on: [IT-T01] }   # api::build_router + TestApp::request (oneshot)
   - { id: IT-T11, phase: 1, status: done, depends_on: [IT-T10, IT-T03] }   # tests/rest_zones.rs (10 tests)
-  - { id: IT-T12, phase: 1, status: todo, depends_on: [IT-T10] }
-  - { id: IT-T13, phase: 1, status: todo, depends_on: [IT-T10] }
+  - { id: IT-T12, phase: 1, status: in-progress, depends_on: [IT-T10] }   # tests/rest_surfaces.rs: client GET contract+boundaries; cmd-capture/EQ-422 pending
+  - { id: IT-T13, phase: 1, status: in-progress, depends_on: [IT-T10] }   # tests/rest_surfaces.rs: system+health done; media/speakers/knx-409 pending
   - { id: IT-T14, phase: 1, status: todo, depends_on: [IT-T10] }
   - { id: IT-T20, phase: 2, status: done, depends_on: [IT-T10, IT-T03] }   # tests/ws.rs (serde + exhaustiveness + tap)
   - { id: IT-T21, phase: 2, status: todo, depends_on: [IT-T20, IT-T03] }
@@ -429,7 +429,7 @@ tasks:
   - { id: IT-T43, phase: 4, status: todo, depends_on: [IT-T04, IT-T40] }
   - { id: IT-T50, phase: 5, status: todo, depends_on: [IT-T01] }
   - { id: IT-T51, phase: 5, status: todo, depends_on: [IT-T50] }
-  - { id: IT-T52, phase: 5, status: todo, depends_on: [IT-T50] }
+  - { id: IT-T52, phase: 5, status: in-progress, depends_on: [IT-T50] }   # tests/snapcast.rs: SnapcastEvent+SnapcastCmd exhaustiveness; ServerEvent map + golden JSON-RPC pending (process feature)
   - { id: IT-T53, phase: 5, status: done, depends_on: [IT-T01] }   # tests/config_contract.rs (GroupVolumeMode + config)
   - { id: IT-T54, phase: 5, status: todo, depends_on: [IT-T06, IT-T50] }
   - { id: IT-T55, phase: 5, status: todo, depends_on: [IT-T50] }
