@@ -465,6 +465,51 @@ mod tests {
     }
 
     #[test]
+    fn source_type_wire_format_is_lowercase_without_underscores() {
+        // serde `rename_all = "lowercase"` only lowercases — it does NOT insert
+        // underscores (the `Display` impl differs: "subsonic_playlist"). Guards the
+        // persisted-state / WS / MQTT wire format against a variant-rename regression.
+        assert_eq!(serde_json::to_value(SourceType::Idle).unwrap(), "idle");
+        assert_eq!(serde_json::to_value(SourceType::Radio).unwrap(), "radio");
+        assert_eq!(
+            serde_json::to_value(SourceType::SubsonicPlaylist).unwrap(),
+            "subsonicplaylist"
+        );
+        assert_eq!(
+            serde_json::to_value(SourceType::SubsonicTrack).unwrap(),
+            "subsonictrack"
+        );
+        assert_eq!(serde_json::to_value(SourceType::Url).unwrap(), "url");
+        assert_eq!(
+            serde_json::to_value(SourceType::AirPlay).unwrap(),
+            "airplay"
+        );
+        assert_eq!(
+            serde_json::to_value(SourceType::Spotify).unwrap(),
+            "spotify"
+        );
+        let back: SourceType =
+            serde_json::from_value(serde_json::json!("subsonicplaylist")).unwrap();
+        assert!(matches!(back, SourceType::SubsonicPlaylist));
+    }
+
+    #[test]
+    fn playback_state_wire_format_is_lowercase() {
+        assert_eq!(
+            serde_json::to_value(PlaybackState::Stopped).unwrap(),
+            "stopped"
+        );
+        assert_eq!(
+            serde_json::to_value(PlaybackState::Playing).unwrap(),
+            "playing"
+        );
+        assert_eq!(
+            serde_json::to_value(PlaybackState::Paused).unwrap(),
+            "paused"
+        );
+    }
+
+    #[test]
     fn initializes_from_config() {
         let config = test_config();
         let store = Store::from_config(&config);

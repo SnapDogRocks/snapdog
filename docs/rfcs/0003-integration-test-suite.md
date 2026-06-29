@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 7
-  in_progress: 10
-  todo: 30
+  done: 8
+  in_progress: 11
+  todo: 28
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -362,9 +362,9 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T73` Feature **build-smoke matrix**: `embedded`/`process` × `ap2` on/off × `spotify` on/off compile. `status: in-progress` · deps: IT-T05.
 
 ### Phase 8 — State machine & lifecycle
-- [ ] `IT-T80` Zone-player transitions (track None iff Idle) + persistence roundtrip (restore subset, playback→Stopped). `status: todo` · deps: IT-T01, IT-T04.
+- [x] `IT-T80` Zone-player transitions (track None iff Idle) + persistence roundtrip (restore subset, playback→Stopped). `status: done` · deps: IT-T01, IT-T04.
 - [ ] `IT-T81` Next/Prev/complete honoring repeat + shuffle (seeded) + prev-restart >3s. `status: todo` · deps: IT-T80, IT-T02.
-- [ ] `IT-T82` Presence (fixed clock + auto-off via time::pause) + `source_conflict` LastWins/ReceiverWins. `status: todo` · deps: IT-T80, IT-T03.
+- [ ] `IT-T82` Presence (fixed clock + auto-off via time::pause) + `source_conflict` LastWins/ReceiverWins. `status: in-progress` · deps: IT-T80, IT-T03.
 - [ ] `IT-T83` Multi-zone isolation + crash restart (`ZONE_RESTART_DELAY` via time control); loom as a stretch note. `status: todo` · deps: IT-T80, IT-T03.
 - [ ] `IT-T84` Headless boot `run_app(cfg)` (mdns off, ephemeral ports, TempEnv) + health endpoints + graceful shutdown. `status: todo` · deps: IT-T04, IT-T02.
 
@@ -442,11 +442,11 @@ tasks:
   - { id: IT-T71, phase: 7, status: in-progress, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (incl. 0dB); RemoteCommand/AP2-SRP pending
   - { id: IT-T72, phase: 7, status: in-progress, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume math; TrackChanged/Playing mapper pending (complex librespot types)
   - { id: IT-T73, phase: 7, status: in-progress, depends_on: [IT-T05] }   # ci.yml integration job runs the process-feature firewall (snapcast_rpc); full embedded/process×ap2×spotify matrix pending
-  - { id: IT-T80, phase: 8, status: todo, depends_on: [IT-T01, IT-T04] }
-  - { id: IT-T81, phase: 8, status: todo, depends_on: [IT-T80, IT-T02] }
-  - { id: IT-T82, phase: 8, status: todo, depends_on: [IT-T80, IT-T03] }
-  - { id: IT-T83, phase: 8, status: todo, depends_on: [IT-T80, IT-T03] }
-  - { id: IT-T84, phase: 8, status: todo, depends_on: [IT-T04, IT-T02] }
+  - { id: IT-T80, phase: 8, status: done, depends_on: [IT-T01, IT-T04] }   # state/mod.rs: persist/load roundtrip + transient-reset (existing 5 tests) + SourceType/PlaybackState wire-format golden; track-None-iff-Idle holds via reset
+  - { id: IT-T81, phase: 8, status: todo, depends_on: [IT-T80, IT-T02] }   # BLOCKED: handle_next/prev/complete are harness fns in private player::helpers; no pure next_index; fastrand unseeded — needs an extracted pure fn or a spawn_zone_players harness
+  - { id: IT-T82, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix done (runner.rs in-crate); presence auto-off timer is inline in run() select-loop → needs spawn_zone_players + tokio::time::pause harness
+  - { id: IT-T83, phase: 8, status: todo, depends_on: [IT-T80, IT-T03] }   # BLOCKED: crash-restart is inline in spawn_zone_players' spawn closure; run() has no realistic Err path → not isolable without injecting a failing run
+  - { id: IT-T84, phase: 8, status: todo, depends_on: [IT-T04, IT-T02] }   # BLOCKED: run_app() is Cli::parse-bound (no Config-injectable headless boot); needs a start_system(Config) seam
   - { id: IT-T90, phase: 9, status: done, depends_on: [IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60] }   # ci.yml unit-tests: cargo test --lib -> --workspace (runs tier-1 integration); nextest/retries = IT-T05
   - { id: IT-T91, phase: 9, status: todo, tier: 2, depends_on: [IT-T05, IT-T32, IT-T56] }
   - { id: IT-T92, phase: 9, status: todo, depends_on: [IT-T14, IT-T90] }

@@ -1182,3 +1182,36 @@ mod fade_tests {
         assert!(buf[198] > 0.9);
     }
 }
+
+#[cfg(test)]
+mod conflict_tests {
+    use super::may_start_local_playback;
+    use crate::config::SourceConflict;
+    use crate::player::commands::ActiveSource;
+
+    #[test]
+    fn non_receiver_sources_always_allow_local_playback() {
+        for src in [
+            ActiveSource::Idle,
+            ActiveSource::Url,
+            ActiveSource::Radio { index: 0 },
+        ] {
+            assert!(may_start_local_playback(&src, SourceConflict::LastWins));
+            assert!(may_start_local_playback(&src, SourceConflict::ReceiverWins));
+        }
+    }
+
+    #[test]
+    fn receiver_active_blocks_local_playback_only_under_receiver_wins() {
+        for src in [ActiveSource::AirPlay, ActiveSource::Spotify] {
+            assert!(
+                may_start_local_playback(&src, SourceConflict::LastWins),
+                "LastWins lets local playback take over an active receiver"
+            );
+            assert!(
+                !may_start_local_playback(&src, SourceConflict::ReceiverWins),
+                "ReceiverWins blocks local playback while a receiver is active"
+            );
+        }
+    }
+}
