@@ -266,3 +266,91 @@ async fn rpc_remaining_method_vectors_complete_all_17() {
         assert_eq!(req["params"], params, "{method} params");
     }
 }
+
+// ── IT-T51: reconcile_zone_groups — sorted Group.SetClients per diverged zone ──
+
+/// Two groups (Zone1/Zone2). "Bedroom" is initially mis-grouped into Zone2, so
+/// reconcile must move it: zone 1 gains it, zone 2 loses it.
+const RECONCILE_FIXTURE: &str = r#"{ "server": {
+  "server": { "host": {"mac":""}, "snapserver": {"name":"snapserver","protocolVersion":2,"controlProtocolVersion":1,"version":"0.27.0"} },
+  "groups": [
+    { "id":"group-zone1","name":"Ground Floor","stream_id":"Zone1","muted":false,
+      "clients":[ {"id":"snap-living","connected":true,"config":{"latency":0,"name":"Living Room","volume":{"muted":false,"percent":50}},"host":{"mac":"02:42:AC:11:00:10"}} ] },
+    { "id":"group-zone2","name":"1st Floor","stream_id":"Zone2","muted":false,
+      "clients":[ {"id":"snap-kitchen","connected":true,"config":{"latency":0,"name":"Kitchen","volume":{"muted":false,"percent":50}},"host":{"mac":"02:42:AC:11:00:11"}},
+                  {"id":"snap-bedroom","connected":true,"config":{"latency":0,"name":"Bedroom","volume":{"muted":false,"percent":50}},"host":{"mac":"02:42:AC:11:00:12"}} ] }
+  ], "streams": [] } }"#;
+
+fn reconcile_config() -> snapdog::config::AppConfig {
+    let raw: snapdog::config::FileConfig = toml::from_str(
+        r#"
+        [[zone]]
+        name = "Ground Floor"
+        [[zone]]
+        name = "1st Floor"
+        [[client]]
+        name = "Living Room"
+        mac = "02:42:ac:11:00:10"
+        zone = "Ground Floor"
+        [[client]]
+        name = "Bedroom"
+        mac = "02:42:ac:11:00:12"
+        zone = "Ground Floor"
+        [[client]]
+        name = "Kitchen"
+        mac = "02:42:ac:11:00:11"
+        zone = "1st Floor"
+        "#,
+    )
+    .unwrap();
+    snapdog::config::load_raw(raw).unwrap()
+}
+
+#[tokio::test]
+async fn reconcile_sends_sorted_setclients_per_diverged_zone() {
+    // The fake replies the same ServerStatus to every request, which answers both
+    // of reconcile's Server.GetStatus calls; Group.SetClients responses are ignored.
+    let result: Value = serde_json::from_str(RECONCILE_FIXTURE).unwrap();
+    let (addr, rec) = spawn_fake(result).await;
+    let snap = SnapcastClient::connect(addr).await.unwrap();
+
+    let config = reconcile_config();
+    let store = snapdog::state::init(&config, None).unwrap();
+    // Populate snapcast_id directly (deterministic; avoids sync_initial_state's
+    // Server.DeleteClient side effects). Keyed by mac, so store-key-agnostic.
+    {
+        let mut s = store.write().await;
+        for c in s.clients.values_mut() {
+            c.snapcast_id = Some(
+                match c.mac.as_str() {
+                    "02:42:ac:11:00:10" => "snap-living",
+                    "02:42:ac:11:00:12" => "snap-bedroom",
+                    "02:42:ac:11:00:11" => "snap-kitchen",
+                    other => panic!("unexpected mac {other}"),
+                }
+                .to_string(),
+            );
+        }
+    }
+    let (notify, _rx) = snapdog::api::ws::notification_channel();
+
+    snapdog::snapcast::reconcile_zone_groups(&snap, &config, &store, &notify).await;
+
+    let reqs = rec.lock().unwrap();
+    let count = |m: &str| reqs.iter().filter(|r| r["method"] == m).count();
+    assert_eq!(count("Server.GetStatus"), 2, "pre + post status fetch");
+    assert_eq!(count("Group.SetClients"), 2, "both zones diverged");
+
+    let set_for = |gid: &str| {
+        reqs.iter()
+            .find(|r| r["method"] == "Group.SetClients" && r["params"]["id"] == gid)
+            .unwrap_or_else(|| panic!("no SetClients for {gid}"))["params"]["clients"]
+            .clone()
+    };
+    // Sorted wire payload (the fix): zone 1 gains Bedroom, zone 2 loses it.
+    assert_eq!(
+        set_for("group-zone1"),
+        json!(["snap-bedroom", "snap-living"])
+    );
+    assert_eq!(set_for("group-zone2"), json!(["snap-kitchen"]));
+}

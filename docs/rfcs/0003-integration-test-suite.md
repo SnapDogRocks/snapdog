@@ -12,8 +12,8 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 11
-  in_progress: 10
+  done: 12
+  in_progress: 9
   todo: 26
 ---
 
@@ -342,7 +342,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 
 ### Phase 5 — snapcast contract firewall
 - [ ] `IT-T50` `SnapcastBackend` trait double (mockall/hand-coded) capturing `execute(SnapcastCmd)` + injecting `SnapcastEvent`. `status: todo` · deps: IT-T01.
-- [ ] `IT-T51` `reconcile_zone_groups` + pure helpers w/ `ServerStatus` fixtures; **sorted** `Group.SetClients`. `status: in-progress` · deps: IT-T50.
+- [x] `IT-T51` `reconcile_zone_groups` + pure helpers w/ `ServerStatus` fixtures; **sorted** `Group.SetClients`. `status: done` · deps: IT-T50.
 - [ ] `IT-T52` Event roundtrip `ServerEvent`→`SnapcastEvent`→state+WS; **exhaustiveness test fails on unmapped variant**. `status: todo` · deps: IT-T50.
 - [x] `IT-T53` `GroupVolumeMode.effective()` table tests (Absolute/Relative/Compressed + clamp + max_volume). `status: todo` · deps: IT-T01.
 - [x] `IT-T54` **Golden JSON-RPC vectors** for the 17 methods + the **line-delimited-JSON TCP fake** (`IT-DEC-06`); assert request ser + response de. `status: done` · deps: IT-T06, IT-T50.
@@ -428,7 +428,7 @@ tasks:
   - { id: IT-T42, phase: 4, status: todo, depends_on: [IT-T40] }
   - { id: IT-T43, phase: 4, status: todo, depends_on: [IT-T04, IT-T40] }
   - { id: IT-T50, phase: 5, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T51, phase: 5, status: in-progress, depends_on: [IT-T50] }   # tests/snapcast_rpc.rs: build_* + ServerStatus golden; reconcile_zone_groups pending
+  - { id: IT-T51, phase: 5, status: done, depends_on: [IT-T50] }   # build_* + ServerStatus golden + reconcile_zone_groups sorted Group.SetClients per diverged zone (FIXED unsorted HashMap-order wire payload)
   - { id: IT-T52, phase: 5, status: in-progress, depends_on: [IT-T50] }   # tests/snapcast.rs: SnapcastEvent+SnapcastCmd exhaustiveness; ServerEvent map + golden JSON-RPC pending (process feature)
   - { id: IT-T53, phase: 5, status: done, depends_on: [IT-T01] }   # tests/config_contract.rs (GroupVolumeMode + config)
   - { id: IT-T54, phase: 5, status: done, depends_on: [IT-T06, IT-T50] }   # tests/snapcast_rpc.rs: line-delimited-JSON TCP fake + golden vectors for ALL 17 JSON-RPC methods (incl. mute/streamUri traps) + framing + response-deser

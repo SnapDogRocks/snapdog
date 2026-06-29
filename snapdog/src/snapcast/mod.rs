@@ -437,12 +437,15 @@ mod process_impl {
 
         for zone_cfg in &config.zones {
             // What clients should be in this zone?
-            let expected_snap_ids: Vec<String> = s
+            // Sorted so the Group.SetClients wire payload is deterministic (not
+            // HashMap-iteration order) and the diff below is order-independent.
+            let mut expected_snap_ids: Vec<String> = s
                 .clients
                 .values()
                 .filter(|c| c.zone_index == zone_cfg.index && c.snapcast_id.is_some())
                 .filter_map(|c| c.snapcast_id.clone())
                 .collect();
+            expected_snap_ids.sort_unstable();
 
             // Find the canonical group for this zone (by stream_id, prefer one with clients)
             let group = status
@@ -453,14 +456,12 @@ mod process_impl {
                 .max_by_key(|g| g.clients.len());
 
             if let Some(group) = group {
-                let current_ids: Vec<&str> = group.clients.iter().map(|c| c.id.as_str()).collect();
-                let mut expected_sorted = expected_snap_ids.clone();
-                expected_sorted.sort_unstable();
-                let mut current_sorted: Vec<&str> = current_ids.clone();
+                let mut current_sorted: Vec<&str> =
+                    group.clients.iter().map(|c| c.id.as_str()).collect();
                 current_sorted.sort_unstable();
 
-                // Only send command if the client list differs
-                if expected_sorted != current_sorted {
+                // Only send the command if the (order-independent) client set differs.
+                if expected_snap_ids != current_sorted {
                     tracing::info!(
                         zone = zone_cfg.index,
                         clients = expected_snap_ids.len(),
