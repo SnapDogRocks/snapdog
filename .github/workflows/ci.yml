@@ -84,7 +84,10 @@ jobs:
       - name: Build WebUI
         working-directory: webui
         run: npm ci --force && npm run build
-      - run: cargo test --lib
+      # Whole workspace incl. tier-1 integration targets (in-process, deterministic,
+      # no services) — `--lib` skipped tests/*.rs (the IT-0003 suite) and the
+      # snapdog-client/-common tests.
+      - run: cargo test --workspace
 
   integration-tests:
     name: Integration Tests
@@ -127,6 +130,8 @@ jobs:
           EOF
       - name: Run integration tests
         run: cargo test --no-default-features --features snapcast-process --test integration -- --test-threads=1
+      - name: Run snapcast contract firewall (process feature)
+        run: cargo test --no-default-features --features snapcast-process --test snapcast_rpc
 
   audit:
     name: Security Audit

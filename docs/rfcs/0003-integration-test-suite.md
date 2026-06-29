@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 6
-  in_progress: 9
-  todo: 32
+  done: 7
+  in_progress: 10
+  todo: 30
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -359,7 +359,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T70` shairplay contract: `TestHandler` + `RaopServer::builder().port(0)` loopback + `send_rtsp`; `audio_init`→`SessionStarted`, volume/metadata/coverart→`ReceiverEvent`. `status: todo` · deps: IT-T01.
 - [ ] `IT-T71` AirPlay volume **golden (corrected)** + `RemoteCommand` round-trip + AP2 SRP/`MemoryPairingStore`. `status: in-progress` · deps: IT-T70, IT-T06.
 - [ ] `IT-T72` Spotify `ChannelSink` f64→f32 cast (assert librespot 0.8 samples are already normalized — **no** rescaling) + `PlayerEvent`→`ReceiverEvent` mapper (pure fns) + volume vectors. `status: in-progress` · deps: IT-T01.
-- [ ] `IT-T73` Feature **build-smoke matrix**: `embedded`/`process` × `ap2` on/off × `spotify` on/off compile. `status: todo` · deps: IT-T05.
+- [ ] `IT-T73` Feature **build-smoke matrix**: `embedded`/`process` × `ap2` on/off × `spotify` on/off compile. `status: in-progress` · deps: IT-T05.
 
 ### Phase 8 — State machine & lifecycle
 - [ ] `IT-T80` Zone-player transitions (track None iff Idle) + persistence roundtrip (restore subset, playback→Stopped). `status: todo` · deps: IT-T01, IT-T04.
@@ -369,7 +369,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T84` Headless boot `run_app(cfg)` (mdns off, ephemeral ports, TempEnv) + health endpoints + graceful shutdown. `status: todo` · deps: IT-T04, IT-T02.
 
 ### Phase 9 — CI & docs
-- [ ] `IT-T90` CI **tier-1 gate**: `nextest run` (lib + tier-1 integration), always-green, no retries. `status: todo` · deps: IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60.
+- [x] `IT-T90` CI **tier-1 gate**: `cargo test --workspace` runs lib + tier-1 integration targets (always-green; nextest/retries deferred to IT-T05). `status: done` · deps: IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60.
 - [ ] `IT-T91` **(T2)** CI tier-2 job: services (snapserver/navidrome/mosquitto via testcontainers), **loud-skip** when absent, **artifact capture** on failure. `status: todo` · deps: IT-T05, IT-T32, IT-T56.
 - [ ] `IT-T92` OpenAPI contract step + coverage (`cargo-llvm-cov`) + thresholds + flake quarantine. `status: todo` · deps: IT-T14, IT-T90.
 - [ ] `IT-T93` Docs: `tests/README` (tiers, how to run, how to add a test, golden-update flow) + test policy. `status: todo` · deps: IT-T90.
@@ -441,13 +441,13 @@ tasks:
   - { id: IT-T70, phase: 7, status: todo, depends_on: [IT-T01] }
   - { id: IT-T71, phase: 7, status: in-progress, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (incl. 0dB); RemoteCommand/AP2-SRP pending
   - { id: IT-T72, phase: 7, status: in-progress, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume math; TrackChanged/Playing mapper pending (complex librespot types)
-  - { id: IT-T73, phase: 7, status: todo, depends_on: [IT-T05] }
+  - { id: IT-T73, phase: 7, status: in-progress, depends_on: [IT-T05] }   # ci.yml integration job runs the process-feature firewall (snapcast_rpc); full embedded/process×ap2×spotify matrix pending
   - { id: IT-T80, phase: 8, status: todo, depends_on: [IT-T01, IT-T04] }
   - { id: IT-T81, phase: 8, status: todo, depends_on: [IT-T80, IT-T02] }
   - { id: IT-T82, phase: 8, status: todo, depends_on: [IT-T80, IT-T03] }
   - { id: IT-T83, phase: 8, status: todo, depends_on: [IT-T80, IT-T03] }
   - { id: IT-T84, phase: 8, status: todo, depends_on: [IT-T04, IT-T02] }
-  - { id: IT-T90, phase: 9, status: todo, depends_on: [IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60] }
+  - { id: IT-T90, phase: 9, status: done, depends_on: [IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60] }   # ci.yml unit-tests: cargo test --lib -> --workspace (runs tier-1 integration); nextest/retries = IT-T05
   - { id: IT-T91, phase: 9, status: todo, tier: 2, depends_on: [IT-T05, IT-T32, IT-T56] }
   - { id: IT-T92, phase: 9, status: todo, depends_on: [IT-T14, IT-T90] }
   - { id: IT-T93, phase: 9, status: todo, depends_on: [IT-T90] }

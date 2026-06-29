@@ -12,4 +12,7 @@ cargo clippy --all-targets -- -D warnings
 echo "3. Linting WebUI (next lint)..."
 (cd webui && npm run lint)
 
+echo "4. Running tests (cargo test --workspace)..."
+cargo test --workspace
+
 echo "=== All pre-push checks passed successfully! ==="
