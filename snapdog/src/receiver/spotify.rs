@@ -316,3 +316,41 @@ impl Sink for ChannelSink {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    /// Spotify volume-out math (IT-T72): librespot u16 volume → 0–100 percent.
+    #[tokio::test]
+    async fn volume_changed_maps_to_percent() {
+        async fn percent_for(volume: u16) -> i32 {
+            let (tx, mut rx) = mpsc::channel(4);
+            let mut dur = 0u64;
+            handle_player_event(PlayerEvent::VolumeChanged { volume }, &tx, &mut dur).await;
+            match rx.try_recv().expect("volume event emitted") {
+                ReceiverEvent::Volume { percent } => percent,
+                _ => panic!("expected ReceiverEvent::Volume"),
+            }
+        }
+        assert_eq!(percent_for(u16::MAX).await, 100);
+        assert_eq!(percent_for(0).await, 0);
+        assert_eq!(percent_for(u16::MAX / 2).await, 49); // (32767*100)/65535 = 49
+    }
+
+    /// librespot 0.8 `AudioPacket::Samples` is already normalized to [-1, 1]; the
+    /// `ChannelSink` must be a plain f64→f32 cast, NOT a `/32768` rescale (IT-T72).
+    #[test]
+    fn channel_sink_casts_f64_to_f32_without_rescaling() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let mut sink = ChannelSink::new(tx);
+        let mut conv = Converter::new(None);
+        sink.write(AudioPacket::Samples(vec![0.5, -0.25, 1.0, 0.0]), &mut conv)
+            .expect("sink write ok");
+        assert_eq!(
+            rx.try_recv().expect("samples forwarded"),
+            vec![0.5_f32, -0.25, 1.0, 0.0]
+        );
+    }
+}

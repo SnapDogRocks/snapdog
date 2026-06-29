@@ -13,8 +13,8 @@ owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
   done: 6
-  in_progress: 7
-  todo: 34
+  in_progress: 9
+  todo: 32
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -357,8 +357,8 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 
 ### Phase 7 — AirPlay & Spotify seams
 - [ ] `IT-T70` shairplay contract: `TestHandler` + `RaopServer::builder().port(0)` loopback + `send_rtsp`; `audio_init`→`SessionStarted`, volume/metadata/coverart→`ReceiverEvent`. `status: todo` · deps: IT-T01.
-- [ ] `IT-T71` AirPlay volume **golden (corrected)** + `RemoteCommand` round-trip + AP2 SRP/`MemoryPairingStore`. `status: todo` · deps: IT-T70, IT-T06.
-- [ ] `IT-T72` Spotify `ChannelSink` f64→f32 cast (assert librespot 0.8 samples are already normalized — **no** rescaling) + `PlayerEvent`→`ReceiverEvent` mapper (pure fns) + volume vectors. `status: todo` · deps: IT-T01.
+- [ ] `IT-T71` AirPlay volume **golden (corrected)** + `RemoteCommand` round-trip + AP2 SRP/`MemoryPairingStore`. `status: in-progress` · deps: IT-T70, IT-T06.
+- [ ] `IT-T72` Spotify `ChannelSink` f64→f32 cast (assert librespot 0.8 samples are already normalized — **no** rescaling) + `PlayerEvent`→`ReceiverEvent` mapper (pure fns) + volume vectors. `status: in-progress` · deps: IT-T01.
 - [ ] `IT-T73` Feature **build-smoke matrix**: `embedded`/`process` × `ap2` on/off × `spotify` on/off compile. `status: todo` · deps: IT-T05.
 
 ### Phase 8 — State machine & lifecycle
@@ -439,8 +439,8 @@ tasks:
   - { id: IT-T62, phase: 6, status: todo, depends_on: [IT-T01] }
   - { id: IT-T63, phase: 6, status: todo, depends_on: [IT-T01] }
   - { id: IT-T70, phase: 7, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T71, phase: 7, status: todo, depends_on: [IT-T70, IT-T06] }
-  - { id: IT-T72, phase: 7, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T71, phase: 7, status: in-progress, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (incl. 0dB); RemoteCommand/AP2-SRP pending
+  - { id: IT-T72, phase: 7, status: in-progress, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume math; TrackChanged/Playing mapper pending (complex librespot types)
   - { id: IT-T73, phase: 7, status: todo, depends_on: [IT-T05] }
   - { id: IT-T80, phase: 8, status: todo, depends_on: [IT-T01, IT-T04] }
   - { id: IT-T81, phase: 8, status: todo, depends_on: [IT-T80, IT-T02] }

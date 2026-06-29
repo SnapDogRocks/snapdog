@@ -313,6 +313,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn airplay_volume_zero_db_is_full_scale() {
+        let (audio_tx, _) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let handler = BridgeHandler {
+            audio_tx,
+            event_tx,
+            sample_rate: AtomicU32::new(44100),
+        };
+        // 0 dB → 100% — completes the corrected volume golden (RFC IT-0003 §8).
+        handler.on_volume(0.0);
+        match event_rx.recv().await {
+            Some(ReceiverEvent::Volume { percent }) => assert_eq!(percent, 100),
+            _ => panic!("expected volume event"),
+        }
+    }
+
+    #[tokio::test]
     async fn test_bridge_handler_volume_mapping() {
         let (audio_tx, _) = mpsc::channel(16);
         let (event_tx, mut event_rx) = mpsc::channel(16);

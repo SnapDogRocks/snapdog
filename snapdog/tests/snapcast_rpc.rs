@@ -6,14 +6,14 @@
 //!
 //! Process backend only (the JSON-RPC client + builders live in
 //! `#[cfg(feature="snapcast-process")] mod process_impl`). Run with:
-//!   cargo test --test snapcast_rpc --no-default-features --features snapcast-process
+//!   `cargo test --test snapcast_rpc --no-default-features --features snapcast-process`
 //!
 //! - IT-T51: a golden `ServerStatus` fixture deserializes (fails if snapcast-proto
 //!   renames a status field on upgrade) and the `build_*` helpers return the
 //!   golden shape.
 //! - IT-T54: a line-delimited-JSON TCP fake records outgoing requests; golden
 //!   vectors assert each method's wire `method` string + `params` shape (ids are
-//!   per-request UUIDv4, so we assert structure, not the literal id). Encodes the
+//!   per-request `UUIDv4`, so we assert structure, not the literal id). Encodes the
 //!   two traps: `Group.SetMute` → key `mute` (not `muted`); `Stream.AddStream` →
 //!   camelCase `streamUri`.
 
