@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 12
-  in_progress: 9
-  todo: 26
+  done: 13
+  in_progress: 10
+  todo: 24
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -341,7 +341,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T43` Device-mode: `DeviceServer::start_at(:0)` loopback + raw `CemiFrame` exchange + `Bau.save()` byte-stability + CRC; prog-mode endpoint device-mode. `status: todo` · deps: IT-T04, IT-T40.
 
 ### Phase 5 — snapcast contract firewall
-- [ ] `IT-T50` `SnapcastBackend` trait double (mockall/hand-coded) capturing `execute(SnapcastCmd)` + injecting `SnapcastEvent`. `status: todo` · deps: IT-T01.
+- [x] `IT-T50` `SnapcastBackend` trait double (hand-coded no-op `MockBackend`) + `ZoneHarness`/`spawn_zone_harness` driving real `spawn_zone_players` (receivers off). `status: done` · deps: IT-T01.
 - [x] `IT-T51` `reconcile_zone_groups` + pure helpers w/ `ServerStatus` fixtures; **sorted** `Group.SetClients`. `status: done` · deps: IT-T50.
 - [ ] `IT-T52` Event roundtrip `ServerEvent`→`SnapcastEvent`→state+WS; **exhaustiveness test fails on unmapped variant**. `status: todo` · deps: IT-T50.
 - [x] `IT-T53` `GroupVolumeMode.effective()` table tests (Absolute/Relative/Compressed + clamp + max_volume). `status: todo` · deps: IT-T01.
@@ -364,8 +364,8 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 ### Phase 8 — State machine & lifecycle
 - [x] `IT-T80` Zone-player transitions (track None iff Idle) + persistence roundtrip (restore subset, playback→Stopped). `status: done` · deps: IT-T01, IT-T04.
 - [ ] `IT-T81` Next/Prev/complete honoring repeat + shuffle (seeded) + prev-restart >3s. `status: todo` · deps: IT-T80, IT-T02.
-- [ ] `IT-T82` Presence (fixed clock + auto-off via time::pause) + `source_conflict` LastWins/ReceiverWins. `status: in-progress` · deps: IT-T80, IT-T03.
-- [ ] `IT-T83` Multi-zone isolation + crash restart (`ZONE_RESTART_DELAY` via time control); loom as a stretch note. `status: todo` · deps: IT-T80, IT-T03.
+- [ ] `IT-T82` `source_conflict` LastWins/ReceiverWins **done** + command→state transitions **done** (ZoneHarness: volume/clamp/adjust/shuffle/repeat); presence auto-off via time::pause remaining. `status: in-progress` · deps: IT-T80, IT-T03.
+- [ ] `IT-T83` Multi-zone isolation **done** (ZoneHarness); crash restart (`ZONE_RESTART_DELAY`) still blocked (no realistic `run()` Err path). `status: in-progress` · deps: IT-T80, IT-T03.
 - [ ] `IT-T84` Headless boot `run_app(cfg)` (mdns off, ephemeral ports, TempEnv) + health endpoints + graceful shutdown. `status: todo` · deps: IT-T04, IT-T02.
 
 ### Phase 9 — CI & docs
@@ -427,7 +427,7 @@ tasks:
   - { id: IT-T41, phase: 4, status: todo, depends_on: [IT-T06, IT-T40] }
   - { id: IT-T42, phase: 4, status: todo, depends_on: [IT-T40] }
   - { id: IT-T43, phase: 4, status: todo, depends_on: [IT-T04, IT-T40] }
-  - { id: IT-T50, phase: 5, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T50, phase: 5, status: done, depends_on: [IT-T01] }   # tests/common: hand-coded no-op SnapcastBackend double (MockBackend) + ZoneHarness/spawn_zone_harness driving real spawn_zone_players; runner emits snap cmds via snap_tx (captured there), backend.execute unused in the zone loop
   - { id: IT-T51, phase: 5, status: done, depends_on: [IT-T50] }   # build_* + ServerStatus golden + reconcile_zone_groups sorted Group.SetClients per diverged zone (FIXED unsorted HashMap-order wire payload)
   - { id: IT-T52, phase: 5, status: in-progress, depends_on: [IT-T50] }   # tests/snapcast.rs: SnapcastEvent+SnapcastCmd exhaustiveness; ServerEvent map + golden JSON-RPC pending (process feature)
   - { id: IT-T53, phase: 5, status: done, depends_on: [IT-T01] }   # tests/config_contract.rs (GroupVolumeMode + config)
@@ -443,9 +443,9 @@ tasks:
   - { id: IT-T72, phase: 7, status: in-progress, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume math; TrackChanged/Playing mapper pending (complex librespot types)
   - { id: IT-T73, phase: 7, status: in-progress, depends_on: [IT-T05] }   # ci.yml integration job runs the process-feature firewall (snapcast_rpc); full embedded/process×ap2×spotify matrix pending
   - { id: IT-T80, phase: 8, status: done, depends_on: [IT-T01, IT-T04] }   # state/mod.rs: persist/load roundtrip + transient-reset (existing 5 tests) + SourceType/PlaybackState wire-format golden; track-None-iff-Idle holds via reset
-  - { id: IT-T81, phase: 8, status: todo, depends_on: [IT-T80, IT-T02] }   # BLOCKED: handle_next/prev/complete are harness fns in private player::helpers; no pure next_index; fastrand unseeded — needs an extracted pure fn or a spawn_zone_players harness
-  - { id: IT-T82, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix done (runner.rs in-crate); presence auto-off timer is inline in run() select-loop → needs spawn_zone_players + tokio::time::pause harness
-  - { id: IT-T83, phase: 8, status: todo, depends_on: [IT-T80, IT-T03] }   # BLOCKED: crash-restart is inline in spawn_zone_players' spawn closure; run() has no realistic Err path → not isolable without injecting a failing run
+  - { id: IT-T81, phase: 8, status: todo, depends_on: [IT-T80, IT-T02] }   # UNBLOCKED-ish: ZoneHarness (tests/common) now drives real spawn_zone_players; next/prev/complete still need either a pure next_index fn or a track-bearing harness (fastrand seeding still open)
+  - { id: IT-T82, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix done (runner.rs in-crate) + command->state transitions done via ZoneHarness (tests/zone_player.rs: volume/clamp/adjust/shuffle/repeat); presence auto-off timer (tokio::time::pause) still remaining
+  - { id: IT-T83, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # multi-zone isolation DONE (tests/zone_player.rs transitions_are_isolated_per_zone via ZoneHarness); crash-restart still blocked (inline in spawn closure; run() has no realistic Err path)
   - { id: IT-T84, phase: 8, status: todo, depends_on: [IT-T04, IT-T02] }   # BLOCKED: run_app() is Cli::parse-bound (no Config-injectable headless boot); needs a start_system(Config) seam
   - { id: IT-T90, phase: 9, status: done, depends_on: [IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60] }   # ci.yml unit-tests: cargo test --lib -> --workspace (runs tier-1 integration); nextest/retries = IT-T05
   - { id: IT-T91, phase: 9, status: todo, tier: 2, depends_on: [IT-T05, IT-T32, IT-T56] }

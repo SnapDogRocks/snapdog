@@ -237,7 +237,7 @@ async fn run(
         crate::receiver::audio_channel(RECEIVER_AUDIO_CHANNEL_SIZE);
     let (airplay_event_tx, mut airplay_event_rx) =
         mpsc::channel::<crate::receiver::ReceiverEvent>(RECEIVER_EVENT_CHANNEL_SIZE);
-    let mut _airplay_receiver = {
+    let mut _airplay_receiver = if ctx.start_receivers {
         let ap_config = crate::config::AirplayConfig {
             password: config.airplay.password.clone(),
             mode: config.airplay.mode,
@@ -257,6 +257,11 @@ async fn run(
                 None
             }
         }
+    } else {
+        // Receivers disabled (tests/headless): keep the channels (the select loop
+        // owns the rx halves) but never bind the RAOP socket or register mDNS.
+        drop((airplay_audio_tx, airplay_event_tx));
+        None
     };
 
     // Spotify Connect: F32 audio channel + event channel + receiver instance
@@ -265,7 +270,9 @@ async fn run(
         let (audio_tx, audio_rx) = crate::receiver::audio_channel(RECEIVER_AUDIO_CHANNEL_SIZE);
         let (event_tx, event_rx) =
             mpsc::channel::<crate::receiver::ReceiverEvent>(RECEIVER_EVENT_CHANNEL_SIZE);
-        let receiver = if let Some(ref sp_config) = config.spotify {
+        let receiver = if let Some(sp_config) =
+            config.spotify.as_ref().filter(|_| ctx.start_receivers)
+        {
             let mut sp = crate::receiver::spotify::SpotifyReceiver::new(
                 crate::config::SpotifyConfig {
                     name: zone_config.name.clone(),

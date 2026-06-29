@@ -407,6 +407,7 @@ pub async fn run_app() -> Result<()> {
         group_clients: snapcast::build_group_clients(&status),
         #[cfg(not(feature = "snapcast-process"))]
         group_clients: std::collections::HashMap::new(),
+        start_receivers: true,
     })
     .await?;
 

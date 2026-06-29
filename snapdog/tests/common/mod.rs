@@ -23,7 +23,8 @@ use axum::http::{Request, StatusCode};
 use snapdog::api::{self, AppState, SharedState};
 use snapdog::audio::eq::EqStore;
 use snapdog::config::{self, AppConfig};
-use snapdog::player::{SnapcastCmd, ZoneCommand};
+use snapdog::player::{self, SnapcastCmd, ZoneCommand, ZonePlayerContext};
+use snapdog::snapcast::backend::{BoxFuture, SnapcastBackend};
 use snapdog::state;
 use tokio::sync::{broadcast, mpsc};
 use tower::ServiceExt; // for `oneshot`
@@ -172,5 +173,116 @@ impl TestApp {
             out.push(cmd);
         }
         out
+    }
+}
+
+// ── Zone-player harness (IT-T50 / IT-T82): REAL `spawn_zone_players` ──────────
+//
+// Unlike `TestApp` (which captures the zone command channels and never runs a
+// player), this spawns the real per-zone runner tasks so command→state
+// transitions can be asserted end-to-end. Determinism (`IT-DEC-02`):
+// `start_receivers = false` (no RAOP socket bind / mDNS), a no-op backend, empty
+// group maps (no Snapcast wiring), and the WS broadcast as the sync barrier.
+
+/// No-op [`SnapcastBackend`] for harness tests — every call succeeds, nothing is
+/// bound or sent. (The crate's own mock is `#[cfg(test)]`-private, so integration
+/// tests need their own copy.)
+pub struct MockBackend;
+
+impl SnapcastBackend for MockBackend {
+    fn send_audio(
+        &self,
+        _zone_index: usize,
+        _samples: &[f32],
+        _sample_rate: u32,
+        _channels: u16,
+    ) -> BoxFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn execute(&self, _cmd: SnapcastCmd) -> BoxFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn stop(&self) -> BoxFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn get_status(&self) -> BoxFuture<'_, anyhow::Result<serde_json::Value>> {
+        Box::pin(async { Ok(serde_json::Value::Null) })
+    }
+    fn delete_client(&self, _id: &str) -> BoxFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// A running set of real zone players plus the channels to observe them.
+pub struct ZoneHarness {
+    /// 1-based zone index → command sender (drives the real runner task).
+    pub senders: HashMap<usize, mpsc::Sender<ZoneCommand>>,
+    /// Shared store — assert post-transition state here.
+    pub store: state::SharedState,
+    /// WebSocket notification tap — the deterministic sync barrier.
+    pub notify_rx: broadcast::Receiver<Arc<str>>,
+    /// Captured Snapcast commands (empty unless a zone has a group).
+    pub snap_rx: mpsc::Receiver<SnapcastCmd>,
+    // Kept alive so the EqStore-backing TempDir outlives the test.
+    _tmp: tempfile::TempDir,
+}
+
+impl ZoneHarness {
+    /// Await the next notification whose parsed JSON satisfies `pred`, returning it.
+    ///
+    /// This is the sync barrier: the runner is a concurrent task, so never poll the
+    /// store immediately — await the notification that *proves* the command was
+    /// processed, then assert the store. No sleeps, no timing assumptions.
+    pub async fn await_notification(
+        &mut self,
+        pred: impl Fn(&serde_json::Value) -> bool,
+    ) -> serde_json::Value {
+        loop {
+            let raw = self.notify_rx.recv().await.expect("notification received");
+            let v: serde_json::Value =
+                serde_json::from_str(&raw).expect("notification is valid JSON");
+            if pred(&v) {
+                return v;
+            }
+        }
+    }
+}
+
+/// Spawn real zone players for `config` with receivers disabled (no sockets/mDNS),
+/// a no-op backend, and empty group maps — so transitions are observable via the
+/// store + notifications without any Snapcast group wiring.
+pub async fn spawn_zone_harness(config: AppConfig) -> ZoneHarness {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let config = Arc::new(config);
+    let store = state::init(&config, None).expect("state init");
+    let covers = state::cover::new_cache();
+    let (notify_tx, notify_rx) = api::ws::notification_channel();
+    let (snap_tx, snap_rx) = mpsc::channel::<SnapcastCmd>(64);
+    let eq_store = Arc::new(Mutex::new(EqStore::load(&tmp.path().join("eq.json"))));
+
+    let ctx = ZonePlayerContext {
+        config: config.clone(),
+        store: store.clone(),
+        covers,
+        notify: notify_tx,
+        snap_tx,
+        backend: Arc::new(MockBackend),
+        eq_store,
+        client_mac_map: HashMap::new(),
+        group_ids: Vec::new(),
+        group_clients: HashMap::new(),
+        start_receivers: false,
+    };
+
+    let senders = player::spawn_zone_players(ctx)
+        .await
+        .expect("spawn zone players");
+
+    ZoneHarness {
+        senders,
+        store,
+        notify_rx,
+        snap_rx,
+        _tmp: tmp,
     }
 }

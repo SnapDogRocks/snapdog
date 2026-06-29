@@ -44,6 +44,11 @@ pub struct ZonePlayerContext {
     pub group_ids: Vec<String>,
     /// Pre-extracted: group ID → client IDs in that group.
     pub group_clients: HashMap<String, Vec<String>>,
+    /// Whether to start network receivers (AirPlay/Spotify) on zone startup.
+    /// Production sets `true`; tests/headless set `false` to avoid binding the
+    /// RAOP socket + mDNS registration, which is otherwise nondeterministic across
+    /// parallel test processes (fixed ports `7000 + zone_index`).
+    pub start_receivers: bool,
 }
 
 /// Command sent to the main loop for Snapcast JSON-RPC execution.
