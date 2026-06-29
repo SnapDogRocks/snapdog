@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 8
-  in_progress: 11
-  todo: 28
+  done: 9
+  in_progress: 12
+  todo: 26
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -330,8 +330,8 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T21` Ping cadence (30s via time::pause), close 1001 on shutdown, 65th conn→503. `status: todo` · deps: IT-T20, IT-T03.
 
 ### Phase 3 — MQTT suite
-- [ ] `IT-T30` Routing/decode via `test_bridge`: 16 topics→captured cmds; volume 0–1 & 0–100; mute/repeat parse; client-zone validation. `status: todo` · deps: IT-T01.
-- [ ] `IT-T31` Retained state JSON schema (`zones/{i}/state`,`clients/{i}/state`) + LWT online/offline + HA discovery payloads. `status: todo` · deps: IT-T30.
+- [x] `IT-T30` Routing/decode via `test_bridge`: 16 topics→captured cmds; volume 0–1 & 0–100; mute/repeat parse; client-zone validation. `status: done` · deps: IT-T01.
+- [ ] `IT-T31` Retained state JSON schema (`zones/{i}/state`,`clients/{i}/state`) + LWT online/offline + HA discovery payloads. `status: in-progress` · deps: IT-T30.
 - [ ] `IT-T32` **(T2)** Real mosquitto via testcontainers: reconnect, QoS1 retained, LWT on ungraceful disconnect; loud-skip w/o Docker. `status: todo` · deps: IT-T05, IT-T30.
 
 ### Phase 4 — KNX suite
@@ -420,8 +420,8 @@ tasks:
   - { id: IT-T14, phase: 1, status: todo, depends_on: [IT-T10] }
   - { id: IT-T20, phase: 2, status: done, depends_on: [IT-T10, IT-T03] }   # tests/ws.rs (serde + exhaustiveness + tap)
   - { id: IT-T21, phase: 2, status: todo, depends_on: [IT-T20, IT-T03] }
-  - { id: IT-T30, phase: 3, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T31, phase: 3, status: todo, depends_on: [IT-T30] }
+  - { id: IT-T30, phase: 3, status: done, depends_on: [IT-T01] }   # existing in-source mqtt routing tests: routes_zone_{volume,mute,control,playlist,seek} + routes_client_{volume,mute,zone_change}
+  - { id: IT-T31, phase: 3, status: in-progress, depends_on: [IT-T30] }   # zone+client retained-state JSON schema done (extracted pure *_payload builders, mqtt/mod.rs); LWT online/offline + HA discovery payloads pending
   - { id: IT-T32, phase: 3, status: todo, tier: 2, depends_on: [IT-T05, IT-T30] }
   - { id: IT-T40, phase: 4, status: todo, depends_on: [IT-T01] }
   - { id: IT-T41, phase: 4, status: todo, depends_on: [IT-T06, IT-T40] }
