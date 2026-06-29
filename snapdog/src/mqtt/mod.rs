@@ -49,7 +49,7 @@ impl MqttBridge {
             opts.set_credentials(&config.username, &*config.password);
         }
 
-        let status_topic = format!("{}status", config.base_topic);
+        let status_topic = availability_topic(&config.base_topic);
         opts.set_last_will(LastWill::new(
             &status_topic,
             "offline",
@@ -126,51 +126,8 @@ impl MqttBridge {
     /// Returns an error if publishing any discovery message fails.
     pub async fn publish_ha_discovery(&self, zones: &[crate::config::ZoneConfig]) -> Result<()> {
         for zone in zones {
-            let idx = zone.index;
-            let unique_id = format!("snapdog_zone_{idx}");
-            let base = &self.base_topic;
-
-            let discovery = serde_json::json!({
-                "name": zone.name,
-                "unique_id": &unique_id,
-                "object_id": &unique_id,
-                "icon": "mdi:speaker-group",
-                "state_topic": format!("{base}zones/{idx}/state"),
-                "volume_command_topic": format!("{base}zones/{idx}/volume/set"),
-                "mute_command_topic": format!("{base}zones/{idx}/mute/set"),
-                "media_position_command_topic": format!("{base}zones/{idx}/position/set"),
-                "payload_play": "play",
-                "payload_pause": "pause",
-                "payload_stop": "stop",
-                "payload_next": "next",
-                "payload_previous": "previous",
-                "command_topic": format!("{base}zones/{idx}/control/set"),
-                "shuffle_command_topic": format!("{base}zones/{idx}/shuffle/set"),
-                "repeat_command_topic": format!("{base}zones/{idx}/repeat/set"),
-                "volume_level_template": "{{ value_json.volume_level }}",
-                "is_volume_muted_template": "{{ value_json.is_volume_muted }}",
-                "state_template": "{{ value_json.state }}",
-                "media_title_template": "{{ value_json.media_title | default('') }}",
-                "media_artist_template": "{{ value_json.media_artist | default('') }}",
-                "media_album_name_template": "{{ value_json.media_album_name | default('') }}",
-                "media_duration_template": "{{ value_json.media_duration | default(0) }}",
-                "media_position_template": "{{ value_json.media_position | default(0) }}",
-                "media_image_url_template": "{{ value_json.media_image_url | default('') }}",
-                "shuffle_state_template": "{{ value_json.shuffle }}",
-                "repeat_state_template": "{{ value_json.repeat }}",
-                "supported_features": ["play", "pause", "stop", "next_track", "previous_track", "volume_set", "volume_mute", "shuffle_set", "repeat_set", "seek"],
-                "device": {
-                    "identifiers": ["snapdog"],
-                    "name": self.name,
-                    "manufacturer": "metaneutrons",
-                    "model": "Multi-zone Audio Controller",
-                    "sw_version": env!("CARGO_PKG_VERSION"),
-                },
-                "availability_topic": format!("{base}/status"),
-                "payload_available": "online",
-                "payload_not_available": "offline",
-            });
-
+            let unique_id = format!("snapdog_zone_{}", zone.index);
+            let discovery = ha_discovery_payload(&self.base_topic, &self.name, zone);
             self.client
                 .publish(
                     format!("homeassistant/media_player/{unique_id}/config"),
@@ -179,13 +136,15 @@ impl MqttBridge {
                     discovery.to_string().as_bytes(),
                 )
                 .await
-                .with_context(|| format!("Failed to publish HA discovery for zone {idx}"))?;
+                .with_context(|| {
+                    format!("Failed to publish HA discovery for zone {}", zone.index)
+                })?;
         }
 
-        // Publish availability
+        // Publish availability "online" to the SAME topic as the LWT (single slash).
         self.client
             .publish(
-                format!("{}/status", self.base_topic),
+                availability_topic(&self.base_topic),
                 QoS::AtLeastOnce,
                 true,
                 b"online",
@@ -568,6 +527,66 @@ fn client_state_payload(client: &state::ClientState) -> serde_json::Value {
     })
 }
 
+/// Online/offline availability topic (LWT + retained "online").
+///
+/// `base_topic` is normalized to end with `/`, so this must NOT add a second slash.
+/// Single source of truth shared by `connect`'s LWT and HA discovery so the two
+/// can never drift (they previously did: `{base}status` vs `{base}/status`).
+fn availability_topic(base_topic: &str) -> String {
+    format!("{base_topic}status")
+}
+
+/// Build the Home Assistant MQTT-discovery payload for one zone (`media_player`).
+/// Pure: extracted from `publish_ha_discovery` so the schema is unit-testable.
+fn ha_discovery_payload(
+    base: &str,
+    device_name: &str,
+    zone: &crate::config::ZoneConfig,
+) -> serde_json::Value {
+    let idx = zone.index;
+    let unique_id = format!("snapdog_zone_{idx}");
+    serde_json::json!({
+        "name": zone.name,
+        "unique_id": &unique_id,
+        "object_id": &unique_id,
+        "icon": "mdi:speaker-group",
+        "state_topic": format!("{base}zones/{idx}/state"),
+        "volume_command_topic": format!("{base}zones/{idx}/volume/set"),
+        "mute_command_topic": format!("{base}zones/{idx}/mute/set"),
+        "media_position_command_topic": format!("{base}zones/{idx}/position/set"),
+        "payload_play": "play",
+        "payload_pause": "pause",
+        "payload_stop": "stop",
+        "payload_next": "next",
+        "payload_previous": "previous",
+        "command_topic": format!("{base}zones/{idx}/control/set"),
+        "shuffle_command_topic": format!("{base}zones/{idx}/shuffle/set"),
+        "repeat_command_topic": format!("{base}zones/{idx}/repeat/set"),
+        "volume_level_template": "{{ value_json.volume_level }}",
+        "is_volume_muted_template": "{{ value_json.is_volume_muted }}",
+        "state_template": "{{ value_json.state }}",
+        "media_title_template": "{{ value_json.media_title | default('') }}",
+        "media_artist_template": "{{ value_json.media_artist | default('') }}",
+        "media_album_name_template": "{{ value_json.media_album_name | default('') }}",
+        "media_duration_template": "{{ value_json.media_duration | default(0) }}",
+        "media_position_template": "{{ value_json.media_position | default(0) }}",
+        "media_image_url_template": "{{ value_json.media_image_url | default('') }}",
+        "shuffle_state_template": "{{ value_json.shuffle }}",
+        "repeat_state_template": "{{ value_json.repeat }}",
+        "supported_features": ["play", "pause", "stop", "next_track", "previous_track", "volume_set", "volume_mute", "shuffle_set", "repeat_set", "seek"],
+        "device": {
+            "identifiers": ["snapdog"],
+            "name": device_name,
+            "manufacturer": "metaneutrons",
+            "model": "Multi-zone Audio Controller",
+            "sw_version": env!("CARGO_PKG_VERSION"),
+        },
+        "availability_topic": availability_topic(base),
+        "payload_available": "online",
+        "payload_not_available": "offline",
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -683,6 +702,45 @@ mod tests {
         assert_eq!(p["connected"], true);
         assert_eq!(p["zone"], 1);
         assert_eq!(p["latency"], 0);
+    }
+
+    #[test]
+    fn availability_topic_single_slash_matches_lwt() {
+        // base_topic is normalized to end with "/"; the availability topic must NOT
+        // double the slash. connect()'s LWT and HA discovery share this fn so they
+        // can't drift (regression guard for the snapdog//status bug).
+        assert_eq!(availability_topic("snapdog/"), "snapdog/status");
+    }
+
+    #[test]
+    fn ha_discovery_payload_schema() {
+        let cfg = crate::config::load_raw(
+            toml::from_str(
+                r#"
+                [[zone]]
+                name = "Living Room"
+                [[client]]
+                name = "Speaker"
+                mac = "00:00:00:00:00:01"
+                zone = "Living Room"
+            "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let p = ha_discovery_payload("snapdog/", "SnapDog", &cfg.zones[0]);
+        assert_eq!(p["name"], "Living Room");
+        assert_eq!(p["unique_id"], "snapdog_zone_1");
+        assert_eq!(p["state_topic"], "snapdog/zones/1/state");
+        assert_eq!(p["command_topic"], "snapdog/zones/1/control/set");
+        assert_eq!(p["volume_command_topic"], "snapdog/zones/1/volume/set");
+        // Must equal the LWT topic (single slash) — guards the snapdog//status bug.
+        assert_eq!(p["availability_topic"], "snapdog/status");
+        assert_eq!(p["availability_topic"], availability_topic("snapdog/"));
+        assert_eq!(p["payload_available"], "online");
+        assert_eq!(p["payload_not_available"], "offline");
+        assert_eq!(p["device"]["identifiers"][0], "snapdog");
+        assert_eq!(p["device"]["name"], "SnapDog");
     }
 
     #[test]
