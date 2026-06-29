@@ -12,8 +12,8 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 10
-  in_progress: 11
+  done: 11
+  in_progress: 10
   todo: 26
 ---
 
@@ -345,7 +345,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T51` `reconcile_zone_groups` + pure helpers w/ `ServerStatus` fixtures; **sorted** `Group.SetClients`. `status: in-progress` · deps: IT-T50.
 - [ ] `IT-T52` Event roundtrip `ServerEvent`→`SnapcastEvent`→state+WS; **exhaustiveness test fails on unmapped variant**. `status: todo` · deps: IT-T50.
 - [x] `IT-T53` `GroupVolumeMode.effective()` table tests (Absolute/Relative/Compressed + clamp + max_volume). `status: todo` · deps: IT-T01.
-- [ ] `IT-T54` **Golden JSON-RPC vectors** for the 17 methods + the **line-delimited-JSON TCP fake** (`IT-DEC-06`); assert request ser + response de. `status: in-progress` · deps: IT-T06, IT-T50.
+- [x] `IT-T54` **Golden JSON-RPC vectors** for the 17 methods + the **line-delimited-JSON TCP fake** (`IT-DEC-06`); assert request ser + response de. `status: done` · deps: IT-T06, IT-T50.
 - [ ] `IT-T55` Embedded `F32AudioSender::send(&[f32])` signature contract + `send_audio` path (inline mock server). `status: todo` · deps: IT-T50.
 - [ ] `IT-T56` **(T2)** Real snapserver via repaired `SnapserverHandle`: control + per-zone TCP audio source end-to-end. `status: todo` · deps: IT-T07, IT-T05.
 
@@ -431,7 +431,7 @@ tasks:
   - { id: IT-T51, phase: 5, status: in-progress, depends_on: [IT-T50] }   # tests/snapcast_rpc.rs: build_* + ServerStatus golden; reconcile_zone_groups pending
   - { id: IT-T52, phase: 5, status: in-progress, depends_on: [IT-T50] }   # tests/snapcast.rs: SnapcastEvent+SnapcastCmd exhaustiveness; ServerEvent map + golden JSON-RPC pending (process feature)
   - { id: IT-T53, phase: 5, status: done, depends_on: [IT-T01] }   # tests/config_contract.rs (GroupVolumeMode + config)
-  - { id: IT-T54, phase: 5, status: in-progress, depends_on: [IT-T06, IT-T50] }   # tests/snapcast_rpc.rs: line-delimited-JSON TCP fake + golden vectors 6/17 (incl. mute/streamUri traps) + framing/response-deser; remaining 11 mechanical
+  - { id: IT-T54, phase: 5, status: done, depends_on: [IT-T06, IT-T50] }   # tests/snapcast_rpc.rs: line-delimited-JSON TCP fake + golden vectors for ALL 17 JSON-RPC methods (incl. mute/streamUri traps) + framing + response-deser
   - { id: IT-T55, phase: 5, status: todo, depends_on: [IT-T50] }
   - { id: IT-T56, phase: 5, status: todo, tier: 2, depends_on: [IT-T07, IT-T05] }
   - { id: IT-T60, phase: 6, status: in-progress, depends_on: [IT-T06] }   # tests/audio.rs: f32→PCM golden done; full decode→resample→EQ chain pending

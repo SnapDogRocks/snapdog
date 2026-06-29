@@ -212,3 +212,57 @@ async fn rpc_stream_add_uses_camelcase_streamuri() {
         "Stream.AddStream wire key is camelCase `streamUri`"
     );
 }
+
+#[tokio::test]
+async fn rpc_remaining_method_vectors_complete_all_17() {
+    // The other 6 methods are covered above; this pins the remaining 11 so every
+    // JSON-RPC method's wire `method` string + `params` shape is golden. Results
+    // are faked as null and ignored — we assert the OUTGOING request, which is
+    // recorded regardless of whether the (deserialized) response is Ok.
+    let (addr, rec) = spawn_fake(Value::Null).await;
+    let c = SnapcastClient::connect(addr).await.unwrap();
+
+    let _ = c.server_get_rpc_version().await;
+    let _ = c.server_delete_client("c1").await;
+    let _ = c.client_get_status("c1").await;
+    let _ = c.client_set_latency("c1", 20).await;
+    let _ = c.client_set_name("c1", "Kitchen").await;
+    let _ = c.group_get_status("g1").await;
+    let _ = c.group_set_stream("g1", "default").await;
+    let _ = c.group_set_name("g1", "Living").await;
+    let _ = c.stream_remove("s1").await;
+    let _ = c
+        .stream_control("s1", "setPosition", json!({ "position": 5 }))
+        .await;
+    let _ = c
+        .stream_set_property("s1", json!({ "loopStatus": "none" }))
+        .await;
+
+    let cases: [(&str, Value); 11] = [
+        ("Server.GetRPCVersion", json!({})),
+        ("Server.DeleteClient", json!({ "id": "c1" })),
+        ("Client.GetStatus", json!({ "id": "c1" })),
+        ("Client.SetLatency", json!({ "id": "c1", "latency": 20 })),
+        ("Client.SetName", json!({ "id": "c1", "name": "Kitchen" })),
+        ("Group.GetStatus", json!({ "id": "g1" })),
+        (
+            "Group.SetStream",
+            json!({ "id": "g1", "stream_id": "default" }),
+        ),
+        ("Group.SetName", json!({ "id": "g1", "name": "Living" })),
+        ("Stream.RemoveStream", json!({ "id": "s1" })),
+        (
+            "Stream.Control",
+            json!({ "id": "s1", "command": "setPosition", "params": { "position": 5 } }),
+        ),
+        (
+            "Stream.SetProperty",
+            json!({ "id": "s1", "properties": { "loopStatus": "none" } }),
+        ),
+    ];
+    for (method, params) in cases {
+        let req = find_request(&rec, method);
+        assert_eq!(req["jsonrpc"], "2.0", "{method} envelope");
+        assert_eq!(req["params"], params, "{method} params");
+    }
+}
