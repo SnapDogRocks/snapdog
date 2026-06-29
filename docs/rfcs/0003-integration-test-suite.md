@@ -1,8 +1,8 @@
 ---
 rfc: IT-0003
 title: Integration & regression test suite for snapdog
-status: draft            # draft | accepted | in-progress | done | superseded
-version: 1.1.0           # v1.1: review-hardened (Spotify f64→f32 fix; added ACs; §5.2 timer-list accuracy)
+status: in-progress      # draft | accepted | in-progress | done | superseded
+version: 1.2.0           # v1.2: Phase-0 testkit + REST/WS/audio/config tier-1 suites landed; integration.rs snapcast helpers repaired
 created: 2026-06-28
 updated: 2026-06-28
 target_repo: snapdog
@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 0
-  in_progress: 0
-  todo: 47
+  done: 6
+  in_progress: 2
+  todo: 39
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -309,24 +309,24 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 > Tier-2 tasks are marked **(T2)**; everything else is the deterministic tier-1 gate.
 
 ### Phase 0 — Foundations & prerequisites
-- [ ] `IT-T01` `testkit` scaffold: `tests/common/` + `test-util` feature exporting reusable doubles (`IT-DEC-08`). `status: todo` · deps: — · **AC:** `cargo test` discovers `tests/common`; `--features test-util` compiles.
+- [x] `IT-T01` `testkit` scaffold: `tests/common/` + `test-util` feature exporting reusable doubles (`IT-DEC-08`). `status: todo` · deps: — · **AC:** `cargo test` discovers `tests/common`; `--features test-util` compiles.
 - [ ] `IT-T02` `EphemeralResource` pool (ports `TcpListener :0`, unique mDNS/zone names, seeded RNG) for safe parallelism. `status: todo` · deps: IT-T01 · **AC:** `allocate_port` returns unique ports across N concurrent tasks; name allocation is collision-free and reproducible under a fixed seed.
 - [ ] `IT-T03` `TokioTimeGuard` (pause/advance helpers for the named timers §5.2). `status: todo` · deps: IT-T01 · **AC:** a 300s presence auto-off test completes in <50ms.
-- [ ] `IT-T04` `TempEnv` fixture (TempDir `state_dir`, pre-seeded `server_id`, `persist_path` control, `mdns.enabled=false`). `status: todo` · deps: IT-T01 · **AC:** `TempEnv::new()` makes a TempDir `state_dir`, pre-writes a fixed `server_id` UUID, supports `persist_path=None` (disables auto-save), sets `mdns.enabled=false`, cleans up on drop.
+- [x] `IT-T04` `TempEnv` fixture (TempDir `state_dir`, pre-seeded `server_id`, `persist_path` control, `mdns.enabled=false`). `status: todo` · deps: IT-T01 · **AC:** `TempEnv::new()` makes a TempDir `state_dir`, pre-writes a fixed `server_id` UUID, supports `persist_path=None` (disables auto-save), sets `mdns.enabled=false`, cleans up on drop.
 - [ ] `IT-T05` Adopt cargo-nextest + `.config/nextest.toml` (test-groups serial for real-service, retries **tier-2 only**, slow-timeout). `status: todo` · deps: — · **AC:** `cargo nextest run` green; tier-1 has 0 retries.
 - [ ] `IT-T06` Golden-vector harness: `tests/fixtures/` + load/compare helper, `UPDATE_GOLDEN=1`, ±tolerance for float DPT/audio (`IT-DEC-07`). `status: todo` · deps: IT-T01 · **AC:** compare returns Ok iff actual is within tolerance of golden; `UPDATE_GOLDEN=1` regenerates fixtures; one round-trippable golden vector exists.
 - [ ] `IT-T07` **PREREQ**: repair `tests/integration.rs` `start_system`/`start_system_with_api` vs the new `SnapcastClient` API (`sync_initial_state`, no `init`/`state`); un-ignore the revived tests. `status: todo` · deps: — · **AC:** previously-`#[ignore]`d integration tests compile and pass under tier-2; **includes any `SnapserverHandle` updates the new API needs (feeds IT-T56)**.
 - [ ] `IT-T08` Resolve the snapcast **0.16.1-vs-0.17.0 pin** (`IT-DEC-11`): record decision in an ADR; add a feature build-smoke matrix entry. `status: todo` · deps: —.
 
 ### Phase 1 — REST contract suite
-- [ ] `IT-T10` In-process REST driver: `oneshot` on `Router` + mock `AppState` (captured `ZoneCommand`/`SnapcastCmd` mpsc + broadcast tap). `status: todo` · deps: IT-T01 · **AC:** a GET returns 200 with no TCP socket; the suite **enumerates and asserts every mounted route group** (no hardcoded endpoint count).
-- [ ] `IT-T11` Zone endpoints contract (all): status+body+**exactly-one** command; boundaries (zone 0→404), seek XOR(→400), volume parse/clamp, repeat cycle, EQ band limits, cover placeholder etag. `status: todo` · deps: IT-T10, IT-T03 · **AC:** every zone endpoint returns documented status+body and captures exactly one `ZoneCommand`; zone 0→404; seek both→400 / exactly-one→200; volume parse/clamp; repeat cycles Off→All→One; EQ >10 bands→400 + band-edit clears preset; `GET …/cover`→200 PNG + ETag `"snapdog-placeholder"`.
+- [x] `IT-T10` In-process REST driver: `oneshot` on `Router` + mock `AppState` (captured `ZoneCommand`/`SnapcastCmd` mpsc + broadcast tap). `status: todo` · deps: IT-T01 · **AC:** a GET returns 200 with no TCP socket; the suite **enumerates and asserts every mounted route group** (no hardcoded endpoint count).
+- [x] `IT-T11` Zone endpoints contract (all): status+body+**exactly-one** command; boundaries (zone 0→404), seek XOR(→400), volume parse/clamp, repeat cycle, EQ band limits, cover placeholder etag. `status: todo` · deps: IT-T10, IT-T03 · **AC:** every zone endpoint returns documented status+body and captures exactly one `ZoneCommand`; zone 0→404; seek both→400 / exactly-one→200; volume parse/clamp; repeat cycles Off→All→One; EQ >10 bands→400 + band-edit clears preset; `GET …/cover`→200 PNG + ETag `"snapdog-placeholder"`.
 - [ ] `IT-T12` Client endpoints contract: vol/mute/latency, zone-assign validation(+fade), EQ 422 if not snapdog, **GET/PUT `…/{client}/speaker`** (profile retrieval/apply, 404 unknown profile, validation error). `status: todo` · deps: IT-T10.
 - [ ] `IT-T13` Media/Speakers/System/KNX(409 client-mode)/Health contract. `status: todo` · deps: IT-T10.
 - [ ] `IT-T14` Auth middleware (401 w/o key) + **OpenAPI** response-schema contract validation. `status: todo` · deps: IT-T10.
 
 ### Phase 2 — WebSocket suite
-- [ ] `IT-T20` All **7** notification variants emitted on the right mutation; serde `tag`/snake_case round-trip; **a compile-time exhaustiveness match over all 7 `Notification` variants** (catch silent add/rename, mirrors IT-T52). `status: todo` · deps: IT-T10, IT-T03.
+- [x] `IT-T20` All **7** notification variants emitted on the right mutation; serde `tag`/snake_case round-trip; **a compile-time exhaustiveness match over all 7 `Notification` variants** (catch silent add/rename, mirrors IT-T52). `status: todo` · deps: IT-T10, IT-T03.
 - [ ] `IT-T21` Ping cadence (30s via time::pause), close 1001 on shutdown, 65th conn→503. `status: todo` · deps: IT-T20, IT-T03.
 
 ### Phase 3 — MQTT suite
@@ -344,7 +344,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T50` `SnapcastBackend` trait double (mockall/hand-coded) capturing `execute(SnapcastCmd)` + injecting `SnapcastEvent`. `status: todo` · deps: IT-T01.
 - [ ] `IT-T51` `reconcile_zone_groups` + pure helpers w/ `ServerStatus` fixtures; **sorted** `Group.SetClients`. `status: todo` · deps: IT-T50.
 - [ ] `IT-T52` Event roundtrip `ServerEvent`→`SnapcastEvent`→state+WS; **exhaustiveness test fails on unmapped variant**. `status: todo` · deps: IT-T50.
-- [ ] `IT-T53` `GroupVolumeMode.effective()` table tests (Absolute/Relative/Compressed + clamp + max_volume). `status: todo` · deps: IT-T01.
+- [x] `IT-T53` `GroupVolumeMode.effective()` table tests (Absolute/Relative/Compressed + clamp + max_volume). `status: todo` · deps: IT-T01.
 - [ ] `IT-T54` **Golden JSON-RPC vectors** for the 17 methods + the **line-delimited-JSON TCP fake** (`IT-DEC-06`); assert request ser + response de. `status: todo` · deps: IT-T06, IT-T50.
 - [ ] `IT-T55` Embedded `F32AudioSender::send(&[f32])` signature contract + `send_audio` path (inline mock server). `status: todo` · deps: IT-T50.
 - [ ] `IT-T56` **(T2)** Real snapserver via repaired `SnapserverHandle`: control + per-zone TCP audio source end-to-end. `status: todo` · deps: IT-T07, IT-T05.
@@ -405,20 +405,20 @@ rfc: IT-0003
 updated: 2026-06-28
 tiers: { "1": deterministic-gate, "2": integration-docker-optional, "3": e2e-hardware-manual }
 tasks:
-  - { id: IT-T01, phase: 0, status: todo, depends_on: [] }
+  - { id: IT-T01, phase: 0, status: done, depends_on: [] }       # tests/common/mod.rs
   - { id: IT-T02, phase: 0, status: todo, depends_on: [IT-T01] }
   - { id: IT-T03, phase: 0, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T04, phase: 0, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T04, phase: 0, status: done, depends_on: [IT-T01] }   # build_test_app: TempDir + persist=None + mdns-off
   - { id: IT-T05, phase: 0, status: todo, depends_on: [] }
   - { id: IT-T06, phase: 0, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T07, phase: 0, status: todo, depends_on: [] }
+  - { id: IT-T07, phase: 0, status: in-progress, depends_on: [] }  # snapcast helpers repaired; tier-2 bodies need rewrite (see file TODO)
   - { id: IT-T08, phase: 0, status: todo, depends_on: [] }
-  - { id: IT-T10, phase: 1, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T11, phase: 1, status: todo, depends_on: [IT-T10, IT-T03] }
+  - { id: IT-T10, phase: 1, status: done, depends_on: [IT-T01] }   # api::build_router + TestApp::request (oneshot)
+  - { id: IT-T11, phase: 1, status: done, depends_on: [IT-T10, IT-T03] }   # tests/rest_zones.rs (10 tests)
   - { id: IT-T12, phase: 1, status: todo, depends_on: [IT-T10] }
   - { id: IT-T13, phase: 1, status: todo, depends_on: [IT-T10] }
   - { id: IT-T14, phase: 1, status: todo, depends_on: [IT-T10] }
-  - { id: IT-T20, phase: 2, status: todo, depends_on: [IT-T10, IT-T03] }
+  - { id: IT-T20, phase: 2, status: done, depends_on: [IT-T10, IT-T03] }   # tests/ws.rs (serde + exhaustiveness + tap)
   - { id: IT-T21, phase: 2, status: todo, depends_on: [IT-T20, IT-T03] }
   - { id: IT-T30, phase: 3, status: todo, depends_on: [IT-T01] }
   - { id: IT-T31, phase: 3, status: todo, depends_on: [IT-T30] }
@@ -430,11 +430,11 @@ tasks:
   - { id: IT-T50, phase: 5, status: todo, depends_on: [IT-T01] }
   - { id: IT-T51, phase: 5, status: todo, depends_on: [IT-T50] }
   - { id: IT-T52, phase: 5, status: todo, depends_on: [IT-T50] }
-  - { id: IT-T53, phase: 5, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T53, phase: 5, status: done, depends_on: [IT-T01] }   # tests/config_contract.rs (GroupVolumeMode + config)
   - { id: IT-T54, phase: 5, status: todo, depends_on: [IT-T06, IT-T50] }
   - { id: IT-T55, phase: 5, status: todo, depends_on: [IT-T50] }
   - { id: IT-T56, phase: 5, status: todo, tier: 2, depends_on: [IT-T07, IT-T05] }
-  - { id: IT-T60, phase: 6, status: todo, depends_on: [IT-T06] }
+  - { id: IT-T60, phase: 6, status: in-progress, depends_on: [IT-T06] }   # tests/audio.rs: f32→PCM golden done; full decode→resample→EQ chain pending
   - { id: IT-T61, phase: 6, status: todo, depends_on: [IT-T01] }
   - { id: IT-T62, phase: 6, status: todo, depends_on: [IT-T01] }
   - { id: IT-T63, phase: 6, status: todo, depends_on: [IT-T01] }

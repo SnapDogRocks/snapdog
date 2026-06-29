@@ -2,9 +2,13 @@
 // Copyright (C) 2026 Fabian Schmieder
 
 //! Integration tests — uses real snapserver (must be installed locally).
+//!
+//! Tier-2 (RFC IT-0003): requires a local `snapserver` binary. Run with
+//! `cargo test --test integration --no-default-features --features snapcast-process -- --test-threads=1`.
+//! Repaired for the post-ADR-018 `SnapcastClient` API (`IT-T07`): `init()`/`state()`
+//! were removed in favour of `server_get_status()` + `sync_initial_state()`, and
+//! `ZonePlayerContext` gained `backend` + `eq_store`.
 #![cfg(feature = "snapcast-process")]
-// TODO: update start_system/start_system_with_api to new SnapcastClient API
-//       (init/state removed in snapdog-client refactor)
 #![allow(dead_code, unused_imports)]
 
 // Run integration tests sequentially — each starts its own snapserver
@@ -20,7 +24,7 @@ use tokio::sync::mpsc;
 use snapdog::config::{self, AppConfig, FileConfig};
 use snapdog::player::{self, ZoneCommand, ZoneCommandSender, ZonePlayerContext};
 use snapdog::process::SnapserverHandle;
-use snapdog::snapcast::SnapcastClient;
+use snapdog::snapcast::{self, SnapcastClient};
 use snapdog::state;
 
 // ── Test Harness ──────────────────────────────────────────────
@@ -189,6 +193,19 @@ async fn mqtt_publish_and_receive() {
 }
 
 // TODO: update to new SnapcastClient API (init/state removed)
+// TODO(IT-T07, tier-2): the documented snapcast break (`init()`/`state()` removal)
+// is repaired in `start_system`/`start_system_with_api` below
+// (`server_get_status` + `sync_initial_state` + `backend`/`eq_store`). The test
+// BODIES carry further, unrelated API drift and need a rewrite against a LIVE
+// snapserver before re-enabling (remove this `cfg`):
+//   • `ZoneCommand::PlayRadio` → unified-playlist commands (`PlayPlaylist`)
+//   • `ZoneState.radio_index` removed (source/playlist_index model)
+//   • `SnapcastConfig.jsonrpc_port` removed (streaming_port + 1 convention)
+//   • `RepeatMode` is no longer boolean (`!repeat` invalid)
+//   • `SnapserverHandle::start` is now sync (no `.await`)
+//   • `api::serve` gained args (eq_store / knx_device_control)
+//   • `MqttConfig` gained `client_id` + `SecretString` password
+//   • `MqttBridge::connect(config, base_url, name)` (was 1-arg)
 #[cfg(any())]
 mod broken_tests {
     use super::*;
@@ -250,11 +267,19 @@ mod broken_tests {
             managed_config.snapcast.streaming_port + 1
         );
 
-        let mut snap = SnapcastClient::from_config(&managed_config).await.unwrap();
-        snap.init().await.unwrap();
-        let snap_state = snap.state().clone();
+        let snap = SnapcastClient::from_config(&managed_config).await.unwrap();
+        let status = snap.server_get_status().await.unwrap();
 
         let store = state::init(&managed_config, None).unwrap();
+        snapcast::sync_initial_state(&status, &managed_config, &snap, &store).await;
+        let backend: Arc<dyn snapcast::backend::SnapcastBackend> = Arc::new(
+            snapcast::process::ProcessBackend::start(&managed_config, snap, store.clone())
+                .await
+                .unwrap(),
+        );
+        let eq_store = Arc::new(std::sync::Mutex::new(snapdog::audio::eq::EqStore::load(
+            std::path::Path::new("/nonexistent/eq.json"),
+        )));
         let covers = state::cover::new_cache();
         let (notify_tx, _) = tokio::sync::broadcast::channel(64);
         let (snap_cmd_tx, _) = mpsc::channel::<player::SnapcastCmd>(64);
@@ -265,17 +290,11 @@ mod broken_tests {
             covers: covers.clone(),
             notify: notify_tx,
             snap_tx: snap_cmd_tx,
-            client_mac_map: snap_state
-                .clients
-                .iter()
-                .map(|e| (e.value().host.mac.to_lowercase(), e.key().clone()))
-                .collect(),
-            group_ids: snap_state.groups.iter().map(|g| g.key().clone()).collect(),
-            group_clients: snap_state
-                .groups
-                .iter()
-                .map(|g| (g.key().clone(), g.clients.iter().cloned().collect()))
-                .collect(),
+            backend,
+            eq_store,
+            client_mac_map: snapcast::build_client_mac_map(&status),
+            group_ids: snapcast::build_group_ids(&status),
+            group_clients: snapcast::build_group_clients(&status),
         })
         .await
         .unwrap();
@@ -286,7 +305,6 @@ mod broken_tests {
     // ── Tests ─────────────────────────────────────────────────────
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn play_radio_with_real_snapserver() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, store, cmds, _) = start_system(config).await;
@@ -304,7 +322,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn stop_clears_playback() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, store, cmds, _) = start_system(config).await;
@@ -324,7 +341,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn next_radio_cycles_stations() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, store, cmds, _) = start_system(config).await;
@@ -342,7 +358,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn volume_set_and_read() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, store, cmds, _) = start_system(config).await;
@@ -356,7 +371,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn mute_toggle() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, store, cmds, _) = start_system(config).await;
@@ -373,7 +387,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn shuffle_repeat_state() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, store, cmds, _) = start_system(config).await;
@@ -390,7 +403,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn icy_metadata_updates_title() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, store, cmds, _) = start_system(config).await;
@@ -512,11 +524,19 @@ mod broken_tests {
         let snapserver = SnapserverHandle::start(&api_config).await.unwrap();
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        let mut snap = SnapcastClient::from_config(&api_config).await.unwrap();
-        snap.init().await.unwrap();
-        let snap_state = snap.state().clone();
+        let snap = SnapcastClient::from_config(&api_config).await.unwrap();
+        let status = snap.server_get_status().await.unwrap();
 
         let store = state::init(&api_config, None).unwrap();
+        snapcast::sync_initial_state(&status, &api_config, &snap, &store).await;
+        let backend: Arc<dyn snapcast::backend::SnapcastBackend> = Arc::new(
+            snapcast::process::ProcessBackend::start(&api_config, snap, store.clone())
+                .await
+                .unwrap(),
+        );
+        let eq_store = Arc::new(std::sync::Mutex::new(snapdog::audio::eq::EqStore::load(
+            std::path::Path::new("/nonexistent/eq.json"),
+        )));
         let covers = state::cover::new_cache();
         let (notify_tx, _) = tokio::sync::broadcast::channel(64);
         let (snap_cmd_tx, _) = mpsc::channel::<player::SnapcastCmd>(64);
@@ -534,17 +554,11 @@ mod broken_tests {
             covers: covers.clone(),
             notify: notify_tx.clone(),
             snap_tx: snap_cmd_tx,
-            client_mac_map: snap_state
-                .clients
-                .iter()
-                .map(|e| (e.value().host.mac.to_lowercase(), e.key().clone()))
-                .collect(),
-            group_ids: snap_state.groups.iter().map(|g| g.key().clone()).collect(),
-            group_clients: snap_state
-                .groups
-                .iter()
-                .map(|g| (g.key().clone(), g.clients.iter().cloned().collect()))
-                .collect(),
+            backend,
+            eq_store,
+            client_mac_map: snapcast::build_client_mac_map(&status),
+            group_ids: snapcast::build_group_ids(&status),
+            group_clients: snapcast::build_group_clients(&status),
         })
         .await
         .unwrap();
@@ -564,7 +578,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     #[cfg(feature = "api-docs")]
     async fn api_docs_configuration_toggle() {
         // Test with api_docs = true (default)
@@ -584,7 +597,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn api_health() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, _, base) = start_system_with_api(config).await;
@@ -600,7 +612,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn api_get_zones() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, _, base) = start_system_with_api(config).await;
@@ -616,7 +627,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn api_play_radio_and_check_state() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, _, base) = start_system_with_api(config).await;
@@ -672,7 +682,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn api_volume_absolute_and_relative() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, _, base) = start_system_with_api(config).await;
@@ -724,7 +733,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn api_mute_toggle() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, _, base) = start_system_with_api(config).await;
@@ -768,7 +776,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn api_zone_not_found() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, _, base) = start_system_with_api(config).await;
@@ -787,7 +794,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn api_clients_list() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, _, base) = start_system_with_api(config).await;
@@ -806,7 +812,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn api_system_version() {
         let (config, _, _, _) = test_config().await;
         let (mut snapserver, _, base) = start_system_with_api(config).await;
@@ -873,7 +878,6 @@ mod broken_tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs SnapcastClient API update"]
     async fn mqtt_volume_command_roundtrip() {
         let Some(mqtt_cfg) = mqtt_config() else {
             eprintln!("Skipping — no MQTT credentials in .env.test");

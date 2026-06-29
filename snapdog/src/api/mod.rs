@@ -89,6 +89,43 @@ pub async fn serve<S: BuildHasher>(
         speaker_db: crate::spinorama::SpeakerDb::new(),
     });
 
+    let app = build_router(&state);
+
+    let local_addr = listener.local_addr()?;
+    let port = local_addr.port();
+    let tls_enabled = state.config.http.tls_cert.is_some();
+    let scheme = if tls_enabled { "https" } else { "http" };
+
+    if local_addr.ip().is_unspecified() {
+        tracing::info!("REST API listening on port {port} (all interfaces, {scheme})");
+        tracing::info!("  → {scheme}://localhost:{port}");
+    } else {
+        tracing::info!("REST API listening on {scheme}://{local_addr}");
+    }
+
+    if let (Some(cert_path), Some(key_path)) =
+        (&state.config.http.tls_cert, &state.config.http.tls_key)
+    {
+        let rustls_config =
+            axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
+                .await
+                .map_err(|e| anyhow::anyhow!("TLS configuration failed: {e}"))?;
+        axum_server::bind_rustls(local_addr, rustls_config)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        axum::serve(listener, app).await?;
+    }
+    Ok(())
+}
+
+/// Build the application `Router` from shared state, without binding a listener.
+///
+/// Extracted from [`serve`] (which calls this) so integration tests can drive the
+/// full router in-process via `tower::ServiceExt::oneshot` — no TCP socket, no
+/// background tasks. The route assembly here is the single source of truth for
+/// both production serving and tests (`IT-T10`).
+pub fn build_router(state: &SharedState) -> Router {
     let api_keys: Vec<String> = state
         .config
         .http
@@ -150,34 +187,6 @@ pub async fn serve<S: BuildHasher>(
         app
     };
 
-    let app = app
-        .layer(CompressionLayer::new())
-        .layer(TraceLayer::new_for_http());
-
-    let local_addr = listener.local_addr()?;
-    let port = local_addr.port();
-    let tls_enabled = state.config.http.tls_cert.is_some();
-    let scheme = if tls_enabled { "https" } else { "http" };
-
-    if local_addr.ip().is_unspecified() {
-        tracing::info!("REST API listening on port {port} (all interfaces, {scheme})");
-        tracing::info!("  → {scheme}://localhost:{port}");
-    } else {
-        tracing::info!("REST API listening on {scheme}://{local_addr}");
-    }
-
-    if let (Some(cert_path), Some(key_path)) =
-        (&state.config.http.tls_cert, &state.config.http.tls_key)
-    {
-        let rustls_config =
-            axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
-                .await
-                .map_err(|e| anyhow::anyhow!("TLS configuration failed: {e}"))?;
-        axum_server::bind_rustls(local_addr, rustls_config)
-            .serve(app.into_make_service())
-            .await?;
-    } else {
-        axum::serve(listener, app).await?;
-    }
-    Ok(())
+    app.layer(CompressionLayer::new())
+        .layer(TraceLayer::new_for_http())
 }

@@ -75,6 +75,8 @@ tempfile = { workspace = true }
 wiremock = { workspace = true }
 dotenvy = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+tower = { version = "0.5", features = ["util"] }       # in-process Router::oneshot (IT-0003 tier-1)
+assert-json-diff = "2"                                  # REST/MQTT JSON body asserts
 
 [package.metadata.deb]
 section = "sound"
