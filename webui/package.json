@@ -40,6 +40,7 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "^8.5.10",
+    "@swc/helpers": "0.5.23"
   }
 }
