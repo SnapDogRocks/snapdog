@@ -12,8 +12,8 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 19
-  in_progress: 9
+  done: 20
+  in_progress: 8
   todo: 19
 ---
 
@@ -343,7 +343,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 ### Phase 5 — snapcast contract firewall
 - [x] `IT-T50` `SnapcastBackend` trait double (hand-coded no-op `MockBackend`) + `ZoneHarness`/`spawn_zone_harness` driving real `spawn_zone_players` (receivers off). `status: done` · deps: IT-T01.
 - [x] `IT-T51` `reconcile_zone_groups` + pure helpers w/ `ServerStatus` fixtures; **sorted** `Group.SetClients`. `status: done` · deps: IT-T50.
-- [ ] `IT-T52` Event roundtrip `ServerEvent`→`SnapcastEvent`→state+WS; **exhaustiveness test fails on unmapped variant**. `status: todo` · deps: IT-T50.
+- [x] `IT-T52` Event mapping `ServerEvent`→`SnapcastEvent` behavioral firewall (round-trip coverage + silently-dropped pins). Compile-time exhaustiveness N/A — `ServerEvent` is `#[non_exhaustive]` (foreign enum). `status: done` · deps: IT-T50.
 - [x] `IT-T53` `GroupVolumeMode.effective()` table tests (Absolute/Relative/Compressed + clamp + max_volume). `status: todo` · deps: IT-T01.
 - [x] `IT-T54` **Golden JSON-RPC vectors** for the 17 methods + the **line-delimited-JSON TCP fake** (`IT-DEC-06`); assert request ser + response de. `status: done` · deps: IT-T06, IT-T50.
 - [x] `IT-T55` `send_audio` signature contract (compile-time) + behavioral PCM-injection path via `test_pcm_rx` seam → `CapturingBackend` (feature `test-harness`). `status: done` · deps: IT-T50.
@@ -429,7 +429,7 @@ tasks:
   - { id: IT-T43, phase: 4, status: todo, depends_on: [IT-T04, IT-T40] }
   - { id: IT-T50, phase: 5, status: done, depends_on: [IT-T01] }   # tests/common: hand-coded no-op SnapcastBackend double (MockBackend) + ZoneHarness/spawn_zone_harness driving real spawn_zone_players; runner emits snap cmds via snap_tx (captured there), backend.execute unused in the zone loop
   - { id: IT-T51, phase: 5, status: done, depends_on: [IT-T50] }   # build_* + ServerStatus golden + reconcile_zone_groups sorted Group.SetClients per diverged zone (FIXED unsorted HashMap-order wire payload)
-  - { id: IT-T52, phase: 5, status: in-progress, depends_on: [IT-T50] }   # tests/snapcast.rs: SnapcastEvent+SnapcastCmd exhaustiveness; ServerEvent map + golden JSON-RPC pending (process feature)
+  - { id: IT-T52, phase: 5, status: done, depends_on: [IT-T50] }   # SnapcastEvent+SnapcastCmd exhaustiveness (tests/snapcast.rs) + embedded ServerEvent→SnapcastEvent map coverage (embedded.rs: latency/name/custom-message type+payload extraction, group/stream collapse, silently-dropped StreamMeta/StreamControl pins). Compile-time exhaustiveness impossible — ServerEvent is #[non_exhaustive] (foreign), so behavioral firewall + documented caveat
   - { id: IT-T53, phase: 5, status: done, depends_on: [IT-T01] }   # tests/config_contract.rs (GroupVolumeMode + config)
   - { id: IT-T54, phase: 5, status: done, depends_on: [IT-T06, IT-T50] }   # tests/snapcast_rpc.rs: line-delimited-JSON TCP fake + golden vectors for ALL 17 JSON-RPC methods (incl. mute/streamUri traps) + framing + response-deser
   - { id: IT-T55, phase: 5, status: done, depends_on: [IT-T50] }   # tests/zone_player.rs: send_audio signature contract (compile-time, default gate) + behavioral PCM-injection via test_pcm_rx seam → CapturingBackend (feature test-harness); embedded F32AudioSender drift caught by embedded.rs compile

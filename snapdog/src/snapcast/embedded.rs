@@ -627,4 +627,92 @@ mod tests {
             Some(SnapcastEvent::ServerUpdated)
         ));
     }
+
+    #[test]
+    fn map_event_client_latency_changed() {
+        let event = ServerEvent::ClientLatencyChanged {
+            client_id: "c1".into(),
+            latency: 42,
+        };
+        let mapped = EmbeddedBackend::map_event(event).unwrap();
+        assert!(matches!(
+            mapped,
+            SnapcastEvent::ClientLatencyChanged { id, latency } if id == "c1" && latency == 42
+        ));
+    }
+
+    #[test]
+    fn map_event_client_name_changed() {
+        let event = ServerEvent::ClientNameChanged {
+            client_id: "c1".into(),
+            name: "Kitchen".into(),
+        };
+        let mapped = EmbeddedBackend::map_event(event).unwrap();
+        assert!(matches!(
+            mapped,
+            SnapcastEvent::ClientNameChanged { id, name } if id == "c1" && name == "Kitchen"
+        ));
+    }
+
+    #[test]
+    fn map_event_stream_and_group_stream_collapse_to_server_updated() {
+        // The remaining members of the collapse (mute/name already covered above).
+        for event in [
+            ServerEvent::GroupStreamChanged {
+                group_id: "g1".into(),
+                stream_id: "Zone1".into(),
+            },
+            ServerEvent::StreamStatus {
+                stream_id: "Zone1".into(),
+                status: "playing".into(),
+            },
+        ] {
+            assert!(matches!(
+                EmbeddedBackend::map_event(event),
+                Some(SnapcastEvent::ServerUpdated)
+            ));
+        }
+    }
+
+    #[test]
+    fn map_event_custom_message_extracts_type_and_payload() {
+        let event = ServerEvent::CustomMessage {
+            client_id: "c1".into(),
+            message: snapcast_proto::CustomMessage {
+                type_id: 14,
+                payload: vec![1, 2, 3],
+            },
+        };
+        let mapped = EmbeddedBackend::map_event(event).unwrap();
+        assert!(matches!(
+            mapped,
+            SnapcastEvent::CustomMessage { client_id, type_id, payload }
+                if client_id == "c1" && type_id == 14 && payload == vec![1, 2, 3]
+        ));
+    }
+
+    #[test]
+    fn map_event_unhandled_variants_are_dropped() {
+        // These ServerEvents intentionally map to None (the `_ => None` arm),
+        // pinning the *silent drop* — notably stream metadata and stream-control
+        // are not propagated today. NOTE: `ServerEvent` is `#[non_exhaustive]` (a
+        // foreign enum), so a compile-time exhaustiveness guard is impossible — a
+        // future upgrade adding a new variant silently lands here as None until
+        // `map_event` is taught about it. This test is the behavioral firewall.
+        assert!(
+            EmbeddedBackend::map_event(ServerEvent::StreamMetaChanged {
+                stream_id: "Zone1".into(),
+                metadata: std::collections::HashMap::new(),
+            })
+            .is_none()
+        );
+        assert!(
+            EmbeddedBackend::map_event(ServerEvent::StreamControl {
+                stream_id: "Zone1".into(),
+                command: "play".into(),
+                params: serde_json::Value::Null,
+            })
+            .is_none()
+        );
+    }
 }
