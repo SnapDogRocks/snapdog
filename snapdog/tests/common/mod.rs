@@ -272,6 +272,8 @@ pub async fn spawn_zone_harness(config: AppConfig) -> ZoneHarness {
         group_ids: Vec::new(),
         group_clients: HashMap::new(),
         start_receivers: false,
+        #[cfg(feature = "test-harness")]
+        test_pcm_rx: Mutex::new(HashMap::new()),
     };
 
     let senders = player::spawn_zone_players(ctx)
@@ -283,6 +285,140 @@ pub async fn spawn_zone_harness(config: AppConfig) -> ZoneHarness {
         store,
         notify_rx,
         snap_rx,
+        _tmp: tmp,
+    }
+}
+
+// ── Capturing harness (IT-T55): drive the real decode→send_audio path ─────────
+//
+// Gated on `feature = "test-harness"` (which enables the
+// `ZonePlayerContext::test_pcm_rx` injection seam). Run with:
+//   `cargo test -p snapdog --features test-harness`
+
+/// One recorded `SnapcastBackend::send_audio` call.
+#[cfg(feature = "test-harness")]
+#[derive(Clone, Debug)]
+pub struct SendAudioCall {
+    pub zone_index: usize,
+    pub len: usize,
+    pub sample_rate: u32,
+    pub channels: u16,
+}
+
+/// `SnapcastBackend` double that records every `send_audio` call (the rest are
+/// no-ops, like `MockBackend`).
+#[cfg(feature = "test-harness")]
+#[derive(Clone, Default)]
+pub struct CapturingBackend {
+    calls: Arc<Mutex<Vec<SendAudioCall>>>,
+}
+
+#[cfg(feature = "test-harness")]
+impl CapturingBackend {
+    /// Snapshot of the `send_audio` calls recorded so far.
+    pub fn calls(&self) -> Vec<SendAudioCall> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+#[cfg(feature = "test-harness")]
+impl SnapcastBackend for CapturingBackend {
+    fn send_audio(
+        &self,
+        zone_index: usize,
+        samples: &[f32],
+        sample_rate: u32,
+        channels: u16,
+    ) -> BoxFuture<'_, anyhow::Result<()>> {
+        self.calls.lock().unwrap().push(SendAudioCall {
+            zone_index,
+            len: samples.len(),
+            sample_rate,
+            channels,
+        });
+        Box::pin(async { Ok(()) })
+    }
+    fn execute(&self, _cmd: SnapcastCmd) -> BoxFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn stop(&self) -> BoxFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn get_status(&self) -> BoxFuture<'_, anyhow::Result<serde_json::Value>> {
+        Box::pin(async { Ok(serde_json::Value::Null) })
+    }
+    fn delete_client(&self, _id: &str) -> BoxFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// Real zone players wired with a [`CapturingBackend`] + per-zone PCM injection.
+#[cfg(feature = "test-harness")]
+pub struct CapturingHarness {
+    /// 1-based zone index → command sender.
+    pub senders: HashMap<usize, mpsc::Sender<ZoneCommand>>,
+    /// Shared store.
+    pub store: state::SharedState,
+    /// WS notification tap.
+    pub notify_rx: broadcast::Receiver<Arc<str>>,
+    /// Captured Snapcast commands.
+    pub snap_rx: mpsc::Receiver<SnapcastCmd>,
+    /// 1-based zone index → PCM injection sender (feeds the real decode arm).
+    pub test_pcm_tx: HashMap<usize, mpsc::Sender<snapdog::audio::PcmMessage>>,
+    /// Backend handle sharing the recorded calls with the running players.
+    pub backend: CapturingBackend,
+    _tmp: tempfile::TempDir,
+}
+
+/// Spawn real zone players with a [`CapturingBackend`] and a per-zone PCM
+/// injection channel adopted as `decode_rx`, so a test can push
+/// [`snapdog::audio::PcmMessage::Audio`] straight into the real
+/// resample→EQ→`send_audio` path without a network decode.
+#[cfg(feature = "test-harness")]
+pub async fn spawn_zone_harness_capturing(config: AppConfig) -> CapturingHarness {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let config = Arc::new(config);
+    let store = state::init(&config, None).expect("state init");
+    let covers = state::cover::new_cache();
+    let (notify_tx, notify_rx) = api::ws::notification_channel();
+    let (snap_tx, snap_rx) = mpsc::channel::<SnapcastCmd>(64);
+    let eq_store = Arc::new(Mutex::new(EqStore::load(&tmp.path().join("eq.json"))));
+    let backend = CapturingBackend::default();
+
+    let mut test_pcm_rx = HashMap::new();
+    let mut test_pcm_tx = HashMap::new();
+    for z in &config.zones {
+        let (tx, rx) = mpsc::channel::<snapdog::audio::PcmMessage>(64);
+        test_pcm_rx.insert(z.index, rx);
+        test_pcm_tx.insert(z.index, tx);
+    }
+
+    let ctx = ZonePlayerContext {
+        config: config.clone(),
+        store: store.clone(),
+        covers,
+        notify: notify_tx,
+        snap_tx,
+        backend: Arc::new(backend.clone()),
+        eq_store,
+        client_mac_map: HashMap::new(),
+        group_ids: Vec::new(),
+        group_clients: HashMap::new(),
+        start_receivers: false,
+        test_pcm_rx: Mutex::new(test_pcm_rx),
+    };
+
+    let senders = player::spawn_zone_players(ctx)
+        .await
+        .expect("spawn zone players");
+
+    CapturingHarness {
+        senders,
+        store,
+        notify_rx,
+        snap_rx,
+        test_pcm_tx,
+        backend,
         _tmp: tmp,
     }
 }

@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 13
-  in_progress: 10
-  todo: 24
+  done: 15
+  in_progress: 9
+  todo: 23
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -346,7 +346,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T52` Event roundtrip `ServerEvent`→`SnapcastEvent`→state+WS; **exhaustiveness test fails on unmapped variant**. `status: todo` · deps: IT-T50.
 - [x] `IT-T53` `GroupVolumeMode.effective()` table tests (Absolute/Relative/Compressed + clamp + max_volume). `status: todo` · deps: IT-T01.
 - [x] `IT-T54` **Golden JSON-RPC vectors** for the 17 methods + the **line-delimited-JSON TCP fake** (`IT-DEC-06`); assert request ser + response de. `status: done` · deps: IT-T06, IT-T50.
-- [ ] `IT-T55` Embedded `F32AudioSender::send(&[f32])` signature contract + `send_audio` path (inline mock server). `status: todo` · deps: IT-T50.
+- [x] `IT-T55` `send_audio` signature contract (compile-time) + behavioral PCM-injection path via `test_pcm_rx` seam → `CapturingBackend` (feature `test-harness`). `status: done` · deps: IT-T50.
 - [ ] `IT-T56` **(T2)** Real snapserver via repaired `SnapserverHandle`: control + per-zone TCP audio source end-to-end. `status: todo` · deps: IT-T07, IT-T05.
 
 ### Phase 6 — Audio pipeline suite
@@ -364,7 +364,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 ### Phase 8 — State machine & lifecycle
 - [x] `IT-T80` Zone-player transitions (track None iff Idle) + persistence roundtrip (restore subset, playback→Stopped). `status: done` · deps: IT-T01, IT-T04.
 - [ ] `IT-T81` Next/Prev/complete honoring repeat + shuffle (seeded) + prev-restart >3s. `status: todo` · deps: IT-T80, IT-T02.
-- [ ] `IT-T82` `source_conflict` LastWins/ReceiverWins **done** + command→state transitions **done** (ZoneHarness: volume/clamp/adjust/shuffle/repeat); presence auto-off via time::pause remaining. `status: in-progress` · deps: IT-T80, IT-T03.
+- [x] `IT-T82` `source_conflict` LastWins/ReceiverWins + command→state transitions + presence auto-off via `start_paused`+`advance` (ZoneHarness). `status: done` · deps: IT-T80, IT-T03.
 - [ ] `IT-T83` Multi-zone isolation **done** (ZoneHarness); crash restart (`ZONE_RESTART_DELAY`) still blocked (no realistic `run()` Err path). `status: in-progress` · deps: IT-T80, IT-T03.
 - [ ] `IT-T84` Headless boot `run_app(cfg)` (mdns off, ephemeral ports, TempEnv) + health endpoints + graceful shutdown. `status: todo` · deps: IT-T04, IT-T02.
 
@@ -432,7 +432,7 @@ tasks:
   - { id: IT-T52, phase: 5, status: in-progress, depends_on: [IT-T50] }   # tests/snapcast.rs: SnapcastEvent+SnapcastCmd exhaustiveness; ServerEvent map + golden JSON-RPC pending (process feature)
   - { id: IT-T53, phase: 5, status: done, depends_on: [IT-T01] }   # tests/config_contract.rs (GroupVolumeMode + config)
   - { id: IT-T54, phase: 5, status: done, depends_on: [IT-T06, IT-T50] }   # tests/snapcast_rpc.rs: line-delimited-JSON TCP fake + golden vectors for ALL 17 JSON-RPC methods (incl. mute/streamUri traps) + framing + response-deser
-  - { id: IT-T55, phase: 5, status: todo, depends_on: [IT-T50] }
+  - { id: IT-T55, phase: 5, status: done, depends_on: [IT-T50] }   # tests/zone_player.rs: send_audio signature contract (compile-time, default gate) + behavioral PCM-injection via test_pcm_rx seam → CapturingBackend (feature test-harness); embedded F32AudioSender drift caught by embedded.rs compile
   - { id: IT-T56, phase: 5, status: todo, tier: 2, depends_on: [IT-T07, IT-T05] }
   - { id: IT-T60, phase: 6, status: in-progress, depends_on: [IT-T06] }   # tests/audio.rs: f32→PCM golden done; full decode→resample→EQ chain pending
   - { id: IT-T61, phase: 6, status: todo, depends_on: [IT-T01] }
@@ -444,7 +444,7 @@ tasks:
   - { id: IT-T73, phase: 7, status: in-progress, depends_on: [IT-T05] }   # ci.yml integration job runs the process-feature firewall (snapcast_rpc); full embedded/process×ap2×spotify matrix pending
   - { id: IT-T80, phase: 8, status: done, depends_on: [IT-T01, IT-T04] }   # state/mod.rs: persist/load roundtrip + transient-reset (existing 5 tests) + SourceType/PlaybackState wire-format golden; track-None-iff-Idle holds via reset
   - { id: IT-T81, phase: 8, status: todo, depends_on: [IT-T80, IT-T02] }   # UNBLOCKED-ish: ZoneHarness (tests/common) now drives real spawn_zone_players; next/prev/complete still need either a pure next_index fn or a track-bearing harness (fastrand seeding still open)
-  - { id: IT-T82, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix done (runner.rs in-crate) + command->state transitions done via ZoneHarness (tests/zone_player.rs: volume/clamp/adjust/shuffle/repeat); presence auto-off timer (tokio::time::pause) still remaining
+  - { id: IT-T82, phase: 8, status: done, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix + command->state transitions (ZoneHarness) + presence auto-off timer via start_paused+tokio::time::advance (tests/zone_player.rs presence_auto_off_stops_zone_after_delay; direct-seed precondition, zone_presence_changed fire barrier)
   - { id: IT-T83, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # multi-zone isolation DONE (tests/zone_player.rs transitions_are_isolated_per_zone via ZoneHarness); crash-restart still blocked (inline in spawn closure; run() has no realistic Err path)
   - { id: IT-T84, phase: 8, status: todo, depends_on: [IT-T04, IT-T02] }   # BLOCKED: run_app() is Cli::parse-bound (no Config-injectable headless boot); needs a start_system(Config) seam
   - { id: IT-T90, phase: 9, status: done, depends_on: [IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60] }   # ci.yml unit-tests: cargo test --lib -> --workspace (runs tier-1 integration); nextest/retries = IT-T05

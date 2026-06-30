@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! IT-T82 (partial) / IT-T50 — deterministic zone-player command→state transitions.
+//! IT-T50 / IT-T55 / IT-T82 — deterministic zone-player tests (transitions,
+//! presence auto-off, F32 send path).
 //!
 //! Drives REAL `spawn_zone_players` runner tasks (receivers disabled via
 //! `start_receivers = false`, no-op [`MockBackend`]) and observes each transition
@@ -13,6 +14,7 @@ mod common;
 
 use common::{spawn_zone_harness, test_config};
 use snapdog::player::ZoneCommand;
+use snapdog::state::{PlaybackState, SourceType};
 use snapdog_common::RepeatMode;
 
 #[tokio::test]
@@ -128,4 +130,126 @@ async fn transitions_are_isolated_per_zone() {
     };
     assert_eq!(z1, 10);
     assert_eq!(z2, 90);
+}
+
+/// IT-T82 — presence auto-off timer fires under a paused clock and stops the zone.
+///
+/// We seed the precondition that `SetPresence(false)` checks (a presence-started
+/// source currently Playing — runner.rs:977) DIRECTLY in the store, rather than
+/// driving a real radio: the presence-default path spawns an HTTP decode whose
+/// failure (connection-refused, on real wall-clock under `start_paused`) could
+/// reset playback→Stopped before the arm, and emits a `stopped` `zone_changed` that
+/// is indistinguishable from the auto-off one. Direct seeding makes it fully
+/// deterministic. The fire barrier keys on `zone_presence_changed{timer_active:
+/// false}` because only the auto-off arm broadcasts it after arming.
+#[tokio::test(start_paused = true)]
+async fn presence_auto_off_stops_zone_after_delay() {
+    let mut h = spawn_zone_harness(test_config()).await;
+    let zone = 1usize;
+
+    {
+        let mut s = h.store.write().await;
+        let z = s.zones.get_mut(&zone).unwrap();
+        z.presence = true;
+        z.presence_enabled = true; // default, made explicit
+        z.presence_source = true; // playback was started by presence
+        z.playback = PlaybackState::Playing;
+        z.auto_off_delay = 10; // seconds; magnitude irrelevant under start_paused
+        drop(s);
+    }
+
+    // Presence lost → arms the auto-off timer.
+    h.senders[&zone]
+        .send(ZoneCommand::SetPresence(false))
+        .await
+        .unwrap();
+    // Linchpin barrier: emitted only AFTER `.reset()` + `auto_off_armed = true`
+    // (runner.rs:979-986), so the pinned sleep is live and the task is parked back
+    // in `select!` before we move the clock.
+    h.await_notification(|v| {
+        v["type"] == "zone_presence_changed"
+            && v["zone"] == zone
+            && v["presence"] == false
+            && v["timer_active"] == true
+    })
+    .await;
+
+    // Advance virtual time past the delay → the timer becomes ready and fires.
+    tokio::time::advance(std::time::Duration::from_secs(11)).await;
+
+    // Fire barrier: race-free vs the decode-error `stopped` path (which never calls
+    // notify_presence).
+    h.await_notification(|v| {
+        v["type"] == "zone_presence_changed"
+            && v["zone"] == zone
+            && v["presence"] == false
+            && v["timer_active"] == false
+    })
+    .await;
+
+    let (playback, source, presence_source, auto_off_active, track_none) = {
+        let s = h.store.read().await;
+        (
+            s.zones[&zone].playback.clone(),
+            s.zones[&zone].source.clone(),
+            s.zones[&zone].presence_source,
+            s.zones[&zone].auto_off_active,
+            s.zones[&zone].track.is_none(),
+        )
+    };
+    assert_eq!(playback, PlaybackState::Stopped);
+    assert_eq!(source, SourceType::Idle);
+    assert!(!presence_source);
+    assert!(!auto_off_active);
+    assert!(track_none);
+}
+
+/// IT-T55 (contract) — compile-time signature guard for `SnapcastBackend::send_audio`.
+/// The nested fn is type-checked (drift in arity/arg-types/return breaks the build)
+/// but never executed. Runs in the normal suite (no feature). The embedded
+/// `F32AudioSender` is guarded transitively: `embedded.rs` forwards into it, so an
+/// upstream signature change fails the `snapcast-embedded` build.
+#[test]
+fn send_audio_signature_is_stable() {
+    #[allow(dead_code)]
+    fn contract<B: snapdog::snapcast::backend::SnapcastBackend>(b: &B) {
+        let _fut: snapdog::snapcast::backend::BoxFuture<'_, anyhow::Result<()>> =
+            b.send_audio(0usize, &[0.0f32][..], 0u32, 0u16);
+    }
+}
+
+/// IT-T55 (behavioral) — a PCM frame injected into the real decode arm flows through
+/// resample→EQ and reaches `SnapcastBackend::send_audio` with the right shape.
+/// Gated on `test-harness` (the `test_pcm_rx` seam). `test_config()` audio rates
+/// match → passthrough resampler + flat EQ preserve the sample count.
+#[cfg(feature = "test-harness")]
+#[tokio::test]
+async fn injected_pcm_reaches_backend_send_audio() {
+    let h = common::spawn_zone_harness_capturing(test_config()).await;
+
+    // 4 stereo frames = 8 interleaved f32 samples.
+    h.test_pcm_tx[&1]
+        .send(snapdog::audio::PcmMessage::Audio(vec![0.25_f32; 8]))
+        .await
+        .unwrap();
+
+    // The audio arm emits no notification — poll the backend under a bounded timeout.
+    let call = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Some(c) = h.backend.calls().into_iter().next() {
+                break c;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("send_audio was called");
+
+    assert_eq!(call.zone_index, 1);
+    assert_eq!(
+        call.len, 8,
+        "passthrough resampler + flat EQ preserve sample count"
+    );
+    assert_eq!(call.sample_rate, snapdog_common::DEFAULT_SAMPLE_RATE);
+    assert_eq!(call.channels, 2);
 }

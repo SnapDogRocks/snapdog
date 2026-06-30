@@ -123,6 +123,10 @@ jobs:
       # no services) — `--lib` skipped tests/*.rs (the IT-0003 suite) and the
       # snapdog-client/-common tests.
       - run: cargo test --workspace
+      # Test-harness feature: the F32 send_audio injection test (IT-T55) gated on
+      # the ZonePlayerContext::test_pcm_rx seam, which `--workspace` doesn't enable.
+      - name: Run test-harness zone-player tests
+        run: cargo test -p snapdog --features test-harness --test zone_player
 
   integration-tests:
     name: Integration Tests

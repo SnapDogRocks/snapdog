@@ -408,6 +408,8 @@ pub async fn run_app() -> Result<()> {
         #[cfg(not(feature = "snapcast-process"))]
         group_clients: std::collections::HashMap::new(),
         start_receivers: true,
+        #[cfg(feature = "test-harness")]
+        test_pcm_rx: std::sync::Mutex::new(std::collections::HashMap::new()),
     })
     .await?;
 

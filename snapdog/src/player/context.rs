@@ -49,6 +49,12 @@ pub struct ZonePlayerContext {
     /// RAOP socket + mDNS registration, which is otherwise nondeterministic across
     /// parallel test processes (fixed ports `7000 + zone_index`).
     pub start_receivers: bool,
+    /// Test-only injection (feature `test-harness`): per-zone pre-seeded PCM
+    /// receivers. When present for a zone, `run()` adopts it as `decode_rx`,
+    /// driving the real resample→EQ→`send_audio` path without a network decode.
+    /// Compiled out of the production binary entirely.
+    #[cfg(feature = "test-harness")]
+    pub test_pcm_rx: std::sync::Mutex<HashMap<usize, mpsc::Receiver<audio::PcmMessage>>>,
 }
 
 /// Command sent to the main loop for Snapcast JSON-RPC execution.

@@ -302,7 +302,17 @@ async fn run(
     // Decode task state
     let mut current_decode: Option<JoinHandle<()>> = None;
     let mut current_cover: Option<JoinHandle<()>> = None;
+    // Test-only (feature `test-harness`): adopt a pre-seeded PCM receiver so the
+    // harness can drive the real decode→resample→EQ→send_audio path (IT-T55)
+    // without a network decode. In the production binary this is simply `None`.
+    #[cfg(not(feature = "test-harness"))]
     let mut decode_rx: Option<mpsc::Receiver<audio::PcmMessage>> = None;
+    #[cfg(feature = "test-harness")]
+    let mut decode_rx: Option<mpsc::Receiver<audio::PcmMessage>> = ctx
+        .test_pcm_rx
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(&zone_index);
     let mut source = ActiveSource::Idle;
     let mut remote_control: Option<std::sync::Arc<dyn crate::receiver::RemoteControl>> = None;
     let mut position_offset_ms: i64 = 0;

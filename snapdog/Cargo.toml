@@ -68,6 +68,9 @@ ap2 = ["shairplay/ap2"]
 dbus = ["dep:zbus"]
 spotify = ["dep:librespot-core", "dep:librespot-playback", "dep:librespot-connect", "dep:librespot-discovery", "dep:librespot-metadata"]
 api-docs = ["dep:utoipa-scalar"]
+# Test-only: enables the ZonePlayerContext::test_pcm_rx injection seam used by
+# the integration harness to drive the real decode→send_audio path (IT-T55).
+test-harness = []
 
 [dev-dependencies]
 mockall = { workspace = true }
