@@ -5,6 +5,8 @@ updates:
     schedule:
       interval: daily
     target-branch: main
+    commit-message:
+      prefix: chore
     open-pull-requests-limit: 5
     labels:
       - dependencies
@@ -19,6 +21,8 @@ updates:
     schedule:
       interval: daily
     target-branch: main
+    commit-message:
+      prefix: chore
     versioning-strategy: increase
     open-pull-requests-limit: 5
     labels:
@@ -40,6 +44,8 @@ updates:
     schedule:
       interval: daily
     target-branch: main
+    commit-message:
+      prefix: chore
     versioning-strategy: increase
     open-pull-requests-limit: 5
     labels:
@@ -61,6 +67,8 @@ updates:
     schedule:
       interval: daily
     target-branch: main
+    commit-message:
+      prefix: chore
     versioning-strategy: increase
     open-pull-requests-limit: 5
     labels:
