@@ -387,4 +387,165 @@ mod tests {
             panic!("Expected volume event");
         }
     }
+
+    // ── IT-T70/T71: handler callback → ReceiverEvent mappers (pure) ────
+
+    fn make_handler() -> (
+        BridgeHandler,
+        mpsc::Receiver<Vec<f32>>,
+        mpsc::Receiver<ReceiverEvent>,
+    ) {
+        let (audio_tx, audio_rx) = mpsc::channel(16);
+        let (event_tx, event_rx) = mpsc::channel(16);
+        (
+            BridgeHandler {
+                audio_tx,
+                event_tx,
+                sample_rate: AtomicU32::new(44100),
+            },
+            audio_rx,
+            event_rx,
+        )
+    }
+
+    #[tokio::test]
+    async fn volume_mapping_slope_and_infinities() {
+        let (handler, _a, mut ev) = make_handler();
+        for (db, expect) in [
+            (-7.5f32, 75),
+            (-22.5, 25),
+            (f32::INFINITY, 100),
+            (f32::NEG_INFINITY, 0),
+        ] {
+            handler.on_volume(db);
+            match ev.try_recv() {
+                Ok(ReceiverEvent::Volume { percent }) => assert_eq!(percent, expect, "{db} dB"),
+                _ => panic!("expected volume event for {db} dB"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn audio_init_emits_session_started_and_forwards_pcm() {
+        let (handler, mut audio, mut ev) = make_handler();
+        let mut session = handler.audio_init(shairplay::AudioFormat {
+            codec: shairplay::AudioCodec::Pcm,
+            bits: 32,
+            channels: 2,
+            sample_rate: 48000,
+        });
+        match ev.try_recv() {
+            Ok(ReceiverEvent::SessionStarted { format }) => {
+                assert_eq!(format.sample_rate, 48000);
+                assert_eq!(format.channels, 2);
+            }
+            _ => panic!("expected SessionStarted"),
+        }
+        session.audio_process(&[0.1, -0.2]);
+        assert_eq!(audio.try_recv().unwrap(), vec![0.1_f32, -0.2]);
+    }
+
+    #[tokio::test]
+    async fn metadata_coverart_progress_disconnect_map_to_events() {
+        let (handler, _a, mut ev) = make_handler();
+
+        handler.on_metadata(&shairplay::TrackMetadata {
+            title: Some("T".into()),
+            artist: Some("A".into()),
+            album: Some("Al".into()),
+            ..Default::default()
+        });
+        match ev.try_recv() {
+            Ok(ReceiverEvent::Metadata {
+                title,
+                artist,
+                album,
+            }) => assert_eq!(
+                (title.as_str(), artist.as_str(), album.as_str()),
+                ("T", "A", "Al")
+            ),
+            _ => panic!("expected Metadata"),
+        }
+
+        // All-None metadata → empty strings (unwrap_or_default).
+        handler.on_metadata(&shairplay::TrackMetadata::default());
+        match ev.try_recv() {
+            Ok(ReceiverEvent::Metadata {
+                title,
+                artist,
+                album,
+            }) => assert!(title.is_empty() && artist.is_empty() && album.is_empty()),
+            _ => panic!("expected Metadata"),
+        }
+
+        handler.on_coverart(b"\xff\xd8\xff");
+        match ev.try_recv() {
+            Ok(ReceiverEvent::CoverArt { bytes }) => assert_eq!(bytes, b"\xff\xd8\xff"),
+            _ => panic!("expected CoverArt"),
+        }
+
+        // sample_rate 44100: 44100 frames = 1000 ms, 88200 = 2000 ms.
+        handler.on_progress(0, 44100, 88200);
+        match ev.try_recv() {
+            Ok(ReceiverEvent::Progress {
+                position_ms,
+                duration_ms,
+            }) => assert_eq!((position_ms, duration_ms), (1000, 2000)),
+            _ => panic!("expected Progress"),
+        }
+
+        handler.on_client_disconnected("1.2.3.4");
+        assert!(matches!(ev.try_recv(), Ok(ReceiverEvent::SessionEnded)));
+    }
+
+    #[test]
+    fn remote_command_round_trips_to_shairplay() {
+        use crate::receiver::{RemoteCommand, RemoteControl};
+
+        struct FakeRemote(std::sync::Mutex<Vec<shairplay::RemoteCommand>>);
+        impl shairplay::RemoteControl for FakeRemote {
+            fn send_command(
+                &self,
+                cmd: shairplay::RemoteCommand,
+            ) -> std::result::Result<(), shairplay::ShairplayError> {
+                self.0.lock().unwrap().push(cmd);
+                Ok(())
+            }
+            fn available_commands(&self) -> Vec<shairplay::RemoteCommand> {
+                vec![]
+            }
+        }
+        let fake = Arc::new(FakeRemote(std::sync::Mutex::new(vec![])));
+        let bridge = ShairplayRemoteBridge(fake.clone());
+        let cases = [
+            (RemoteCommand::Play, shairplay::RemoteCommand::Play),
+            (RemoteCommand::Pause, shairplay::RemoteCommand::Pause),
+            (
+                RemoteCommand::NextTrack,
+                shairplay::RemoteCommand::NextTrack,
+            ),
+            (
+                RemoteCommand::PreviousTrack,
+                shairplay::RemoteCommand::PreviousTrack,
+            ),
+            (RemoteCommand::Stop, shairplay::RemoteCommand::Stop),
+            (
+                RemoteCommand::SetVolume(42),
+                shairplay::RemoteCommand::SetVolume(42),
+            ),
+            (
+                RemoteCommand::ToggleShuffle,
+                shairplay::RemoteCommand::ToggleShuffle,
+            ),
+            (
+                RemoteCommand::ToggleRepeat,
+                shairplay::RemoteCommand::ToggleRepeat,
+            ),
+        ];
+        let expected: Vec<_> = cases.iter().map(|(_, sp)| sp.clone()).collect();
+        for (snap, _) in cases {
+            bridge.send_command(snap).unwrap();
+        }
+        assert_eq!(*fake.0.lock().unwrap(), expected);
+    }
 }

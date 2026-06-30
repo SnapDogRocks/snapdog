@@ -353,4 +353,174 @@ mod tests {
             vec![0.5_f32, -0.25, 1.0, 0.0]
         );
     }
+
+    // ── IT-T72: PlayerEvent → ReceiverEvent mapper goldens ────────────
+    // (ReceiverEvent has no Debug/PartialEq derive → assert via matches!/destructure.)
+
+    use librespot_core::SpotifyId;
+    use librespot_core::date::Date;
+    use librespot_core::spotify_uri::SpotifyUri;
+    use librespot_metadata::artist::ArtistsWithRole;
+    use librespot_metadata::audio::file::AudioFiles;
+    use librespot_metadata::audio::item::AudioItem;
+
+    fn track_uri() -> SpotifyUri {
+        SpotifyUri::Track {
+            id: SpotifyId::from_base62("4iV5W9uYEdYUVa79Axb7Rh").unwrap(),
+        }
+    }
+
+    fn audio_item(name: &str, duration_ms: u32, unique_fields: UniqueFields) -> AudioItem {
+        AudioItem {
+            track_id: track_uri(),
+            uri: String::new(),
+            files: AudioFiles(std::collections::HashMap::new()),
+            name: name.to_string(),
+            covers: vec![], // empty → skips the (networked) cover fetch
+            language: vec![],
+            duration_ms,
+            is_explicit: false,
+            availability: Ok(()),
+            alternatives: None,
+            unique_fields,
+        }
+    }
+
+    async fn metadata_for(unique_fields: UniqueFields) -> (String, String, String) {
+        let (tx, mut rx) = mpsc::channel(4);
+        let mut dur = 0u64;
+        let item = audio_item("Title", 180_000, unique_fields);
+        handle_player_event(
+            PlayerEvent::TrackChanged {
+                audio_item: Box::new(item),
+            },
+            &tx,
+            &mut dur,
+        )
+        .await;
+        assert_eq!(dur, 180_000, "TrackChanged updates last_duration_ms");
+        match rx.try_recv().expect("metadata emitted") {
+            ReceiverEvent::Metadata {
+                title,
+                artist,
+                album,
+            } => {
+                assert!(rx.try_recv().is_err(), "no cover event when covers empty");
+                (title, artist, album)
+            }
+            _ => panic!("expected ReceiverEvent::Metadata"),
+        }
+    }
+
+    #[tokio::test]
+    async fn progress_events_emit_progress_with_last_duration() {
+        let makers: [fn(SpotifyUri) -> PlayerEvent; 4] = [
+            |t| PlayerEvent::Playing {
+                play_request_id: 1,
+                track_id: t,
+                position_ms: 5000,
+            },
+            |t| PlayerEvent::Paused {
+                play_request_id: 1,
+                track_id: t,
+                position_ms: 5000,
+            },
+            |t| PlayerEvent::Seeked {
+                play_request_id: 1,
+                track_id: t,
+                position_ms: 5000,
+            },
+            |t| PlayerEvent::PositionCorrection {
+                play_request_id: 1,
+                track_id: t,
+                position_ms: 5000,
+            },
+        ];
+        for make in makers {
+            let (tx, mut rx) = mpsc::channel(4);
+            let mut dur = 240_000u64;
+            handle_player_event(make(track_uri()), &tx, &mut dur).await;
+            assert!(matches!(
+                rx.try_recv().expect("progress emitted"),
+                ReceiverEvent::Progress {
+                    position_ms: 5000,
+                    duration_ms: 240_000
+                }
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn track_changed_track_uses_first_artist_and_album() {
+        let (title, artist, album) = metadata_for(UniqueFields::Track {
+            artists: ArtistsWithRole(vec![]), // empty → "" via unwrap_or_default
+            album: "Album X".into(),
+            album_artists: vec![],
+            popularity: 0,
+            number: 0,
+            disc_number: 0,
+        })
+        .await;
+        assert_eq!(
+            (title.as_str(), artist.as_str(), album.as_str()),
+            ("Title", "", "Album X")
+        );
+    }
+
+    #[tokio::test]
+    async fn track_changed_episode_uses_show_name_as_artist() {
+        let (_, artist, album) = metadata_for(UniqueFields::Episode {
+            description: String::new(),
+            publish_time: Date::from_timestamp_ms(0).unwrap(),
+            show_name: "My Show".into(),
+        })
+        .await;
+        assert_eq!((artist.as_str(), album.as_str()), ("My Show", ""));
+    }
+
+    #[tokio::test]
+    async fn track_changed_local_maps_optional_artist_album() {
+        let (_, artist, album) = metadata_for(UniqueFields::Local {
+            artists: Some("Local Artist".into()),
+            album: Some("Local Album".into()),
+            album_artists: None,
+            number: None,
+            disc_number: None,
+            path: std::path::PathBuf::new(),
+        })
+        .await;
+        assert_eq!(
+            (artist.as_str(), album.as_str()),
+            ("Local Artist", "Local Album")
+        );
+
+        // None fields → empty strings.
+        let (_, artist, album) = metadata_for(UniqueFields::Local {
+            artists: None,
+            album: None,
+            album_artists: None,
+            number: None,
+            disc_number: None,
+            path: std::path::PathBuf::new(),
+        })
+        .await;
+        assert_eq!((artist.as_str(), album.as_str()), ("", ""));
+    }
+
+    #[tokio::test]
+    async fn unhandled_events_emit_nothing() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let mut dur = 7u64;
+        handle_player_event(
+            PlayerEvent::Stopped {
+                play_request_id: 0,
+                track_id: track_uri(),
+            },
+            &tx,
+            &mut dur,
+        )
+        .await;
+        assert!(rx.try_recv().is_err(), "Stopped emits no ReceiverEvent");
+        assert_eq!(dur, 7, "duration unchanged");
+    }
 }

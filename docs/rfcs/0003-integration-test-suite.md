@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 32
-  in_progress: 5
-  todo: 10
+  done: 35
+  in_progress: 3
+  todo: 9
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -356,9 +356,9 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [x] `IT-T63` Subsonic prefetch cache miss→fetch→hit (`wiremock`) + ICY metadata parse + cache LRU/eviction. `status: done` · deps: IT-T01.
 
 ### Phase 7 — AirPlay & Spotify seams
-- [ ] `IT-T70` shairplay contract: `TestHandler` + `RaopServer::builder().port(0)` loopback + `send_rtsp`; `audio_init`→`SessionStarted`, volume/metadata/coverart→`ReceiverEvent`. `status: todo` · deps: IT-T01.
-- [ ] `IT-T71` AirPlay volume **golden (corrected)** + `RemoteCommand` round-trip + AP2 SRP/`MemoryPairingStore`. `status: in-progress` · deps: IT-T70, IT-T06.
-- [ ] `IT-T72` Spotify `ChannelSink` f64→f32 cast (assert librespot 0.8 samples are already normalized — **no** rescaling) + `PlayerEvent`→`ReceiverEvent` mapper (pure fns) + volume vectors. `status: in-progress` · deps: IT-T01.
+- [x] `IT-T70` AirPlay handler callback→`ReceiverEvent` mappers (`audio_init`→`SessionStarted`+PCM, metadata/coverart/progress/disconnect) on shairplay 0.5.0. RTSP-loopback e2e deferred → `IT-NG-09`. `status: done` · deps: IT-T01.
+- [x] `IT-T71` AirPlay volume **golden** (0dB + slope + ±inf) + `RemoteCommand` 8-arm round-trip. AP2 SRP/pairing-store deferred → `IT-NG-09`. `status: done` · deps: IT-T70, IT-T06.
+- [x] `IT-T72` Spotify `ChannelSink` f64→f32 (no rescale) + volume + `PlayerEvent`→`ReceiverEvent` mapper goldens (progress / Track-Episode-Local metadata / unhandled). `status: done` · deps: IT-T01.
 - [x] `IT-T73` Feature **build-smoke matrix** (CI `build-smoke` job): embedded {default,minimal,full} + process {minimal,full} `cargo check`. `status: done` · deps: IT-T05.
 
 ### Phase 8 — State machine & lifecycle
@@ -438,9 +438,9 @@ tasks:
   - { id: IT-T61, phase: 6, status: done, depends_on: [IT-T01] }   # snapdog-common fade_gain: monotonic/complementary/bounded ramp; runner.rs ZoneFade: total = sr*ms/1000 golden, zero-duration passthrough, per-frame stereo gain
   - { id: IT-T62, phase: 6, status: done, depends_on: [IT-T01] }   # audio/eq.rs: 0dB-peaking≈identity, bit-identical determinism, deterministic filter-grid (5 types × freq/gain/q) NaN/Inf guard (grid instead of proptest — no new dep)
   - { id: IT-T63, phase: 6, status: done, depends_on: [IT-T01] }   # ICY parse (icy.rs parse_icy_metadata + helpers.rs parse_icy_title) + TrackCache hit/miss/LRU/eviction (cache.rs ~15 tests) already covered; added wiremock subsonic prefetch_one miss→fetch→hit end-to-end (first wiremock use)
-  - { id: IT-T70, phase: 7, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T71, phase: 7, status: in-progress, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (incl. 0dB); RemoteCommand/AP2-SRP pending
-  - { id: IT-T72, phase: 7, status: in-progress, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume math; TrackChanged/Playing mapper pending (complex librespot types)
+  - { id: IT-T70, phase: 7, status: done, depends_on: [IT-T01] }   # airplay.rs in-source: handler callback→ReceiverEvent mappers on shairplay 0.5.0 — audio_init→SessionStarted + PCM forward, on_metadata (+all-None), on_coverart, on_progress (44.1k→ms), on_client_disconnected→SessionEnded. RTSP-loopback e2e (RaopServer::port(0)+send_rtsp, #[serial]) deferred → IT-NG-09
+  - { id: IT-T71, phase: 7, status: done, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (0dB + slope -7.5→75/-22.5→25 + ±inf) + RemoteCommand 8-arm round-trip to shairplay via a Fake RemoteControl. AP2 SRP/pairing-store + RemoteAvailable-via-loopback deferred → IT-NG-09
+  - { id: IT-T72, phase: 7, status: done, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume + PlayerEvent→ReceiverEvent mapper goldens (progress Playing/Paused/Seeked/PositionCorrection; TrackChanged Track/Episode/Local metadata; unhandled→nothing) on librespot 0.8
   - { id: IT-T73, phase: 7, status: done, depends_on: [IT-T05] }   # ci.yml build-smoke job: flat matrix (embedded default/minimal/full + process minimal/full) cargo check — gross-signature firewall across feature combos. All 12 combos verified to compile locally; the embedded XOR process compile_error! guards keep it a flat include-list (no --all-features)
   - { id: IT-T80, phase: 8, status: done, depends_on: [IT-T01, IT-T04] }   # state/mod.rs: persist/load roundtrip + transient-reset (existing 5 tests) + SourceType/PlaybackState wire-format golden; track-None-iff-Idle holds via reset
   - { id: IT-T81, phase: 8, status: done, depends_on: [IT-T80, IT-T02] }   # extracted pure player::nav (next_index/prev_index/complete_index + radio wrap) from helpers.rs handlers; in-source matrix covers repeat Off/Track/Playlist, end-of-list stop/wrap, CD-player >3s prev, Complete-vs-Next asymmetry, shuffle determinism via injected draw (no fastrand in tested path). Subsonic behavioral path needs network (out of scope)
@@ -496,6 +496,13 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
   abrupt TCP drop, not a clean 1001. Fix would thread the cooperative shutdown token
   (added in `IT-T84`) into `handle_socket` to send 1001 before teardown. Low severity
   (clients reconnect); flagged for a follow-up.
+- **AirPlay RTSP-loopback + AP2-SRP receiver tests** (`IT-NG-09`, deferred from `IT-T70`/`IT-T71`) —
+  drive the callback→`ReceiverEvent` mappers through a real loopback `RaopServer::builder().port(0)`
+  + `send_rtsp` (SET_PARAMETER volume/metadata/coverart/progress; SETUP+DACP → `RemoteAvailable`),
+  plus the AP2 `FilePairingStore` round-trip. Needs the `#[serial]` + `CI=1` (mDNS-off) loopback
+  harness and the shairplay 0.6 pairing-store APIs (`load_identity`/`save_identity`). The pure
+  callback mappers are already covered (`IT-T70`/`IT-T71`); this is the end-to-end layer. Also file
+  the `on_progress` `current - start` u32 underflow (airplay.rs) — guard with `saturating_sub`.
 - **Decode-fixture audio-chain golden** (`IT-NG-07`, deferred from `IT-T60`) — golden
   vectors for `symphonia` decode of canonical fixtures (sine/silence/pink in FLAC/MP3)
   through the full decode→resample→EQ chain. Whole-stream hashing is not bit-exact on
