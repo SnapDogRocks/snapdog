@@ -641,4 +641,43 @@ mod tests {
             ("Adele".into(), "Hello".into())
         );
     }
+
+    #[tokio::test]
+    async fn prefetch_downloads_on_miss_then_serves_from_cache() {
+        use crate::audio::cache::{CacheEntry, TrackCache};
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // Mock subsonic stream endpoint returning audio bytes.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "audio/mpeg")
+                    .set_body_bytes(vec![0u8; 4096]),
+            )
+            .mount(&server)
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TrackCache::new(&crate::config::SubsonicCacheConfig {
+            path: dir.path().to_string_lossy().into_owned(),
+            max_size_mb: 100,
+        })
+        .unwrap();
+
+        // Miss before the prefetch fetch.
+        assert!(matches!(cache.get("track1"), CacheEntry::Miss));
+
+        let url = format!("{}/rest/stream?id=track1", server.uri());
+        prefetch_one(&cache, "track1", &url).await.unwrap();
+
+        // Miss → fetch → hit: now served from disk with the response content-type.
+        match cache.get("track1") {
+            CacheEntry::Complete { content_type, .. } => {
+                assert_eq!(content_type, "audio/mpeg");
+            }
+            _ => panic!("expected Complete cache entry after prefetch"),
+        }
+    }
 }

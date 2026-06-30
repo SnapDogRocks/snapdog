@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 21
+  done: 22
   in_progress: 8
-  todo: 18
+  todo: 17
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -353,7 +353,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T60` Golden PCM vectors: resample (passthrough exact + 48k→24k) + EQ goldens **done**; sine/silence/pink **decode**-fixture chain hash deferred → `IT-NG-07` (rubato sinc not bit-exact). `status: in-progress` · deps: IT-T06.
 - [x] `IT-T61` Fade math (pure `fade_gain`): monotonic gain ramp + sample count = `sample_rate*fade_ms/1000` for 0→1 and 1→0; `ZoneFade` total/zero-duration/per-frame. `status: done` · deps: IT-T01.
 - [x] `IT-T62` EQ stability: deterministic filter-grid (random-equivalent, no proptest dep) → finite/bounded (NaN/Inf guard) + 0 dB identity + determinism. `status: done` · deps: IT-T01.
-- [ ] `IT-T63` Subsonic prefetch cache hit vs miss + ICY metadata parse (`wiremock`). `status: todo` · deps: IT-T01.
+- [x] `IT-T63` Subsonic prefetch cache miss→fetch→hit (`wiremock`) + ICY metadata parse + cache LRU/eviction. `status: done` · deps: IT-T01.
 
 ### Phase 7 — AirPlay & Spotify seams
 - [ ] `IT-T70` shairplay contract: `TestHandler` + `RaopServer::builder().port(0)` loopback + `send_rtsp`; `audio_init`→`SessionStarted`, volume/metadata/coverart→`ReceiverEvent`. `status: todo` · deps: IT-T01.
@@ -437,7 +437,7 @@ tasks:
   - { id: IT-T60, phase: 6, status: in-progress, depends_on: [IT-T06] }   # f32→PCM golden + resample (passthrough exact-identity, 48k→24k ≈half within band, all-finite) + EQ goldens done; symphonia decode-fixture golden (sine/silence/pink) + full-chain hash deferred (rubato sinc not bit-exact) → IT-NG-07
   - { id: IT-T61, phase: 6, status: done, depends_on: [IT-T01] }   # snapdog-common fade_gain: monotonic/complementary/bounded ramp; runner.rs ZoneFade: total = sr*ms/1000 golden, zero-duration passthrough, per-frame stereo gain
   - { id: IT-T62, phase: 6, status: done, depends_on: [IT-T01] }   # audio/eq.rs: 0dB-peaking≈identity, bit-identical determinism, deterministic filter-grid (5 types × freq/gain/q) NaN/Inf guard (grid instead of proptest — no new dep)
-  - { id: IT-T63, phase: 6, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T63, phase: 6, status: done, depends_on: [IT-T01] }   # ICY parse (icy.rs parse_icy_metadata + helpers.rs parse_icy_title) + TrackCache hit/miss/LRU/eviction (cache.rs ~15 tests) already covered; added wiremock subsonic prefetch_one miss→fetch→hit end-to-end (first wiremock use)
   - { id: IT-T70, phase: 7, status: todo, depends_on: [IT-T01] }
   - { id: IT-T71, phase: 7, status: in-progress, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (incl. 0dB); RemoteCommand/AP2-SRP pending
   - { id: IT-T72, phase: 7, status: in-progress, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume math; TrackChanged/Playing mapper pending (complex librespot types)
