@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 22
-  in_progress: 8
-  todo: 17
+  done: 25
+  in_progress: 6
+  todo: 16
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -321,9 +321,9 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 ### Phase 1 — REST contract suite
 - [x] `IT-T10` In-process REST driver: `oneshot` on `Router` + mock `AppState` (captured `ZoneCommand`/`SnapcastCmd` mpsc + broadcast tap). `status: todo` · deps: IT-T01 · **AC:** a GET returns 200 with no TCP socket; the suite **enumerates and asserts every mounted route group** (no hardcoded endpoint count).
 - [x] `IT-T11` Zone endpoints contract (all): status+body+**exactly-one** command; boundaries (zone 0→404), seek XOR(→400), volume parse/clamp, repeat cycle, EQ band limits, cover placeholder etag. `status: todo` · deps: IT-T10, IT-T03 · **AC:** every zone endpoint returns documented status+body and captures exactly one `ZoneCommand`; zone 0→404; seek both→400 / exactly-one→200; volume parse/clamp; repeat cycles Off→All→One; EQ >10 bands→400 + band-edit clears preset; `GET …/cover`→200 PNG + ETag `"snapdog-placeholder"`.
-- [ ] `IT-T12` Client endpoints contract: vol/mute/latency, zone-assign validation(+fade), EQ 422 if not snapdog, **GET/PUT `…/{client}/speaker`** (profile retrieval/apply, 404 unknown profile, validation error). `status: todo` · deps: IT-T10.
-- [ ] `IT-T13` Media/Speakers/System/KNX(409 client-mode)/Health contract. `status: todo` · deps: IT-T10.
-- [ ] `IT-T14` Auth middleware (401 w/o key) + **OpenAPI** response-schema contract validation. `status: todo` · deps: IT-T10.
+- [x] `IT-T12` REST command-capture (zone actions + client vol/mute/latency) + EQ 400/422/404 + client-EQ-422-not-snapdog + client-speaker 404/422. (Speaker-apply-200 / zone-assign-fade need a SnapDog-client fixture — deferred.) `status: done` · deps: IT-T10.
+- [x] `IT-T13` Media `[]`/index-404, client-speaker 404/422, KNX programming-mode 409 (device-mode inactive), system gaps. Network 200 paths out of scope. `status: done` · deps: IT-T10.
+- [x] `IT-T14` Auth middleware 401 (no/wrong Bearer key; `/health` unauth) **+ caught/fixed a real auth-bypass** + **OpenAPI** structural contract. `status: done` · deps: IT-T10.
 
 ### Phase 2 — WebSocket suite
 - [x] `IT-T20` All **7** notification variants emitted on the right mutation; serde `tag`/snake_case round-trip; **a compile-time exhaustiveness match over all 7 `Notification` variants** (catch silent add/rename, mirrors IT-T52). `status: todo` · deps: IT-T10, IT-T03.
@@ -415,9 +415,9 @@ tasks:
   - { id: IT-T08, phase: 0, status: todo, depends_on: [] }
   - { id: IT-T10, phase: 1, status: done, depends_on: [IT-T01] }   # api::build_router + TestApp::request (oneshot)
   - { id: IT-T11, phase: 1, status: done, depends_on: [IT-T10, IT-T03] }   # tests/rest_zones.rs (10 tests)
-  - { id: IT-T12, phase: 1, status: in-progress, depends_on: [IT-T10] }   # tests/rest_surfaces.rs: client GET contract+boundaries; cmd-capture/EQ-422 pending
-  - { id: IT-T13, phase: 1, status: in-progress, depends_on: [IT-T10] }   # tests/rest_surfaces.rs: system+health done; media/speakers/knx-409 pending
-  - { id: IT-T14, phase: 1, status: todo, depends_on: [IT-T10] }
+  - { id: IT-T12, phase: 1, status: done, depends_on: [IT-T10] }   # tests/rest_commands.rs: zone-action command capture (shuffle/repeat/toggle/seek abs+rel+400) + client vol/mute/latency capture (needs snapcast_id) + EQ 400(>10 bands)/422(serde-shape)/404 matrix + client-EQ-422-not-snapdog. Speaker-profile-apply-200 + zone-assign-fade paths need a snapdog-client fixture (deferred)
+  - { id: IT-T13, phase: 1, status: done, depends_on: [IT-T10] }   # tests/rest_surfaces.rs: media playlists []/index-404, client-speaker 404/422, knx programming-mode 409 (device-mode inactive), system radios/version/name gaps. Network 200 paths (subsonic/spinorama) out of scope
+  - { id: IT-T14, phase: 1, status: done, depends_on: [IT-T10] }   # tests/openapi_contract.rs (structural: 3.1.0/title/version + key paths + op-count floor 85 + component schemas) + tests/auth.rs (Bearer 401 without/wrong key, 200 with, /health unauth) — the auth test CAUGHT + now guards a real auth-bypass (Extension/middleware layer-order in build_router)
   - { id: IT-T20, phase: 2, status: done, depends_on: [IT-T10, IT-T03] }   # tests/ws.rs (serde + exhaustiveness + tap)
   - { id: IT-T21, phase: 2, status: todo, depends_on: [IT-T20, IT-T03] }
   - { id: IT-T30, phase: 3, status: done, depends_on: [IT-T01] }   # existing in-source mqtt routing tests: routes_zone_{volume,mute,control,playlist,seek} + routes_client_{volume,mute,zone_change}

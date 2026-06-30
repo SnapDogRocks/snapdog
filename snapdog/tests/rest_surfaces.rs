@@ -36,9 +36,72 @@ async fn system_status_and_version() {
     assert_eq!(s, StatusCode::OK);
     assert_eq!(b["zones"], 2);
     assert_eq!(b["clients"], 2);
+    assert_eq!(b["radios"], 0);
     assert!(b["version"].is_string(), "version present: {b}");
 
-    assert_eq!(app.get("/api/v1/system/version").await.0, StatusCode::OK);
+    let (s, b) = app.get("/api/v1/system/version").await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(b["version"].is_string());
+    assert!(b["rust_version"].is_string());
+    assert_eq!(b["name"], "SnapDog"); // default_server_name
+}
+
+#[tokio::test]
+async fn media_playlists_empty_and_indices_404() {
+    // No subsonic + no radios → playlists is an empty list (no network), and every
+    // playlist index is out of range.
+    let app = common::test_app();
+
+    let (s, b) = app.get("/api/v1/media/playlists").await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(b.as_array().is_some_and(Vec::is_empty), "no playlists: {b}");
+
+    for uri in [
+        "/api/v1/media/playlists/0",
+        "/api/v1/media/playlists/0/tracks",
+        "/api/v1/media/playlists/0/tracks/0",
+        "/api/v1/media/playlists/0/cover",
+        "/api/v1/media/playlists/5/tracks/0/cover",
+    ] {
+        let (s, b) = app.get(uri).await;
+        assert_eq!(s, StatusCode::NOT_FOUND, "{uri} → 404");
+        assert_eq!(b["error"], "not_found", "{uri} body");
+    }
+}
+
+#[tokio::test]
+async fn client_speaker_404_and_422() {
+    // Unknown client → 404; known client that isn't a SnapDog client → 422.
+    let app = common::test_app();
+
+    assert_eq!(
+        app.get("/api/v1/clients/0/speaker").await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.get("/api/v1/clients/99/speaker").await.0,
+        StatusCode::NOT_FOUND
+    );
+
+    let (s, b) = app.get("/api/v1/clients/1/speaker").await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(b["error"], "unprocessable");
+}
+
+#[tokio::test]
+async fn knx_programming_mode_conflict_when_device_mode_inactive() {
+    // test_app has knx_device_control: None → KNX routes short-circuit to 409.
+    let app = common::test_app();
+
+    let (s, b) = app.get("/api/v1/knx/programming-mode").await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    assert_eq!(b["error"], "conflict");
+    assert_eq!(b["message"], "KNX device mode not active");
+
+    let (s, _) = app
+        .request("PUT", "/api/v1/knx/programming-mode", Some(json!(true)))
+        .await;
+    assert_eq!(s, StatusCode::CONFLICT);
 }
 
 #[tokio::test]
