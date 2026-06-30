@@ -8,6 +8,7 @@ use tokio::task::JoinHandle;
 
 use super::commands::ActiveSource;
 use super::context::{NotifySender, stop_decode, update_and_notify};
+use super::nav;
 use crate::audio;
 use crate::config::AppConfig;
 use crate::state::{self, PlaybackState, SourceType, TrackInfo, cover::SharedCoverCache};
@@ -268,7 +269,7 @@ pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
 
     match ds.source.clone() {
         ActiveSource::Radio { index } => {
-            let next = (index + 1) % ctx.config.radios.len();
+            let next = nav::radio_next_index(index, ctx.config.radios.len());
             stop_decode(ds.current_decode, ds.decode_rx).await;
             if let Some(radio) = ctx.config.radios.get(next) {
                 if was_playing {
@@ -292,28 +293,23 @@ pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
             track_index,
             track_count,
         } => {
-            let next = track_index + 1;
-            if next < track_count {
-                advance_playlist_track(ds, &playlist_id, next, track_count, ctx).await;
+            let repeat = ctx
+                .store
+                .read()
+                .await
+                .zones
+                .get(&ctx.zone_index)
+                .map_or(snapdog_common::RepeatMode::Off, |z| z.repeat);
+            if let Some(i) = nav::next_index(track_index, track_count, repeat) {
+                advance_playlist_track(ds, &playlist_id, i, track_count, ctx).await;
             } else {
-                let repeat = ctx
-                    .store
-                    .read()
-                    .await
-                    .zones
-                    .get(&ctx.zone_index)
-                    .is_some_and(|z| z.repeat == snapdog_common::RepeatMode::Playlist);
-                if repeat {
-                    advance_playlist_track(ds, &playlist_id, 0, track_count, ctx).await;
-                } else {
-                    stop_decode(ds.current_decode, ds.decode_rx).await;
-                    *ds.source = ActiveSource::Idle;
-                    update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
-                        z.playback = PlaybackState::Stopped;
-                        z.source = SourceType::Idle;
-                    })
-                    .await;
-                }
+                stop_decode(ds.current_decode, ds.decode_rx).await;
+                *ds.source = ActiveSource::Idle;
+                update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
+                    z.playback = PlaybackState::Stopped;
+                    z.source = SourceType::Idle;
+                })
+                .await;
             }
         }
         _ => {}
@@ -323,7 +319,6 @@ pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
 pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
     // CD-player behavior: if position > 3s, restart current track.
     // Otherwise, go to previous track.
-    const RESTART_THRESHOLD_MS: i64 = 3000;
     let (position_ms, was_playing) = {
         let z = ctx.store.read().await.zones.get(&ctx.zone_index).cloned();
         (
@@ -337,11 +332,7 @@ pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
 
     match ds.source.clone() {
         ActiveSource::Radio { index } => {
-            let prev = if index == 0 {
-                ctx.config.radios.len() - 1
-            } else {
-                index - 1
-            };
+            let prev = nav::radio_prev_index(index, ctx.config.radios.len());
             stop_decode(ds.current_decode, ds.decode_rx).await;
             if let Some(radio) = ctx.config.radios.get(prev) {
                 if was_playing {
@@ -365,12 +356,8 @@ pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
             track_index,
             track_count,
         } => {
-            if position_ms > RESTART_THRESHOLD_MS {
-                // Restart current track (seek to 0)
-                advance_playlist_track(ds, &playlist_id, track_index, track_count, ctx).await;
-            } else if track_index > 0 {
-                // Go to previous track
-                advance_playlist_track(ds, &playlist_id, track_index - 1, track_count, ctx).await;
+            if let Some(i) = nav::prev_index(track_index, position_ms) {
+                advance_playlist_track(ds, &playlist_id, i, track_count, ctx).await;
             }
         }
         _ => {}
@@ -378,11 +365,11 @@ pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
 }
 
 pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
-    let (repeat_track, shuffle) = {
+    let (repeat, shuffle) = {
         let z = ctx.store.read().await.zones.get(&ctx.zone_index).cloned();
         (
             z.as_ref()
-                .is_some_and(|z| z.repeat == snapdog_common::RepeatMode::Track),
+                .map_or(snapdog_common::RepeatMode::Off, |z| z.repeat),
             z.as_ref().is_some_and(|z| z.shuffle),
         )
     };
@@ -393,11 +380,13 @@ pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'
             track_index,
             track_count,
         } => {
-            if repeat_track {
-                advance_playlist_track(ds, &playlist_id, track_index, track_count, ctx).await;
-            } else if shuffle {
-                let next = fastrand::usize(..track_count);
-                advance_playlist_track(ds, &playlist_id, next, track_count, ctx).await;
+            let draw = if shuffle {
+                fastrand::usize(..track_count)
+            } else {
+                0
+            };
+            if let Some(i) = nav::complete_index(track_index, repeat, shuffle, draw) {
+                advance_playlist_track(ds, &playlist_id, i, track_count, ctx).await;
             } else {
                 handle_next(ds, ctx).await;
             }

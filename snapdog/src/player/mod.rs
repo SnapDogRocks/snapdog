@@ -6,6 +6,7 @@
 mod commands;
 pub mod context;
 mod helpers;
+mod nav;
 mod runner;
 
 pub use commands::ZoneCommand;

@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 15
+  done: 16
   in_progress: 9
-  todo: 23
+  todo: 22
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -363,7 +363,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 
 ### Phase 8 — State machine & lifecycle
 - [x] `IT-T80` Zone-player transitions (track None iff Idle) + persistence roundtrip (restore subset, playback→Stopped). `status: done` · deps: IT-T01, IT-T04.
-- [ ] `IT-T81` Next/Prev/complete honoring repeat + shuffle (seeded) + prev-restart >3s. `status: todo` · deps: IT-T80, IT-T02.
+- [x] `IT-T81` Next/Prev/complete honoring repeat + shuffle + prev-restart >3s — pure `player::nav` extraction + in-source matrix (shuffle deterministic via injected draw). `status: done` · deps: IT-T80, IT-T02.
 - [x] `IT-T82` `source_conflict` LastWins/ReceiverWins + command→state transitions + presence auto-off via `start_paused`+`advance` (ZoneHarness). `status: done` · deps: IT-T80, IT-T03.
 - [ ] `IT-T83` Multi-zone isolation **done** (ZoneHarness); crash restart (`ZONE_RESTART_DELAY`) still blocked (no realistic `run()` Err path). `status: in-progress` · deps: IT-T80, IT-T03.
 - [ ] `IT-T84` Headless boot `run_app(cfg)` (mdns off, ephemeral ports, TempEnv) + health endpoints + graceful shutdown. `status: todo` · deps: IT-T04, IT-T02.
@@ -443,7 +443,7 @@ tasks:
   - { id: IT-T72, phase: 7, status: in-progress, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume math; TrackChanged/Playing mapper pending (complex librespot types)
   - { id: IT-T73, phase: 7, status: in-progress, depends_on: [IT-T05] }   # ci.yml integration job runs the process-feature firewall (snapcast_rpc); full embedded/process×ap2×spotify matrix pending
   - { id: IT-T80, phase: 8, status: done, depends_on: [IT-T01, IT-T04] }   # state/mod.rs: persist/load roundtrip + transient-reset (existing 5 tests) + SourceType/PlaybackState wire-format golden; track-None-iff-Idle holds via reset
-  - { id: IT-T81, phase: 8, status: todo, depends_on: [IT-T80, IT-T02] }   # UNBLOCKED-ish: ZoneHarness (tests/common) now drives real spawn_zone_players; next/prev/complete still need either a pure next_index fn or a track-bearing harness (fastrand seeding still open)
+  - { id: IT-T81, phase: 8, status: done, depends_on: [IT-T80, IT-T02] }   # extracted pure player::nav (next_index/prev_index/complete_index + radio wrap) from helpers.rs handlers; in-source matrix covers repeat Off/Track/Playlist, end-of-list stop/wrap, CD-player >3s prev, Complete-vs-Next asymmetry, shuffle determinism via injected draw (no fastrand in tested path). Subsonic behavioral path needs network (out of scope)
   - { id: IT-T82, phase: 8, status: done, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix + command->state transitions (ZoneHarness) + presence auto-off timer via start_paused+tokio::time::advance (tests/zone_player.rs presence_auto_off_stops_zone_after_delay; direct-seed precondition, zone_presence_changed fire barrier)
   - { id: IT-T83, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # multi-zone isolation DONE (tests/zone_player.rs transitions_are_isolated_per_zone via ZoneHarness); crash-restart still blocked (inline in spawn closure; run() has no realistic Err path)
   - { id: IT-T84, phase: 8, status: todo, depends_on: [IT-T04, IT-T02] }   # BLOCKED: run_app() is Cli::parse-bound (no Config-injectable headless boot); needs a start_system(Config) seam
