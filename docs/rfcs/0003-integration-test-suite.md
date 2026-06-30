@@ -488,8 +488,7 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
   seam to silence receivers. Unlocks an end-to-end real-boot test (embedded snapcast on
   ephemeral ports, mDNS off, no MQTT/KNX) covering full subsystem assembly + teardown.
   Deferred for production-entry-point blast radius; `IT-T84` shipped the
-  serve + graceful-shutdown-over-socket path instead. Also wire TLS-path graceful
-  shutdown (axum_server `Handle`).
+  serve + graceful-shutdown-over-socket path instead.
 - **Decode-fixture audio-chain golden** (`IT-NG-07`, deferred from `IT-T60`) — golden
   vectors for `symphonia` decode of canonical fixtures (sine/silence/pink in FLAC/MP3)
   through the full decode→resample→EQ chain. Whole-stream hashing is not bit-exact on

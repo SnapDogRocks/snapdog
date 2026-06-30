@@ -151,6 +151,19 @@ impl MqttBridge {
             )
             .await?;
 
+        // Migration cleanup: clear the stale retained "online" left by pre-fix
+        // snapdog at the old buggy double-slash topic (`{base}/status`). A
+        // zero-length retained publish deletes a retained message (MQTT spec);
+        // idempotent, so it is harmless on every later reconnect.
+        self.client
+            .publish(
+                format!("{}/status", self.base_topic),
+                QoS::AtLeastOnce,
+                true,
+                Vec::<u8>::new(),
+            )
+            .await?;
+
         tracing::info!(zones = zones.len(), "HA MQTT Discovery published");
         Ok(())
     }

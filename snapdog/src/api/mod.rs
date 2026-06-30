@@ -111,9 +111,17 @@ pub async fn serve<S: BuildHasher>(
             axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
                 .await
                 .map_err(|e| anyhow::anyhow!("TLS configuration failed: {e}"))?;
-        // TLS path does not wire graceful shutdown (axum_server uses a Handle);
-        // the cooperative `shutdown` future is only honored on the plain-HTTP path.
+        // TLS graceful shutdown via axum_server's Handle: when the cooperative
+        // `shutdown` future resolves, stop accepting + drain in-flight, then
+        // force-close after a grace period (parity with the plain-HTTP path).
+        let handle = axum_server::Handle::new();
+        let shutdown_handle = handle.clone();
+        tokio::spawn(async move {
+            shutdown.await;
+            shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
+        });
         axum_server::bind_rustls(local_addr, rustls_config)
+            .handle(handle)
             .serve(app.into_make_service())
             .await?;
     } else {
