@@ -172,6 +172,39 @@ jobs:
       - name: Run snapcast contract firewall (process feature)
         run: cargo test --no-default-features --features snapcast-process --test snapcast_rpc
 
+  build-smoke:
+    name: Build Smoke (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    # Gross-signature firewall (IT-T73): every meaningful feature combination must
+    # still compile. `snapcast-embedded` XOR `snapcast-process` is a compile_error!
+    # guard (main.rs), so this is a flat include-list (one backend per cell) — never
+    # a cross-product, never `--all-features`/bare `--no-default-features`.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "embedded (default)", features: "snapcast-embedded,spotify,dbus" }
+          - { name: "embedded minimal", features: "snapcast-embedded" }
+          - { name: "embedded full", features: "snapcast-embedded,ap2,spotify,dbus,api-docs" }
+          - { name: "process minimal", features: "snapcast-process" }
+          - { name: "process full", features: "snapcast-process,ap2,spotify,dbus,api-docs" }
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 25
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      # rust-embed needs webui/out to exist at compile time
+      - name: Build WebUI
+        working-directory: webui
+        run: npm ci --force && npm run build
+      - name: cargo check
+        run: cargo check -p snapdog --no-default-features --features "${{ matrix.features }}"
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
