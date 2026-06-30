@@ -293,13 +293,18 @@ pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
             track_index,
             track_count,
         } => {
-            let repeat = ctx
-                .store
-                .read()
-                .await
-                .zones
-                .get(&ctx.zone_index)
-                .map_or(snapdog_common::RepeatMode::Off, |z| z.repeat);
+            // `repeat` only affects the end-of-playlist decision (next_index ignores
+            // it mid-playlist), so skip the store read on the common advance.
+            let repeat = if track_index + 1 >= track_count {
+                ctx.store
+                    .read()
+                    .await
+                    .zones
+                    .get(&ctx.zone_index)
+                    .map_or(snapdog_common::RepeatMode::Off, |z| z.repeat)
+            } else {
+                snapdog_common::RepeatMode::Off
+            };
             if let Some(i) = nav::next_index(track_index, track_count, repeat) {
                 advance_playlist_track(ds, &playlist_id, i, track_count, ctx).await;
             } else {
