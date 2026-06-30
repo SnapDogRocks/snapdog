@@ -366,7 +366,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [x] `IT-T81` Next/Prev/complete honoring repeat + shuffle + prev-restart >3s — pure `player::nav` extraction + in-source matrix (shuffle deterministic via injected draw). `status: done` · deps: IT-T80, IT-T02.
 - [x] `IT-T82` `source_conflict` LastWins/ReceiverWins + command→state transitions + presence auto-off via `start_paused`+`advance` (ZoneHarness). `status: done` · deps: IT-T80, IT-T03.
 - [ ] `IT-T83` Multi-zone isolation **done** (ZoneHarness); crash restart (`ZONE_RESTART_DELAY`) still blocked (no realistic `run()` Err path). `status: in-progress` · deps: IT-T80, IT-T03.
-- [x] `IT-T84` Serve lifecycle: in-process `/health` + real ephemeral-port `api::serve` → health → graceful shutdown (cooperative future) → listener closed. Full `run_app(Config)` extraction deferred. `status: done` · deps: IT-T04, IT-T02.
+- [x] `IT-T84` Serve lifecycle: in-process `/health` + real ephemeral-port `api::serve` → health → graceful shutdown (cooperative future) → listener closed. Full `run_app(Config)` extraction deferred → `IT-NG-06`. `status: done` · deps: IT-T04, IT-T02.
 
 ### Phase 9 — CI & docs
 - [x] `IT-T90` CI **tier-1 gate**: `cargo test --workspace` runs lib + tier-1 integration targets (always-green; nextest/retries deferred to IT-T05). `status: done` · deps: IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60.
@@ -446,7 +446,7 @@ tasks:
   - { id: IT-T81, phase: 8, status: done, depends_on: [IT-T80, IT-T02] }   # extracted pure player::nav (next_index/prev_index/complete_index + radio wrap) from helpers.rs handlers; in-source matrix covers repeat Off/Track/Playlist, end-of-list stop/wrap, CD-player >3s prev, Complete-vs-Next asymmetry, shuffle determinism via injected draw (no fastrand in tested path). Subsonic behavioral path needs network (out of scope)
   - { id: IT-T82, phase: 8, status: done, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix + command->state transitions (ZoneHarness) + presence auto-off timer via start_paused+tokio::time::advance (tests/zone_player.rs presence_auto_off_stops_zone_after_delay; direct-seed precondition, zone_presence_changed fire barrier)
   - { id: IT-T83, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # multi-zone isolation DONE (tests/zone_player.rs transitions_are_isolated_per_zone via ZoneHarness); crash-restart still blocked (inline in spawn closure; run() has no realistic Err path)
-  - { id: IT-T84, phase: 8, status: done, depends_on: [IT-T04, IT-T02] }   # api::serve gained a cooperative shutdown future + with_graceful_shutdown (plain HTTP); tests/headless_boot.rs: in-process /health oneshot + real loopback ephemeral-port serve→/health→graceful-shutdown→listener-closed. Full run_app(Config) extraction deferred by choice (entry-point blast radius); this covers the genuinely-untested serve+shutdown-over-socket path
+  - { id: IT-T84, phase: 8, status: done, depends_on: [IT-T04, IT-T02] }   # api::serve gained a cooperative shutdown future + with_graceful_shutdown (plain HTTP); tests/headless_boot.rs: in-process /health oneshot + real loopback ephemeral-port serve→/health→graceful-shutdown→listener-closed. Full run_app(Config) extraction deferred by choice → roadmap IT-NG-06 (entry-point blast radius); this covers the genuinely-untested serve+shutdown-over-socket path
   - { id: IT-T90, phase: 9, status: done, depends_on: [IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60] }   # ci.yml unit-tests: cargo test --lib -> --workspace (runs tier-1 integration); nextest/retries = IT-T05
   - { id: IT-T91, phase: 9, status: todo, tier: 2, depends_on: [IT-T05, IT-T32, IT-T56] }
   - { id: IT-T92, phase: 9, status: todo, depends_on: [IT-T14, IT-T90] }
@@ -480,3 +480,13 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
 - **Concurrency model checking** with `loom` (zone-player + shared state) — stretch.
 - **Performance / latency-SLA** (`IT-NG-03`) — MQTT/KNX→audio budget, separate RFC.
 - **`cargo public-api` / semver-checks** on the 3 deps as an early-warning CI step.
+- **Full headless boot via `start_system(Config)`** (`IT-NG-06`, deferred from `IT-T84`) —
+  extract a Cli-independent `start_system(config) -> StartedSystem { addr, shutdown, handle }`
+  from `run_app` (cut after `Arc::new(app_config)`), with a cooperative shutdown token
+  replacing the signal-only `process::exit` path, logging-init + the force-exit watchdog
+  kept in `run_app`, and an `AppConfig.start_receivers` (`#[serde(skip)]`, default `true`)
+  seam to silence receivers. Unlocks an end-to-end real-boot test (embedded snapcast on
+  ephemeral ports, mDNS off, no MQTT/KNX) covering full subsystem assembly + teardown.
+  Deferred for production-entry-point blast radius; `IT-T84` shipped the
+  serve + graceful-shutdown-over-socket path instead. Also wire TLS-path graceful
+  shutdown (axum_server `Handle`).
