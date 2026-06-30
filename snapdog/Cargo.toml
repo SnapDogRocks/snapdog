@@ -81,6 +81,8 @@ tokio = { workspace = true, features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }       # in-process Router::oneshot (IT-0003 tier-1)
 assert-json-diff = "2"                                  # REST/MQTT JSON body asserts
 tokio-tungstenite = "0.26"                              # WS client for the WS lifecycle tests (IT-T21)
+testcontainers = "0.25.0"
+testcontainers-modules = { version = "0.13.0", features = ["mosquitto"] }
 
 [package.metadata.deb]
 section = "sound"

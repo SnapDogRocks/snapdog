@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 31
+  done: 32
   in_progress: 5
-  todo: 11
+  todo: 10
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -332,7 +332,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 ### Phase 3 — MQTT suite
 - [x] `IT-T30` Routing/decode via `test_bridge`: 16 topics→captured cmds; volume 0–1 & 0–100; mute/repeat parse; client-zone validation. `status: done` · deps: IT-T01.
 - [x] `IT-T31` Retained state JSON schema (`zones/{i}/state`,`clients/{i}/state`) + LWT online/offline + HA discovery payloads. `status: done` · deps: IT-T30.
-- [ ] `IT-T32` **(T2)** Real mosquitto via testcontainers: reconnect, QoS1 retained, LWT on ungraceful disconnect; loud-skip w/o Docker. `status: todo` · deps: IT-T05, IT-T30.
+- [x] `IT-T32` **(T2)** Real mosquitto via testcontainers: retained online, QoS1 retained state round-trip, LWT offline on ungraceful disconnect; loud-skip w/o Docker. `status: done` · deps: IT-T05, IT-T30.
 
 ### Phase 4 — KNX suite
 - [x] `IT-T40` Routing/decode via `run_incoming`: GA action→command (repeat/track_repeat/presence_timeout-u16/shuffle/playlist_next/client-latency/client-zone happy path) + explicit-byte decode goldens incl. `decode_u16` + `build_*_ga_map`. `status: done` · deps: IT-T01.
@@ -422,7 +422,7 @@ tasks:
   - { id: IT-T21, phase: 2, status: done, depends_on: [IT-T20, IT-T03] }   # tests/ws_lifecycle.rs (real socket): keepalive ping-on-connect + 64-conn cap → 65th handshake 503; tests/ws_ping.rs (start_paused, isolated binary for the ACTIVE_CONNECTIONS global): 30s ping cadence via time::advance. close-1001-on-shutdown is unreachable in production (api::serve holds a NotifySender for the server lifetime → the broadcast never closes) → roadmap IT-NG-08
   - { id: IT-T30, phase: 3, status: done, depends_on: [IT-T01] }   # existing in-source mqtt routing tests: routes_zone_{volume,mute,control,playlist,seek} + routes_client_{volume,mute,zone_change}
   - { id: IT-T31, phase: 3, status: done, depends_on: [IT-T30] }   # zone+client state schema + HA-discovery payload golden + availability_topic==LWT topic (FIXED a snapdog//status double-slash bug). LWT runtime fire-on-disconnect = tier-2 (IT-T32).
-  - { id: IT-T32, phase: 3, status: todo, tier: 2, depends_on: [IT-T05, IT-T30] }
+  - { id: IT-T32, phase: 3, status: done, tier: 2, depends_on: [IT-T05, IT-T30] }   # tests/mqtt_tier2.rs: real mosquitto via testcontainers — retained "online", QoS1 retained zone-state round-trip, LWT "offline" on ungraceful disconnect (drop the bridge → broker fires LWT immediately). Loud-skips (no panic) when the Docker socket is absent. Verified passing against colima (DOCKER_HOST). dev-deps: testcontainers 0.25 + testcontainers-modules 0.13 (mosquitto)
   - { id: IT-T40, phase: 4, status: done, depends_on: [IT-T01] }   # knx/mod.rs in-source: handle_incoming routing via run_incoming for the uncovered actions (repeat/track_repeat→RepeatMode, presence_timeout→SetAutoOffDelay u16, shuffle, playlist_next, client latency, client zone-change happy path) + explicit-byte decode goldens incl. decode_u16 (zero coverage before) + build_zone/client_ga_map construction from config. (Existing module already covered play/volume/mute/toggle/playlist/dim/client.)
   - { id: IT-T41, phase: 4, status: done, depends_on: [IT-T06, IT-T40] }   # tests/knx_golden.rs: knx-rs-core dependency contract — GroupAddress 3-level round-trip (1/2/3↔0x0A03↔Display) + DPT byte goldens (1.001/5.001/7.x) + public-surface 460-GO/ASAP layout export. Catches a wire-format break on the knx-rs upgrade
   - { id: IT-T42, phase: 4, status: done, depends_on: [IT-T40] }   # knx/mod.rs in-source: track_progress_pct scaling golden + publish_zone_state status GOs with fixed DPTs (volume 5.001, mute/repeat 1.001, repeat-Playlist vs track-repeat-Track mutual exclusion, control_status==track_playing) + publish_zone_track (14-byte DPT16 title + scaled progress) via a recording KnxPublisher mock
