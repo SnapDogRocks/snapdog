@@ -221,6 +221,54 @@ mod tests {
     }
 
     #[test]
+    fn passthrough_is_exact_identity() {
+        let mut r = F32Resampling::new(48000, 48000, 2);
+        let buf: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.013).sin() * 0.5).collect();
+        assert_eq!(
+            r.process(&buf),
+            Some(buf.clone()),
+            "passthrough is lossless"
+        );
+        assert_eq!(r.process_or_passthrough(buf.clone()), buf);
+    }
+
+    #[test]
+    fn buffering_returns_none_until_chunk_full() {
+        let mut r = F32Resampling::new(44100, 48000, 2);
+        // 512 frames (1024 interleaved samples) < CHUNK_SIZE (1024 frames) → buffering.
+        assert_eq!(r.process(&vec![0.1f32; 1024]), None);
+    }
+
+    #[test]
+    fn downsample_48k_to_24k_roughly_halves_frames() {
+        let mut r = F32Resampling::new(48000, 24000, 2);
+        let chunks = 32;
+        let in_frames = chunks * 1024;
+        let mut out = Vec::new();
+        for _ in 0..chunks {
+            let chunk: Vec<f32> = (0..1024 * 2)
+                .map(|i| (i as f32 * 0.02).sin() * 0.5)
+                .collect();
+            if let Some(o) = r.process(&chunk) {
+                out.extend_from_slice(&o);
+            }
+        }
+        let out_frames = out.len() / 2;
+        assert!(
+            out_frames < in_frames,
+            "downsampling reduces the frame count"
+        );
+        assert!(
+            out_frames >= in_frames * 40 / 100 && out_frames <= in_frames * 55 / 100,
+            "out {out_frames} ≈ half of {in_frames} (sinc warm-up + trailing buffer)"
+        );
+        assert!(
+            out.iter().all(|s| s.is_finite()),
+            "all output samples finite"
+        );
+    }
+
+    #[test]
     fn f32_to_pcm_16bit() {
         let bytes = f32_to_pcm(&[0.0, 1.0, -1.0, 0.5], 16);
         assert_eq!(bytes.len(), 8);

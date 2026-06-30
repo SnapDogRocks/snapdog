@@ -1198,6 +1198,34 @@ mod fade_tests {
         assert!(buf[0] < 0.02);
         assert!(buf[198] > 0.9);
     }
+
+    #[test]
+    fn fade_total_samples_from_ms() {
+        assert_eq!(ZoneFade::new(300, 48000).total, 14400); // 48000 * 300 / 1000
+        assert_eq!(ZoneFade::new(100, 1000).total, 100);
+    }
+
+    #[test]
+    fn fade_zero_duration_completes_and_preserves_buffer() {
+        let mut fade = ZoneFade::new(0, 48000);
+        let mut buf = vec![1.0f32; 8];
+        assert!(
+            fade.process(&mut buf, 2),
+            "zero-duration fade completes immediately"
+        );
+        assert_eq!(buf, vec![1.0f32; 8], "buffer left unchanged");
+    }
+
+    #[test]
+    fn fade_gain_is_per_frame_across_channels() {
+        // Both samples of a stereo frame receive the same gain (per-frame decrement).
+        let mut fade = ZoneFade::new(100, 1000);
+        let mut buf = vec![1.0f32; 200];
+        fade.process(&mut buf, 2);
+        for f in 0..100 {
+            assert_eq!(buf[2 * f], buf[2 * f + 1], "L and R share the frame's gain");
+        }
+    }
 }
 
 #[cfg(test)]

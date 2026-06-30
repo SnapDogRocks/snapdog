@@ -432,6 +432,89 @@ mod tests {
     }
 
     #[test]
+    fn zero_db_peaking_is_near_identity() {
+        let mut eq = ZoneEq::new(48000, 2);
+        eq.set_config(&EqConfig {
+            enabled: true,
+            bands: vec![EqBand {
+                freq: 1000.0,
+                gain: 0.0,
+                q: 1.0,
+                filter_type: FilterType::Peaking,
+            }],
+            preset: None,
+        });
+        let input: Vec<f32> = (0..256).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
+        let mut samples = input.clone();
+        eq.process(&mut samples);
+        for (got, want) in samples.iter().zip(&input) {
+            assert!((got - want).abs() < 1e-4, "0 dB peaking ≈ identity");
+        }
+    }
+
+    #[test]
+    fn eq_is_deterministic() {
+        let cfg = EqConfig {
+            enabled: true,
+            bands: vec![EqBand {
+                freq: 800.0,
+                gain: 6.0,
+                q: 1.2,
+                filter_type: FilterType::Peaking,
+            }],
+            preset: None,
+        };
+        let input: Vec<f32> = (0..512).map(|i| (i as f32 * 0.03).sin() * 0.5).collect();
+        let mut a = input.clone();
+        let mut b = input;
+        let mut eq_a = ZoneEq::new(48000, 2);
+        eq_a.set_config(&cfg);
+        let mut eq_b = ZoneEq::new(48000, 2);
+        eq_b.set_config(&cfg);
+        eq_a.process(&mut a);
+        eq_b.process(&mut b);
+        assert_eq!(a, b, "same config + input → bit-identical output");
+    }
+
+    #[test]
+    fn eq_output_stays_finite_across_filter_grid() {
+        // IT-T62 stability: every filter type × representative params × full-scale
+        // input must never produce NaN/Inf (deterministic grid, no RNG).
+        let input: Vec<f32> = (0..2048).map(|i| (i as f32 * 0.07).sin() * 0.9).collect();
+        for ft in [
+            FilterType::LowShelf,
+            FilterType::HighShelf,
+            FilterType::Peaking,
+            FilterType::LowPass,
+            FilterType::HighPass,
+        ] {
+            for freq in [40.0f32, 200.0, 1000.0, 8000.0, 18000.0] {
+                for gain in [-24.0f32, -6.0, 0.0, 6.0, 24.0] {
+                    for q in [0.1f32, 0.707, 2.0, 10.0] {
+                        let mut eq = ZoneEq::new(48000, 2);
+                        eq.set_config(&EqConfig {
+                            enabled: true,
+                            bands: vec![EqBand {
+                                freq,
+                                gain,
+                                q,
+                                filter_type: ft,
+                            }],
+                            preset: None,
+                        });
+                        let mut s = input.clone();
+                        eq.process(&mut s);
+                        assert!(
+                            s.iter().all(|x| x.is_finite()),
+                            "non-finite output: {ft:?} freq={freq} gain={gain} q={q}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn preset_flat_returns_empty() {
         assert_eq!(preset("flat").unwrap().len(), 0);
     }

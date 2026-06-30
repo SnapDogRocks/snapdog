@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 17
+  done: 19
   in_progress: 9
-  todo: 21
+  todo: 19
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -350,9 +350,9 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T56` **(T2)** Real snapserver via repaired `SnapserverHandle`: control + per-zone TCP audio source end-to-end. `status: todo` · deps: IT-T07, IT-T05.
 
 ### Phase 6 — Audio pipeline suite
-- [ ] `IT-T60` Golden PCM vectors: sine/silence/pink → decode→resample→EQ → hashed (tolerance); canonical fixtures. `status: todo` · deps: IT-T06.
-- [ ] `IT-T61` Fade math (pure `fade_gain`): assert monotonic gain ramp + sample count = `sample_rate*fade_ms/1000` (±1) for 0→1 and 1→0 at a fixed `sample_rate`. `status: todo` · deps: IT-T01 · **AC:** ramp monotonic; count exact (±1); pure function — no tokio time needed.
-- [ ] `IT-T62` EQ stability: `proptest` random audio+filter params → finite/bounded (NaN/Inf guard). `status: todo` · deps: IT-T01.
+- [ ] `IT-T60` Golden PCM vectors: resample (passthrough exact + 48k→24k) + EQ goldens **done**; sine/silence/pink **decode**-fixture chain hash deferred → `IT-NG-07` (rubato sinc not bit-exact). `status: in-progress` · deps: IT-T06.
+- [x] `IT-T61` Fade math (pure `fade_gain`): monotonic gain ramp + sample count = `sample_rate*fade_ms/1000` for 0→1 and 1→0; `ZoneFade` total/zero-duration/per-frame. `status: done` · deps: IT-T01.
+- [x] `IT-T62` EQ stability: deterministic filter-grid (random-equivalent, no proptest dep) → finite/bounded (NaN/Inf guard) + 0 dB identity + determinism. `status: done` · deps: IT-T01.
 - [ ] `IT-T63` Subsonic prefetch cache hit vs miss + ICY metadata parse (`wiremock`). `status: todo` · deps: IT-T01.
 
 ### Phase 7 — AirPlay & Spotify seams
@@ -434,9 +434,9 @@ tasks:
   - { id: IT-T54, phase: 5, status: done, depends_on: [IT-T06, IT-T50] }   # tests/snapcast_rpc.rs: line-delimited-JSON TCP fake + golden vectors for ALL 17 JSON-RPC methods (incl. mute/streamUri traps) + framing + response-deser
   - { id: IT-T55, phase: 5, status: done, depends_on: [IT-T50] }   # tests/zone_player.rs: send_audio signature contract (compile-time, default gate) + behavioral PCM-injection via test_pcm_rx seam → CapturingBackend (feature test-harness); embedded F32AudioSender drift caught by embedded.rs compile
   - { id: IT-T56, phase: 5, status: todo, tier: 2, depends_on: [IT-T07, IT-T05] }
-  - { id: IT-T60, phase: 6, status: in-progress, depends_on: [IT-T06] }   # tests/audio.rs: f32→PCM golden done; full decode→resample→EQ chain pending
-  - { id: IT-T61, phase: 6, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T62, phase: 6, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T60, phase: 6, status: in-progress, depends_on: [IT-T06] }   # f32→PCM golden + resample (passthrough exact-identity, 48k→24k ≈half within band, all-finite) + EQ goldens done; symphonia decode-fixture golden (sine/silence/pink) + full-chain hash deferred (rubato sinc not bit-exact) → IT-NG-07
+  - { id: IT-T61, phase: 6, status: done, depends_on: [IT-T01] }   # snapdog-common fade_gain: monotonic/complementary/bounded ramp; runner.rs ZoneFade: total = sr*ms/1000 golden, zero-duration passthrough, per-frame stereo gain
+  - { id: IT-T62, phase: 6, status: done, depends_on: [IT-T01] }   # audio/eq.rs: 0dB-peaking≈identity, bit-identical determinism, deterministic filter-grid (5 types × freq/gain/q) NaN/Inf guard (grid instead of proptest — no new dep)
   - { id: IT-T63, phase: 6, status: todo, depends_on: [IT-T01] }
   - { id: IT-T70, phase: 7, status: todo, depends_on: [IT-T01] }
   - { id: IT-T71, phase: 7, status: in-progress, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (incl. 0dB); RemoteCommand/AP2-SRP pending
@@ -490,3 +490,9 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
   Deferred for production-entry-point blast radius; `IT-T84` shipped the
   serve + graceful-shutdown-over-socket path instead. Also wire TLS-path graceful
   shutdown (axum_server `Handle`).
+- **Decode-fixture audio-chain golden** (`IT-NG-07`, deferred from `IT-T60`) — golden
+  vectors for `symphonia` decode of canonical fixtures (sine/silence/pink in FLAC/MP3)
+  through the full decode→resample→EQ chain. Whole-stream hashing is not bit-exact on
+  the rubato sinc path (f32→f64→f32 + warm-up), so this needs a tolerance/feature-fingerprint
+  approach + committed fixtures. `IT-T60` already covers the resample + EQ stages as units
+  (passthrough exact-identity, 48k→24k ≈half, all-finite; EQ identity/determinism/grid).

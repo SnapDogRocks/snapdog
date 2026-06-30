@@ -308,6 +308,30 @@ mod tests {
         assert_eq!(fade_gain(0, 100, false), 1.0);
     }
 
+    #[test]
+    fn fade_gain_monotonic_complementary_bounded() {
+        // Sweeping remaining total→0: fade-out is non-increasing, fade-in is
+        // non-decreasing, the two are complementary, and both stay within [0, 1].
+        let total = 480u32;
+        let mut last_out = 2.0f32;
+        let mut last_in = -1.0f32;
+        let mut remaining = total;
+        loop {
+            let out = fade_gain(remaining, total, true);
+            let inn = fade_gain(remaining, total, false);
+            assert!((0.0..=1.0).contains(&out) && (0.0..=1.0).contains(&inn));
+            assert!((out + inn - 1.0).abs() < 1e-6, "fade-out + fade-in == 1");
+            assert!(out <= last_out + 1e-6, "fade-out non-increasing");
+            assert!(inn >= last_in - 1e-6, "fade-in non-decreasing");
+            last_out = out;
+            last_in = inn;
+            if remaining == 0 {
+                break;
+            }
+            remaining -= 1;
+        }
+    }
+
     // ── PlaybackControl serialization ─────────────────────────
 
     #[test]
