@@ -12,8 +12,8 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 36
-  in_progress: 2
+  done: 37
+  in_progress: 1
   todo: 9
 ---
 
@@ -315,7 +315,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [x] `IT-T04` `TempEnv` fixture (TempDir `state_dir`, pre-seeded `server_id`, `persist_path` control, `mdns.enabled=false`). `status: todo` · deps: IT-T01 · **AC:** `TempEnv::new()` makes a TempDir `state_dir`, pre-writes a fixed `server_id` UUID, supports `persist_path=None` (disables auto-save), sets `mdns.enabled=false`, cleans up on drop.
 - [ ] `IT-T05` Adopt cargo-nextest + `.config/nextest.toml` (test-groups serial for real-service, retries **tier-2 only**, slow-timeout). `status: todo` · deps: — · **AC:** `cargo nextest run` green; tier-1 has 0 retries.
 - [ ] `IT-T06` Golden-vector harness: `tests/fixtures/` + load/compare helper, `UPDATE_GOLDEN=1`, ±tolerance for float DPT/audio (`IT-DEC-07`). `status: todo` · deps: IT-T01 · **AC:** compare returns Ok iff actual is within tolerance of golden; `UPDATE_GOLDEN=1` regenerates fixtures; one round-trippable golden vector exists.
-- [ ] `IT-T07` **PREREQ**: repair `tests/integration.rs` `start_system`/`start_system_with_api` vs the new `SnapcastClient` API (`sync_initial_state`, no `init`/`state`); un-ignore the revived tests. `status: todo` · deps: — · **AC:** previously-`#[ignore]`d integration tests compile and pass under tier-2; **includes any `SnapserverHandle` updates the new API needs (feeds IT-T56)**.
+- [x] `IT-T07` **PREREQ**: `tests/integration.rs` repaired against the new `SnapcastClient` API (`sync_initial_state`, no `init`/`state`); the stale `#[cfg(any())]` tier-2 snapserver bodies (carrying further API drift) were **removed** rather than kept as dead code — real-snapserver end-to-end is owned by `IT-T56`. Live tier-2 Subsonic + MQTT tests remain. `status: done` · deps: — · **AC:** `tests/integration.rs` compiles under tier-2 (`--features snapcast-process`); no dead/ignored bodies remain.
 - [x] `IT-T08` Snapcast **0.16.1 pin** decision recorded as **ADR-019** (stay pinned until the firewall + `IT-T73` are green, then `IT-NG-05`); build-smoke matrix is `IT-T73`. `status: done` · deps: —.
 
 ### Phase 1 — REST contract suite
@@ -411,7 +411,7 @@ tasks:
   - { id: IT-T04, phase: 0, status: done, depends_on: [IT-T01] }   # build_test_app: TempDir + persist=None + mdns-off
   - { id: IT-T05, phase: 0, status: todo, depends_on: [] }
   - { id: IT-T06, phase: 0, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T07, phase: 0, status: in-progress, depends_on: [] }  # snapcast helpers repaired; tier-2 bodies need rewrite (see file TODO)
+  - { id: IT-T07, phase: 0, status: done, depends_on: [] }  # helpers repaired; dead #[cfg(any())] tier-2 bodies removed — real-snapserver e2e owned by IT-T56
   - { id: IT-T08, phase: 0, status: done, depends_on: [] }   # ADR-019 (docs/architecture/decisions.md): stay pinned snapcast 0.16.1 until the seam firewall (IT-T52/T54/T55 + IT-T73 build-smoke) is complete+green, then upgrade as IT-NG-05 behind it; resolves the dangling README link too
   - { id: IT-T10, phase: 1, status: done, depends_on: [IT-T01] }   # api::build_router + TestApp::request (oneshot)
   - { id: IT-T11, phase: 1, status: done, depends_on: [IT-T10, IT-T03] }   # tests/rest_zones.rs (10 tests)
