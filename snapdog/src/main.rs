@@ -467,6 +467,10 @@ pub async fn run_app() -> Result<()> {
             api_notify,
             eq_store.clone(),
             knx_device_control,
+            // Production never triggers cooperative shutdown (the process exits via
+            // the main loop's signal handler); a never-resolving future preserves
+            // the prior serve-until-exit behavior. The seam exists for tests (IT-T84).
+            std::future::pending::<()>(),
         )
         .await
         {

@@ -75,6 +75,7 @@ pub async fn serve<S: BuildHasher>(
     notifications: ws::NotifySender,
     eq_store: std::sync::Arc<std::sync::Mutex<crate::audio::eq::EqStore>>,
     knx_device_control: Option<crate::knx::DeviceControlHandle>,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
     let state = Arc::new(AppState {
         config,
@@ -110,11 +111,15 @@ pub async fn serve<S: BuildHasher>(
             axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
                 .await
                 .map_err(|e| anyhow::anyhow!("TLS configuration failed: {e}"))?;
+        // TLS path does not wire graceful shutdown (axum_server uses a Handle);
+        // the cooperative `shutdown` future is only honored on the plain-HTTP path.
         axum_server::bind_rustls(local_addr, rustls_config)
             .serve(app.into_make_service())
             .await?;
     } else {
-        axum::serve(listener, app).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await?;
     }
     Ok(())
 }
