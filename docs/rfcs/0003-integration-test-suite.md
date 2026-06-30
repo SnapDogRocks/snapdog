@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 42
-  in_progress: 1
-  todo: 4
+  done: 45
+  in_progress: 2
+  todo: 0
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -370,10 +370,10 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 
 ### Phase 9 — CI & docs
 - [x] `IT-T90` CI **tier-1 gate**: `cargo test --workspace` runs lib + tier-1 integration targets (always-green; nextest/retries deferred to IT-T05). `status: done` · deps: IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60.
-- [ ] `IT-T91` **(T2)** CI tier-2 job: services (snapserver/navidrome/mosquitto via testcontainers), **loud-skip** when absent, **artifact capture** on failure. `status: todo` · deps: IT-T05, IT-T32, IT-T56.
-- [ ] `IT-T92` OpenAPI contract step + coverage (`cargo-llvm-cov`) + thresholds + flake quarantine. `status: todo` · deps: IT-T14, IT-T90.
-- [ ] `IT-T93` Docs: `tests/README` (tiers, how to run, how to add a test, golden-update flow) + test policy. `status: todo` · deps: IT-T90.
-- [ ] `IT-T94` Export `testkit` reuse hooks for `BT-0001`/`LI-0002` (ReceiverEvent capture, time guard, ephemeral pool). `status: todo` · deps: IT-T01.
+- [x] `IT-T91` **(T2)** CI tier-2 job: services (snapserver/navidrome/mosquitto via testcontainers), **loud-skip** when absent, **artifact capture** on failure. `status: done` · deps: IT-T05, IT-T32, IT-T56. **Done:** the `integration-tests` job runs the tier-2 binaries via `cargo nextest run --profile ci` (serial `tier2-real-service` group + tier-2 retries from `.config/nextest.toml`); services = navidrome (job service) + apt snapserver/mosquitto + Docker testcontainers (mqtt_tier2); each test loud-skips when its service is absent; the JUnit report is uploaded as an artifact.
+- [x] `IT-T92` OpenAPI contract step + coverage (`cargo-llvm-cov`) + thresholds + flake quarantine. `status: done` · deps: IT-T14, IT-T90. **Done:** explicit API+config contract gate step (`openapi_contract` + `config_contract`); a `coverage` job runs `cargo llvm-cov --fail-under-lines 45` (current ≈50.7% line) + uploads lcov; flake-quarantine mechanism = nextest `ci` override on `test(/^quarantine_/)` (retries=5, serialized).
+- [x] `IT-T93` Docs: `tests/README` (tiers, how to run, how to add a test, golden-update flow) + test policy. `status: done` · deps: IT-T90. **Done:** `snapdog/tests/README.md` — tiers, run commands (incl. nextest + `UPDATE_GOLDEN`), the testkit surface, golden flow, how to add a tier-1/tier-2 test, and a per-file map.
+- [ ] `IT-T94` Export `testkit` reuse hooks for `BT-0001`/`LI-0002` (ReceiverEvent capture, time guard, ephemeral pool). `status: in-progress` · deps: IT-T01. **Partial:** the ephemeral-pool + virtual-time + golden hooks are consolidated in `tests/common` and documented as the reuse surface (tests/README — "sibling suites can lift"); a standalone cross-repo `snapdog-testkit` crate + a `ReceiverEvent`-capture hook are deferred → `IT-NG-10`.
 
 ## 11. Definition of done (coverage goals)
 - **Tier-1 is the gate**: green on every push, no Docker/network, no retries, runs in
@@ -448,10 +448,10 @@ tasks:
   - { id: IT-T83, phase: 8, status: done, depends_on: [IT-T80, IT-T03] }   # multi-zone isolation (tests/zone_player.rs) + crash-restart: extracted supervise() now catches PANICS via catch_unwind (the real crash mode) + restarts with capped exponential backoff + gives up after ZONE_MAX_CONSECUTIVE_CRASHES — fixes silent zone-death (the old while-let-Err loop never fired; run() never returns Err). Tested with panicking AsyncFnMut closures (supervise_tests, start_paused). Also fixed the on_progress current-start u32 underflow (saturating_sub)
   - { id: IT-T84, phase: 8, status: done, depends_on: [IT-T04, IT-T02] }   # api::serve gained a cooperative shutdown future + with_graceful_shutdown (plain HTTP); tests/headless_boot.rs: in-process /health oneshot + real loopback ephemeral-port serve→/health→graceful-shutdown→listener-closed. Full run_app(Config) extraction deferred by choice → roadmap IT-NG-06 (entry-point blast radius); this covers the genuinely-untested serve+shutdown-over-socket path
   - { id: IT-T90, phase: 9, status: done, depends_on: [IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60] }   # ci.yml unit-tests: cargo test --lib -> --workspace (runs tier-1 integration); nextest/retries = IT-T05
-  - { id: IT-T91, phase: 9, status: todo, tier: 2, depends_on: [IT-T05, IT-T32, IT-T56] }
-  - { id: IT-T92, phase: 9, status: todo, depends_on: [IT-T14, IT-T90] }
-  - { id: IT-T93, phase: 9, status: todo, depends_on: [IT-T90] }
-  - { id: IT-T94, phase: 9, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T91, phase: 9, status: done, tier: 2, depends_on: [IT-T05, IT-T32, IT-T56] }  # ci.yml integration-tests: cargo nextest run --profile ci over the 4 tier-2 binaries (serial tier2-real-service group + tier-2 retries); navidrome/snapserver/mosquitto + testcontainers; loud-skip; JUnit artifact upload
+  - { id: IT-T92, phase: 9, status: done, depends_on: [IT-T14, IT-T90] }  # ci.yml: explicit openapi_contract+config_contract gate; coverage job cargo llvm-cov --fail-under-lines 45 (~50.7% now) + lcov artifact; flake quarantine = nextest ci override test(/^quarantine_/) retries=5
+  - { id: IT-T93, phase: 9, status: done, depends_on: [IT-T90] }  # snapdog/tests/README.md: tiers, run/nextest/UPDATE_GOLDEN commands, testkit surface, golden flow, how-to-add, per-file map
+  - { id: IT-T94, phase: 9, status: in-progress, depends_on: [IT-T01] }  # ephemeral-pool + time-guard + golden consolidated in tests/common + documented as reuse surface; standalone snapdog-testkit crate + ReceiverEvent-capture hook deferred → IT-NG-10
 ```
 <!-- IT-LEDGER-END -->
 
@@ -509,3 +509,9 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
   the rubato sinc path (f32→f64→f32 + warm-up), so this needs a tolerance/feature-fingerprint
   approach + committed fixtures. `IT-T60` already covers the resample + EQ stages as units
   (passthrough exact-identity, 48k→24k ≈half, all-finite; EQ identity/determinism/grid).
+- **Standalone `snapdog-testkit` crate** (`IT-NG-10`, deferred from `IT-T94`) — the
+  ephemeral pool, virtual-time, and golden helpers are consolidated + documented in
+  `tests/common` (intra-crate reuse), but true cross-repo reuse by `BT-0001`/`LI-0002`
+  needs them lifted into a published dev-dependency crate, plus a `ReceiverEvent`-capture
+  hook (no running-receiver harness exists yet — the receiver mappers are pure-fn tested
+  in-source). Packaging + the capture hook are the remaining work.

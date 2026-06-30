@@ -31,16 +31,28 @@ test-group = 'tier2-real-service'
 retries = 2
 slow-timeout = { period = "45s", terminate-after = 3 }
 
-# A CI profile: same semantics, but fail the run if anyone marks a test #[ignore]
-# without wiring it back in, and keep going to collect all failures.
+# A CI profile: same semantics, plus a JUnit report (uploaded as a CI artifact on
+# failure) and keep-going to collect all failures in one run.
 [profile.ci]
 retries = 0
 slow-timeout = { period = "60s" }
 fail-fast = false
 final-status-level = "slow"
 
+[profile.ci.junit]
+path = "junit.xml"
+
 [[profile.ci.overrides]]
 filter = 'binary(integration) | binary(snapserver_e2e) | binary(mqtt_tier2)'
 test-group = 'tier2-real-service'
 retries = 2
 slow-timeout = { period = "45s", terminate-after = 3 }
+
+# Flake quarantine (IT-T92): a known-flaky test whose name starts with
+# `quarantine_` is retried generously and serialized, so it never blocks CI while
+# it's being investigated — without granting retries to the rest of the suite.
+# (There are none today; this is the standing mechanism + naming convention.)
+[[profile.ci.overrides]]
+filter = 'test(/^quarantine_/)'
+test-group = 'tier2-real-service'
+retries = 5

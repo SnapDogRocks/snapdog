@@ -4,6 +4,9 @@
 /target/
 .cargo/
 
+# Coverage output (cargo-llvm-cov, IT-T92)
+/lcov.info
+
 # Local Xcode/Swift build output
 /build_local/
 

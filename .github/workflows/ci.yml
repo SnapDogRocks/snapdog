@@ -127,6 +127,8 @@ jobs:
       # the ZonePlayerContext::test_pcm_rx seam, which `--workspace` doesn't enable.
       - name: Run test-harness zone-player tests
         run: cargo test -p snapdog --features test-harness --test zone_player
+      - name: API + config contract gate (IT-T92 / IT-T14)
+        run: cargo test -p snapdog --test openapi_contract --test config_contract
 
   integration-tests:
     name: Integration Tests
@@ -151,6 +153,9 @@ jobs:
       - name: Build WebUI
         working-directory: webui
         run: npm ci --force && npm run build
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       - name: Install snapserver + mosquitto
         run: |
           sudo apt-get update
@@ -167,12 +172,21 @@ jobs:
           SNAPDOG_TEST_MQTT_USERNAME=
           SNAPDOG_TEST_MQTT_PASSWORD=
           EOF
-      - name: Run integration tests
-        run: cargo test --no-default-features --features snapcast-process --test integration -- --test-threads=1
-      - name: Run snapcast contract firewall (process feature)
-        run: cargo test --no-default-features --features snapcast-process --test snapcast_rpc
-      - name: Run snapserver e2e (process feature, IT-T56)
-        run: cargo test --no-default-features --features snapcast-process --test snapserver_e2e -- --test-threads=1
+      - name: Run tier-2 integration tests (process feature)
+        # nextest applies the serial `tier2-real-service` group + tier-2-only
+        # retries from .config/nextest.toml; each test loud-skips if its service
+        # is unavailable. Covers integration (Subsonic/MQTT), the snapcast JSON-RPC
+        # firewall, the real-snapserver e2e (IT-T56), and real-mosquitto (IT-T32).
+        run: |
+          cargo nextest run --profile ci --no-default-features --features snapcast-process \
+            -E 'binary(integration) | binary(snapcast_rpc) | binary(snapserver_e2e) | binary(mqtt_tier2)'
+      - name: Upload tier-2 test report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: tier2-nextest-report
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   build-smoke:
     name: Build Smoke (${{ matrix.name }})
@@ -227,6 +241,32 @@ jobs:
             --ignore RUSTSEC-2026-0104 \
             --ignore RUSTSEC-2025-0134 \
             --ignore RUSTSEC-2026-0097
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
+      - name: WebUI placeholder (rust-embed needs the dir at build time)
+        run: mkdir -p webui/out && touch webui/out/index.html
+      - name: Coverage (tier-1, gate on threshold)
+        # Default features (snapcast-embedded). Threshold is a regression guard set
+        # a few points below the current ~50% line coverage (IT-T92).
+        run: cargo llvm-cov -p snapdog --lcov --output-path lcov.info --fail-under-lines 45
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          if-no-files-found: ignore
 
   knxprod:
     name: KNX Product Database
