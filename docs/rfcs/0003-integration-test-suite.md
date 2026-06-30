@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 30
+  done: 31
   in_progress: 5
-  todo: 12
+  todo: 11
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -327,7 +327,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 
 ### Phase 2 — WebSocket suite
 - [x] `IT-T20` All **7** notification variants emitted on the right mutation; serde `tag`/snake_case round-trip; **a compile-time exhaustiveness match over all 7 `Notification` variants** (catch silent add/rename, mirrors IT-T52). `status: todo` · deps: IT-T10, IT-T03.
-- [ ] `IT-T21` Ping cadence (30s via time::pause), close 1001 on shutdown, 65th conn→503. `status: todo` · deps: IT-T20, IT-T03.
+- [x] `IT-T21` Ping cadence (30s via time::pause) + 65th conn→503 (real socket). Close-1001-on-shutdown is unreachable in prod → `IT-NG-08`. `status: done` · deps: IT-T20, IT-T03.
 
 ### Phase 3 — MQTT suite
 - [x] `IT-T30` Routing/decode via `test_bridge`: 16 topics→captured cmds; volume 0–1 & 0–100; mute/repeat parse; client-zone validation. `status: done` · deps: IT-T01.
@@ -419,7 +419,7 @@ tasks:
   - { id: IT-T13, phase: 1, status: done, depends_on: [IT-T10] }   # tests/rest_surfaces.rs: media playlists []/index-404, client-speaker 404/422, knx programming-mode 409 (device-mode inactive), system radios/version/name gaps. Network 200 paths (subsonic/spinorama) out of scope
   - { id: IT-T14, phase: 1, status: done, depends_on: [IT-T10] }   # tests/openapi_contract.rs (structural: 3.1.0/title/version + key paths + op-count floor 85 + component schemas) + tests/auth.rs (Bearer 401 without/wrong key, 200 with, /health unauth) — the auth test CAUGHT + now guards a real auth-bypass (Extension/middleware layer-order in build_router)
   - { id: IT-T20, phase: 2, status: done, depends_on: [IT-T10, IT-T03] }   # tests/ws.rs (serde + exhaustiveness + tap)
-  - { id: IT-T21, phase: 2, status: todo, depends_on: [IT-T20, IT-T03] }
+  - { id: IT-T21, phase: 2, status: done, depends_on: [IT-T20, IT-T03] }   # tests/ws_lifecycle.rs (real socket): keepalive ping-on-connect + 64-conn cap → 65th handshake 503; tests/ws_ping.rs (start_paused, isolated binary for the ACTIVE_CONNECTIONS global): 30s ping cadence via time::advance. close-1001-on-shutdown is unreachable in production (api::serve holds a NotifySender for the server lifetime → the broadcast never closes) → roadmap IT-NG-08
   - { id: IT-T30, phase: 3, status: done, depends_on: [IT-T01] }   # existing in-source mqtt routing tests: routes_zone_{volume,mute,control,playlist,seek} + routes_client_{volume,mute,zone_change}
   - { id: IT-T31, phase: 3, status: done, depends_on: [IT-T30] }   # zone+client state schema + HA-discovery payload golden + availability_topic==LWT topic (FIXED a snapdog//status double-slash bug). LWT runtime fire-on-disconnect = tier-2 (IT-T32).
   - { id: IT-T32, phase: 3, status: todo, tier: 2, depends_on: [IT-T05, IT-T30] }
@@ -489,6 +489,13 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
   ephemeral ports, mDNS off, no MQTT/KNX) covering full subsystem assembly + teardown.
   Deferred for production-entry-point blast radius; `IT-T84` shipped the
   serve + graceful-shutdown-over-socket path instead.
+- **WebSocket graceful-close on shutdown** (`IT-NG-08`, latent, found in `IT-T21`) — the
+  `handle_socket` 1001 ("Going Away") close only fires when the notification broadcast
+  channel closes, but `api::serve` keeps a `NotifySender` in `AppState` for the whole
+  server lifetime, so a real shutdown never closes the channel — live WS clients get an
+  abrupt TCP drop, not a clean 1001. Fix would thread the cooperative shutdown token
+  (added in `IT-T84`) into `handle_socket` to send 1001 before teardown. Low severity
+  (clients reconnect); flagged for a follow-up.
 - **Decode-fixture audio-chain golden** (`IT-NG-07`, deferred from `IT-T60`) — golden
   vectors for `symphonia` decode of canonical fixtures (sine/silence/pink in FLAC/MP3)
   through the full decode→resample→EQ chain. Whole-stream hashing is not bit-exact on
