@@ -12,8 +12,8 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 35
-  in_progress: 3
+  done: 36
+  in_progress: 2
   todo: 9
 ---
 
@@ -365,7 +365,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [x] `IT-T80` Zone-player transitions (track None iff Idle) + persistence roundtrip (restore subset, playback→Stopped). `status: done` · deps: IT-T01, IT-T04.
 - [x] `IT-T81` Next/Prev/complete honoring repeat + shuffle + prev-restart >3s — pure `player::nav` extraction + in-source matrix (shuffle deterministic via injected draw). `status: done` · deps: IT-T80, IT-T02.
 - [x] `IT-T82` `source_conflict` LastWins/ReceiverWins + command→state transitions + presence auto-off via `start_paused`+`advance` (ZoneHarness). `status: done` · deps: IT-T80, IT-T03.
-- [ ] `IT-T83` Multi-zone isolation **done** (ZoneHarness); crash restart (`ZONE_RESTART_DELAY`) still blocked (no realistic `run()` Err path). `status: in-progress` · deps: IT-T80, IT-T03.
+- [x] `IT-T83` Multi-zone isolation + crash-restart: `supervise()` catches panics (`catch_unwind`) + restarts with capped backoff + gives-up cap — fixes silent zone-death on panic. `status: done` · deps: IT-T80, IT-T03.
 - [x] `IT-T84` Serve lifecycle: in-process `/health` + real ephemeral-port `api::serve` → health → graceful shutdown (cooperative future) → listener closed. Full `run_app(Config)` extraction deferred → `IT-NG-06`. `status: done` · deps: IT-T04, IT-T02.
 
 ### Phase 9 — CI & docs
@@ -445,7 +445,7 @@ tasks:
   - { id: IT-T80, phase: 8, status: done, depends_on: [IT-T01, IT-T04] }   # state/mod.rs: persist/load roundtrip + transient-reset (existing 5 tests) + SourceType/PlaybackState wire-format golden; track-None-iff-Idle holds via reset
   - { id: IT-T81, phase: 8, status: done, depends_on: [IT-T80, IT-T02] }   # extracted pure player::nav (next_index/prev_index/complete_index + radio wrap) from helpers.rs handlers; in-source matrix covers repeat Off/Track/Playlist, end-of-list stop/wrap, CD-player >3s prev, Complete-vs-Next asymmetry, shuffle determinism via injected draw (no fastrand in tested path). Subsonic behavioral path needs network (out of scope)
   - { id: IT-T82, phase: 8, status: done, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix + command->state transitions (ZoneHarness) + presence auto-off timer via start_paused+tokio::time::advance (tests/zone_player.rs presence_auto_off_stops_zone_after_delay; direct-seed precondition, zone_presence_changed fire barrier)
-  - { id: IT-T83, phase: 8, status: in-progress, depends_on: [IT-T80, IT-T03] }   # multi-zone isolation DONE (tests/zone_player.rs transitions_are_isolated_per_zone via ZoneHarness); crash-restart still blocked (inline in spawn closure; run() has no realistic Err path)
+  - { id: IT-T83, phase: 8, status: done, depends_on: [IT-T80, IT-T03] }   # multi-zone isolation (tests/zone_player.rs) + crash-restart: extracted supervise() now catches PANICS via catch_unwind (the real crash mode) + restarts with capped exponential backoff + gives up after ZONE_MAX_CONSECUTIVE_CRASHES — fixes silent zone-death (the old while-let-Err loop never fired; run() never returns Err). Tested with panicking AsyncFnMut closures (supervise_tests, start_paused). Also fixed the on_progress current-start u32 underflow (saturating_sub)
   - { id: IT-T84, phase: 8, status: done, depends_on: [IT-T04, IT-T02] }   # api::serve gained a cooperative shutdown future + with_graceful_shutdown (plain HTTP); tests/headless_boot.rs: in-process /health oneshot + real loopback ephemeral-port serve→/health→graceful-shutdown→listener-closed. Full run_app(Config) extraction deferred by choice → roadmap IT-NG-06 (entry-point blast radius); this covers the genuinely-untested serve+shutdown-over-socket path
   - { id: IT-T90, phase: 9, status: done, depends_on: [IT-T05, IT-T11, IT-T20, IT-T30, IT-T40, IT-T50, IT-T60] }   # ci.yml unit-tests: cargo test --lib -> --workspace (runs tier-1 integration); nextest/retries = IT-T05
   - { id: IT-T91, phase: 9, status: todo, tier: 2, depends_on: [IT-T05, IT-T32, IT-T56] }
@@ -501,8 +501,8 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
   + `send_rtsp` (SET_PARAMETER volume/metadata/coverart/progress; SETUP+DACP → `RemoteAvailable`),
   plus the AP2 `FilePairingStore` round-trip. Needs the `#[serial]` + `CI=1` (mDNS-off) loopback
   harness and the shairplay 0.6 pairing-store APIs (`load_identity`/`save_identity`). The pure
-  callback mappers are already covered (`IT-T70`/`IT-T71`); this is the end-to-end layer. Also file
-  the `on_progress` `current - start` u32 underflow (airplay.rs) — guard with `saturating_sub`.
+  callback mappers are already covered (`IT-T70`/`IT-T71`); this is the end-to-end layer. (The
+  `on_progress` `current - start` u32 underflow it originally flagged is now fixed via `saturating_sub`.)
 - **Decode-fixture audio-chain golden** (`IT-NG-07`, deferred from `IT-T60`) — golden
   vectors for `symphonia` decode of canonical fixtures (sine/silence/pink in FLAC/MP3)
   through the full decode→resample→EQ chain. Whole-stream hashing is not bit-exact on

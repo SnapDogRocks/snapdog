@@ -190,8 +190,10 @@ impl shairplay::AudioHandler for BridgeHandler {
 
     fn on_progress(&self, start: u32, current: u32, end: u32) {
         let sample_rate = u64::from(self.sample_rate.load(Ordering::Relaxed));
-        let position_ms = (u64::from(current - start) * 1000) / sample_rate;
-        let duration_ms = (u64::from(end - start) * 1000) / sample_rate;
+        // saturating_sub: shairplay can deliver current < start (seek-before-start)
+        // or end < start; plain `-` would panic in debug / wrap in release.
+        let position_ms = (u64::from(current.saturating_sub(start)) * 1000) / sample_rate;
+        let duration_ms = (u64::from(end.saturating_sub(start)) * 1000) / sample_rate;
         let _ = self.event_tx.try_send(ReceiverEvent::Progress {
             position_ms,
             duration_ms,

@@ -38,6 +38,12 @@ pub(super) const PCM_DECODE_CHANNEL_SIZE: usize = 64;
 
 /// Delay before restarting a crashed zone player.
 const ZONE_RESTART_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+/// Cap on the exponential restart backoff for a repeatedly-crashing zone player.
+const ZONE_RESTART_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
+/// A zone run lasting at least this long is "stable" — it resets the crash counter.
+const ZONE_STABLE_RUN: std::time::Duration = std::time::Duration::from_secs(60);
+/// Consecutive crashes (without a stable run) before giving up on a zone player.
+const ZONE_MAX_CONSECUTIVE_CRASHES: u32 = 8;
 
 /// Spawn a `ZonePlayer` task for each configured zone. Returns command senders.
 ///
@@ -59,16 +65,64 @@ pub async fn spawn_zone_players(
 
         tokio::spawn(async move {
             let mut cmd_rx = cmd_rx;
-            while let Err(e) = run(zone_index, &mut cmd_rx, cmd_tx.clone(), ctx.clone()).await {
-                tracing::error!(zone = zone_index, error = %e, "Zone player crashed, restarting in 5s");
-                tokio::time::sleep(ZONE_RESTART_DELAY).await;
-            }
+            supervise(zone_index, async move || {
+                run(zone_index, &mut cmd_rx, cmd_tx.clone(), ctx.clone()).await
+            })
+            .await;
         });
 
         tracing::info!(zone = %zone.name, "Zone started");
     }
 
     Ok(senders)
+}
+
+/// Supervise a zone player: run `attempt` to completion, restarting on a returned
+/// error OR a panic (caught via `catch_unwind`) with capped exponential backoff.
+///
+/// A run lasting at least [`ZONE_STABLE_RUN`] resets the backoff and crash counter;
+/// after [`ZONE_MAX_CONSECUTIVE_CRASHES`] rapid crashes it gives up (the zone stays
+/// offline, logged loudly) rather than busy-restarting a deterministic panic. A clean
+/// `Ok(())` ends supervision. (The previous `while let Err(..) = run(..)` loop only
+/// caught `Err` — which `run` never returns — so a panicking zone died silently.)
+async fn supervise<F>(zone_index: usize, mut attempt: F)
+where
+    F: AsyncFnMut() -> Result<()>,
+{
+    use futures_util::FutureExt as _;
+
+    let mut backoff = ZONE_RESTART_DELAY;
+    let mut consecutive: u32 = 0;
+    loop {
+        let started = tokio::time::Instant::now();
+        match std::panic::AssertUnwindSafe(attempt()).catch_unwind().await {
+            Ok(Ok(())) => break, // clean shutdown
+            Ok(Err(e)) => tracing::error!(zone = zone_index, error = %e, "Zone player crashed"),
+            Err(_) => tracing::error!(zone = zone_index, "Zone player panicked"),
+        }
+
+        // A long, healthy run before the crash counts as a fresh failure.
+        if started.elapsed() >= ZONE_STABLE_RUN {
+            consecutive = 0;
+            backoff = ZONE_RESTART_DELAY;
+        }
+        consecutive += 1;
+        if consecutive >= ZONE_MAX_CONSECUTIVE_CRASHES {
+            tracing::error!(
+                zone = zone_index,
+                crashes = consecutive,
+                "Zone player failed repeatedly — giving up (offline until process restart)"
+            );
+            break;
+        }
+        tracing::warn!(
+            zone = zone_index,
+            delay_s = backoff.as_secs(),
+            "Restarting zone player"
+        );
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(ZONE_RESTART_MAX_DELAY);
+    }
 }
 
 /// Stop any active decode task and reset the playback position to zero.
@@ -1258,5 +1312,44 @@ mod conflict_tests {
                 "ReceiverWins blocks local playback while a receiver is active"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod supervise_tests {
+    use super::{ZONE_MAX_CONSECUTIVE_CRASHES, supervise};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[tokio::test(start_paused = true)]
+    #[allow(clippy::manual_assert)] // the panic deliberately simulates a zone crash
+    async fn crashed_zone_restarts_then_recovers() {
+        let calls = Arc::new(AtomicU32::new(0));
+        let c = calls.clone();
+        // First attempt panics → supervisor catches it, backs off, restarts; the
+        // second attempt returns Ok and supervision ends. (Without catch_unwind the
+        // panic would kill the zone task silently — the bug this guards.)
+        supervise(1, async move || {
+            if c.fetch_add(1, Ordering::SeqCst) == 0 {
+                panic!("boom");
+            }
+            Ok(())
+        })
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn repeated_crashes_give_up_without_looping_forever() {
+        let calls = Arc::new(AtomicU32::new(0));
+        let c = calls.clone();
+        // Always panics → supervisor gives up after the consecutive-crash cap rather
+        // than busy-restarting a deterministic panic forever.
+        supervise(1, async move || {
+            c.fetch_add(1, Ordering::SeqCst);
+            panic!("always");
+        })
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), ZONE_MAX_CONSECUTIVE_CRASHES);
     }
 }
