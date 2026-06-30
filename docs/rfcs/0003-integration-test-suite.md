@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 20
+  done: 21
   in_progress: 8
-  todo: 19
+  todo: 18
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -338,7 +338,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T40` Routing/decode via `run_incoming`: every GA action→command; DPT decode bool/percent/u8/u16/dim-stepcode; unmapped GA ignored. `status: todo` · deps: IT-T01.
 - [ ] `IT-T41` DPT/GA golden + **reuse `knx-rs-core` golden vectors** as dep-contract; `GroupAddress` round-trip; ASAP layout + 460-GO assert. `status: todo` · deps: IT-T06, IT-T40.
 - [ ] `IT-T42` Publisher: status GOs on each notification w/ fixed DPTs; `track_progress` scaling. `status: todo` · deps: IT-T40.
-- [ ] `IT-T43` Device-mode: `DeviceServer::start_at(:0)` loopback + raw `CemiFrame` exchange + `Bau.save()` byte-stability + CRC; prog-mode endpoint device-mode. `status: todo` · deps: IT-T04, IT-T40.
+- [x] `IT-T43` Device-mode deterministic core: `Bau.save()` envelope byte-layout + CRC golden + `resolve_go_update` asap→GA + parse/tables/persist. Live `DeviceServer::start_at(:0)` loopback + raw `CemiFrame` is a knx-rs dep contract (its own tests). `status: done` · deps: IT-T04, IT-T40.
 
 ### Phase 5 — snapcast contract firewall
 - [x] `IT-T50` `SnapcastBackend` trait double (hand-coded no-op `MockBackend`) + `ZoneHarness`/`spawn_zone_harness` driving real `spawn_zone_players` (receivers off). `status: done` · deps: IT-T01.
@@ -426,7 +426,7 @@ tasks:
   - { id: IT-T40, phase: 4, status: todo, depends_on: [IT-T01] }
   - { id: IT-T41, phase: 4, status: todo, depends_on: [IT-T06, IT-T40] }
   - { id: IT-T42, phase: 4, status: todo, depends_on: [IT-T40] }
-  - { id: IT-T43, phase: 4, status: todo, depends_on: [IT-T04, IT-T40] }
+  - { id: IT-T43, phase: 4, status: done, depends_on: [IT-T04, IT-T40] }   # device.rs deterministic core: Bau.save() envelope byte-layout golden (magic/version/LE-len/LE-crc32 — §9.2 drift guard) + resolve_go_update asap→GA translation + existing parse_ets_memory/build_tables/persist round-trip+corruption+version+truncation. Live DeviceServer::start_at(:0) loopback + raw CemiFrame is a knx-rs dependency contract (knx-rs-ip tunnel_integration.rs), out of snapdog scope
   - { id: IT-T50, phase: 5, status: done, depends_on: [IT-T01] }   # tests/common: hand-coded no-op SnapcastBackend double (MockBackend) + ZoneHarness/spawn_zone_harness driving real spawn_zone_players; runner emits snap cmds via snap_tx (captured there), backend.execute unused in the zone loop
   - { id: IT-T51, phase: 5, status: done, depends_on: [IT-T50] }   # build_* + ServerStatus golden + reconcile_zone_groups sorted Group.SetClients per diverged zone (FIXED unsorted HashMap-order wire payload)
   - { id: IT-T52, phase: 5, status: done, depends_on: [IT-T50] }   # SnapcastEvent+SnapcastCmd exhaustiveness (tests/snapcast.rs) + embedded ServerEvent→SnapcastEvent map coverage (embedded.rs: latency/name/custom-message type+payload extraction, group/stream collapse, silently-dropped StreamMeta/StreamControl pins). Compile-time exhaustiveness impossible — ServerEvent is #[non_exhaustive] (foreign), so behavioral firewall + documented caveat

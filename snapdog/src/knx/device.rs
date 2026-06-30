@@ -880,4 +880,80 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn persist_envelope_byte_layout() {
+        // Pin the on-disk format (the IT-T43 §9.2 Bau.save drift risk):
+        // [4 magic]["SDKM"][1 version][2 len LE][payload][4 crc32 LE].
+        let dir = std::env::temp_dir().join("snapdog_test_envelope");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("envelope.bin");
+        let payload = vec![0xDE_u8, 0xAD, 0xBE, 0xEF, 0x42];
+        super::persist_memory(&path, &payload).unwrap();
+        let raw = std::fs::read(&path).unwrap();
+        let n = payload.len();
+
+        assert_eq!(&raw[0..4], b"SDKM", "magic");
+        assert_eq!(raw[4], super::PERSIST_VERSION, "version byte");
+        assert_eq!(
+            u16::from_le_bytes([raw[5], raw[6]]),
+            n as u16,
+            "length is little-endian u16"
+        );
+        assert_eq!(
+            &raw[super::PERSIST_HEADER..super::PERSIST_HEADER + n],
+            &payload[..],
+            "payload verbatim"
+        );
+        let crc = u32::from_le_bytes([
+            raw[super::PERSIST_HEADER + n],
+            raw[super::PERSIST_HEADER + n + 1],
+            raw[super::PERSIST_HEADER + n + 2],
+            raw[super::PERSIST_HEADER + n + 3],
+        ]);
+        assert_eq!(
+            crc,
+            super::crc32(&payload),
+            "trailing CRC32 is little-endian"
+        );
+        assert_eq!(
+            raw.len(),
+            super::PERSIST_HEADER + n + 4,
+            "total = 7-byte header + payload + 4-byte CRC"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_go_update_translates_asap_to_group_address() {
+        let raw: crate::config::FileConfig = toml::from_str(
+            r#"
+            [[zone]]
+            name = "Test"
+            [zone.knx]
+            play = "1/0/1"
+            volume = "1/0/2"
+            volume_status = "1/0/3"
+
+            [[client]]
+            name = "Speaker"
+            mac = "00:00:00:00:00:00"
+            zone = "Test"
+            [client.knx]
+            volume = "2/0/1"
+            mute = "2/0/2"
+        "#,
+        )
+        .unwrap();
+        let config = crate::config::load_raw(raw).unwrap();
+        let bau = build_bau(IndividualAddress::from_raw(0x1101), &config);
+
+        // ASAP 1 = zone 1 Play → GA 1/0/1, via the asap→tsap→GA translation chain.
+        let (ga, _data) = resolve_go_update(&bau, 1).expect("asap 1 resolves");
+        assert_eq!(ga.raw(), GroupAddress::from_str("1/0/1").unwrap().raw());
+
+        // A non-existent ASAP resolves to None.
+        assert!(resolve_go_update(&bau, 60000).is_none());
+    }
 }
