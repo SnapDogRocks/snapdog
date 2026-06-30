@@ -170,9 +170,13 @@ pub fn build_router(state: &SharedState) -> Router {
 
     if !api_keys.is_empty() {
         tracing::info!(keys = api_keys.len(), "API authentication enabled");
+        // Layer order is load-bearing: the LAST `.layer` is the OUTERMOST, so the
+        // Extension (which inserts ApiKeys into request extensions) must come AFTER
+        // the auth middleware here — otherwise `require_api_key` runs first, sees no
+        // ApiKeys extension, and falls through (auth.rs), silently bypassing auth.
         protected = protected
-            .layer(axum::Extension(auth::ApiKeys(api_keys)))
-            .layer(axum::middleware::from_fn(auth::require_api_key));
+            .layer(axum::middleware::from_fn(auth::require_api_key))
+            .layer(axum::Extension(auth::ApiKeys(api_keys)));
     } else if state
         .config
         .http
