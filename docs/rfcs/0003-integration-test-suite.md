@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 25
+  done: 28
   in_progress: 6
-  todo: 16
+  todo: 13
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -335,9 +335,9 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T32` **(T2)** Real mosquitto via testcontainers: reconnect, QoS1 retained, LWT on ungraceful disconnect; loud-skip w/o Docker. `status: todo` · deps: IT-T05, IT-T30.
 
 ### Phase 4 — KNX suite
-- [ ] `IT-T40` Routing/decode via `run_incoming`: every GA action→command; DPT decode bool/percent/u8/u16/dim-stepcode; unmapped GA ignored. `status: todo` · deps: IT-T01.
-- [ ] `IT-T41` DPT/GA golden + **reuse `knx-rs-core` golden vectors** as dep-contract; `GroupAddress` round-trip; ASAP layout + 460-GO assert. `status: todo` · deps: IT-T06, IT-T40.
-- [ ] `IT-T42` Publisher: status GOs on each notification w/ fixed DPTs; `track_progress` scaling. `status: todo` · deps: IT-T40.
+- [x] `IT-T40` Routing/decode via `run_incoming`: GA action→command (repeat/track_repeat/presence_timeout-u16/shuffle/playlist_next/client-latency/client-zone happy path) + explicit-byte decode goldens incl. `decode_u16` + `build_*_ga_map`. `status: done` · deps: IT-T01.
+- [x] `IT-T41` knx-rs-core dep contract: `GroupAddress` round-trip + DPT byte goldens + public 460-GO/ASAP export (`tests/knx_golden.rs`). `status: done` · deps: IT-T06, IT-T40.
+- [x] `IT-T42` Publisher: `track_progress_pct` scaling + `publish_zone_state`/`publish_zone_track` status GOs with fixed DPTs (recording mock). `status: done` · deps: IT-T40.
 - [x] `IT-T43` Device-mode deterministic core: `Bau.save()` envelope byte-layout + CRC golden + `resolve_go_update` asap→GA + parse/tables/persist. Live `DeviceServer::start_at(:0)` loopback + raw `CemiFrame` is a knx-rs dep contract (its own tests). `status: done` · deps: IT-T04, IT-T40.
 
 ### Phase 5 — snapcast contract firewall
@@ -423,9 +423,9 @@ tasks:
   - { id: IT-T30, phase: 3, status: done, depends_on: [IT-T01] }   # existing in-source mqtt routing tests: routes_zone_{volume,mute,control,playlist,seek} + routes_client_{volume,mute,zone_change}
   - { id: IT-T31, phase: 3, status: done, depends_on: [IT-T30] }   # zone+client state schema + HA-discovery payload golden + availability_topic==LWT topic (FIXED a snapdog//status double-slash bug). LWT runtime fire-on-disconnect = tier-2 (IT-T32).
   - { id: IT-T32, phase: 3, status: todo, tier: 2, depends_on: [IT-T05, IT-T30] }
-  - { id: IT-T40, phase: 4, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T41, phase: 4, status: todo, depends_on: [IT-T06, IT-T40] }
-  - { id: IT-T42, phase: 4, status: todo, depends_on: [IT-T40] }
+  - { id: IT-T40, phase: 4, status: done, depends_on: [IT-T01] }   # knx/mod.rs in-source: handle_incoming routing via run_incoming for the uncovered actions (repeat/track_repeat→RepeatMode, presence_timeout→SetAutoOffDelay u16, shuffle, playlist_next, client latency, client zone-change happy path) + explicit-byte decode goldens incl. decode_u16 (zero coverage before) + build_zone/client_ga_map construction from config. (Existing module already covered play/volume/mute/toggle/playlist/dim/client.)
+  - { id: IT-T41, phase: 4, status: done, depends_on: [IT-T06, IT-T40] }   # tests/knx_golden.rs: knx-rs-core dependency contract — GroupAddress 3-level round-trip (1/2/3↔0x0A03↔Display) + DPT byte goldens (1.001/5.001/7.x) + public-surface 460-GO/ASAP layout export. Catches a wire-format break on the knx-rs upgrade
+  - { id: IT-T42, phase: 4, status: done, depends_on: [IT-T40] }   # knx/mod.rs in-source: track_progress_pct scaling golden + publish_zone_state status GOs with fixed DPTs (volume 5.001, mute/repeat 1.001, repeat-Playlist vs track-repeat-Track mutual exclusion, control_status==track_playing) + publish_zone_track (14-byte DPT16 title + scaled progress) via a recording KnxPublisher mock
   - { id: IT-T43, phase: 4, status: done, depends_on: [IT-T04, IT-T40] }   # device.rs deterministic core: Bau.save() envelope byte-layout golden (magic/version/LE-len/LE-crc32 — §9.2 drift guard) + resolve_go_update asap→GA translation + existing parse_ets_memory/build_tables/persist round-trip+corruption+version+truncation. Live DeviceServer::start_at(:0) loopback + raw CemiFrame is a knx-rs dependency contract (knx-rs-ip tunnel_integration.rs), out of snapdog scope
   - { id: IT-T50, phase: 5, status: done, depends_on: [IT-T01] }   # tests/common: hand-coded no-op SnapcastBackend double (MockBackend) + ZoneHarness/spawn_zone_harness driving real spawn_zone_players; runner emits snap cmds via snap_tx (captured there), backend.execute unused in the zone loop
   - { id: IT-T51, phase: 5, status: done, depends_on: [IT-T50] }   # build_* + ServerStatus golden + reconcile_zone_groups sorted Group.SetClients per diverged zone (FIXED unsorted HashMap-order wire payload)

@@ -791,6 +791,11 @@ mod tests {
         m.insert("1/0/9".into(), (1, "shuffle_toggle"));
         m.insert("1/0/10".into(), (1, "playlist"));
         m.insert("1/0/11".into(), (1, "volume_dim"));
+        m.insert("1/0/12".into(), (1, "repeat"));
+        m.insert("1/0/13".into(), (1, "track_repeat"));
+        m.insert("1/0/14".into(), (1, "presence_timeout"));
+        m.insert("1/0/15".into(), (1, "shuffle"));
+        m.insert("1/0/16".into(), (1, "playlist_next"));
         m
     }
 
@@ -800,6 +805,7 @@ mod tests {
         m.insert("2/0/2".into(), (1, "mute"));
         m.insert("2/0/3".into(), (1, "mute_toggle"));
         m.insert("2/0/4".into(), (1, "zone"));
+        m.insert("2/0/5".into(), (1, "latency"));
         m
     }
 
@@ -947,5 +953,261 @@ mod tests {
             rx.recv().await,
             Some(ZoneCommand::AdjustVolume(32))
         ));
+    }
+
+    // ── IT-T40: explicit-byte decode goldens (+ decode_u16, zero coverage) ──
+
+    #[test]
+    fn decode_bool_handles_empty() {
+        assert!(!decode_bool(&[])); // decode error → false default
+    }
+
+    #[test]
+    fn decode_percent_byte_goldens() {
+        assert_eq!(decode_percent(&[0x00]), Some(0));
+        assert_eq!(decode_percent(&[0xFF]), Some(100));
+        assert_eq!(decode_percent(&[0x80]), Some(50)); // 128*100/255 = 50.196 → 50
+        assert_eq!(decode_percent(&[0x7F]), Some(50)); // 127 → 49.8 → 50
+        assert_eq!(decode_percent(&[]), None);
+    }
+
+    #[test]
+    fn decode_u16_byte_goldens() {
+        assert_eq!(decode_u16(&[0x00, 0x3C]), Some(60)); // DPT 7, big-endian
+        assert_eq!(decode_u16(&[0xFF, 0xFF]), Some(65535));
+        assert_eq!(decode_u16(&[0x00]), None); // len < 2 → decode error → None
+    }
+
+    // ── IT-T40: routing goldens for the previously-uncovered actions ──
+
+    #[tokio::test]
+    async fn zone_repeat_on_sets_playlist_mode() {
+        let (mut rx, _) = run_incoming("1/0/12", &encode_bool(true), &test_state()).await;
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::SetRepeat(snapdog_common::RepeatMode::Playlist))
+        ));
+    }
+
+    #[tokio::test]
+    async fn zone_track_repeat_on_sets_track_mode() {
+        let (mut rx, _) = run_incoming("1/0/13", &encode_bool(true), &test_state()).await;
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::SetRepeat(snapdog_common::RepeatMode::Track))
+        ));
+    }
+
+    #[tokio::test]
+    async fn zone_presence_timeout_from_knx_u16() {
+        // DPT 7 (2-byte big-endian): 0x003C = 60 seconds.
+        let (mut rx, _) = run_incoming("1/0/14", &[0x00, 0x3C], &test_state()).await;
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::SetAutoOffDelay(60))
+        ));
+    }
+
+    #[tokio::test]
+    async fn zone_shuffle_set_from_knx() {
+        let (mut rx, _) = run_incoming("1/0/15", &encode_bool(true), &test_state()).await;
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::SetShuffle(true))
+        ));
+    }
+
+    #[tokio::test]
+    async fn zone_playlist_next_from_knx() {
+        let (mut rx, _) = run_incoming("1/0/16", &[], &test_state()).await;
+        assert!(matches!(rx.recv().await, Some(ZoneCommand::NextPlaylist)));
+    }
+
+    #[tokio::test]
+    async fn client_latency_from_knx() {
+        let (_, mut snap_rx) = run_incoming("2/0/5", &encode_u8(120), &test_state()).await;
+        assert!(matches!(
+            snap_rx.recv().await,
+            Some(SnapcastCmd::Client {
+                action: ClientAction::Latency(120),
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn client_zone_change_accepts_valid_zone() {
+        // Only the reject path was covered; this pins the happy path (store mutated
+        // + ReconcileZones emitted) for a valid target zone.
+        let state = test_state();
+        let (_, mut snap_rx) = run_incoming("2/0/4", &encode_u8(2), &state).await;
+        assert!(matches!(
+            snap_rx.recv().await,
+            Some(SnapcastCmd::ReconcileZones)
+        ));
+        assert_eq!(state.read().await.clients[&1].zone_index, 2);
+        assert!(state.read().await.dirty);
+    }
+
+    // ── IT-T40: GA-map construction from config (passthrough GAs) ──────
+
+    fn cfg_with_knx() -> crate::config::AppConfig {
+        let toml = r#"
+[[zone]]
+name = "Z1"
+[zone.knx]
+play = "1/0/1"
+volume = "1/0/6"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+[client.knx]
+volume = "2/0/1"
+"#;
+        let raw: crate::config::FileConfig = toml::from_str(toml).unwrap();
+        crate::config::load_raw(raw).unwrap()
+    }
+
+    #[test]
+    fn build_zone_ga_map_maps_configured_gas() {
+        let m = build_zone_ga_map(&cfg_with_knx());
+        assert_eq!(m.get("1/0/1").copied(), Some((1usize, "play")));
+        assert_eq!(m.get("1/0/6").copied(), Some((1usize, "volume")));
+        assert!(!m.contains_key("1/0/99"), "unconfigured GA omitted");
+    }
+
+    #[test]
+    fn build_client_ga_map_maps_configured_gas() {
+        let m = build_client_ga_map(&cfg_with_knx());
+        assert_eq!(m.get("2/0/1").copied(), Some((1usize, "volume")));
+    }
+
+    // ── IT-T42: publisher — status GOs with fixed DPTs + progress scaling ──
+
+    /// Records every `(GA, DPT, value)` the publisher writes — no socket.
+    #[derive(Default)]
+    struct RecordingPub {
+        writes: std::sync::Mutex<Vec<(String, Dpt, DptValue)>>,
+    }
+    impl KnxPublisher for RecordingPub {
+        fn write(
+            &self,
+            ga: GroupAddress,
+            dpt: Dpt,
+            value: &DptValue,
+        ) -> impl std::future::Future<Output = ()> + Send {
+            self.writes
+                .lock()
+                .unwrap()
+                .push((ga.to_string(), dpt, value.clone()));
+            std::future::ready(())
+        }
+    }
+
+    fn track(position_ms: i64, duration_ms: i64) -> state::TrackInfo {
+        serde_json::from_value(serde_json::json!({
+            "title": "T", "artist": "A", "album": "Al",
+            "album_artist": null, "genre": null, "year": null,
+            "track_number": null, "disc_number": null,
+            "duration_ms": duration_ms, "position_ms": position_ms,
+            "seekable": true, "source": "idle",
+            "bitrate_kbps": null, "content_type": null, "sample_rate": null
+        }))
+        .unwrap()
+    }
+
+    /// Single zone with the status GAs the publisher writes to.
+    fn cfg_with_status_gas() -> crate::config::AppConfig {
+        let toml = r#"
+[[zone]]
+name = "Z1"
+[zone.knx]
+volume_status = "1/1/1"
+mute_status = "1/1/2"
+repeat_status = "1/1/3"
+track_repeat_status = "1/1/4"
+control_status = "1/1/5"
+track_playing_status = "1/1/6"
+track_title_status = "1/1/7"
+track_progress_status = "1/1/8"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+"#;
+        let raw: crate::config::FileConfig = toml::from_str(toml).unwrap();
+        crate::config::load_raw(raw).unwrap()
+    }
+
+    #[test]
+    fn track_progress_pct_scaling() {
+        assert_eq!(track_progress_pct(&track(0, 100)), 0.0);
+        assert_eq!(track_progress_pct(&track(50, 100)), 50.0);
+        assert_eq!(track_progress_pct(&track(100, 100)), 100.0);
+        assert_eq!(track_progress_pct(&track(150, 100)), 100.0); // clamp pos > dur
+        assert_eq!(track_progress_pct(&track(10, 0)), 0.0); // duration 0 → 0
+    }
+
+    #[tokio::test]
+    #[allow(clippy::significant_drop_tightening)] // guard held only for the multi-field seed
+    async fn publish_zone_state_writes_status_gos_with_fixed_dpts() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        {
+            let mut s = store.write().await;
+            let z = s.zones.get_mut(&1).unwrap();
+            z.volume = 60;
+            z.muted = true;
+            z.repeat = snapdog_common::RepeatMode::Playlist;
+            z.playback = state::PlaybackState::Playing;
+        }
+        let mock = RecordingPub::default();
+        publish_zone_state(1, &cfg, &store, &mock).await;
+
+        let w = mock.writes.lock().unwrap().clone();
+        let chk = |ga: &str, dpt: Dpt, bytes: &[u8]| {
+            let (_, d, v) = w
+                .iter()
+                .find(|(g, _, _)| g == ga)
+                .unwrap_or_else(|| panic!("no write for {ga}"));
+            assert_eq!(*d, dpt, "{ga} dpt");
+            assert_eq!(dpt::encode(*d, v).unwrap().as_slice(), bytes, "{ga} bytes");
+        };
+        chk("1/1/1", DPT_SCALING, &[0x99]); // volume 60 → round(153)
+        chk("1/1/2", DPT_SWITCH, &[0x01]); // muted
+        chk("1/1/3", DPT_SWITCH, &[0x01]); // repeat == Playlist → repeat_status on
+        chk("1/1/4", DPT_SWITCH, &[0x00]); // repeat != Track → track_repeat_status off
+        chk("1/1/5", DPT_SWITCH, &[0x01]); // control_status = playing
+        chk("1/1/6", DPT_SWITCH, &[0x01]); // track_playing_status = playing (== control)
+    }
+
+    #[tokio::test]
+    async fn publish_zone_track_writes_title_and_scaled_progress() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        {
+            let mut s = store.write().await;
+            s.zones.get_mut(&1).unwrap().track = Some(track(30, 100)); // 30%
+        }
+        let mock = RecordingPub::default();
+        publish_zone_track(1, &cfg, &store, &mock).await;
+
+        let w = mock.writes.lock().unwrap().clone();
+        let title = w
+            .iter()
+            .find(|(g, _, _)| g == "1/1/7")
+            .expect("title write");
+        assert_eq!(title.1, DPT_STRING_8859_1);
+        assert_eq!(dpt::encode(title.1, &title.2).unwrap().len(), 14); // DPT16 is 14 bytes
+
+        let prog = w
+            .iter()
+            .find(|(g, _, _)| g == "1/1/8")
+            .expect("progress write");
+        assert_eq!(prog.1, DPT_SCALING);
+        assert_eq!(dpt::encode(prog.1, &prog.2).unwrap(), vec![0x4D]); // 30% → round(76.5)=77
     }
 }
