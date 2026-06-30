@@ -171,6 +171,8 @@ jobs:
         run: cargo test --no-default-features --features snapcast-process --test integration -- --test-threads=1
       - name: Run snapcast contract firewall (process feature)
         run: cargo test --no-default-features --features snapcast-process --test snapcast_rpc
+      - name: Run snapserver e2e (process feature, IT-T56)
+        run: cargo test --no-default-features --features snapcast-process --test snapserver_e2e -- --test-threads=1
 
   build-smoke:
     name: Build Smoke (${{ matrix.name }})

@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 37
+  done: 38
   in_progress: 1
-  todo: 9
+  todo: 8
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -347,7 +347,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [x] `IT-T53` `GroupVolumeMode.effective()` table tests (Absolute/Relative/Compressed + clamp + max_volume). `status: todo` · deps: IT-T01.
 - [x] `IT-T54` **Golden JSON-RPC vectors** for the 17 methods + the **line-delimited-JSON TCP fake** (`IT-DEC-06`); assert request ser + response de. `status: done` · deps: IT-T06, IT-T50.
 - [x] `IT-T55` `send_audio` signature contract (compile-time) + behavioral PCM-injection path via `test_pcm_rx` seam → `CapturingBackend` (feature `test-harness`). `status: done` · deps: IT-T50.
-- [ ] `IT-T56` **(T2)** Real snapserver via repaired `SnapserverHandle`: control + per-zone TCP audio source end-to-end. `status: todo` · deps: IT-T07, IT-T05.
+- [x] `IT-T56` **(T2)** Real snapserver via repaired `SnapserverHandle`: control + per-zone TCP audio source end-to-end. `status: done` · deps: IT-T07, IT-T05. **Done:** `tests/snapserver_e2e.rs` — control (connect → `Server.GetStatus`/`GetRPCVersion` → `sync_initial_state`/`reconcile_zone_groups` against a LIVE server) + audio (440 Hz sine → snapserver stream idle→playing; all-zero PCM stays idle via silence detection); loud-skips when the binary is absent; the CI integration job runs it. IT-T05's serial-grouping need is met via `--test-threads=1` (nextest grouping lands with IT-T05).
 
 ### Phase 6 — Audio pipeline suite
 - [ ] `IT-T60` Golden PCM vectors: resample (passthrough exact + 48k→24k) + EQ goldens **done**; sine/silence/pink **decode**-fixture chain hash deferred → `IT-NG-07` (rubato sinc not bit-exact). `status: in-progress` · deps: IT-T06.
@@ -433,7 +433,7 @@ tasks:
   - { id: IT-T53, phase: 5, status: done, depends_on: [IT-T01] }   # tests/config_contract.rs (GroupVolumeMode + config)
   - { id: IT-T54, phase: 5, status: done, depends_on: [IT-T06, IT-T50] }   # tests/snapcast_rpc.rs: line-delimited-JSON TCP fake + golden vectors for ALL 17 JSON-RPC methods (incl. mute/streamUri traps) + framing + response-deser
   - { id: IT-T55, phase: 5, status: done, depends_on: [IT-T50] }   # tests/zone_player.rs: send_audio signature contract (compile-time, default gate) + behavioral PCM-injection via test_pcm_rx seam → CapturingBackend (feature test-harness); embedded F32AudioSender drift caught by embedded.rs compile
-  - { id: IT-T56, phase: 5, status: todo, tier: 2, depends_on: [IT-T07, IT-T05] }
+  - { id: IT-T56, phase: 5, status: done, tier: 2, depends_on: [IT-T07, IT-T05] }  # tests/snapserver_e2e.rs: real snapserver control (GetStatus/GetRPCVersion/sync_initial_state/reconcile_zone_groups) + per-zone audio-source idle→playing (440Hz sine; zeros=silence stays idle); loud-skip on no-binary; ci.yml integration job runs it; --test-threads=1 covers the IT-T05 serial need
   - { id: IT-T60, phase: 6, status: in-progress, depends_on: [IT-T06] }   # f32→PCM golden + resample (passthrough exact-identity, 48k→24k ≈half within band, all-finite) + EQ goldens done; symphonia decode-fixture golden (sine/silence/pink) + full-chain hash deferred (rubato sinc not bit-exact) → IT-NG-07
   - { id: IT-T61, phase: 6, status: done, depends_on: [IT-T01] }   # snapdog-common fade_gain: monotonic/complementary/bounded ramp; runner.rs ZoneFade: total = sr*ms/1000 golden, zero-duration passthrough, per-frame stereo gain
   - { id: IT-T62, phase: 6, status: done, depends_on: [IT-T01] }   # audio/eq.rs: 0dB-peaking≈identity, bit-identical determinism, deterministic filter-grid (5 types × freq/gain/q) NaN/Inf guard (grid instead of proptest — no new dep)
