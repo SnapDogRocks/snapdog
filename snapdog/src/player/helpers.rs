@@ -385,7 +385,10 @@ pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'
             track_index,
             track_count,
         } => {
-            let draw = if shuffle {
+            // complete_index uses `draw` only when shuffle is on AND repeat != Track
+            // (Track replays the current track and wins). Only draw then, so the RNG
+            // isn't advanced on a discarded value.
+            let draw = if shuffle && !matches!(repeat, snapdog_common::RepeatMode::Track) {
                 fastrand::usize(..track_count)
             } else {
                 0
