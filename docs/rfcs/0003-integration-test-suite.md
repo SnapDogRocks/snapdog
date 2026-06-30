@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 28
-  in_progress: 6
-  todo: 13
+  done: 30
+  in_progress: 5
+  todo: 12
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -316,7 +316,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T05` Adopt cargo-nextest + `.config/nextest.toml` (test-groups serial for real-service, retries **tier-2 only**, slow-timeout). `status: todo` · deps: — · **AC:** `cargo nextest run` green; tier-1 has 0 retries.
 - [ ] `IT-T06` Golden-vector harness: `tests/fixtures/` + load/compare helper, `UPDATE_GOLDEN=1`, ±tolerance for float DPT/audio (`IT-DEC-07`). `status: todo` · deps: IT-T01 · **AC:** compare returns Ok iff actual is within tolerance of golden; `UPDATE_GOLDEN=1` regenerates fixtures; one round-trippable golden vector exists.
 - [ ] `IT-T07` **PREREQ**: repair `tests/integration.rs` `start_system`/`start_system_with_api` vs the new `SnapcastClient` API (`sync_initial_state`, no `init`/`state`); un-ignore the revived tests. `status: todo` · deps: — · **AC:** previously-`#[ignore]`d integration tests compile and pass under tier-2; **includes any `SnapserverHandle` updates the new API needs (feeds IT-T56)**.
-- [ ] `IT-T08` Resolve the snapcast **0.16.1-vs-0.17.0 pin** (`IT-DEC-11`): record decision in an ADR; add a feature build-smoke matrix entry. `status: todo` · deps: —.
+- [x] `IT-T08` Snapcast **0.16.1 pin** decision recorded as **ADR-019** (stay pinned until the firewall + `IT-T73` are green, then `IT-NG-05`); build-smoke matrix is `IT-T73`. `status: done` · deps: —.
 
 ### Phase 1 — REST contract suite
 - [x] `IT-T10` In-process REST driver: `oneshot` on `Router` + mock `AppState` (captured `ZoneCommand`/`SnapcastCmd` mpsc + broadcast tap). `status: todo` · deps: IT-T01 · **AC:** a GET returns 200 with no TCP socket; the suite **enumerates and asserts every mounted route group** (no hardcoded endpoint count).
@@ -359,7 +359,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [ ] `IT-T70` shairplay contract: `TestHandler` + `RaopServer::builder().port(0)` loopback + `send_rtsp`; `audio_init`→`SessionStarted`, volume/metadata/coverart→`ReceiverEvent`. `status: todo` · deps: IT-T01.
 - [ ] `IT-T71` AirPlay volume **golden (corrected)** + `RemoteCommand` round-trip + AP2 SRP/`MemoryPairingStore`. `status: in-progress` · deps: IT-T70, IT-T06.
 - [ ] `IT-T72` Spotify `ChannelSink` f64→f32 cast (assert librespot 0.8 samples are already normalized — **no** rescaling) + `PlayerEvent`→`ReceiverEvent` mapper (pure fns) + volume vectors. `status: in-progress` · deps: IT-T01.
-- [ ] `IT-T73` Feature **build-smoke matrix**: `embedded`/`process` × `ap2` on/off × `spotify` on/off compile. `status: in-progress` · deps: IT-T05.
+- [x] `IT-T73` Feature **build-smoke matrix** (CI `build-smoke` job): embedded {default,minimal,full} + process {minimal,full} `cargo check`. `status: done` · deps: IT-T05.
 
 ### Phase 8 — State machine & lifecycle
 - [x] `IT-T80` Zone-player transitions (track None iff Idle) + persistence roundtrip (restore subset, playback→Stopped). `status: done` · deps: IT-T01, IT-T04.
@@ -412,7 +412,7 @@ tasks:
   - { id: IT-T05, phase: 0, status: todo, depends_on: [] }
   - { id: IT-T06, phase: 0, status: todo, depends_on: [IT-T01] }
   - { id: IT-T07, phase: 0, status: in-progress, depends_on: [] }  # snapcast helpers repaired; tier-2 bodies need rewrite (see file TODO)
-  - { id: IT-T08, phase: 0, status: todo, depends_on: [] }
+  - { id: IT-T08, phase: 0, status: done, depends_on: [] }   # ADR-019 (docs/architecture/decisions.md): stay pinned snapcast 0.16.1 until the seam firewall (IT-T52/T54/T55 + IT-T73 build-smoke) is complete+green, then upgrade as IT-NG-05 behind it; resolves the dangling README link too
   - { id: IT-T10, phase: 1, status: done, depends_on: [IT-T01] }   # api::build_router + TestApp::request (oneshot)
   - { id: IT-T11, phase: 1, status: done, depends_on: [IT-T10, IT-T03] }   # tests/rest_zones.rs (10 tests)
   - { id: IT-T12, phase: 1, status: done, depends_on: [IT-T10] }   # tests/rest_commands.rs: zone-action command capture (shuffle/repeat/toggle/seek abs+rel+400) + client vol/mute/latency capture (needs snapcast_id) + EQ 400(>10 bands)/422(serde-shape)/404 matrix + client-EQ-422-not-snapdog. Speaker-profile-apply-200 + zone-assign-fade paths need a snapdog-client fixture (deferred)
@@ -441,7 +441,7 @@ tasks:
   - { id: IT-T70, phase: 7, status: todo, depends_on: [IT-T01] }
   - { id: IT-T71, phase: 7, status: in-progress, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (incl. 0dB); RemoteCommand/AP2-SRP pending
   - { id: IT-T72, phase: 7, status: in-progress, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume math; TrackChanged/Playing mapper pending (complex librespot types)
-  - { id: IT-T73, phase: 7, status: in-progress, depends_on: [IT-T05] }   # ci.yml integration job runs the process-feature firewall (snapcast_rpc); full embedded/process×ap2×spotify matrix pending
+  - { id: IT-T73, phase: 7, status: done, depends_on: [IT-T05] }   # ci.yml build-smoke job: flat matrix (embedded default/minimal/full + process minimal/full) cargo check — gross-signature firewall across feature combos. All 12 combos verified to compile locally; the embedded XOR process compile_error! guards keep it a flat include-list (no --all-features)
   - { id: IT-T80, phase: 8, status: done, depends_on: [IT-T01, IT-T04] }   # state/mod.rs: persist/load roundtrip + transient-reset (existing 5 tests) + SourceType/PlaybackState wire-format golden; track-None-iff-Idle holds via reset
   - { id: IT-T81, phase: 8, status: done, depends_on: [IT-T80, IT-T02] }   # extracted pure player::nav (next_index/prev_index/complete_index + radio wrap) from helpers.rs handlers; in-source matrix covers repeat Off/Track/Playlist, end-of-list stop/wrap, CD-player >3s prev, Complete-vs-Next asymmetry, shuffle determinism via injected draw (no fastrand in tested path). Subsonic behavioral path needs network (out of scope)
   - { id: IT-T82, phase: 8, status: done, depends_on: [IT-T80, IT-T03] }   # source_conflict may_start_local_playback matrix + command->state transitions (ZoneHarness) + presence auto-off timer via start_paused+tokio::time::advance (tests/zone_player.rs presence_auto_off_stops_zone_after_delay; direct-seed precondition, zone_presence_changed fire barrier)
