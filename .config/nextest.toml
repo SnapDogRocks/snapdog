@@ -1,0 +1,46 @@
+# cargo-nextest configuration — RFC IT-0003 (IT-T05).
+#
+# Tier-1 (the default): pure / in-process tests — deterministic, so **zero
+# retries** and full parallelism. Tier-2 real-service tests (a real snapserver,
+# mosquitto, or Subsonic over loopback/Docker) are serialized into one group and
+# granted a couple of retries to absorb transient service bring-up, without ever
+# granting tier-1 a retry.
+#
+# Run tier-1:  cargo nextest run
+# Run tier-2:  cargo nextest run --no-default-features --features snapcast-process
+#              (+ services available, else the tests loud-skip)
+
+[profile.default]
+# Deterministic tier-1: a flaky tier-1 test is a bug, not something to paper over.
+retries = 0
+# Warn about unexpectedly slow tests (no auto-terminate at tier-1).
+slow-timeout = { period = "60s" }
+# Surface the slowest handful to keep the suite fast.
+final-status-level = "slow"
+
+# Real-service tests run one-at-a-time (each spawns its own server / binds ports).
+[test-groups]
+tier2-real-service = { max-threads = 1 }
+
+# Apply the serial group + bounded retries + a hard hang-kill ONLY to the
+# real-service binaries. snapcast_rpc is tier-2-shaped but uses in-process fakes,
+# so it stays in the fast, no-retry default.
+[[profile.default.overrides]]
+filter = 'binary(integration) | binary(snapserver_e2e) | binary(mqtt_tier2)'
+test-group = 'tier2-real-service'
+retries = 2
+slow-timeout = { period = "45s", terminate-after = 3 }
+
+# A CI profile: same semantics, but fail the run if anyone marks a test #[ignore]
+# without wiring it back in, and keep going to collect all failures.
+[profile.ci]
+retries = 0
+slow-timeout = { period = "60s" }
+fail-fast = false
+final-status-level = "slow"
+
+[[profile.ci.overrides]]
+filter = 'binary(integration) | binary(snapserver_e2e) | binary(mqtt_tier2)'
+test-group = 'tier2-real-service'
+retries = 2
+slow-timeout = { period = "45s", terminate-after = 3 }

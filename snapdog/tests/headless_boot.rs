@@ -21,7 +21,6 @@ use snapdog::api;
 use snapdog::audio::eq::EqStore;
 use snapdog::player::{SnapcastCmd, ZoneCommandSender};
 use snapdog::state;
-use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
 
 #[tokio::test]
@@ -46,8 +45,7 @@ async fn serve_health_over_socket_then_graceful_shutdown() {
     let eq_store = Arc::new(Mutex::new(EqStore::load(&tmp.path().join("eq.json"))));
 
     // Ephemeral loopback port — no fixed-port collision across parallel runs.
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+    let (listener, addr) = common::bind_ephemeral().await;
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let handle = tokio::spawn(api::serve(

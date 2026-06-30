@@ -17,7 +17,6 @@ use snapdog::api;
 use snapdog::audio::eq::EqStore;
 use snapdog::player::{SnapcastCmd, ZoneCommand};
 use snapdog::state;
-use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
@@ -31,8 +30,7 @@ async fn spawn_ws_server() -> (SocketAddr, oneshot::Sender<()>, tempfile::TempDi
     let zone_commands: HashMap<usize, mpsc::Sender<ZoneCommand>> = HashMap::new();
     let tmp = tempfile::tempdir().unwrap();
     let eq_store = Arc::new(Mutex::new(EqStore::load(&tmp.path().join("eq.json"))));
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+    let (listener, addr) = common::bind_ephemeral().await;
     let (sd_tx, sd_rx) = oneshot::channel::<()>();
     tokio::spawn(api::serve(
         listener,

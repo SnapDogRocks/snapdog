@@ -12,9 +12,9 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 38
+  done: 42
   in_progress: 1
-  todo: 8
+  todo: 4
 ---
 
 # RFC IT-0003 — Integration & regression test suite for snapdog
@@ -310,11 +310,11 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 
 ### Phase 0 — Foundations & prerequisites
 - [x] `IT-T01` `testkit` scaffold: `tests/common/` + `test-util` feature exporting reusable doubles (`IT-DEC-08`). `status: todo` · deps: — · **AC:** `cargo test` discovers `tests/common`; `--features test-util` compiles.
-- [ ] `IT-T02` `EphemeralResource` pool (ports `TcpListener :0`, unique mDNS/zone names, seeded RNG) for safe parallelism. `status: todo` · deps: IT-T01 · **AC:** `allocate_port` returns unique ports across N concurrent tasks; name allocation is collision-free and reproducible under a fixed seed.
-- [ ] `IT-T03` `TokioTimeGuard` (pause/advance helpers for the named timers §5.2). `status: todo` · deps: IT-T01 · **AC:** a 300s presence auto-off test completes in <50ms.
+- [x] `IT-T02` `EphemeralResource` pool (ports `TcpListener :0`, unique mDNS/zone names, seeded RNG) for safe parallelism. `status: done` · deps: IT-T01 · **AC:** `allocate_port` returns unique ports across N concurrent tasks; name allocation is collision-free and reproducible under a fixed seed. **Done:** `common::{free_port, bind_ephemeral, alloc_ports, EphemeralNames}` (splitmix64); `tests/testkit.rs` proves mutual-distinctness + seeded reproducibility; ws_ping/ws_lifecycle/headless_boot consolidated onto `bind_ephemeral`.
+- [x] `IT-T03` `TokioTimeGuard` (pause/advance helpers for the named timers §5.2). `status: done` · deps: IT-T01 · **AC:** a 300s presence auto-off test completes in <50ms. **Done:** `common::{advance, advance_secs}` under `start_paused`; `tests/testkit.rs` advances a 300 s timer in <50 ms wall.
 - [x] `IT-T04` `TempEnv` fixture (TempDir `state_dir`, pre-seeded `server_id`, `persist_path` control, `mdns.enabled=false`). `status: todo` · deps: IT-T01 · **AC:** `TempEnv::new()` makes a TempDir `state_dir`, pre-writes a fixed `server_id` UUID, supports `persist_path=None` (disables auto-save), sets `mdns.enabled=false`, cleans up on drop.
-- [ ] `IT-T05` Adopt cargo-nextest + `.config/nextest.toml` (test-groups serial for real-service, retries **tier-2 only**, slow-timeout). `status: todo` · deps: — · **AC:** `cargo nextest run` green; tier-1 has 0 retries.
-- [ ] `IT-T06` Golden-vector harness: `tests/fixtures/` + load/compare helper, `UPDATE_GOLDEN=1`, ±tolerance for float DPT/audio (`IT-DEC-07`). `status: todo` · deps: IT-T01 · **AC:** compare returns Ok iff actual is within tolerance of golden; `UPDATE_GOLDEN=1` regenerates fixtures; one round-trippable golden vector exists.
+- [x] `IT-T05` Adopt cargo-nextest + `.config/nextest.toml` (test-groups serial for real-service, retries **tier-2 only**, slow-timeout). `status: done` · deps: — · **AC:** `cargo nextest run` green; tier-1 has 0 retries. **Done:** `.config/nextest.toml` (default + ci profiles; `tier2-real-service` group `max-threads=1` over integration/snapserver_e2e/mqtt_tier2 with `retries=2` + hang-kill; tier-1 `retries=0`); `cargo nextest run` = 293 passed.
+- [x] `IT-T06` Golden-vector harness: `tests/fixtures/` + load/compare helper, `UPDATE_GOLDEN=1`, ±tolerance for float DPT/audio (`IT-DEC-07`). `status: done` · deps: IT-T01 · **AC:** compare returns Ok iff actual is within tolerance of golden; `UPDATE_GOLDEN=1` regenerates fixtures; one round-trippable golden vector exists. **Done:** `common::{assert_json_golden, assert_f64_golden_within, cmp_f64_within}` + `tests/fixtures/{testkit_demo,testkit_sine}.json`; `tests/testkit.rs` proves round-trip + tolerance Ok/Err + `UPDATE_GOLDEN` regen.
 - [x] `IT-T07` **PREREQ**: `tests/integration.rs` repaired against the new `SnapcastClient` API (`sync_initial_state`, no `init`/`state`); the stale `#[cfg(any())]` tier-2 snapserver bodies (carrying further API drift) were **removed** rather than kept as dead code — real-snapserver end-to-end is owned by `IT-T56`. Live tier-2 Subsonic + MQTT tests remain. `status: done` · deps: — · **AC:** `tests/integration.rs` compiles under tier-2 (`--features snapcast-process`); no dead/ignored bodies remain.
 - [x] `IT-T08` Snapcast **0.16.1 pin** decision recorded as **ADR-019** (stay pinned until the firewall + `IT-T73` are green, then `IT-NG-05`); build-smoke matrix is `IT-T73`. `status: done` · deps: —.
 
@@ -406,11 +406,11 @@ updated: 2026-06-28
 tiers: { "1": deterministic-gate, "2": integration-docker-optional, "3": e2e-hardware-manual }
 tasks:
   - { id: IT-T01, phase: 0, status: done, depends_on: [] }       # tests/common/mod.rs
-  - { id: IT-T02, phase: 0, status: todo, depends_on: [IT-T01] }
-  - { id: IT-T03, phase: 0, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T02, phase: 0, status: done, depends_on: [IT-T01] }  # common: free_port/bind_ephemeral/alloc_ports/EphemeralNames (splitmix64); tests/testkit.rs proves it; ws_ping/ws_lifecycle/headless_boot consolidated
+  - { id: IT-T03, phase: 0, status: done, depends_on: [IT-T01] }  # common::advance/advance_secs under start_paused; tests/testkit.rs: 300s timer fires in <50ms wall
   - { id: IT-T04, phase: 0, status: done, depends_on: [IT-T01] }   # build_test_app: TempDir + persist=None + mdns-off
-  - { id: IT-T05, phase: 0, status: todo, depends_on: [] }
-  - { id: IT-T06, phase: 0, status: todo, depends_on: [IT-T01] }
+  - { id: IT-T05, phase: 0, status: done, depends_on: [] }  # .config/nextest.toml (default+ci; tier2-real-service serial group, retries tier-2 only, slow-timeout/hang-kill); cargo nextest run = 293 passed, tier-1 retries=0
+  - { id: IT-T06, phase: 0, status: done, depends_on: [IT-T01] }  # common::assert_json_golden/assert_f64_golden_within/cmp_f64_within + tests/fixtures/*.json + UPDATE_GOLDEN regen; tests/testkit.rs
   - { id: IT-T07, phase: 0, status: done, depends_on: [] }  # helpers repaired; dead #[cfg(any())] tier-2 bodies removed — real-snapserver e2e owned by IT-T56
   - { id: IT-T08, phase: 0, status: done, depends_on: [] }   # ADR-019 (docs/architecture/decisions.md): stay pinned snapcast 0.16.1 until the seam firewall (IT-T52/T54/T55 + IT-T73 build-smoke) is complete+green, then upgrade as IT-NG-05 behind it; resolves the dangling README link too
   - { id: IT-T10, phase: 1, status: done, depends_on: [IT-T01] }   # api::build_router + TestApp::request (oneshot)

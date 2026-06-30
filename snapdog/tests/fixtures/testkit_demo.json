@@ -1,0 +1,11 @@
+{
+  "name": "Zone1",
+  "ports": {
+    "control": 1705,
+    "streaming": 1704
+  },
+  "streams": [
+    "Zone1",
+    "Zone2"
+  ]
+}
