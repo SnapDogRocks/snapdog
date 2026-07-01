@@ -178,7 +178,7 @@ jobs:
         # is unavailable. Covers integration (Subsonic/MQTT), the snapcast JSON-RPC
         # firewall, the real-snapserver e2e (IT-T56), and real-mosquitto (IT-T32).
         run: |
-          cargo nextest run --profile ci --no-default-features --features snapcast-process \
+          cargo nextest run -p snapdog --profile ci --no-default-features --features snapcast-process \
             -E 'binary(integration) | binary(snapcast_rpc) | binary(snapserver_e2e) | binary(mqtt_tier2)'
       - name: Upload tier-2 test report
         if: ${{ !cancelled() }}
@@ -231,7 +231,9 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run security audit
-        # Unfixable transitive deps — review periodically
+        # Unfixable transitive deps — review periodically. The RUSTSEC-2026-006x/01xx
+        # entries are astral-tokio-tar (tar-extraction) advisories reachable only via
+        # the testcontainers *dev*-dependency — not in the shipped binary.
         run: |
           cargo audit \
             --ignore RUSTSEC-2023-0071 \
@@ -240,7 +242,11 @@ jobs:
             --ignore RUSTSEC-2026-0099 \
             --ignore RUSTSEC-2026-0104 \
             --ignore RUSTSEC-2025-0134 \
-            --ignore RUSTSEC-2026-0097
+            --ignore RUSTSEC-2026-0097 \
+            --ignore RUSTSEC-2026-0066 \
+            --ignore RUSTSEC-2026-0112 \
+            --ignore RUSTSEC-2026-0113 \
+            --ignore RUSTSEC-2026-0145
 
   coverage:
     name: Coverage
