@@ -1,0 +1,17 @@
+[package]
+name = "snapdog-testkit"
+version = "0.1.0"
+edition = "2024"
+description = "Reusable deterministic test primitives (ephemeral resource pool, virtual-time helpers, golden vectors, event capture) shared by the SnapDog test suites (IT-0003) and sibling suites (BT-0001, LI-0002)"
+license = "GPL-3.0-only"
+repository = "https://github.com/metaneutrons/snapdog"
+
+# Deliberately self-contained (no `workspace = true` deps/lints) so this crate can
+# be consumed as a `git`/path dev-dependency from OTHER repos, not just this one.
+[dependencies]
+tokio = { version = "1", features = ["net", "time", "sync", "rt", "macros", "test-util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

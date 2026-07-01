@@ -13,7 +13,7 @@
 //! Determinism (`IT-DEC-02`): no sockets, no mDNS, `persist_path = None` (no
 //! auto-save loop), `EqStore` backed by a `TempDir`.
 
-#![allow(dead_code)] // harness is consumed selectively across test files
+#![allow(dead_code, unused_imports)] // harness (incl. testkit re-exports) is consumed selectively per test binary
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -426,189 +426,41 @@ pub async fn spawn_zone_harness_capturing(config: AppConfig) -> CapturingHarness
 // ════════════════════════════════════════════════════════════════════════════
 // Reusable testkit (IT-T02 / IT-T03 / IT-T06 / IT-T94)
 //
-// Deterministic primitives shared across the suite — and a stable surface other
-// suites (`BT-0001`, `LI-0002`) can copy: an ephemeral-resource pool, virtual-time
-// helpers, and a golden-vector harness. All pure/host-only, no mDNS, no real I/O
-// beyond loopback sockets.
+// The generic primitives now live in the standalone `snapdog-testkit` crate so
+// sibling suites (`BT-0001`, `LI-0002`) can depend on them instead of copy-pasting.
+// Here we re-export them under the familiar `common::…` names and add the two
+// snapdog-specific bindings: the golden helpers wired to *this* crate's
+// `tests/fixtures/`, and a `ReceiverEvent` capture hook.
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── Ephemeral resource pool (IT-T02) ─────────────────────────────────────────
+// IT-T02 ephemeral pool + IT-T03 virtual time + IT-T06 pure comparator.
+pub use snapdog_testkit::ephemeral::{EphemeralNames, alloc_ports, bind_ephemeral, free_port};
+pub use snapdog_testkit::golden::cmp_f64_within;
+pub use snapdog_testkit::time::{advance, advance_secs};
 
-/// An ephemeral free TCP port: bind `127.0.0.1:0`, read the kernel-assigned port,
-/// release it. Each call yields a distinct port (the kernel won't re-hand one
-/// that's still bound), so concurrent callers get unique ports.
-pub async fn free_port() -> u16 {
-    tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind ephemeral port")
-        .local_addr()
-        .expect("local_addr")
-        .port()
-}
-
-/// Bind an ephemeral loopback listener and return it together with its address —
-/// the idiom for tests that hand a live listener to `api::serve` (no port race).
-pub async fn bind_ephemeral() -> (tokio::net::TcpListener, std::net::SocketAddr) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind ephemeral listener");
-    let addr = listener.local_addr().expect("local_addr");
-    (listener, addr)
-}
-
-/// Allocate `n` **mutually-distinct** ephemeral ports. All `n` listeners are bound
-/// simultaneously (so the kernel can't hand the same port twice) before any are
-/// released, then dropped together — the caller gets `n` free, distinct ports to
-/// bind itself (e.g. a managed snapserver's control / streaming / per-zone source
-/// ports). Unlike calling [`free_port`] `n` times, distinctness is guaranteed.
-pub async fn alloc_ports(n: usize) -> Vec<u16> {
-    let mut held = Vec::with_capacity(n);
-    for _ in 0..n {
-        held.push(
-            tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("bind ephemeral port"),
-        );
-    }
-    held.iter()
-        .map(|l| l.local_addr().expect("local_addr").port())
-        .collect()
-    // `held` drops here → all ports released, still mutually distinct.
-}
-
-/// Deterministic, collision-free unique-name generator (splitmix64). Seeded, so a
-/// fixed seed reproduces the exact name sequence — reproducible parallel tests
-/// without global state or mDNS collisions (`IT-DEC-02`).
-pub struct EphemeralNames {
-    state: u64,
-}
-
-impl EphemeralNames {
-    /// Create a generator with a fixed seed (same seed → same sequence).
-    #[must_use]
-    pub fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        // splitmix64 — small, fast, no external RNG dependency.
-        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    /// Next unique `"{prefix}-XXXXXXXX"` name (32-bit hex suffix).
-    pub fn next(&mut self, prefix: &str) -> String {
-        format!("{prefix}-{:08x}", self.next_u64() & 0xFFFF_FFFF)
-    }
-}
-
-// ── Virtual-time helpers (IT-T03) ────────────────────────────────────────────
-//
-// Use under `#[tokio::test(start_paused = true)]`: the clock only moves when you
-// `advance` it, so a 300 s timer (§5.2: presence auto-off, WS ping cadence) fires
-// in microseconds of wall time. Requires the current-thread runtime (the default
-// for `#[tokio::test]`).
-
-/// Advance the paused tokio clock by `d` (no wall-clock wait).
-pub async fn advance(d: std::time::Duration) {
-    tokio::time::advance(d).await;
-}
-
-/// Advance the paused tokio clock by `secs` seconds.
-pub async fn advance_secs(secs: u64) {
-    tokio::time::advance(std::time::Duration::from_secs(secs)).await;
-}
-
-// ── Golden-vector harness (IT-T06) ───────────────────────────────────────────
-//
-// Fixtures live in `tests/fixtures/<name>.json`. `UPDATE_GOLDEN=1` (re)writes the
-// golden and passes; otherwise the actual value is compared against it. Two flavours:
-// exact (canonical JSON) and float-tolerant (per-element ±tol for audio / float DPT).
-
-/// Absolute path to `tests/fixtures/` for the crate under test.
+/// Absolute path to snapdog's own `tests/fixtures/`.
 #[must_use]
 pub fn fixtures_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
-fn golden_path(name: &str) -> std::path::PathBuf {
-    fixtures_dir().join(format!("{name}.json"))
-}
-
-fn write_golden(path: &std::path::Path, contents: &str) {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).expect("create fixtures dir");
-    }
-    std::fs::write(path, contents).expect("write golden");
-}
-
-fn update_golden_enabled() -> bool {
-    std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| v != "0" && !v.is_empty())
-}
-
-/// Assert `actual` (canonical pretty JSON) equals `tests/fixtures/<name>.json`.
-/// With `UPDATE_GOLDEN=1`, (re)writes the golden and returns.
+/// Exact JSON golden under snapdog's `tests/fixtures/` (see `snapdog_testkit::golden`).
 pub fn assert_json_golden<T: serde::Serialize>(name: &str, actual: &T) {
-    let path = golden_path(name);
-    let mut actual_str = serde_json::to_string_pretty(actual).expect("serialize golden");
-    actual_str.push('\n');
-    if update_golden_enabled() {
-        write_golden(&path, &actual_str);
-        return;
-    }
-    let expected = std::fs::read_to_string(&path).unwrap_or_else(|_| {
-        panic!(
-            "missing golden {} — run with UPDATE_GOLDEN=1 to create it",
-            path.display()
-        )
-    });
-    assert_eq!(
-        actual_str, expected,
-        "golden mismatch for `{name}` — run UPDATE_GOLDEN=1 to refresh if intended"
-    );
+    snapdog_testkit::golden::assert_json_golden(&fixtures_dir(), name, actual);
 }
 
-/// Assert each element of `actual` is within `tol` of the golden float vector at
-/// `tests/fixtures/<name>.json`. With `UPDATE_GOLDEN=1`, (re)writes and returns.
-/// Returns `Ok(())` on match; `Err(msg)` describing the first divergence otherwise
-/// (so callers can test the comparator itself).
-pub fn check_f64_golden_within(name: &str, actual: &[f64], tol: f64) -> Result<(), String> {
-    let path = golden_path(name);
-    if update_golden_enabled() {
-        let mut s = serde_json::to_string_pretty(actual).expect("serialize golden");
-        s.push('\n');
-        write_golden(&path, &s);
-        return Ok(());
-    }
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|_| format!("missing golden {} — run UPDATE_GOLDEN=1", path.display()))?;
-    let expected: Vec<f64> =
-        serde_json::from_str(&raw).map_err(|e| format!("parse golden: {e}"))?;
-    cmp_f64_within(actual, &expected, tol).map_err(|e| format!("golden `{name}`: {e}"))
-}
-
-/// Pure, file-free per-element float comparison: `Ok(())` iff lengths match and
-/// every element is within `tol`; else `Err` describing the first divergence. The
-/// core of [`check_f64_golden_within`], exposed so the comparator can be tested
-/// without touching (or being rewritten by `UPDATE_GOLDEN`) a fixture file.
-pub fn cmp_f64_within(actual: &[f64], expected: &[f64], tol: f64) -> Result<(), String> {
-    if actual.len() != expected.len() {
-        return Err(format!("length {} != {}", actual.len(), expected.len()));
-    }
-    for (i, (a, e)) in actual.iter().zip(expected).enumerate() {
-        if (a - e).abs() > tol {
-            return Err(format!("[{i}]: {a} vs {e} (tol {tol})"));
-        }
-    }
-    Ok(())
-}
-
-/// Panicking wrapper over [`check_f64_golden_within`].
+/// Float-tolerant golden under snapdog's `tests/fixtures/`.
 pub fn assert_f64_golden_within(name: &str, actual: &[f64], tol: f64) {
-    if let Err(e) = check_f64_golden_within(name, actual, tol) {
-        panic!("{e}");
-    }
+    snapdog_testkit::golden::assert_f64_golden_within(&fixtures_dir(), name, actual, tol);
+}
+
+/// `ReceiverEvent` capture hook (IT-T94): the snapdog instantiation of the generic
+/// channel drain — drive a receiver, then collect up to `max` emitted events (or
+/// until the channel closes / `timeout` elapses) for assertion.
+pub async fn drain_receiver_events(
+    rx: &mut snapdog::receiver::ReceiverEventRx,
+    max: usize,
+    timeout: std::time::Duration,
+) -> Vec<snapdog::receiver::ReceiverEvent> {
+    snapdog_testkit::capture::drain(rx, max, timeout).await
 }

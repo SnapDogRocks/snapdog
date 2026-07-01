@@ -116,3 +116,24 @@ fn f64_comparator_is_ok_iff_within_tolerance() {
     assert!(common::cmp_f64_within(&perturbed, &base, 1e-9).is_err()); // tight tol fails
     assert!(common::cmp_f64_within(&base[..3], &base, 1.0).is_err()); // length mismatch
 }
+
+// ── IT-T94: ReceiverEvent capture hook ───────────────────────────────────────
+
+#[tokio::test]
+async fn receiver_event_capture_drains_channel() {
+    use snapdog::receiver::ReceiverEvent;
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<ReceiverEvent>(8);
+    tx.send(ReceiverEvent::Volume { percent: 42 })
+        .await
+        .unwrap();
+    tx.send(ReceiverEvent::SessionEnded).await.unwrap();
+    drop(tx); // close so the drain stops at the channel end (before `max`)
+
+    let events =
+        common::drain_receiver_events(&mut rx, 10, std::time::Duration::from_secs(1)).await;
+
+    assert_eq!(events.len(), 2, "captured both emitted events");
+    assert!(matches!(events[0], ReceiverEvent::Volume { percent: 42 }));
+    assert!(matches!(events[1], ReceiverEvent::SessionEnded));
+}

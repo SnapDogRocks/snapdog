@@ -4812,6 +4812,7 @@ dependencies = [
  "snapcast-proto",
  "snapcast-server",
  "snapdog-common",
+ "snapdog-testkit",
  "subtle",
  "symphonia 0.5.5",
  "tempfile",
@@ -4866,6 +4867,16 @@ dependencies = [
  "serde",
  "serde_json",
  "utoipa",
+]
+
+[[package]]
+name = "snapdog-testkit"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

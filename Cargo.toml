@@ -4,6 +4,7 @@ members = [
   "snapdog",
   "snapdog-client",
   "snapdog-common",
+  "snapdog-testkit",
   "xtask",
 ]
 
