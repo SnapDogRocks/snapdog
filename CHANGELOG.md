@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.21.0](https://github.com/SnapDogRocks/snapdog/compare/v0.20.0...v0.21.0) (2026-07-01)
+
+
+### Features
+
+* **api:** graceful shutdown for serve + headless serve-lifecycle test (IT-T84) ([f597734](https://github.com/SnapDogRocks/snapdog/commit/f597734b61b4991aa3bc7ea7c537e5adc6d1af6d))
+
+
+### Bug Fixes
+
+* **api,mqtt:** wire TLS graceful shutdown + clear stale MQTT retained topic ([7f4d2fc](https://github.com/SnapDogRocks/snapdog/commit/7f4d2fc84ea8605d8e652370a0b01d1df62d404a))
+* **mqtt:** align LWT/HA availability topic; add HA-discovery golden test (IT-T31 done) ([2ff47f5](https://github.com/SnapDogRocks/snapdog/commit/2ff47f550b5621a76e89ea75a3284849f0b38a66))
+* **player:** supervise zone players across panics + crash-restart test (IT-T83) ([28d0f2d](https://github.com/SnapDogRocks/snapdog/commit/28d0f2d5b6fa4287bd39420d792e509075614aa1))
+* **snapcast:** sort Group.SetClients wire payload; add reconcile test (IT-T51 done) ([4f585a9](https://github.com/SnapDogRocks/snapdog/commit/4f585a97f47a7eee47daefabbd864cb6d3d43259))
+* **webui:** drop stray darwin-only @parcel/watcher dep + clear eslint warnings ([17878e0](https://github.com/SnapDogRocks/snapdog/commit/17878e02cf38f1268f1ffc5e01624709ab1ef470))
+* **webui:** pin @swc/helpers 0.5.23 via override to fix npm ci lock desync ([a5d41d0](https://github.com/SnapDogRocks/snapdog/commit/a5d41d0e927f16bf7cb2d3150554bdc0fc899e52))
+
+
+### Performance Improvements
+
+* **player:** only draw shuffle RNG when it will be used (review [#6](https://github.com/SnapDogRocks/snapdog/issues/6)) ([837264d](https://github.com/SnapDogRocks/snapdog/commit/837264db84f7dc8612ea1867e1428f3a2c739589))
+* **player:** skip store read on mid-playlist Next (review [#7](https://github.com/SnapDogRocks/snapdog/issues/7)) ([e36145d](https://github.com/SnapDogRocks/snapdog/commit/e36145dbe807b429d3b4bf18913214612cbe3fb6))
+
 ## [0.20.0](https://github.com/SnapDogRocks/snapdog/compare/v0.19.0...v0.20.0) (2026-06-14)
 
 
