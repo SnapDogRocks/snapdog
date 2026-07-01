@@ -69,17 +69,17 @@ async fn flac_48k_decode_chain_is_bit_exact() {
     // Stage 1 — resampling at a matching rate is a bit-exact passthrough (no rubato).
     let decoded = samples.clone();
     let mut resampler = F32Resampling::new(rate, 48_000, channels);
-    let resampled = resampler.process_or_passthrough(samples);
+    let passthrough = resampler.process_or_passthrough(samples);
     assert_eq!(
-        resampled, decoded,
+        passthrough, decoded,
         "48k→48k resample must be an exact passthrough"
     );
 
     // Stage 2 — a fresh ZoneEq (disabled, no bands) is a bit-exact no-op.
     let mut eq = ZoneEq::new(48_000, channels);
-    let mut chained = resampled.clone();
+    let mut chained = passthrough.clone();
     eq.process(&mut chained);
-    assert_eq!(chained, resampled, "identity EQ must not alter samples");
+    assert_eq!(chained, passthrough, "identity EQ must not alter samples");
 
     // Bit-exact golden of the full chain output (UPDATE_GOLDEN=1 regenerates).
     common::assert_json_golden("decode_chain_48k", &chained);

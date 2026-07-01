@@ -109,7 +109,7 @@ fn f64_golden_roundtrips_against_fixture() {
 fn f64_comparator_is_ok_iff_within_tolerance() {
     // Pure comparator (no fixture file, unaffected by UPDATE_GOLDEN).
     let base = [0.0_f64, 0.25, -0.25, 0.5, -0.5, 1.0];
-    let perturbed = [0.0_f64, 0.2500004, -0.25, 0.5, -0.5, 1.0];
+    let perturbed = [0.0_f64, 0.250_000_4, -0.25, 0.5, -0.5, 1.0];
 
     assert!(common::cmp_f64_within(&base, &base, 1e-9).is_ok());
     assert!(common::cmp_f64_within(&perturbed, &base, 1e-6).is_ok()); // loose tol passes
