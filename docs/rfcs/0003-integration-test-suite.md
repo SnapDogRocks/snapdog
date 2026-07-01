@@ -12,8 +12,8 @@ feature_flags: [test-util]
 owners: [metaneutrons]
 progress:                # keep in sync with the IT-LEDGER block (§13)
   total_tasks: 47
-  done: 45
-  in_progress: 2
+  done: 46
+  in_progress: 1
   todo: 0
 ---
 
@@ -350,7 +350,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [x] `IT-T56` **(T2)** Real snapserver via repaired `SnapserverHandle`: control + per-zone TCP audio source end-to-end. `status: done` · deps: IT-T07, IT-T05. **Done:** `tests/snapserver_e2e.rs` — control (connect → `Server.GetStatus`/`GetRPCVersion` → `sync_initial_state`/`reconcile_zone_groups` against a LIVE server) + audio (440 Hz sine → snapserver stream idle→playing; all-zero PCM stays idle via silence detection); loud-skips when the binary is absent; the CI integration job runs it. IT-T05's serial-grouping need is met via `--test-threads=1` (nextest grouping lands with IT-T05).
 
 ### Phase 6 — Audio pipeline suite
-- [ ] `IT-T60` Golden PCM vectors: resample (passthrough exact + 48k→24k) + EQ goldens **done**; sine/silence/pink **decode**-fixture chain hash deferred → `IT-NG-07` (rubato sinc not bit-exact). `status: in-progress` · deps: IT-T06.
+- [x] `IT-T60` Golden PCM vectors: resample (passthrough exact + 48k→24k) + EQ goldens **done**; **bit-exact decode-chain golden** for the same-rate path landed (`tests/audio_decode_chain.rs`: 48 kHz FLAC → passthrough resample → identity EQ, exact — same rate means no rubato). The rate-converting (sinc/`f64`) decode-chain golden stays on the tolerance track → `IT-NG-07`. `status: done` · deps: IT-T06.
 - [x] `IT-T61` Fade math (pure `fade_gain`): monotonic gain ramp + sample count = `sample_rate*fade_ms/1000` for 0→1 and 1→0; `ZoneFade` total/zero-duration/per-frame. `status: done` · deps: IT-T01.
 - [x] `IT-T62` EQ stability: deterministic filter-grid (random-equivalent, no proptest dep) → finite/bounded (NaN/Inf guard) + 0 dB identity + determinism. `status: done` · deps: IT-T01.
 - [x] `IT-T63` Subsonic prefetch cache miss→fetch→hit (`wiremock`) + ICY metadata parse + cache LRU/eviction. `status: done` · deps: IT-T01.
@@ -434,7 +434,7 @@ tasks:
   - { id: IT-T54, phase: 5, status: done, depends_on: [IT-T06, IT-T50] }   # tests/snapcast_rpc.rs: line-delimited-JSON TCP fake + golden vectors for ALL 17 JSON-RPC methods (incl. mute/streamUri traps) + framing + response-deser
   - { id: IT-T55, phase: 5, status: done, depends_on: [IT-T50] }   # tests/zone_player.rs: send_audio signature contract (compile-time, default gate) + behavioral PCM-injection via test_pcm_rx seam → CapturingBackend (feature test-harness); embedded F32AudioSender drift caught by embedded.rs compile
   - { id: IT-T56, phase: 5, status: done, tier: 2, depends_on: [IT-T07, IT-T05] }  # tests/snapserver_e2e.rs: real snapserver control (GetStatus/GetRPCVersion/sync_initial_state/reconcile_zone_groups) + per-zone audio-source idle→playing (440Hz sine; zeros=silence stays idle); loud-skip on no-binary; ci.yml integration job runs it; --test-threads=1 covers the IT-T05 serial need
-  - { id: IT-T60, phase: 6, status: in-progress, depends_on: [IT-T06] }   # f32→PCM golden + resample (passthrough exact-identity, 48k→24k ≈half within band, all-finite) + EQ goldens done; symphonia decode-fixture golden (sine/silence/pink) + full-chain hash deferred (rubato sinc not bit-exact) → IT-NG-07
+  - { id: IT-T60, phase: 6, status: done, depends_on: [IT-T06] }   # f32→PCM + resample (passthrough exact-identity, 48k→24k ≈half within band) + EQ goldens; bit-exact decode-chain golden for the same-rate path (tests/audio_decode_chain.rs: 48kHz FLAC → passthrough → identity EQ, exact); rate-converting sinc decode-chain (tolerance) → IT-NG-07
   - { id: IT-T61, phase: 6, status: done, depends_on: [IT-T01] }   # snapdog-common fade_gain: monotonic/complementary/bounded ramp; runner.rs ZoneFade: total = sr*ms/1000 golden, zero-duration passthrough, per-frame stereo gain
   - { id: IT-T62, phase: 6, status: done, depends_on: [IT-T01] }   # audio/eq.rs: 0dB-peaking≈identity, bit-identical determinism, deterministic filter-grid (5 types × freq/gain/q) NaN/Inf guard (grid instead of proptest — no new dep)
   - { id: IT-T63, phase: 6, status: done, depends_on: [IT-T01] }   # ICY parse (icy.rs parse_icy_metadata + helpers.rs parse_icy_title) + TrackCache hit/miss/LRU/eviction (cache.rs ~15 tests) already covered; added wiremock subsonic prefetch_one miss→fetch→hit end-to-end (first wiremock use)
@@ -503,12 +503,14 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
   harness and the shairplay 0.6 pairing-store APIs (`load_identity`/`save_identity`). The pure
   callback mappers are already covered (`IT-T70`/`IT-T71`); this is the end-to-end layer. (The
   `on_progress` `current - start` u32 underflow it originally flagged is now fixed via `saturating_sub`.)
-- **Decode-fixture audio-chain golden** (`IT-NG-07`, deferred from `IT-T60`) — golden
-  vectors for `symphonia` decode of canonical fixtures (sine/silence/pink in FLAC/MP3)
-  through the full decode→resample→EQ chain. Whole-stream hashing is not bit-exact on
-  the rubato sinc path (f32→f64→f32 + warm-up), so this needs a tolerance/feature-fingerprint
-  approach + committed fixtures. `IT-T60` already covers the resample + EQ stages as units
-  (passthrough exact-identity, 48k→24k ≈half, all-finite; EQ identity/determinism/grid).
+- **Decode-fixture audio-chain golden — rate-converting arm** (`IT-NG-07`, from `IT-T60`) —
+  the **same-rate** path is now covered bit-exactly (`tests/audio_decode_chain.rs`: a
+  48 kHz FLAC through decode → passthrough resample → identity EQ, exact golden). What
+  remains is the **rate-converting** arm: whole-stream goldens for `symphonia` decode of
+  canonical fixtures (sine/silence/pink) through decode → **resample(≠rate)** → EQ, which is
+  not bit-exact on the rubato sinc path (f32→f64→f32 + warm-up) and so needs a
+  tolerance/feature-fingerprint approach + committed fixtures. (`IT-T60` also covers the
+  resample + EQ stages as units: passthrough exact-identity, 48k→24k ≈half, EQ identity/grid.)
 - **Standalone `snapdog-testkit` crate** (`IT-NG-10`, deferred from `IT-T94`) — the
   ephemeral pool, virtual-time, and golden helpers are consolidated + documented in
   `tests/common` (intra-crate reuse), but true cross-repo reuse by `BT-0001`/`LI-0002`
