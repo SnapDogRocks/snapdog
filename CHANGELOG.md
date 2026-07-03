@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/SnapDogRocks/snapdog/compare/v0.21.0...v0.21.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **docker:** copy snapdog-testkit into the build context ([d9cf871](https://github.com/SnapDogRocks/snapdog/commit/d9cf87176343592f5654bb1d0453646d6dac7362))
+
 ## [0.21.0](https://github.com/SnapDogRocks/snapdog/compare/v0.20.0...v0.21.0) (2026-07-03)
 
 
