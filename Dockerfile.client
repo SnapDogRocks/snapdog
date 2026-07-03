@@ -9,6 +9,7 @@ COPY assets/ assets/
 COPY snapdog/ snapdog/
 COPY snapdog-client/ snapdog-client/
 COPY snapdog-common/ snapdog-common/
+COPY snapdog-testkit/ snapdog-testkit/
 COPY xtask/ xtask/
 # WebUI not needed for client, but workspace requires the directory
 RUN mkdir -p webui/out && cargo build --release -p snapdog-client
