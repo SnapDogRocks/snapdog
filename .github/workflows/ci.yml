@@ -129,6 +129,10 @@ jobs:
         run: cargo test -p snapdog --features test-harness --test zone_player
       - name: API + config contract gate (IT-T92 / IT-T14)
         run: cargo test -p snapdog --test openapi_contract --test config_contract
+      - name: AirPlay receiver firewall (ap2 mappers, IT-T70/T71)
+        # ap2 is off in the default `cargo test --workspace`, so the callback→
+        # ReceiverEvent mapper goldens only compile (build-smoke) unless run here.
+        run: cargo test -p snapdog --features ap2 --lib receiver::airplay
 
   integration-tests:
     name: Integration Tests
@@ -178,7 +182,7 @@ jobs:
         # is unavailable. Covers integration (Subsonic/MQTT), the snapcast JSON-RPC
         # firewall, the real-snapserver e2e (IT-T56), and real-mosquitto (IT-T32).
         run: |
-          cargo nextest run --profile ci --no-default-features --features snapcast-process \
+          cargo nextest run -p snapdog --profile ci --no-default-features --features snapcast-process \
             -E 'binary(integration) | binary(snapcast_rpc) | binary(snapserver_e2e) | binary(mqtt_tier2)'
       - name: Upload tier-2 test report
         if: ${{ !cancelled() }}
@@ -231,7 +235,11 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run security audit
-        # Unfixable transitive deps — review periodically
+        # Transitive-dep advisories not fixable via `cargo update` — review periodically.
+        # RUSTSEC-2026-0066/0112/0113/0145: astral-tokio-tar (tar-extraction), dev-only
+        #   via the testcontainers dev-dependency — not in the shipped binary.
+        # RUSTSEC-2026-0194/0195: quick-xml; fixed in >=0.41 but held <0.41 by
+        #   librespot-core 0.8 / plist / knx-rs-prod 0.2 — revisit when those bump.
         run: |
           cargo audit \
             --ignore RUSTSEC-2023-0071 \
@@ -240,7 +248,13 @@ jobs:
             --ignore RUSTSEC-2026-0099 \
             --ignore RUSTSEC-2026-0104 \
             --ignore RUSTSEC-2025-0134 \
-            --ignore RUSTSEC-2026-0097
+            --ignore RUSTSEC-2026-0097 \
+            --ignore RUSTSEC-2026-0066 \
+            --ignore RUSTSEC-2026-0112 \
+            --ignore RUSTSEC-2026-0113 \
+            --ignore RUSTSEC-2026-0145 \
+            --ignore RUSTSEC-2026-0194 \
+            --ignore RUSTSEC-2026-0195
 
   coverage:
     name: Coverage

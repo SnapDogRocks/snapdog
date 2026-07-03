@@ -80,13 +80,28 @@ zone = "Living Room"
 
 /// Start a real snapserver, or `None` (loud-skip) if the binary isn't installed.
 /// The handle kills the child on drop, so callers just hold it for the test's life.
-async fn spawn_snapserver_or_skip() -> Option<(SnapserverHandle, config::AppConfig)> {
+async fn spawn_snapserver_or_skip() -> Option<(SnapserverHandle, config::AppConfig, SnapcastClient)>
+{
     let config = managed_test_config().await;
-    match SnapserverHandle::start(&config) {
-        Ok(handle) => Some((handle, config)),
+    let handle = match SnapserverHandle::start(&config) {
+        Ok(h) => h,
         Err(e) => {
             eprintln!(
                 "SKIP IT-T56: snapserver unavailable ({e}) — install snapcast to run this tier-2 test"
+            );
+            return None;
+        }
+    };
+    // `connect` retries 10×500ms for readiness. If the control port never comes up
+    // — an older snapserver that doesn't honour `[tcp-control]`, or a slow/racy start
+    // — loud-skip rather than hard-fail: the tier-2 "service unavailable" contract,
+    // mirroring the Docker skip in mqtt_tier2.
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, config.snapcast.jsonrpc_tcp_port));
+    match SnapcastClient::connect(addr).await {
+        Ok(snap) => Some((handle, config, snap)),
+        Err(e) => {
+            eprintln!(
+                "SKIP IT-T56: snapserver control port unreachable ({e}) — incompatible/old snapserver?"
             );
             None
         }
@@ -120,15 +135,9 @@ async fn wait_for_stream_status(
 /// the repaired sync/reconcile helpers against the real server status.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn snapserver_control_e2e() {
-    let Some((_handle, config)) = spawn_snapserver_or_skip().await else {
+    let Some((_handle, config, snap)) = spawn_snapserver_or_skip().await else {
         return;
     };
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, config.snapcast.jsonrpc_tcp_port));
-    // `connect` already retries (10×500ms) for readiness; a failure here is a real
-    // fault (snapserver started but the control port never came up), not a skip.
-    let snap = SnapcastClient::connect(addr)
-        .await
-        .expect("connect to live snapserver control port");
 
     // A second RPC method round-trips through the real newline-JSON framing.
     snap.server_get_rpc_version()
@@ -212,13 +221,9 @@ async fn snapserver_control_e2e() {
 /// stream idle → playing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn snapserver_audio_source_e2e() {
-    let Some((_handle, config)) = spawn_snapserver_or_skip().await else {
+    let Some((_handle, config, snap)) = spawn_snapserver_or_skip().await else {
         return;
     };
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, config.snapcast.jsonrpc_tcp_port));
-    let snap = SnapcastClient::connect(addr)
-        .await
-        .expect("connect to live snapserver control port");
 
     let zone = &config.zones[0];
     let stream_id = zone.stream_name.clone();

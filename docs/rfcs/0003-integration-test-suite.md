@@ -92,7 +92,7 @@ optional** and never a prerequisite for the core (`IT-DEC-10`).
 | Fact | Evidence |
 |---|---|
 | Workspace `0.20.0`, edition 2024, rust 1.85; crate at `snapdog/snapdog` | `Cargo.toml` |
-| Consumed deps: snapcast-server/proto **0.16.1**, knx-rs-core/ip/device **0.2.0**, shairplay **0.5.0**, librespot **0.8.0** | `Cargo.lock` |
+| Consumed deps: snapcast-server/proto **0.16.1**, knx-rs-core/ip/device **0.2.0**, shairplay **0.7.0**, librespot **0.8.0** | `Cargo.lock` |
 | **ADR-018**: own JSON-RPC `SnapcastClient` (snapcast-control removed); **17 JSON-RPC** method wrappers (+ `connect`/`from_config`/`subscribe` lifecycle), `sync_initial_state` (:328), `reconcile_zone_groups` (:422) | `snapdog/src/snapcast/mod.rs:55-498` |
 | **Realized breakage**: `SnapcastClient.init()/.state()` removed; `tests/integration.rs` dead, ~22 `#[ignore]` | `snapdog/tests/integration.rs:6-8` |
 | `SnapcastBackend` trait is the mock seam; `embedded` XOR `process` (compile_error if both/neither) | `snapdog/src/snapcast/backend.rs`, `embedded.rs:24,260,448` |
@@ -356,7 +356,7 @@ pool; golden **PCM** fixtures; the in-process REST driver. *(Do **not** rely on
 - [x] `IT-T63` Subsonic prefetch cache miss→fetch→hit (`wiremock`) + ICY metadata parse + cache LRU/eviction. `status: done` · deps: IT-T01.
 
 ### Phase 7 — AirPlay & Spotify seams
-- [x] `IT-T70` AirPlay handler callback→`ReceiverEvent` mappers (`audio_init`→`SessionStarted`+PCM, metadata/coverart/progress/disconnect) on shairplay 0.5.0. RTSP-loopback e2e deferred → `IT-NG-09`. `status: done` · deps: IT-T01.
+- [x] `IT-T70` AirPlay handler callback→`ReceiverEvent` mappers (`audio_init`→`SessionStarted`+PCM, metadata/coverart/progress/disconnect) on shairplay 0.7.0 (upgraded from 0.5.0 — mappers unchanged, this firewall stayed green). RTSP-loopback e2e deferred → `IT-NG-09`. `status: done` · deps: IT-T01.
 - [x] `IT-T71` AirPlay volume **golden** (0dB + slope + ±inf) + `RemoteCommand` 8-arm round-trip. AP2 SRP/pairing-store deferred → `IT-NG-09`. `status: done` · deps: IT-T70, IT-T06.
 - [x] `IT-T72` Spotify `ChannelSink` f64→f32 (no rescale) + volume + `PlayerEvent`→`ReceiverEvent` mapper goldens (progress / Track-Episode-Local metadata / unhandled). `status: done` · deps: IT-T01.
 - [x] `IT-T73` Feature **build-smoke matrix** (CI `build-smoke` job): embedded {default,minimal,full} + process {minimal,full} `cargo check`. `status: done` · deps: IT-T05.
@@ -438,7 +438,7 @@ tasks:
   - { id: IT-T61, phase: 6, status: done, depends_on: [IT-T01] }   # snapdog-common fade_gain: monotonic/complementary/bounded ramp; runner.rs ZoneFade: total = sr*ms/1000 golden, zero-duration passthrough, per-frame stereo gain
   - { id: IT-T62, phase: 6, status: done, depends_on: [IT-T01] }   # audio/eq.rs: 0dB-peaking≈identity, bit-identical determinism, deterministic filter-grid (5 types × freq/gain/q) NaN/Inf guard (grid instead of proptest — no new dep)
   - { id: IT-T63, phase: 6, status: done, depends_on: [IT-T01] }   # ICY parse (icy.rs parse_icy_metadata + helpers.rs parse_icy_title) + TrackCache hit/miss/LRU/eviction (cache.rs ~15 tests) already covered; added wiremock subsonic prefetch_one miss→fetch→hit end-to-end (first wiremock use)
-  - { id: IT-T70, phase: 7, status: done, depends_on: [IT-T01] }   # airplay.rs in-source: handler callback→ReceiverEvent mappers on shairplay 0.5.0 — audio_init→SessionStarted + PCM forward, on_metadata (+all-None), on_coverart, on_progress (44.1k→ms), on_client_disconnected→SessionEnded. RTSP-loopback e2e (RaopServer::port(0)+send_rtsp, #[serial]) deferred → IT-NG-09
+  - { id: IT-T70, phase: 7, status: done, depends_on: [IT-T01] }   # airplay.rs in-source: handler callback→ReceiverEvent mappers on shairplay 0.7.0 (up from 0.5.0) — audio_init→SessionStarted + PCM forward, on_metadata (+all-None), on_coverart, on_progress (44.1k→ms), on_client_disconnected→SessionEnded. RTSP-loopback e2e (RaopServer::port(0)+send_rtsp, #[serial]) deferred → IT-NG-09
   - { id: IT-T71, phase: 7, status: done, depends_on: [IT-T70, IT-T06] }   # airplay.rs in-source: volume golden (0dB + slope -7.5→75/-22.5→25 + ±inf) + RemoteCommand 8-arm round-trip to shairplay via a Fake RemoteControl. AP2 SRP/pairing-store + RemoteAvailable-via-loopback deferred → IT-NG-09
   - { id: IT-T72, phase: 7, status: done, depends_on: [IT-T01] }   # spotify.rs in-source: ChannelSink f64→f32 no-rescale + volume + PlayerEvent→ReceiverEvent mapper goldens (progress Playing/Paused/Seeked/PositionCorrection; TrackChanged Track/Episode/Local metadata; unhandled→nothing) on librespot 0.8
   - { id: IT-T73, phase: 7, status: done, depends_on: [IT-T05] }   # ci.yml build-smoke job: flat matrix (embedded default/minimal/full + process minimal/full) cargo check — gross-signature firewall across feature combos. All 5 matrix cells verified to compile locally; the embedded XOR process compile_error! guards keep it a flat include-list (no --all-features)
