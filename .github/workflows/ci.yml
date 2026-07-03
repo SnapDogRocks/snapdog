@@ -129,6 +129,10 @@ jobs:
         run: cargo test -p snapdog --features test-harness --test zone_player
       - name: API + config contract gate (IT-T92 / IT-T14)
         run: cargo test -p snapdog --test openapi_contract --test config_contract
+      - name: AirPlay receiver firewall (ap2 mappers, IT-T70/T71/T72)
+        # ap2 is off in the default `cargo test --workspace`, so the callback→
+        # ReceiverEvent mapper goldens only compile (build-smoke) unless run here.
+        run: cargo test -p snapdog --features ap2 --lib receiver::airplay
 
   integration-tests:
     name: Integration Tests

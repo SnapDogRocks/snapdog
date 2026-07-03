@@ -2911,21 +2911,6 @@ checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "mdns-sd"
-version = "0.19.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18148fee27e99e76dbf6e137f27727113d31f766e578d1b93a93c3615fca7081"
-dependencies = [
- "fastrand",
- "flume",
- "if-addrs 0.15.0",
- "log",
- "mio",
- "socket-pktinfo",
- "socket2 0.6.4",
-]
-
-[[package]]
-name = "mdns-sd"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "892f96f6d2ebe1ea641279f986ac52a2a6bac71e8f743bb258315cfe2bd7e88e"
@@ -4606,9 +4591,9 @@ dependencies = [
 
 [[package]]
 name = "shairplay"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81bd2eb0e7451569574d522524939cbf907f2da4ae134f5358ab62271c339453"
+checksum = "c792c7751a561e8df0d0fb7d5da96f0345e15a392b11e7f5485587f54cf99d23"
 dependencies = [
  "aes 0.9.1",
  "astro-dnssd",
@@ -4624,7 +4609,7 @@ dependencies = [
  "hmac",
  "httparse",
  "md-5 0.10.6",
- "mdns-sd 0.19.2",
+ "mdns-sd",
  "num-bigint",
  "plist",
  "rand 0.8.6",
@@ -4632,6 +4617,7 @@ dependencies = [
  "rubato 3.0.0",
  "sha1",
  "sha2",
+ "subtle",
  "symphonia 0.6.0",
  "thiserror 2.0.18",
  "tokio",
@@ -4846,7 +4832,7 @@ dependencies = [
  "clap",
  "cpal",
  "libc",
- "mdns-sd 0.20.0",
+ "mdns-sd",
  "midir",
  "sd-notify",
  "serde_json",
