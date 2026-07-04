@@ -10,7 +10,29 @@ on:
       - 'docs/**'
 
 jobs:
+  # Gate on the cross-repo token. Secrets can't be read in a job-level `if:`, so a
+  # tiny gate job exposes its presence as an output. Without it the sync job is
+  # SKIPPED (not failed) — turning a hard "Input required and not supplied: token"
+  # error into a visible warning, so a missing secret no longer reddens main.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          TOKEN: ${{ secrets.SNAPDOG_WEB_SYNC_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning title=Docs sync skipped::SNAPDOG_WEB_SYNC_TOKEN is not set — skipping sync to SnapDogRocks/snapdog-web. Add a fine-grained PAT with contents:write on that repo as this secret to enable it."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
   sync:
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout SnapDog Code
