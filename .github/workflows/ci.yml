@@ -121,8 +121,10 @@ jobs:
         run: npm ci --force && npm run build
       # Whole workspace incl. tier-1 integration targets (in-process, deterministic,
       # no services) — `--lib` skipped tests/*.rs (the IT-0003 suite) and the
-      # snapdog-client/-common tests.
-      - run: cargo test --workspace
+      # snapdog-client/-common tests. `--locked` doubles as the Cargo.lock drift
+      # guard: a release bump (or any change) that didn't regenerate the lock fails
+      # here loudly instead of dirtying fresh checkouts silently.
+      - run: cargo test --workspace --locked
       # Test-harness feature: the F32 send_audio injection test (IT-T55) gated on
       # the ZonePlayerContext::test_pcm_rx seam, which `--workspace` doesn't enable.
       - name: Run test-harness zone-player tests

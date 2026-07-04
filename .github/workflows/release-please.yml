@@ -25,6 +25,31 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # release-please bumps the version in Cargo.toml (via extra-files) but never
+      # touches Cargo.lock, so main's lockfile would lag one release and dirty every
+      # fresh checkout (and now fail the `--locked` CI guard). Sync the lock into the
+      # open release PR so merging keeps main current. GITHUB_TOKEN push does not
+      # re-trigger workflows, so there is no loop.
+      - name: Sync Cargo.lock into the release PR
+        if: ${{ steps.rp.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_JSON: ${{ steps.rp.outputs.pr }}
+        run: |
+          set -euo pipefail
+          branch=$(printf '%s' "$PR_JSON" | jq -r .headBranchName)
+          git clone --branch "$branch" --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" rp-lock
+          cd rp-lock
+          cargo update --workspace -q
+          if git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock already matches the release version."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: sync Cargo.lock to the release version" -- Cargo.lock
+            git push origin "HEAD:$branch"
+          fi
       - name: Trigger release workflow
         if: steps.rp.outputs.release_created == 'true'
         env:
