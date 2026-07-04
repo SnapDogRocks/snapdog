@@ -928,9 +928,17 @@ fn write_load_procedures(x: &mut String) {
     let memory_size = mem::TOTAL;
     w(x, "            <LoadProcedures>");
     w(x, r#"              <LoadProcedure MergeId="1">"#);
+    // InlineData is the device HardwareType (PID 78) — SSOT with the firmware
+    // (`group_objects::HARDWARE_TYPE`), so the download-gate compare can't drift.
+    let hardware_type_hex: String = snapdog::knx::group_objects::HARDWARE_TYPE
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect();
     w(
         x,
-        r#"                <LdCtrlCompareProp InlineData="0000FF010100" ObjIdx="0" PropId="78">"#,
+        &format!(
+            r#"                <LdCtrlCompareProp InlineData="{hardware_type_hex}" ObjIdx="0" PropId="78">"#
+        ),
     );
     w(
         x,

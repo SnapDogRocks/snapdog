@@ -24,6 +24,16 @@ pub const CLIENT_GO_COUNT: usize = CLIENT_GOS.len();
 /// Total number of group objects.
 pub const TOTAL_GO_COUNT: usize = MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIENT_GO_COUNT;
 
+/// Device hardware type, served as `PID_HARDWARE_TYPE` (device object, PID 78).
+///
+/// **SSOT.** At the start of every download ETS reads PID 78 and compares it to
+/// the `.knxprod`'s `LdCtrlCompareProp InlineData`; a mismatch aborts programming
+/// with a firmware/version error before any table is touched. This constant is
+/// both served by the firmware (`device.rs`) and emitted into the `.knxprod`
+/// (`xtask`), so the compare can never drift. Encodes hardware order number
+/// `0xFF01`, version `01` (hex `0000FF010100`).
+pub const HARDWARE_TYPE: [u8; 6] = [0x00, 0x00, 0xFF, 0x01, 0x01, 0x00];
+
 /// KNX communication object flags (matching ETS flag bits).
 pub struct GoFlags {
     /// Communication enabled (K-flag).

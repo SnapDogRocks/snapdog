@@ -12,7 +12,8 @@
 use knx_rs_core::address::GroupAddress;
 use knx_rs_core::dpt::{self, DPT_SCALING, DPT_SWITCH, DPT_VALUE_2_UCOUNT, Dpt, DptValue};
 use snapdog::knx::group_objects::{
-    CLIENT_GO_COUNT, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZONE_GO_COUNT, client_asap, zone_asap,
+    CLIENT_GO_COUNT, HARDWARE_TYPE, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZONE_GO_COUNT,
+    client_asap, zone_asap,
 };
 use std::str::FromStr;
 
@@ -40,6 +41,20 @@ fn group_address_round_trip() {
         "Display is the form handle_incoming keys on"
     );
     assert_eq!(GroupAddress::from_raw(0x0A03).raw(), ga.raw());
+}
+
+#[test]
+fn hardware_type_matches_knxprod_compare_gate() {
+    // The device serves HARDWARE_TYPE as PID_HARDWARE_TYPE (device object, PID 78);
+    // ETS compares it to the .knxprod's LdCtrlCompareProp at the start of every
+    // download and aborts on mismatch. Firmware (device.rs) and the .knxprod
+    // (xtask) both derive from this constant, so they can't drift — this pins the
+    // value against an accidental change.
+    let hex: String = HARDWARE_TYPE.iter().map(|b| format!("{b:02X}")).collect();
+    assert_eq!(
+        hex, "0000FF010100",
+        "HardwareType must equal the .knxprod compare gate"
+    );
 }
 
 #[test]

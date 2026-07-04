@@ -511,7 +511,7 @@ async fn bau_task_loop(
 fn build_bau(ia: IndividualAddress, config: &crate::config::AppConfig) -> Bau {
     let device = device_object::new_device_object(
         device_serial(),
-        [0x00; 6], // hardware type
+        group_objects::HARDWARE_TYPE, // must match the .knxprod LdCtrlCompareProp (PID 78)
     );
     let mut bau = Bau::new(device, TOTAL_GO_COUNT as u16, MAX_TUNNEL_CONNECTIONS);
     device_object::set_individual_address(bau.device_mut(), ia.raw());
