@@ -207,14 +207,15 @@ async fn snapserver_control_e2e() {
     sync_initial_state(&status, &config, &snap, &store).await;
     let (notify, _notify_rx) = api::ws::notification_channel();
     reconcile_zone_groups(&snap, &config, &store, &notify).await;
-    {
-        let s = store.read().await;
-        assert_eq!(s.zones.len(), 2, "both zones survive sync + reconcile");
-        assert!(
-            s.clients.values().all(|c| c.snapcast_id.is_none()),
-            "no snapcast_id assigned without a connected client"
-        );
-    }
+    let s = store.read().await;
+    let zone_count = s.zones.len();
+    let all_unassigned = s.clients.values().all(|c| c.snapcast_id.is_none());
+    drop(s);
+    assert_eq!(zone_count, 2, "both zones survive sync + reconcile");
+    assert!(
+        all_unassigned,
+        "no snapcast_id assigned without a connected client"
+    );
 }
 
 /// Audio-source path: pushing PCM to a zone's TCP source flips the snapserver
@@ -253,6 +254,9 @@ async fn snapserver_audio_source_e2e() {
         loop {
             let mut chunk = Vec::with_capacity(3840); // 960 frames × 2ch × 2 bytes = 20ms
             for _ in 0..960 {
+                // sin() ∈ [-1, 1] ⇒ product bounded to ±SINE_AMPLITUDE_I16, always
+                // within i16 range, so the cast never truncates.
+                #[allow(clippy::cast_possible_truncation)]
                 let v = (SINE_AMPLITUDE_I16 * phase.sin()) as i16;
                 phase = (phase + dphase) % std::f32::consts::TAU;
                 let le = v.to_le_bytes();
