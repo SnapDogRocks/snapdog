@@ -254,8 +254,10 @@ async fn snapserver_audio_source_e2e() {
         loop {
             let mut chunk = Vec::with_capacity(3840); // 960 frames × 2ch × 2 bytes = 20ms
             for _ in 0..960 {
-                // sin() ∈ [-1, 1] ⇒ product bounded to ±SINE_AMPLITUDE_I16, always
-                // within i16 range, so the cast never truncates.
+                // sin() ∈ [-1, 1] ⇒ the product stays within ±SINE_AMPLITUDE_I16
+                // (8000), inside i16's range, so the cast can't overflow — which is
+                // what the cast_possible_truncation allow guards. The fractional
+                // part is dropped by design: quantization to an i16 PCM sample.
                 #[allow(clippy::cast_possible_truncation)]
                 let v = (SINE_AMPLITUDE_I16 * phase.sin()) as i16;
                 phase = (phase + dphase) % std::f32::consts::TAU;
