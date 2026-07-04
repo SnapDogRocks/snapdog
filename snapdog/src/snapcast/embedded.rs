@@ -79,16 +79,17 @@ impl EmbeddedBackend {
                 None
             };
 
+        // 0.17: the library no longer owns the port or persists state.
+        // `stream_port` moved to the embedder (we bind the listener below), and
+        // `state_file` is gone — `initial_state` defaults to `None`, so the
+        // embedded server starts empty and snapdog's own `Store`
+        // (sync_initial_state / reconcile_zone_groups) owns cross-restart state.
         let server_config = ServerConfig {
-            stream_port: config.snapcast.streaming_port,
             buffer_ms: DEFAULT_BUFFER_MS,
             codec,
             sample_format: config.audio.sample_format(),
             encryption_psk,
             client_filter,
-            state_file: Some(
-                std::path::PathBuf::from(&config.system.state_dir).join("snapcast.json"),
-            ),
             ..ServerConfig::default()
         };
 
@@ -105,8 +106,26 @@ impl EmbeddedBackend {
 
         let cmd_tx = server.command_sender();
 
+        // 0.17: the library no longer binds the port — the embedder owns the
+        // TcpListener and hands it to serve(). Bind synchronously (std +
+        // set_nonblocking + from_std) so start() stays sync; bind all interfaces
+        // so LAN receivers can connect. A port clash fails boot here (fail-fast)
+        // rather than logging inside the server task and limping on.
+        let std_listener = std::net::TcpListener::bind(("0.0.0.0", config.snapcast.streaming_port))
+            .with_context(|| {
+                format!(
+                    "bind embedded Snapcast streaming port {}",
+                    config.snapcast.streaming_port
+                )
+            })?;
+        std_listener
+            .set_nonblocking(true)
+            .context("set embedded Snapcast listener non-blocking")?;
+        let listener = tokio::net::TcpListener::from_std(std_listener)
+            .context("adopt embedded Snapcast listener into the tokio reactor")?;
+
         tokio::spawn(async move {
-            if let Err(e) = server.run().await {
+            if let Err(e) = server.serve(listener).await {
                 tracing::error!(error = %e, "Embedded Snapcast server error");
             }
         });
@@ -116,8 +135,6 @@ impl EmbeddedBackend {
             zones = audio_txs.len(),
             "Embedded Snapcast server started"
         );
-
-        // mDNS is handled automatically by SnapServer::run()
 
         Ok((
             Self {
@@ -712,6 +729,17 @@ mod tests {
                 command: "play".into(),
                 params: serde_json::Value::Null,
             })
+            .is_none()
+        );
+        // `StateChanged` (new in snapcast-server 0.17) is deliberately dropped:
+        // snapdog does not persist the library's `ServerState` — its own `Store`
+        // (sync_initial_state / reconcile_zone_groups) owns cross-restart state.
+        // Pin that this stays a no-op mapping so the choice is explicit, not a
+        // forgotten variant silently falling through `_ => None`.
+        assert!(
+            EmbeddedBackend::map_event(ServerEvent::StateChanged(
+                snapcast_server::ServerState::default()
+            ))
             .is_none()
         );
     }

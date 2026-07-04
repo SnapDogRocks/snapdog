@@ -730,6 +730,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "built"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56ed6191a7e78c36abdb16ab65341eefd73d64d303fffccdbb00d51e4205967b"
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1078,6 +1084,21 @@ checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "crc"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
+dependencies = [
+ "crc-catalog",
+]
+
+[[package]]
+name = "crc-catalog"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
 name = "crc32fast"
@@ -1554,6 +1575,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
+name = "flacenc"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74c892c2b5fa08f967e8b5ad29121570b4762202f2402033ce08479ec65eccd0"
+dependencies = [
+ "built",
+ "crc",
+ "heapless",
+ "md-5 0.10.6",
+ "num-traits",
+ "rustversion",
+ "seq-macro",
+]
+
+[[package]]
 name = "flate2"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1852,6 +1888,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hash32"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1905,6 +1950,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4"
 dependencies = [
  "http",
+]
+
+[[package]]
+name = "heapless"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad"
+dependencies = [
+ "hash32",
+ "stable_deref_trait",
 ]
 
 [[package]]
@@ -2573,16 +2628,6 @@ name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
-
-[[package]]
-name = "libflac-sys"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fc5cbb957a914952ee9b8667e82b984c6dc280087df01497fc5b4776d303582"
-dependencies = [
- "cmake",
- "libc",
-]
 
 [[package]]
 name = "libloading"
@@ -4441,6 +4486,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
+name = "seq-macro"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bc711410fbe7399f390ca1c3b60ad0f53f80e95c5eb935e52268a0e2cd49acc"
+
+[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4696,16 +4747,15 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "snapcast-client"
-version = "0.16.1"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "697c0b8a792d6e0aa69be756816b9142cd328f35a644b7ddac06bc463ec08c09"
+checksum = "2a857766feb76f6e0096a06d2500801e648d0c2245b5c1f4610625c1b2450dc6"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
  "futures-util",
  "hkdf",
  "hostname",
- "libc",
  "lz4_flex",
  "mac_address",
  "opus-decoder",
@@ -4724,11 +4774,12 @@ dependencies = [
 
 [[package]]
 name = "snapcast-proto"
-version = "0.16.1"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b86a397360e7c22ec7139f12f66d7f2c20349f621308a97a125878b51ab4a9b8"
+checksum = "be48953d4289d39793fd856d1bad3888511491acabe80ac6ed0f03df75f1f4e8"
 dependencies = [
  "byteorder",
+ "libc",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -4736,17 +4787,16 @@ dependencies = [
 
 [[package]]
 name = "snapcast-server"
-version = "0.16.1"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61f273b966d4b3391259a3b3388549c1075ffd399efd020dbcb6351dade4d5a3"
+checksum = "0851a2a42c4966228de7cc0713ab14b3aad9d1b52d1b76568f7c6bc448f6c59b"
 dependencies = [
  "anyhow",
  "base64",
  "chacha20poly1305",
+ "flacenc",
  "getrandom 0.4.2",
  "hkdf",
- "libc",
- "libflac-sys",
  "lz4_flex",
  "serde",
  "serde_json",
@@ -4761,7 +4811,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog"
-version = "0.20.0"
+version = "0.21.1"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -4823,7 +4873,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog-client"
-version = "0.20.0"
+version = "0.21.1"
 dependencies = [
  "alsa",
  "anyhow",
