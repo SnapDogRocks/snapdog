@@ -30,6 +30,11 @@ jobs:
       # fresh checkout (and now fail the `--locked` CI guard). Sync the lock into the
       # open release PR so merging keeps main current. GITHUB_TOKEN push does not
       # re-trigger workflows, so there is no loop.
+      # ubuntu-latest ships a Rust toolchain, but pin it explicitly so the sync
+      # step below doesn't depend on the runner image's preinstalled cargo.
+      - name: Set up Rust for the Cargo.lock sync
+        if: ${{ steps.rp.outputs.pr }}
+        uses: dtolnay/rust-toolchain@stable
       - name: Sync Cargo.lock into the release PR
         if: ${{ steps.rp.outputs.pr }}
         env:
