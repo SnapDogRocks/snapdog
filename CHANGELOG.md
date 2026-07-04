@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/SnapDogRocks/snapdog/compare/v0.22.0...v0.22.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **snapcast:** restore per-client latency on reconnect ([#54](https://github.com/SnapDogRocks/snapdog/issues/54)) ([d859e9c](https://github.com/SnapDogRocks/snapdog/commit/d859e9c0f70503bc40b985d6e066c108f1220973))
+
 ## [0.22.0](https://github.com/SnapDogRocks/snapdog/compare/v0.21.1...v0.22.0) (2026-07-04)
 
 
