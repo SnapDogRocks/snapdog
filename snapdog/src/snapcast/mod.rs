@@ -188,14 +188,14 @@ mod process_impl {
         /// # Errors
         /// Returns an error if the request fails.
         pub async fn group_get_status(&self, id: &str) -> Result<types::Group> {
-            let result = self
-                .conn
-                .request("Group.GetStatus", json!({ "id": id }))
-                .await?;
             #[derive(serde::Deserialize)]
             struct R {
                 group: types::Group,
             }
+            let result = self
+                .conn
+                .request("Group.GetStatus", json!({ "id": id }))
+                .await?;
             let r: R = serde_json::from_value(result)?;
             Ok(r.group)
         }
@@ -365,7 +365,7 @@ mod process_impl {
             .filter(|c| !c.connected && connected_macs.contains(&c.host.mac.to_lowercase()))
             .map(|c| c.id.clone())
             .collect();
-        for (_, c) in s.clients.iter() {
+        for c in s.clients.values() {
             tracing::info!(client = %c.name, zone = c.zone_index, connected = c.connected, "Client synced");
         }
         drop(s);
@@ -376,7 +376,7 @@ mod process_impl {
     }
 
     /// Match Snapcast groups to zones by stream ID (read-only, no commands).
-    /// Used at startup and on ServerOnUpdate.
+    /// Used at startup and on `ServerOnUpdate`.
     fn sync_zones_from_groups(groups: &[types::Group], config: &AppConfig, s: &mut state::Store) {
         for zone_cfg in &config.zones {
             let group = groups
@@ -498,7 +498,7 @@ mod process_impl {
         }
     }
 
-    /// Build MAC → snapcast_id map from server status.
+    /// Build MAC → `snapcast_id` map from server status.
     #[must_use]
     pub fn build_client_mac_map(status: &ServerStatus) -> HashMap<String, String> {
         status
@@ -628,7 +628,7 @@ mod process_impl {
                 id: snap_id,
                 latency,
             } => {
-                let lat = latency as i32;
+                let lat = i32::try_from(latency).unwrap_or(i32::MAX);
                 let mut s = store.write().await;
                 if let Some((&idx, client)) = s
                     .clients
