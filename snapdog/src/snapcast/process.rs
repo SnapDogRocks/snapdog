@@ -145,13 +145,14 @@ impl SnapcastBackend for ProcessBackend {
                             .values()
                             .find(|c| c.snapcast_id.as_deref() == Some(&client_id))
                             .map(|c| (c.zone_index, c.max_volume));
-                        let (zone_vol, mode, max_vol) = info
-                            .map(|(zi, mv)| {
-                                let zv = s.zones.get(&zi).map(|z| z.volume).unwrap_or(100);
+                        let (zone_vol, mode, max_vol) = info.map_or_else(
+                            || (100, crate::config::GroupVolumeMode::default(), 100),
+                            |(zi, mv)| {
+                                let zv = s.zones.get(&zi).map_or(100, |z| z.volume);
                                 let m = self.volume_modes.get(&zi).copied().unwrap_or_default();
                                 (zv, m, mv)
-                            })
-                            .unwrap_or((100, Default::default(), 100));
+                            },
+                        );
                         let base = v.clamp(0, max_vol);
                         if let Some(c) = s
                             .clients

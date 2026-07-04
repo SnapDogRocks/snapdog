@@ -101,7 +101,13 @@ jobs:
       - name: Build WebUI
         working-directory: webui
         run: npm ci --force && npm run build
-      - run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (default / embedded)
+        run: cargo clippy --all-targets -- -D warnings
+      # Process mode is a mutually-exclusive feature set the default clippy above
+      # never compiles; lint it explicitly so process-only code (snapcast/process.rs,
+      # process paths in snapcast/mod.rs, tier-2 tests) can't accumulate lints unseen.
+      - name: Clippy (process mode)
+        run: cargo clippy -p snapdog --no-default-features --features snapcast-process --all-targets -- -D warnings
 
   unit-tests:
     name: Unit Tests
