@@ -162,13 +162,15 @@ async fn handle_event(
                     }
                 }
 
-                // Push snapdog's persisted volume/mute to snapcast (SSOT)
-                let (push_vol, push_mute) = {
+                // Push snapdog's persisted volume/mute/latency to snapcast (SSOT).
+                // The embedded server starts stateless (initial_state: None), so
+                // snapdog re-applies each client's persisted settings on reconnect.
+                let (push_vol, push_mute, push_latency) = {
                     let s = store.read().await;
                     s.clients
                         .get(&client_index)
-                        .map_or((crate::state::DEFAULT_VOLUME, false), |c| {
-                            (c.base_volume, c.muted)
+                        .map_or((crate::state::DEFAULT_VOLUME, false, 0), |c| {
+                            (c.base_volume, c.muted, c.latency_ms)
                         })
                 };
                 let _ = backend
@@ -182,6 +184,17 @@ async fn handle_event(
                         .execute(SnapcastCmd::Client {
                             client_id: id.clone(),
                             action: ClientAction::Mute(true),
+                        })
+                        .await;
+                }
+                // Latency compensation isn't restored by the library (unlike the
+                // old snapcast.json), so re-apply the persisted value; 0 is
+                // snapcast's default, so only push a non-zero offset.
+                if push_latency != 0 {
+                    let _ = backend
+                        .execute(SnapcastCmd::Client {
+                            client_id: id.clone(),
+                            action: ClientAction::Latency(push_latency),
                         })
                         .await;
                 }
@@ -814,5 +827,131 @@ mod tests {
         assert_eq!(name, "TestClient");
         assert_eq!(zone_index, 1);
         assert!(connected);
+    }
+
+    /// A `SnapcastBackend` double that records every `execute()` command, so tests
+    /// can assert exactly which client commands the event handler issued.
+    #[derive(Default)]
+    struct RecordingBackend {
+        cmds: Arc<std::sync::Mutex<Vec<SnapcastCmd>>>,
+    }
+    impl SnapcastBackend for RecordingBackend {
+        fn send_audio(
+            &self,
+            _zone_index: usize,
+            _samples: &[f32],
+            _sample_rate: u32,
+            _channels: u16,
+        ) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn execute(&self, cmd: SnapcastCmd) -> BoxFuture<'_, anyhow::Result<()>> {
+            self.cmds.lock().unwrap().push(cmd);
+            Box::pin(async { Ok(()) })
+        }
+        fn stop(&self) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn get_status(&self) -> BoxFuture<'_, anyhow::Result<serde_json::Value>> {
+            Box::pin(async { Ok(serde_json::json!({ "server": { "groups": [] } })) })
+        }
+        fn delete_client(&self, _id: &str) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    /// Firewall for the SSOT restore-on-connect contract: the embedded server starts
+    /// stateless (`initial_state: None`), so a client's persisted volume, mute, and
+    /// latency are only restored after a restart by snapdog re-pushing them when the
+    /// client reconnects. Latency in particular regressed silently in the 0.17
+    /// migration until it was added to that push — this pins all three.
+    #[tokio::test]
+    async fn client_connect_restores_persisted_volume_mute_latency() {
+        let config = test_config();
+        let store = crate::state::init(&config, None).unwrap();
+        let (notify, _) = tokio::sync::broadcast::channel(16);
+        let temp_dir = tempfile::tempdir().unwrap();
+        let eq_store = Arc::new(std::sync::Mutex::new(EqStore::load(
+            &temp_dir.path().join("eq.json"),
+        )));
+
+        // Seed the persisted per-client state the reconnect must restore.
+        {
+            let mut s = store.write().await;
+            let client = s
+                .clients
+                .values_mut()
+                .find(|c| c.mac == "00:00:00:00:00:00")
+                .expect("configured client present in store");
+            client.base_volume = 60;
+            client.muted = true;
+            client.latency_ms = 42;
+            drop(s);
+        }
+
+        let backend = RecordingBackend::default();
+        handle_event(
+            SnapcastEvent::ClientConnected {
+                id: "c1".into(),
+                hello: ClientHello {
+                    client_name: "SnapDog".into(),
+                    mac: "00:00:00:00:00:00".into(),
+                    host_name: "Living Room".into(),
+                    version: "0.17.0".into(),
+                },
+            },
+            &config,
+            &backend,
+            &store,
+            &notify,
+            &eq_store,
+            &std::collections::HashMap::new(),
+        )
+        .await;
+
+        let (has_volume, has_mute, has_latency) = {
+            let cmds = backend.cmds.lock().unwrap();
+            let vol = cmds.iter().any(|c| {
+                matches!(
+                    c,
+                    SnapcastCmd::Client {
+                        action: ClientAction::Volume(60),
+                        ..
+                    }
+                )
+            });
+            let mute = cmds.iter().any(|c| {
+                matches!(
+                    c,
+                    SnapcastCmd::Client {
+                        action: ClientAction::Mute(true),
+                        ..
+                    }
+                )
+            });
+            let latency = cmds.iter().any(|c| {
+                matches!(
+                    c,
+                    SnapcastCmd::Client {
+                        action: ClientAction::Latency(42),
+                        ..
+                    }
+                )
+            });
+            drop(cmds);
+            (vol, mute, latency)
+        };
+        assert!(
+            has_volume,
+            "persisted volume must be re-pushed to snapcast on reconnect"
+        );
+        assert!(
+            has_mute,
+            "persisted mute must be re-pushed to snapcast on reconnect"
+        );
+        assert!(
+            has_latency,
+            "persisted latency must be re-pushed on reconnect (0.17 SSOT regression firewall)"
+        );
     }
 }
