@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/SnapDogRocks/snapdog/compare/v0.21.1...v0.22.0) (2026-07-04)
+
+
+### Features
+
+* **snapcast:** upgrade snapcast-rs 0.16.1 -&gt; 0.17.2 ([#51](https://github.com/SnapDogRocks/snapdog/issues/51)) ([0f2ef93](https://github.com/SnapDogRocks/snapdog/commit/0f2ef9332314318551c9ea9d81ffc2400e0d3744))
+
+
+### Bug Fixes
+
+* **ci:** exact-match tarball hash in the snapdog-os bump step ([19c013d](https://github.com/SnapDogRocks/snapdog/commit/19c013d311b596a53c2fab0855620ea7cc4e72a2))
+
 ## [0.21.1](https://github.com/SnapDogRocks/snapdog/compare/v0.21.0...v0.21.1) (2026-07-03)
 
 
