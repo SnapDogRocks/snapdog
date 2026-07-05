@@ -91,7 +91,7 @@ volumes:
 ### KNX Device Mode (no config file needed)
 
 ```bash
-# Start as KNX/IP device — ETS programs zones, clients, group addresses
+# Start as KNX/IP device — ETS programs zones, clients, group addresses and parameters
 snapdog --knx-device --knx-address 1.1.100
 
 # Programming mode can be enabled via CLI flag, About dialog in WebUI, or REST API
@@ -100,6 +100,14 @@ snapdog --knx-device --knx-address 1.1.100 --knx-prog-mode
 # Dual-stack IPv4+IPv6
 snapdog --knx-device --knx-address 1.1.100 --bind ::
 ```
+
+Started this way (device mode, no `--config`), SnapDog **configures itself entirely
+from ETS**: the parameters ETS downloads — zones, clients, radios, Subsonic and
+MQTT endpoints, HTTP port, log level — are persisted and applied as the running
+configuration on start. When ETS finishes a programming session (sending
+`A_Restart`), SnapDog persists the new programming and **restarts itself** so the
+changes take effect immediately (disable with `restart_after_ets = false`). Until a
+device has been programmed, built-in defaults are used.
 
 The `.knxprod` file for ETS import is available from [Releases](https://github.com/metaneutrons/snapdog/releases/latest).
 
@@ -215,6 +223,8 @@ password = "pass"
 url = "udp://192.168.1.50:3671"
 # role = "device"                     # Run as ETS-programmable KNX/IP device
 # individual_address = "1.1.100"
+# persist_ets_config = true           # Persist ETS programming across restarts (device role)
+# restart_after_ets = true            # Restart to apply new parameters after an ETS reprogram
 
 [[zone]]
 # name = "SnapDog"
