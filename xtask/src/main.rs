@@ -11,6 +11,8 @@
 // on internal helpers is noise.
 #![allow(clippy::cast_possible_truncation)]
 
+use std::fmt::Write as _;
+
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
     CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_COUNT,
@@ -928,9 +930,20 @@ fn write_load_procedures(x: &mut String) {
     let memory_size = mem::TOTAL;
     w(x, "            <LoadProcedures>");
     w(x, r#"              <LoadProcedure MergeId="1">"#);
+    // InlineData is the device HardwareType (PID 78) — SSOT with the firmware
+    // (`group_objects::HARDWARE_TYPE`), so the download-gate compare can't drift.
+    let hardware_type_hex =
+        snapdog::knx::group_objects::HARDWARE_TYPE
+            .iter()
+            .fold(String::new(), |mut s, b| {
+                let _ = write!(s, "{b:02X}");
+                s
+            });
     w(
         x,
-        r#"                <LdCtrlCompareProp InlineData="0000FF010100" ObjIdx="0" PropId="78">"#,
+        &format!(
+            r#"                <LdCtrlCompareProp InlineData="{hardware_type_hex}" ObjIdx="0" PropId="78">"#
+        ),
     );
     w(
         x,

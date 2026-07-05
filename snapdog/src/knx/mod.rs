@@ -13,8 +13,11 @@
 
 mod client;
 mod device;
+mod ets_config;
 pub mod group_objects;
 mod transport;
+
+pub use ets_config::ets_device_config;
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;

@@ -317,6 +317,7 @@ pub async fn start_device_transport(
 
     let knx = config.knx.as_ref().expect("KNX config required");
     let persist = knx.persist_ets_config.unwrap_or(true);
+    let restart_after_ets = knx.restart_after_ets.unwrap_or(true);
     let persist_path = if persist {
         Some(PathBuf::from(ETS_MEMORY_PATH))
     } else {
@@ -375,7 +376,14 @@ pub async fn start_device_transport(
         tracing::info!("KNX programming mode active (--knx-prog-mode)");
     }
 
-    tokio::spawn(bau_task_loop(bau, server, cmd_rx, update_tx, persist_path));
+    tokio::spawn(bau_task_loop(
+        bau,
+        server,
+        cmd_rx,
+        update_tx,
+        persist_path,
+        restart_after_ets,
+    ));
 
     tracing::info!(%individual_address, persist, "KNX device mode started");
 
@@ -413,6 +421,7 @@ async fn bau_task_loop(
     mut cmd_rx: mpsc::Receiver<BauCmd>,
     update_tx: mpsc::Sender<(GroupAddress, Vec<u8>)>,
     persist_path: Option<PathBuf>,
+    restart_after_ets: bool,
 ) {
     let mut memory_dirty = false;
     let persist_timer = tokio::time::sleep(ETS_PERSIST_DEBOUNCE);
@@ -452,6 +461,41 @@ async fn bau_task_loop(
                     persist_armed = true;
                 }
 
+                // An A_Restart / master reset from ETS ends the programming session
+                // (knx-rs drops the connection and raises this flag). Persist the
+                // freshly-downloaded memory immediately — matching KNX's
+                // persist-before-restart ordering — instead of waiting for the
+                // debounce, and cancel the now-redundant pending persist. This
+                // closes the window where a crash between the last write and the
+                // debounce firing would lose the programming.
+                if bau.take_restart_pending() {
+                    persist_armed = false;
+                    memory_dirty = false;
+                    tunnel_active = false;
+                    // Persist SYNCHRONOUSLY here: if we restart below, the re-exec
+                    // abandons any spawned task, so the write must complete first.
+                    if let Some(path) = persist_path.as_ref() {
+                        if !bau.memory_area().is_empty() {
+                            let state = bau.save();
+                            if let Err(e) = persist_memory(path, &state) {
+                                tracing::warn!(error = %e, "Failed to persist ETS state before restart");
+                            } else {
+                                tracing::info!(bytes = state.len(), "ETS programming persisted before restart");
+                            }
+                        }
+                    }
+                    if restart_after_ets {
+                        // Reboot into the new programming — the boot-time config
+                        // path (KEA-0004) then applies the ETS parameters.
+                        tracing::info!("ETS programming complete — restarting snapdog to apply parameters");
+                        crate::process::restart_process(); // does not return on success
+                    } else {
+                        tracing::info!(
+                            "ETS programming complete — restart snapdog to apply the new parameters"
+                        );
+                    }
+                }
+
                 dispatch_updated_gos(&mut bau, &update_tx).await;
             }
 
@@ -477,15 +521,7 @@ async fn bau_task_loop(
                 memory_dirty = false;
                 tunnel_active = false;
                 if let Some(ref path) = persist_path {
-                    let state = bau.save();
-                    let path = path.clone();
-                    tokio::task::spawn_blocking(move || {
-                        if let Err(e) = persist_memory(&path, &state) {
-                            tracing::warn!(error = %e, "Failed to persist ETS state");
-                        } else {
-                            tracing::info!(path = %path.display(), bytes = state.len(), "ETS programming session complete — state persisted");
-                        }
-                    });
+                    spawn_persist(bau.save(), path.clone());
                 }
             }
         }
@@ -506,12 +542,41 @@ async fn bau_task_loop(
     tracing::info!("KNX BAU task ended");
 }
 
+/// Persist a saved BAU memory snapshot to `path` in a blocking task, logging the
+/// outcome. Shared by the debounced-persist and restart-persist paths.
+fn spawn_persist(state: Vec<u8>, path: PathBuf) {
+    tokio::task::spawn_blocking(move || match persist_memory(&path, &state) {
+        Ok(()) => {
+            tracing::info!(path = %path.display(), bytes = state.len(), "ETS programming persisted");
+        }
+        Err(e) => tracing::warn!(error = %e, "Failed to persist ETS state"),
+    });
+}
+
+/// Load and parse persisted ETS device memory into [`EtsParams`], or `None` if the
+/// file is absent/unreadable or the device was never fully programmed.
+///
+/// Reads the same [`ETS_MEMORY_PATH`] the BAU task persists to, and builds a
+/// throwaway BAU purely to restore the memory image and parse it — no
+/// `DeviceServer` and no UDP bind — so it is safe to call at boot **before** the
+/// real KNX device transport starts (KEA-0004 boot-time apply).
+pub(super) fn load_persisted_ets_params(ia: IndividualAddress) -> Option<EtsParams> {
+    let data = load_memory(std::path::Path::new(ETS_MEMORY_PATH)).ok()?;
+    let device = device_object::new_device_object(device_serial(), group_objects::HARDWARE_TYPE);
+    let mut bau = Bau::new(device, TOTAL_GO_COUNT as u16, MAX_TUNNEL_CONNECTIONS);
+    device_object::set_individual_address(bau.device_mut(), ia.raw());
+    if bau.restore(&data).is_err() || !bau.configured() {
+        return None;
+    }
+    Some(parse_ets_memory(bau.memory_area()))
+}
+
 /// Build a BAU with 460 group objects configured with correct DPTs,
 /// and address/association tables from TOML config.
 fn build_bau(ia: IndividualAddress, config: &crate::config::AppConfig) -> Bau {
     let device = device_object::new_device_object(
         device_serial(),
-        [0x00; 6], // hardware type
+        group_objects::HARDWARE_TYPE, // must match the .knxprod LdCtrlCompareProp (PID 78)
     );
     let mut bau = Bau::new(device, TOTAL_GO_COUNT as u16, MAX_TUNNEL_CONNECTIONS);
     device_object::set_individual_address(bau.device_mut(), ia.raw());
