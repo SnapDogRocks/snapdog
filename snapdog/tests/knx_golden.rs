@@ -50,7 +50,11 @@ fn hardware_type_matches_knxprod_compare_gate() {
     // download and aborts on mismatch. Firmware (device.rs) and the .knxprod
     // (xtask) both derive from this constant, so they can't drift — this pins the
     // value against an accidental change.
-    let hex: String = HARDWARE_TYPE.iter().map(|b| format!("{b:02X}")).collect();
+    use std::fmt::Write as _;
+    let hex = HARDWARE_TYPE.iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02X}");
+        s
+    });
     assert_eq!(
         hex, "0000FF010100",
         "HardwareType must equal the .knxprod compare gate"
