@@ -1,8 +1,8 @@
 ---
 rfc: KEA-0004
 title: Applying ETS-programmed parameters to snapdog's running config
-status: draft            # draft | accepted | in-progress | done | superseded
-version: 0.1.0           # v0.1: scoping from a 3-slice architecture map (config↔EtsParams, startup flow, per-subsystem reconfig)
+status: in-progress      # draft | accepted | in-progress | done | superseded
+version: 0.2.0           # v0.2: Option A boot-time apply + self-restart landed (KEA-T2/T3/T4); state-seed + merge deferred
 created: 2026-07-05
 updated: 2026-07-05
 target_repo: snapdog
@@ -186,13 +186,14 @@ far more often than structure (**KEA-DEC-5**).
 
 ## 8. Task breakdown (`KEA-T*`) — Option A
 
-- **KEA-T1** — Resolve **KEA-DEC-1..3, 6** (blocks implementation).
-- **KEA-T2** — `fn etsparams_to_fileconfig(&EtsParams) -> FileConfig` (§4.1), with index→name zone translation and sanitize-then-fallback for bad strings (KEA-REQ-3). Unit-tested against `parse_ets_memory` golden vectors.
-- **KEA-T3** — Standalone `load_and_parse_ets_memory(state_dir, ia) -> Option<EtsParams>` lifted from `start_device_transport`, callable pre-subsystem; resolve the UDP-3671 double-bind (split server-start from bridge-spawn).
-- **KEA-T4** — Wire into `main.rs` (~`:199`): if ETS memory parses, build config via `load_raw_no_validate` per KEA-DEC-1; else keep current behavior.
-- **KEA-T5** — Seed the store from ETS for the §4.2 fields (per KEA-DEC-3): `zone/client default_volume`, `client default_latency`.
-- **KEA-T6** — `zones.json` migration/invalidation per KEA-DEC-4.
-- **KEA-T7** — Docs + an integration test: persisted memory → derived `AppConfig` → subsystems see ETS zones/clients/endpoints.
+- **KEA-T1** — Resolve **KEA-DEC-1..3, 6**. *Partially resolved:* DEC-1 = ETS applies only in `--knx-device` **without** `--config` (base = defaults); DEC-3 = state-seed (deferred, T5); DEC-6 = kept CWD-relative for now (read matches write).
+- **KEA-T2** — ✅ **Done** — `ets_params_to_file_config(&EtsParams, FileConfig)` in `knx/ets_config.rs`, with client default-zone index→name translation and empty-name fallbacks. Unit-tested (mapping, base fallback, out-of-range zone, full `load_raw_no_validate` resolution).
+- **KEA-T3** — ✅ **Done** — `device::load_persisted_ets_params(ia)` restores a throwaway BAU (no `DeviceServer`, no UDP bind) and parses only if `configured()`. Double-bind avoided entirely (boot path never starts the server).
+- **KEA-T4** — ✅ **Done** — `main.rs` `--knx-device` (no `--config`) branch derives config via `knx::ets_device_config()`.
+- **KEA-T4b** — ✅ **Done** (added) — **self-restart**: on `A_Restart`, the BAU task persists synchronously and `process::restart_process()` re-execs the binary so the boot-time path applies the new config. Gated by `knx.restart_after_ets` (default true).
+- **KEA-T5** — ⏳ **Deferred** — seed the store from ETS `zone/client default_volume` + `client default_latency` (§4.2 fields with no config home; per KEA-DEC-3).
+- **KEA-T6** — ⏳ **Deferred** — `zones.json` migration/invalidation per KEA-DEC-4; and the `--config` + ETS merge (KEA-DEC-1 richer form).
+- **KEA-T7** — ⏳ **Deferred** — an end-to-end integration test (persisted memory → subsystems see ETS zones/clients/endpoints).
 
 ## 9. Risks
 
