@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.23.0](https://github.com/SnapDogRocks/snapdog/compare/v0.22.1...v0.23.0) (2026-07-05)
+
+
+### Features
+
+* **knx:** apply ETS-programmed parameters as config at boot (KEA-0004) ([2823788](https://github.com/SnapDogRocks/snapdog/commit/282378879a8981461288ad70904b07110a7f7016))
+* **knx:** ETS-programmable device — knx-rs 0.4, boot-time config apply, self-restart ([ad69d1e](https://github.com/SnapDogRocks/snapdog/commit/ad69d1e1404b9e81718eaf0842d86410c3e3a884))
+* **knx:** self-restart after an ETS reprogram to apply new parameters ([dfdeb96](https://github.com/SnapDogRocks/snapdog/commit/dfdeb965d5a67e54fd98096ca79bc2e77f22fe4f))
+
+
+### Bug Fixes
+
+* **knx:** bump knx-rs 0.2 → 0.4 for System-B device conformance ([d6b9faf](https://github.com/SnapDogRocks/snapdog/commit/d6b9fafcc001757ae98d2c7d46cb1bbddc40f6f4))
+* **knx:** bump knx-rs 0.4 → 0.5.0 ([#59](https://github.com/SnapDogRocks/snapdog/issues/59)) ([3aee044](https://github.com/SnapDogRocks/snapdog/commit/3aee04436cbbc52148679fb1ba7158c294dbf06b))
+* **knx:** persist ETS programming immediately on A_Restart ([bd1406a](https://github.com/SnapDogRocks/snapdog/commit/bd1406afab25e8347f3646cf6049286186985fb6))
+* **knx:** serve the correct device HardwareType (PID 78) so ETS can program ([43fb8de](https://github.com/SnapDogRocks/snapdog/commit/43fb8de007b259b75750c5357851a2750ef9b797))
+
 ## [0.22.1](https://github.com/SnapDogRocks/snapdog/compare/v0.22.0...v0.22.1) (2026-07-04)
 
 
