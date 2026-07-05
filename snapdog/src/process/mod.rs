@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! Child process management for snapserver.
+//! Child process management for snapserver, plus self-restart.
 //!
 //! Generates snapserver.conf from app config, spawns and monitors the process.
 //! In dev mode (managed=false), this is a no-op.
@@ -13,6 +13,38 @@ use anyhow::{Context, Result};
 use tokio::process::{Child, Command};
 
 use crate::config::AppConfig;
+
+/// Restart the running snapdog process by re-executing the same binary with the
+/// same arguments — the software equivalent of a device reboot.
+///
+/// On Unix this `exec()`s in place (same PID, fresh process image); on success it
+/// **never returns**. On other platforms it spawns a replacement and exits. Used
+/// after an ETS reprogram so the new parameters are applied by the boot-time
+/// config path. Persist anything important before calling — nothing after the
+/// exec point runs, and `Drop` handlers do not fire.
+pub fn restart_process() {
+    let Ok(exe) = std::env::current_exe() else {
+        tracing::error!("Cannot determine current executable — skipping restart");
+        return;
+    };
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    tracing::warn!(exe = %exe.display(), "Restarting snapdog to apply new configuration");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        // exec() only returns on failure.
+        let err = std::process::Command::new(&exe).args(&args).exec();
+        tracing::error!(error = %err, "Failed to re-exec — continuing without restart");
+    }
+    #[cfg(not(unix))]
+    {
+        match std::process::Command::new(&exe).args(&args).spawn() {
+            Ok(_) => std::process::exit(0),
+            Err(e) => tracing::error!(error = %e, "Failed to spawn replacement process"),
+        }
+    }
+}
 
 /// Handle to a managed snapserver process. Kills the process on drop.
 pub struct SnapserverHandle {

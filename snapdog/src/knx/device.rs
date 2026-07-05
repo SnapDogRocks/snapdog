@@ -317,6 +317,7 @@ pub async fn start_device_transport(
 
     let knx = config.knx.as_ref().expect("KNX config required");
     let persist = knx.persist_ets_config.unwrap_or(true);
+    let restart_after_ets = knx.restart_after_ets.unwrap_or(true);
     let persist_path = if persist {
         Some(PathBuf::from(ETS_MEMORY_PATH))
     } else {
@@ -375,7 +376,14 @@ pub async fn start_device_transport(
         tracing::info!("KNX programming mode active (--knx-prog-mode)");
     }
 
-    tokio::spawn(bau_task_loop(bau, server, cmd_rx, update_tx, persist_path));
+    tokio::spawn(bau_task_loop(
+        bau,
+        server,
+        cmd_rx,
+        update_tx,
+        persist_path,
+        restart_after_ets,
+    ));
 
     tracing::info!(%individual_address, persist, "KNX device mode started");
 
@@ -413,6 +421,7 @@ async fn bau_task_loop(
     mut cmd_rx: mpsc::Receiver<BauCmd>,
     update_tx: mpsc::Sender<(GroupAddress, Vec<u8>)>,
     persist_path: Option<PathBuf>,
+    restart_after_ets: bool,
 ) {
     let mut memory_dirty = false;
     let persist_timer = tokio::time::sleep(ETS_PERSIST_DEBOUNCE);
@@ -463,15 +472,28 @@ async fn bau_task_loop(
                     persist_armed = false;
                     memory_dirty = false;
                     tunnel_active = false;
-                    if let Some(path) = persist_path.clone() {
+                    // Persist SYNCHRONOUSLY here: if we restart below, the re-exec
+                    // abandons any spawned task, so the write must complete first.
+                    if let Some(path) = persist_path.as_ref() {
                         if !bau.memory_area().is_empty() {
-                            spawn_persist(bau.save(), path);
+                            let state = bau.save();
+                            if let Err(e) = persist_memory(path, &state) {
+                                tracing::warn!(error = %e, "Failed to persist ETS state before restart");
+                            } else {
+                                tracing::info!(bytes = state.len(), "ETS programming persisted before restart");
+                            }
                         }
                     }
-                    tracing::info!(
-                        "KNX device restart requested by ETS — programming session complete \
-                         (restart snapdog to apply ETS parameters)"
-                    );
+                    if restart_after_ets {
+                        // Reboot into the new programming — the boot-time config
+                        // path (KEA-0004) then applies the ETS parameters.
+                        tracing::info!("ETS programming complete — restarting snapdog to apply parameters");
+                        crate::process::restart_process(); // does not return on success
+                    } else {
+                        tracing::info!(
+                            "ETS programming complete — restart snapdog to apply the new parameters"
+                        );
+                    }
                 }
 
                 dispatch_updated_gos(&mut bau, &update_tx).await;

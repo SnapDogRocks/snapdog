@@ -826,6 +826,9 @@ pub struct KnxConfig {
     pub individual_address: Option<String>,
     /// Persist ETS-programmed configuration across restarts (device role).
     pub persist_ets_config: Option<bool>,
+    /// Restart the snapdog process when ETS finishes a programming session
+    /// (device role), so the new parameters are applied at boot. Default: true.
+    pub restart_after_ets: Option<bool>,
     /// Start with programming mode active (set via --knx-prog-mode CLI flag).
     #[serde(default)]
     pub start_prog_mode: bool,
