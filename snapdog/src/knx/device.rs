@@ -452,6 +452,28 @@ async fn bau_task_loop(
                     persist_armed = true;
                 }
 
+                // An A_Restart / master reset from ETS ends the programming session
+                // (knx-rs drops the connection and raises this flag). Persist the
+                // freshly-downloaded memory immediately — matching KNX's
+                // persist-before-restart ordering — instead of waiting for the
+                // debounce, and cancel the now-redundant pending persist. This
+                // closes the window where a crash between the last write and the
+                // debounce firing would lose the programming.
+                if bau.take_restart_pending() {
+                    persist_armed = false;
+                    memory_dirty = false;
+                    tunnel_active = false;
+                    if let Some(path) = persist_path.clone() {
+                        if !bau.memory_area().is_empty() {
+                            spawn_persist(bau.save(), path);
+                        }
+                    }
+                    tracing::info!(
+                        "KNX device restart requested by ETS — programming session complete \
+                         (restart snapdog to apply ETS parameters)"
+                    );
+                }
+
                 dispatch_updated_gos(&mut bau, &update_tx).await;
             }
 
@@ -477,15 +499,7 @@ async fn bau_task_loop(
                 memory_dirty = false;
                 tunnel_active = false;
                 if let Some(ref path) = persist_path {
-                    let state = bau.save();
-                    let path = path.clone();
-                    tokio::task::spawn_blocking(move || {
-                        if let Err(e) = persist_memory(&path, &state) {
-                            tracing::warn!(error = %e, "Failed to persist ETS state");
-                        } else {
-                            tracing::info!(path = %path.display(), bytes = state.len(), "ETS programming session complete — state persisted");
-                        }
-                    });
+                    spawn_persist(bau.save(), path.clone());
                 }
             }
         }
@@ -504,6 +518,17 @@ async fn bau_task_loop(
     }
 
     tracing::info!("KNX BAU task ended");
+}
+
+/// Persist a saved BAU memory snapshot to `path` in a blocking task, logging the
+/// outcome. Shared by the debounced-persist and restart-persist paths.
+fn spawn_persist(state: Vec<u8>, path: PathBuf) {
+    tokio::task::spawn_blocking(move || match persist_memory(&path, &state) {
+        Ok(()) => {
+            tracing::info!(path = %path.display(), bytes = state.len(), "ETS programming persisted");
+        }
+        Err(e) => tracing::warn!(error = %e, "Failed to persist ETS state"),
+    });
 }
 
 /// Build a BAU with 460 group objects configured with correct DPTs,
