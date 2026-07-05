@@ -2564,29 +2564,30 @@ dependencies = [
 
 [[package]]
 name = "knx-rs-core"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de60282e6e45db68dbf651c5e5f8395e18222ddf972a3d4bdddf7281c9e45e4a"
+checksum = "dc78bdd0a1ee94df76d8ab3c01bf33ef21663255489995a37043d5dcbab5a607"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "knx-rs-device"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52a1524e58689409c3b69f0aef186fe57c085aaf311af4de57ab7c5c0991fe20"
+checksum = "846787dd133eec377c354e0282ee0f6b2d8f68a82747501eca6887be578862f4"
 dependencies = [
  "knx-rs-core",
 ]
 
 [[package]]
 name = "knx-rs-ip"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5e44580323f3f8ffbd382e652d1301b7e60ae87f67e4fafbf7d7ec9e756ec2a"
+checksum = "37803f5061c84ec348b97c170c8fe38716c1ae0cb9f9a38fe3eba8ca9c25c102"
 dependencies = [
  "knx-rs-core",
+ "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2594,14 +2595,14 @@ dependencies = [
 
 [[package]]
 name = "knx-rs-prod"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "106a8db6755fcf9f2607ed914ce2107a182b12fa4c9a238a36300ef1b29c646e"
+checksum = "732f831b6cf14ce17041e24918a819069a06be6e78fbd85ee27225cd31676745"
 dependencies = [
  "base64",
  "clap",
  "md-5 0.11.0",
- "quick-xml 0.39.4",
+ "quick-xml 0.41.0",
  "regex",
  "tempfile",
  "thiserror 2.0.18",
@@ -3935,6 +3936,15 @@ name = "quick-xml"
 version = "0.39.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
 ]
