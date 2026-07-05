@@ -195,8 +195,10 @@ pub async fn run_app() -> Result<()> {
     let mut app_config = if let Some(ref config_path) = cli.config {
         config::load(config_path)?
     } else {
-        // --knx-device without --config: start with defaults, ETS provides config
-        config::load_raw_no_validate(config::FileConfig::default())?
+        // --knx-device without --config: an ETS-programmed device provides its
+        // config from persisted parameter memory; otherwise built-in defaults
+        // (RFC KEA-0004 boot-time apply).
+        config::load_raw_no_validate(knx::ets_device_config(cli.knx_address.as_deref()))?
     };
 
     // --knx-device enables device mode

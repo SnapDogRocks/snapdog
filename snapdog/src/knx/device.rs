@@ -531,6 +531,24 @@ fn spawn_persist(state: Vec<u8>, path: PathBuf) {
     });
 }
 
+/// Load and parse persisted ETS device memory into [`EtsParams`], or `None` if the
+/// file is absent/unreadable or the device was never fully programmed.
+///
+/// Reads the same [`ETS_MEMORY_PATH`] the BAU task persists to, and builds a
+/// throwaway BAU purely to restore the memory image and parse it — no
+/// `DeviceServer` and no UDP bind — so it is safe to call at boot **before** the
+/// real KNX device transport starts (KEA-0004 boot-time apply).
+pub(super) fn load_persisted_ets_params(ia: IndividualAddress) -> Option<EtsParams> {
+    let data = load_memory(std::path::Path::new(ETS_MEMORY_PATH)).ok()?;
+    let device = device_object::new_device_object(device_serial(), group_objects::HARDWARE_TYPE);
+    let mut bau = Bau::new(device, TOTAL_GO_COUNT as u16, MAX_TUNNEL_CONNECTIONS);
+    device_object::set_individual_address(bau.device_mut(), ia.raw());
+    if bau.restore(&data).is_err() || !bau.configured() {
+        return None;
+    }
+    Some(parse_ets_memory(bau.memory_area()))
+}
+
 /// Build a BAU with 460 group objects configured with correct DPTs,
 /// and address/association tables from TOML config.
 fn build_bau(ia: IndividualAddress, config: &crate::config::AppConfig) -> Bau {
