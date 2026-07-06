@@ -31,7 +31,7 @@ LABEL org.opencontainers.image.description="Multi-room audio system with KNX int
 LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libasound2 libavahi-client3 ca-certificates dumb-init curl \
+    libasound2 libavahi-client3 libavahi-compat-libdnssd1 ca-certificates dumb-init curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/snapdog /usr/local/bin/
