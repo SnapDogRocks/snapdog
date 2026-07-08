@@ -23,8 +23,9 @@ jobs:
   # Detect which areas a change touches so each downstream job runs only when
   # relevant. A change under .github/workflows/** flips every area on, so CI
   # changes are always validated by the full suite (and this workflow's own PR
-  # runs everything). Heavy/comprehensive checks (coverage, full feature-combo
-  # smoke, Windows*, time-based audit) live in nightly.yml — off the PR path.
+  # runs everything). Comprehensive checks (line coverage, the full 5-combo
+  # feature smoke, a time-based advisory sweep) live in nightly.yml; Windows
+  # Check runs here, gated to Rust PRs.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -38,6 +39,10 @@ jobs:
       deps: ${{ steps.filter.outputs.deps }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history so paths-filter can resolve the base commit on push:main
+          # (a shallow checkout can leave the base missing and mis-detect changes).
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
