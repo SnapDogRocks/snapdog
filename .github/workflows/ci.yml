@@ -15,6 +15,48 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  # Detect which areas a change touches so each downstream job runs only when
+  # relevant. A change under .github/workflows/** flips every area on, so CI
+  # changes are always validated by the full suite (and this workflow's own PR
+  # runs everything). Heavy/comprehensive checks (coverage, full feature-combo
+  # smoke, Windows*, time-based audit) live in nightly.yml — off the PR path.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      webui: ${{ steps.filter.outputs.webui }}
+      knx: ${{ steps.filter.outputs.knx }}
+      deps: ${{ steps.filter.outputs.deps }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - '.github/workflows/**'
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - '.config/**'
+              - 'rust-toolchain*'
+            webui:
+              - '.github/workflows/**'
+              - 'webui/**'
+            knx:
+              - '.github/workflows/**'
+              - '**/*.rs'
+              - 'knx/**'
+              - 'xtask/**'
+            deps:
+              - '.github/workflows/**'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+
   commit-convention:
     name: Conventional Commits
     runs-on: ubuntu-latest
@@ -52,6 +94,8 @@ jobs:
 
   fmt:
     name: Format
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -62,6 +106,8 @@ jobs:
 
   webui:
     name: WebUI
+    needs: changes
+    if: needs.changes.outputs.webui == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -85,6 +131,8 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -106,6 +154,8 @@ jobs:
 
   unit-tests:
     name: Unit Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -134,6 +184,8 @@ jobs:
 
   integration-tests:
     name: Integration Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     services:
       navidrome:
@@ -187,17 +239,19 @@ jobs:
 
   build-smoke:
     name: Build Smoke (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     # Gross-signature firewall (IT-T73): every meaningful feature combination must
     # still compile. `snapcast-embedded` XOR `snapcast-process` is a compile_error!
     # guard (main.rs), so this is a flat include-list (one backend per cell) — never
     # a cross-product, never `--all-features`/bare `--no-default-features`.
+    # The default combo ("embedded,spotify,dbus") is already compiled by Clippy +
+    # Unit Tests, so it's omitted here; nightly.yml runs the full 5-combo matrix.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: "embedded (default)", features: "snapcast-embedded,spotify,dbus" }
           - { name: "embedded minimal", features: "snapcast-embedded" }
           - { name: "embedded full", features: "snapcast-embedded,ap2,spotify,dbus,api-docs" }
           - { name: "process minimal", features: "snapcast-process" }
@@ -216,13 +270,16 @@ jobs:
 
   audit:
     name: Security Audit
+    needs: changes
+    if: needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+      # Prebuilt binary — no source compile (was `cargo install cargo-audit`, ~2-3 min/run).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
       - name: Run security audit
         # Transitive-dep advisories not fixable via `cargo update` — review periodically.
         # RUSTSEC-2026-0066/0112/0113/0145: astral-tokio-tar (tar-extraction), dev-only
@@ -245,35 +302,10 @@ jobs:
             --ignore RUSTSEC-2026-0194 \
             --ignore RUSTSEC-2026-0195
 
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-      - name: Skip WebUI build (placeholder is generated by snapdog/build.rs)
-        shell: bash
-        run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
-      - name: Coverage (tier-1, gate on threshold)
-        # Default features (snapcast-embedded). Threshold is a regression guard set
-        # a few points below the current ~50% line coverage (IT-T92).
-        run: cargo llvm-cov -p snapdog --lcov --output-path lcov.info --fail-under-lines 45
-      - uses: actions/upload-artifact@v7
-        if: ${{ !cancelled() }}
-        with:
-          name: coverage-lcov
-          path: lcov.info
-          if-no-files-found: ignore
-
   knxprod:
     name: KNX Product Database
+    needs: changes
+    if: needs.changes.outputs.knx == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -293,8 +325,9 @@ jobs:
 
   windows-check:
     name: Windows Check
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' && github.event_name == 'pull_request'
     runs-on: windows-2025
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -303,3 +336,31 @@ jobs:
         shell: bash
         run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
       - run: cargo check --all-targets
+
+  # Single required status check. Passes iff every job above succeeded or was
+  # skipped (path-filtered), fails if any failed or was cancelled. Branch
+  # protection requires only "CI Success", so conditional jobs never wedge a PR.
+  ci-success:
+    name: CI Success
+    if: always()
+    needs:
+      - changes
+      - commit-convention
+      - fmt
+      - webui
+      - clippy
+      - unit-tests
+      - integration-tests
+      - build-smoke
+      - audit
+      - knxprod
+      - windows-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize job results
+        run: echo "results = ${{ join(needs.*.result, ', ') }}"
+      - name: Fail if any required job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "::error::One or more CI jobs did not pass (see results above)."
+          exit 1
