@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.23.1](https://github.com/SnapDogRocks/snapdog/compare/v0.23.0...v0.23.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **config:** allow zero static clients when unknown_clients = accept ([b32de3a](https://github.com/SnapDogRocks/snapdog/commit/b32de3a37d5aa94074e9077c85ec874bc4183c45))
+* **docker:** install libavahi-compat-libdnssd1 in runtime images ([07faccd](https://github.com/SnapDogRocks/snapdog/commit/07faccdfea984cc8236a015211d86d16c7e596ab))
+
 ## [0.23.0](https://github.com/SnapDogRocks/snapdog/compare/v0.22.1...v0.23.0) (2026-07-05)
 
 
