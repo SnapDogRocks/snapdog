@@ -22,7 +22,7 @@ LABEL org.opencontainers.image.description="SnapDog audio client — receives an
 LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libasound2 libavahi-client3 ca-certificates dumb-init \
+    libasound2 libavahi-client3 libavahi-compat-libdnssd1 ca-certificates dumb-init \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/snapdog-client /usr/local/bin/
