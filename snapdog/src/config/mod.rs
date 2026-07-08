@@ -52,9 +52,11 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
             !raw.zone.is_empty(),
             "At least one [[zone]] must be configured"
         );
+        // Clients auto-register when snapcast.unknown_clients = "accept", so a
+        // static [[client]] is only required for the ignore/reject policies.
         anyhow::ensure!(
-            !raw.client.is_empty(),
-            "At least one [[client]] must be configured"
+            !raw.client.is_empty() || raw.snapcast.unknown_clients == UnknownClientPolicy::Accept,
+            "At least one [[client]] must be configured (unless snapcast.unknown_clients = \"accept\")"
         );
     }
 
@@ -525,6 +527,40 @@ mod tests {
             name = "X"
             mac = "00:00:00:00:00:00"
             zone = "X"
+        "#,
+        )
+        .unwrap();
+        assert!(load_raw(raw).is_err());
+    }
+
+    #[test]
+    fn accept_policy_allows_no_clients() {
+        // Fresh servers with unknown_clients = "accept" have no static clients
+        // (they auto-register), so a zone-only config must be accepted.
+        let raw: FileConfig = toml::from_str(
+            r#"
+            [snapcast]
+            unknown_clients = "accept"
+
+            [[zone]]
+            name = "Ground Floor"
+        "#,
+        )
+        .unwrap();
+        assert!(load_raw(raw).is_ok());
+    }
+
+    #[test]
+    fn reject_policy_still_requires_clients() {
+        // With unknown_clients = "reject", only known clients work, so a static
+        // [[client]] is still required.
+        let raw: FileConfig = toml::from_str(
+            r#"
+            [snapcast]
+            unknown_clients = "reject"
+
+            [[zone]]
+            name = "Ground Floor"
         "#,
         )
         .unwrap();
