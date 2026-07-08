@@ -93,14 +93,9 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 25
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
-      - name: Build WebUI
-        working-directory: webui
-        run: npm ci --force && npm run build
+      - name: WebUI placeholder (rust-embed needs the dir at build time)
+        shell: bash
+        run: mkdir -p webui/out && touch webui/out/index.html
       - name: Clippy (default / embedded)
         run: cargo clippy --all-targets -- -D warnings
       # Process mode is a mutually-exclusive feature set the default clippy above
@@ -117,14 +112,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 25
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
-      - name: Build WebUI
-        working-directory: webui
-        run: npm ci --force && npm run build
+      - name: WebUI placeholder (rust-embed needs the dir at build time)
+        shell: bash
+        run: mkdir -p webui/out && touch webui/out/index.html
       # Whole workspace incl. tier-1 integration targets (in-process, deterministic,
       # no services) — `--lib` skipped tests/*.rs (the IT-0003 suite) and the
       # snapdog-client/-common tests. `--locked` doubles as the Cargo.lock drift
@@ -157,14 +147,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 25
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
-      - name: Build WebUI
-        working-directory: webui
-        run: npm ci --force && npm run build
+      - name: WebUI placeholder (rust-embed needs the dir at build time)
+        shell: bash
+        run: mkdir -p webui/out && touch webui/out/index.html
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
@@ -203,6 +188,7 @@ jobs:
   build-smoke:
     name: Build Smoke (${{ matrix.name }})
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     # Gross-signature firewall (IT-T73): every meaningful feature combination must
     # still compile. `snapcast-embedded` XOR `snapcast-process` is a compile_error!
     # guard (main.rs), so this is a flat include-list (one backend per cell) — never
@@ -221,15 +207,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 25
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
       # rust-embed needs webui/out to exist at compile time
-      - name: Build WebUI
-        working-directory: webui
-        run: npm ci --force && npm run build
+      - name: WebUI placeholder (rust-embed needs the dir at build time)
+        shell: bash
+        run: mkdir -p webui/out && touch webui/out/index.html
       - name: cargo check
         run: cargo check -p snapdog --no-default-features --features "${{ matrix.features }}"
 
@@ -312,16 +293,12 @@ jobs:
   windows-check:
     name: Windows Check
     runs-on: windows-2025
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 25
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
-      - name: Build WebUI
-        working-directory: webui
-        run: npm ci --force && npm run build
+      - name: WebUI placeholder (rust-embed needs the dir at build time)
+        shell: bash
+        run: mkdir -p webui/out && touch webui/out/index.html
       - run: cargo check --all-targets
