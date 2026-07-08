@@ -5,10 +5,10 @@ Maintainer: Fabian Schmieder
 Installed-Size: 22651
 Depends: libasound2, libavahi-compat-libdnssd1
 Filename: pool/snapdog_0.23.1-1_arm64.deb
-Size: 7627376
-MD5sum: 6204633b166581237687cf7ae218b38f
-SHA1: d4fe2b55b9c2c54289ca2c0cd1e6d7d1c228dea2
-SHA256: b64a684f15ca9f52fd73cbff217bc458456e5a5f40e0bb6d630be034129e61d2
+Size: 7626256
+MD5sum: 4b12e0bdf7ac6a4ade1bf0067b37e3f6
+SHA1: 224317439cc0fe353ed8d863cce4da1b2e609892
+SHA256: e3e9acd3000be5a347aa29841d24136cd273a94fba370953de50e618cd91ab46
 Section: sound
 Priority: optional
 Homepage: https://github.com/metaneutrons/snapdog
