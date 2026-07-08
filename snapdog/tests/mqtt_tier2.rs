@@ -121,7 +121,14 @@ async fn mqtt_tier2_online_state_roundtrip_and_lwt() {
     while !(seen.get("snapdog/status").map(String::as_str) == Some("online")
         && seen.contains_key("snapdog/zones/1/state"))
     {
+        // `biased`: always poll the bridge first. Under a slow/loaded runner an
+        // unbiased select lets the busy subscriber branch keep winning, starving
+        // the bridge's CONNECT + retained-publish flush — the connection then drops
+        // mid-setup and the broker fires the LWT, so the subscriber sees a retained
+        // "offline" and never the "online"/zone-state. Prioritising the bridge lets
+        // its setup complete before we lean on the subscriber loop.
         tokio::select! {
+            biased;
             () = bridge.poll_once(&cmds, &store, &snap_tx) => {}
             r = tokio::time::timeout_at(deadline, sub_loop.poll()) => {
                 match r {
