@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.2](https://github.com/SnapDogRocks/snapdog/compare/v0.23.1...v0.23.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* **ci:** skip WebUI build via env var in all Rust jobs ([030fd07](https://github.com/SnapDogRocks/snapdog/commit/030fd07c665f33ac337734fa99656e958b5899b5))
+
 ## [0.23.1](https://github.com/SnapDogRocks/snapdog/compare/v0.23.0...v0.23.1) (2026-07-08)
 
 
