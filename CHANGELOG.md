@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.3](https://github.com/SnapDogRocks/snapdog/compare/v0.23.2...v0.23.3) (2026-07-09)
+
+
+### Bug Fixes
+
+* **mdns:** advertise _snapdog._tcp via mdns-sd instead of astro-dnssd ([9d209de](https://github.com/SnapDogRocks/snapdog/commit/9d209decd09cd5f675814ac35536d39a53a7c8ae))
+
 ## [0.23.2](https://github.com/SnapDogRocks/snapdog/compare/v0.23.1...v0.23.2) (2026-07-08)
 
 
