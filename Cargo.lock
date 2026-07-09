@@ -4827,7 +4827,6 @@ version = "0.23.2"
 dependencies = [
  "anyhow",
  "assert-json-diff",
- "astro-dnssd",
  "axum",
  "axum-server",
  "biquad",
@@ -4838,6 +4837,7 @@ dependencies = [
  "dotenvy",
  "fastrand",
  "futures-util",
+ "gethostname",
  "image",
  "knx-rs-core",
  "knx-rs-device",
@@ -4849,6 +4849,7 @@ dependencies = [
  "librespot-playback",
  "mac_address",
  "md5",
+ "mdns-sd",
  "mockall",
  "reqwest",
  "rubato 0.16.2",
