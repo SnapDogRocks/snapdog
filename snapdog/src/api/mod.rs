@@ -14,6 +14,22 @@ pub mod ws;
 /// Cache-Control header value for immutable assets cached for 1 day.
 pub(crate) const CACHE_CONTROL_1DAY: &str = "public, max-age=86400";
 
+/// Install the process-wide rustls crypto provider (aws-lc-rs, matching reqwest's
+/// client default).
+///
+/// Both the `ring` and `aws-lc-rs` crypto providers are present in the dependency
+/// tree (via axum-server/bollard and reqwest respectively). With more than one
+/// provider compiled in, rustls cannot auto-select a default, so `ServerConfig::builder()`
+/// — reached through `axum_server::tls_rustls::RustlsConfig::from_pem_file` in [`serve`]
+/// when `http.tls_cert`/`tls_key` are set — panics at runtime unless a default has been
+/// installed first. Call this once at startup, before any TLS is set up.
+///
+/// Idempotent: the underlying `install_default` returns an error if a provider was
+/// already installed (e.g. a second call from a test), which is intentionally ignored.
+pub fn install_crypto_provider() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+}
+
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::sync::Arc;
@@ -206,4 +222,18 @@ pub fn build_router(state: &SharedState) -> Router {
 
     app.layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
+}
+
+#[cfg(test)]
+mod crypto_provider_tests {
+    /// Regression: with both `ring` and `aws-lc-rs` in the tree, `ServerConfig::builder()`
+    /// (used by the axum-server TLS path in `serve`) panics unless a default provider was
+    /// installed. `install_crypto_provider` must make the builder succeed.
+    #[test]
+    fn builder_ok_after_provider_installed() {
+        super::install_crypto_provider();
+        // Panics with "Could not automatically determine the process-level CryptoProvider"
+        // if no default is installed.
+        let _ = rustls::ServerConfig::builder();
+    }
 }

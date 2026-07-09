@@ -34,6 +34,7 @@ knx-rs-core = { workspace = true }
 knx-rs-ip = { workspace = true }
 knx-rs-device = { workspace = true }
 reqwest = { workspace = true }
+rustls = { workspace = true }
 url = { workspace = true }
 futures-util = { workspace = true }
 anyhow = { workspace = true }

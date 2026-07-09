@@ -181,6 +181,11 @@ async fn main() -> Result<()> {
 /// Panics if the OS signal handler cannot be registered (Unix only).
 #[allow(clippy::too_many_lines)] // Main app setup + event loop — splitting would obscure control flow
 pub async fn run_app() -> Result<()> {
+    // Install the rustls crypto provider before any TLS is set up: both `ring` and
+    // `aws-lc-rs` are in the tree, so rustls can't auto-pick one and the axum-server
+    // TLS path would otherwise panic when `http.tls_cert`/`tls_key` are configured.
+    api::install_crypto_provider();
+
     // ── Parse config ──────────────────────────────────────────
     let cli = Cli::parse();
 

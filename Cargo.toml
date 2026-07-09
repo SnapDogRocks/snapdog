@@ -60,6 +60,11 @@ knx-rs-device = { version = "0.5", package = "knx-rs-device" }
 # HTTP client (Subsonic API, radio streams)
 reqwest = { version = "0.13", features = ["json", "stream"] }
 
+# TLS crypto provider — install a process-level default. Both `ring` and `aws-lc-rs`
+# are present transitively (axum-server/bollard vs reqwest), so rustls cannot auto-pick
+# one; see `api::install_crypto_provider`.
+rustls = "0.23"
+
 # URL parsing
 url = "2"
 
