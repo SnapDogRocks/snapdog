@@ -295,7 +295,7 @@ pub async fn run_app() -> Result<()> {
     // ── Pre-bind ports ────────────────────────────────────────
     // Bind early — before starting any subsystems — so a port conflict
     // (e.g. a stale snapdog instance) fails fast with an actionable error
-    // instead of crashing mid-startup via astro-dnssd or silently degrading.
+    // instead of crashing mid-startup or silently degrading.
 
     // HTTP API listener — passed into api::serve() so no TOCTOU window.
     let http_addr = format!("{}:{}", config.http.bind, config.http.port);
@@ -563,33 +563,19 @@ pub async fn run_app() -> Result<()> {
         if let Some(ref url) = effective_base_url {
             txt.insert("base_url".into(), url.clone());
         }
-        let svc = astro_dnssd::DNSServiceBuilder::new("_snapdog._tcp", config.http.port)
-            .with_name(&config.name)
-            .with_txt_record(txt.clone())
-            .register();
-        match svc {
-            Ok(s) => {
+        let snapcast_port = config
+            .mdns
+            .advertise_snapcast
+            .then_some(config.snapcast.streaming_port);
+        match advertise_mdns(&config.name, config.http.port, txt.clone(), snapcast_port) {
+            Ok(handle) => {
                 tracing::info!(
                     port = config.http.port,
                     name = %config.name,
                     ?txt,
                     "mDNS: advertising _snapdog._tcp"
                 );
-                let snapcast_svc = if config.mdns.advertise_snapcast {
-                    astro_dnssd::DNSServiceBuilder::new(
-                        "_snapcast._tcp",
-                        config.snapcast.streaming_port,
-                    )
-                    .with_name(&config.name)
-                    .register()
-                    .map_err(|e| {
-                        tracing::warn!(error = %e, "mDNS: _snapcast._tcp advertisement failed");
-                    })
-                    .ok()
-                } else {
-                    None
-                };
-                Some((s, snapcast_svc))
+                Some(handle)
             }
             Err(e) => {
                 tracing::warn!(error = %e, "mDNS advertisement failed");
@@ -923,6 +909,73 @@ pub async fn run_app() -> Result<()> {
 
     tracing::info!("SnapDog server terminated");
     std::process::exit(0);
+}
+
+/// RAII guard for the `SnapDog` server's mDNS advertisement.
+///
+/// Uses pure-Rust `mdns-sd` (no avahi-daemon / Bonjour-compat needed, unlike the
+/// previous `astro-dnssd` path which failed inside the container). Unregisters the
+/// services and shuts the responder down on drop.
+struct MdnsAdvertisement {
+    daemon: mdns_sd::ServiceDaemon,
+    fullnames: Vec<String>,
+}
+
+impl Drop for MdnsAdvertisement {
+    fn drop(&mut self) {
+        for name in &self.fullnames {
+            let _ = self.daemon.unregister(name);
+        }
+        let _ = self.daemon.shutdown();
+    }
+}
+
+/// Advertise the `SnapDog` server over mDNS: `_snapdog._tcp` (HTTP/API + web UI, with
+/// the full TXT record) and, optionally, a bare `_snapcast._tcp` for standard
+/// Snapcast clients. `enable_addr_auto()` publishes A/AAAA for every host interface,
+/// so no explicit IP/interface configuration is needed.
+fn advertise_mdns(
+    name: &str,
+    http_port: u16,
+    txt: std::collections::HashMap<String, String>,
+    snapcast_port: Option<u16>,
+) -> Result<MdnsAdvertisement, mdns_sd::Error> {
+    let daemon = mdns_sd::ServiceDaemon::new()?;
+    let host = format!("{}.local.", gethostname::gethostname().to_string_lossy());
+    let mut fullnames = Vec::new();
+
+    let svc = mdns_sd::ServiceInfo::new("_snapdog._tcp.local.", name, &host, "", http_port, txt)
+        .map(mdns_sd::ServiceInfo::enable_addr_auto)?;
+    fullnames.push(svc.get_fullname().to_string());
+    daemon.register(svc)?;
+
+    // Non-fatal: a failure to advertise the optional `_snapcast._tcp` must not sink
+    // the primary `_snapdog._tcp` registration.
+    if let Some(port) = snapcast_port {
+        match mdns_sd::ServiceInfo::new(
+            "_snapcast._tcp.local.",
+            name,
+            &host,
+            "",
+            port,
+            std::collections::HashMap::new(),
+        )
+        .map(mdns_sd::ServiceInfo::enable_addr_auto)
+        {
+            Ok(svc) => {
+                let fullname = svc.get_fullname().to_string();
+                match daemon.register(svc) {
+                    Ok(()) => fullnames.push(fullname),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "mDNS: _snapcast._tcp advertisement failed");
+                    }
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "mDNS: _snapcast._tcp advertisement failed"),
+        }
+    }
+
+    Ok(MdnsAdvertisement { daemon, fullnames })
 }
 
 /// Detect if running inside a Docker container.

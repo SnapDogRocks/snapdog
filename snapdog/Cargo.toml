@@ -46,7 +46,8 @@ mac_address = "1"
 crc32fast = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 shairplay = "0.7"
-astro-dnssd = "0.3"
+mdns-sd = "0.20"
+gethostname = "1"
 zbus = { version = "5", optional = true }
 librespot-core = { version = "0.8", optional = true }
 librespot-playback = { version = "0.8", default-features = false, optional = true }
