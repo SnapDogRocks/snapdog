@@ -58,7 +58,7 @@ knx-rs-ip = { version = "0.5", package = "knx-rs-ip" }
 knx-rs-device = { version = "0.5", package = "knx-rs-device" }
 
 # HTTP client (Subsonic API, radio streams)
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 
 # URL parsing
 url = "2"
