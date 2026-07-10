@@ -6,21 +6,45 @@ import ServiceManagement
 @Observable
 final class ConfigModel {
     var subsonic = SubsonicSection()
+    var spotify = SpotifySection()
     var zones: [ZoneEntry] = []
     var clients: [ClientEntry] = []
     var radios: [RadioEntry] = []
     var mqtt = MqttSection()
+    var apiKeys: [ApiKeyEntry] = []
     var airplayPassword = ""
+    var airplayMode = "airplay2"
     var codec = "flac"
     var encryptionPsk = ""
     var sampleRate = 48000
     var bitDepth = 16
+    var sourceConflict = "last_wins"
+    var zoneSwitchFadeMs = 300
+    var sourceSwitchFadeMs = 300
+    var streamingPort = 1704
+    var unknownClients = "accept"
+    var groupVolumeMode = "compressed"
+    var defaultZone = ""
+    var httpPort = 5555
 
     struct SubsonicSection: Equatable {
         var enabled = false
         var url = ""
         var username = ""
         var password = ""
+        var format = "raw"
+        var tlsSkipVerify = false
+    }
+
+    struct SpotifySection: Equatable {
+        var enabled = false
+        var name = "SnapDog"
+        var bitrate = 320
+    }
+
+    struct ApiKeyEntry: Identifiable, Equatable {
+        let id = UUID()
+        var value = ""
     }
 
     struct MqttSection: Equatable {
@@ -99,16 +123,7 @@ struct ConfigView: View {
             load()
             launchAtLogin = (SMAppService.mainApp.status == .enabled)
         }
-        .onChange(of: config.subsonic) { _, _ in debounceSave() }
-        .onChange(of: config.mqtt) { _, _ in debounceSave() }
-        .onChange(of: config.airplayPassword) { _, _ in debounceSave() }
-        .onChange(of: config.codec) { _, _ in debounceSave() }
-        .onChange(of: config.encryptionPsk) { _, _ in debounceSave() }
-        .onChange(of: config.sampleRate) { _, _ in debounceSave() }
-        .onChange(of: config.bitDepth) { _, _ in debounceSave() }
-        .onChange(of: config.zones) { _, _ in debounceSave() }
-        .onChange(of: config.clients) { _, _ in debounceSave() }
-        .onChange(of: config.radios) { _, _ in debounceSave() }
+        .modifier(AutoSaveObserver(config: config, save: debounceSave))
     }
 
     // MARK: - General Tab
@@ -155,12 +170,35 @@ struct ConfigView: View {
                 }
                 TextField("Username", text: $config.subsonic.username)
                 SecureField("Password", text: $config.subsonic.password)
+                Picker("Stream format", selection: $config.subsonic.format) {
+                    Text("Original file").tag("raw")
+                    Text("FLAC").tag("flac")
+                    Text("MP3").tag("mp3")
+                    Text("Opus").tag("opus")
+                }
+                Toggle("Skip TLS verification", isOn: $config.subsonic.tlsSkipVerify)
             }
         }
 
         SwiftUI.Section("AirPlay") {
             SecureField("Password", text: $config.airplayPassword, prompt: Text("No password"))
                 .help("Optional password for AirPlay connections")
+            Picker("Protocol", selection: $config.airplayMode) {
+                Text("AirPlay 2").tag("airplay2")
+                Text("AirPlay 1").tag("airplay1")
+            }
+        }
+
+        SwiftUI.Section("Spotify") {
+            Toggle("Enable Spotify Connect", isOn: $config.spotify.enabled)
+            if config.spotify.enabled {
+                TextField("Device name", text: $config.spotify.name, prompt: Text("SnapDog"))
+                Picker("Bitrate", selection: $config.spotify.bitrate) {
+                    Text("96 kbps").tag(96)
+                    Text("160 kbps").tag(160)
+                    Text("320 kbps").tag(320)
+                }
+            }
         }
 
         SwiftUI.Section {
@@ -211,6 +249,16 @@ struct ConfigView: View {
             }
             .pickerStyle(.menu)
         }
+        SwiftUI.Section("Mixing") {
+            Picker("Source conflict", selection: $config.sourceConflict) {
+                Text("Last wins").tag("last_wins")
+                Text("Receiver wins").tag("receiver_wins")
+            }
+            Stepper("Zone switch fade: \(config.zoneSwitchFadeMs) ms",
+                    value: $config.zoneSwitchFadeMs, in: 0...1000, step: 50)
+            Stepper("Source switch fade: \(config.sourceSwitchFadeMs) ms",
+                    value: $config.sourceSwitchFadeMs, in: 0...1000, step: 50)
+        }
         SwiftUI.Section("Streaming") {
             Picker("Codec", selection: $config.codec) {
                 Text("FLAC (lossless)").tag("flac")
@@ -221,6 +269,30 @@ struct ConfigView: View {
             .pickerStyle(.menu)
             if config.codec == "f32lz4e" {
                 SecureField("Encryption Key", text: $config.encryptionPsk, prompt: Text("Pre-shared key"))
+            }
+            TextField("Streaming port", value: $config.streamingPort, format: .number.grouping(.never))
+            Picker("Group volume mode", selection: $config.groupVolumeMode) {
+                Text("Absolute").tag("absolute")
+                Text("Relative").tag("relative")
+                Text("Compressed").tag("compressed")
+            }
+        }
+        SwiftUI.Section("Server") {
+            TextField("HTTP port", value: $config.httpPort, format: .number.grouping(.never))
+            Picker("Unknown clients", selection: $config.unknownClients) {
+                Text("Accept").tag("accept")
+                Text("Ignore").tag("ignore")
+                Text("Reject").tag("reject")
+            }
+            Picker("Default zone", selection: $config.defaultZone) {
+                Text("First zone").tag("")
+                ForEach(config.zones) { zone in
+                    if !zone.name.isEmpty { Text(zone.name).tag(zone.name) }
+                }
+                if !config.defaultZone.isEmpty
+                    && !config.zones.contains(where: { $0.name == config.defaultZone }) {
+                    Text("\(config.defaultZone) (unknown)").tag(config.defaultZone)
+                }
             }
         }
     }
@@ -333,6 +405,28 @@ struct ConfigView: View {
         } header: {
             Text("MQTT")
         }
+
+        SwiftUI.Section {
+            ForEach($config.apiKeys) { $key in
+                SecureField("API key", text: $key.value, prompt: Text("Bearer token"))
+            }
+            .onDelete { config.apiKeys.remove(atOffsets: $0) }
+        } header: {
+            Text("API Keys")
+        } footer: {
+            HStack {
+                Button("Add API key", systemImage: "plus") { config.apiKeys.append(.init()) }
+                Button("Remove last API key", systemImage: "minus") {
+                    if !config.apiKeys.isEmpty { config.apiKeys.removeLast() }
+                }
+                .disabled(config.apiKeys.isEmpty)
+                Spacer()
+                Text(config.apiKeys.isEmpty ? "No keys → API is open" : "Bearer token required")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .labelStyle(.iconOnly)
+        }
     }
 
     // MARK: - Auto-save
@@ -421,5 +515,38 @@ struct ConfigView: View {
         guard let url = URL(string: s), let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https", url.host?.isEmpty == false else { return false }
         return true
+    }
+}
+
+/// Installs the config auto-save observers in a separate type-check context (and split into
+/// two chains) so the ConfigView body expression stays small enough for the Swift compiler.
+private struct AutoSaveObserver: ViewModifier {
+    let config: ConfigModel
+    let save: () -> Void
+
+    func body(content: Content) -> some View {
+        let a = content
+            .onChange(of: config.subsonic) { _, _ in save() }
+            .onChange(of: config.spotify) { _, _ in save() }
+            .onChange(of: config.mqtt) { _, _ in save() }
+            .onChange(of: config.apiKeys) { _, _ in save() }
+            .onChange(of: config.zones) { _, _ in save() }
+            .onChange(of: config.clients) { _, _ in save() }
+            .onChange(of: config.radios) { _, _ in save() }
+            .onChange(of: config.airplayPassword) { _, _ in save() }
+            .onChange(of: config.airplayMode) { _, _ in save() }
+            .onChange(of: config.codec) { _, _ in save() }
+            .onChange(of: config.encryptionPsk) { _, _ in save() }
+        return a
+            .onChange(of: config.sampleRate) { _, _ in save() }
+            .onChange(of: config.bitDepth) { _, _ in save() }
+            .onChange(of: config.sourceConflict) { _, _ in save() }
+            .onChange(of: config.zoneSwitchFadeMs) { _, _ in save() }
+            .onChange(of: config.sourceSwitchFadeMs) { _, _ in save() }
+            .onChange(of: config.streamingPort) { _, _ in save() }
+            .onChange(of: config.unknownClients) { _, _ in save() }
+            .onChange(of: config.groupVolumeMode) { _, _ in save() }
+            .onChange(of: config.defaultZone) { _, _ in save() }
+            .onChange(of: config.httpPort) { _, _ in save() }
     }
 }

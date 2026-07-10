@@ -146,8 +146,16 @@ appcast over R2, universal build).
 - **MAC-T24** deferred — signing hygiene (drop `--deep`, staple `.app`, entitlements file)
   is release-pipeline surgery best done with a real notarized-release test.
 
-### Tasks — Phase 3 (later branches)
-- **MAC-T30** rest of Server>Audio. **MAC-T31** source integrations. **MAC-T32** KNX matrix +
-  API keys (phased). **MAC-T33** live file reconciliation. **MAC-T34** string-catalog i18n.
+### Tasks — Phase 3 (fix/macos-app-phase1)
+- **MAC-T30** ✅ rest of Server>Audio — source_conflict + zone/source fade steppers, streaming
+  port, group_volume_mode, unknown_clients, default_zone (zone picker), http port.
+- **MAC-T31** ✅ source integrations — Subsonic stream-format picker + `tls_skip_verify`,
+  AirPlay protocol (airplay1/2), and a Spotify section (enable + device name + bitrate).
+- **MAC-T32** ⭑ partial — **API keys** list done (`[http].api_keys`). **KNX matrix deferred**
+  (37 zone + 11 client group-address fields with DPT/direction — the largest surface; do
+  phased Role+Gateway+subset first).
+- **MAC-T33** deferred — live file reconciliation (FSEvents watch → reload on external edit).
+- **MAC-T34** deferred — string-catalog i18n. Blocked on adding a `Localizable.xcstrings`
+  resource to the Xcode project (pbxproj change) + translating ~all strings; do de first.
 - **MAC-T30** rest of Server>Audio. **MAC-T31** source integrations. **MAC-T32** KNX matrix +
   API keys (phased). **MAC-T33** live file reconciliation. **MAC-T34** string-catalog i18n.

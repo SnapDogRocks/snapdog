@@ -13,23 +13,48 @@ enum TOMLConfigParser {
             model.subsonic.url = (sub["url"] as? String) ?? ""
             model.subsonic.username = (sub["username"] as? String) ?? ""
             model.subsonic.password = (sub["password"] as? String) ?? ""
+            model.subsonic.format = (sub["format"] as? String) ?? "raw"
+            model.subsonic.tlsSkipVerify = (sub["tls_skip_verify"] as? Bool) ?? false
         }
 
-        // Codec
+        // Spotify
+        if let sp = table["spotify"] as? TOMLTable {
+            model.spotify.enabled = true
+            model.spotify.name = (sp["name"] as? String) ?? "SnapDog"
+            model.spotify.bitrate = intValue(sp["bitrate"]) ?? 320
+        }
+
+        // Snapcast / streaming
         if let snap = table["snapcast"] as? TOMLTable {
             model.codec = (snap["codec"] as? String) ?? "flac"
             model.encryptionPsk = (snap["encryption_psk"] as? String) ?? ""
+            model.streamingPort = intValue(snap["streaming_port"]) ?? 1704
+            model.unknownClients = (snap["unknown_clients"] as? String) ?? "accept"
+            model.groupVolumeMode = (snap["group_volume_mode"] as? String) ?? "compressed"
+            model.defaultZone = (snap["default_zone"] as? String) ?? ""
         }
 
-        // Audio output format
+        // Audio output + mixing
         if let audio = table["audio"] as? TOMLTable {
             model.sampleRate = intValue(audio["sample_rate"]) ?? 48000
             model.bitDepth = intValue(audio["bit_depth"]) ?? 16
+            model.sourceConflict = (audio["source_conflict"] as? String) ?? "last_wins"
+            model.zoneSwitchFadeMs = intValue(audio["zone_switch_fade_ms"]) ?? 300
+            model.sourceSwitchFadeMs = intValue(audio["source_switch_fade_ms"]) ?? 300
+        }
+
+        // HTTP
+        if let http = table["http"] as? TOMLTable {
+            model.httpPort = intValue(http["port"]) ?? 5555
+            if let keys = http["api_keys"] as? [String] {
+                model.apiKeys = keys.map { ConfigModel.ApiKeyEntry(value: $0) }
+            }
         }
 
         // AirPlay
         if let ap = table["airplay"] as? TOMLTable {
             model.airplayPassword = (ap["password"] as? String) ?? ""
+            model.airplayMode = (ap["mode"] as? String) ?? "airplay2"
         }
 
         // MQTT
@@ -88,32 +113,39 @@ enum TOMLConfigParser {
             existing = TOMLTable()
         }
 
-        // HTTP (preserve or set defaults)
-        if existing["http"] == nil {
-            let http = TOMLTable()
-            http["port"] = 5555
-            http["base_url"] = "http://localhost:5555"
-            existing["http"] = http
+        // HTTP — port + API keys from the model, preserving other keys (tls, bind, …)
+        let http = (existing["http"] as? TOMLTable) ?? TOMLTable()
+        http["port"] = model.httpPort
+        if http["base_url"] == nil { http["base_url"] = "http://localhost:\(model.httpPort)" }
+        let apiKeys = model.apiKeys.map(\.value).filter { !$0.isEmpty }
+        if apiKeys.isEmpty {
+            http["api_keys"] = nil
+        } else {
+            let arr = TOMLArray()
+            for key in apiKeys { arr.append(key) }
+            http["api_keys"] = arr
         }
+        existing["http"] = http
 
-        // Audio — write the model's rate/depth, preserve any other keys
+        // Audio — output format + mixing from the model, preserving any other keys
         let audio = (existing["audio"] as? TOMLTable) ?? TOMLTable()
         audio["sample_rate"] = model.sampleRate
         audio["bit_depth"] = model.bitDepth
-        if audio["source_conflict"] == nil { audio["source_conflict"] = "last_wins" }
-        if audio["zone_switch_fade_ms"] == nil { audio["zone_switch_fade_ms"] = 300 }
-        if audio["source_switch_fade_ms"] == nil { audio["source_switch_fade_ms"] = 300 }
+        audio["source_conflict"] = model.sourceConflict
+        audio["zone_switch_fade_ms"] = model.zoneSwitchFadeMs
+        audio["source_switch_fade_ms"] = model.sourceSwitchFadeMs
         existing["audio"] = audio
 
-        // Snapcast — update codec, preserve rest
+        // Snapcast — codec, streaming and grouping from the model, preserving the rest
         let snap = (existing["snapcast"] as? TOMLTable) ?? TOMLTable()
         snap["codec"] = model.codec
         // Keep the pre-shared key only for the encrypted codec; drop any stale key otherwise.
         snap["encryption_psk"] = (model.codec == "f32lz4e" && !model.encryptionPsk.isEmpty)
             ? model.encryptionPsk : nil
-        if snap["streaming_port"] == nil { snap["streaming_port"] = 1704 }
-        if snap["group_volume_mode"] == nil { snap["group_volume_mode"] = "relative" }
-        if snap["unknown_clients"] == nil { snap["unknown_clients"] = "accept" }
+        snap["streaming_port"] = model.streamingPort
+        snap["group_volume_mode"] = model.groupVolumeMode
+        snap["unknown_clients"] = model.unknownClients
+        snap["default_zone"] = model.defaultZone.isEmpty ? nil : model.defaultZone
         existing["snapcast"] = snap
 
         // Subsonic
@@ -122,16 +154,28 @@ enum TOMLConfigParser {
             sub["url"] = model.subsonic.url
             sub["username"] = model.subsonic.username
             sub["password"] = model.subsonic.password
-            if sub["format"] == nil { sub["format"] = "raw" }
+            sub["format"] = model.subsonic.format
+            sub["tls_skip_verify"] = model.subsonic.tlsSkipVerify
             existing["subsonic"] = sub
         } else {
             existing["subsonic"] = nil
         }
 
-        // AirPlay
-        if !model.airplayPassword.isEmpty {
-            let ap = TOMLTable()
-            ap["password"] = model.airplayPassword
+        // Spotify
+        if model.spotify.enabled && !model.spotify.name.isEmpty {
+            let sp = (existing["spotify"] as? TOMLTable) ?? TOMLTable()
+            sp["name"] = model.spotify.name
+            sp["bitrate"] = model.spotify.bitrate
+            existing["spotify"] = sp
+        } else {
+            existing["spotify"] = nil
+        }
+
+        // AirPlay — write the section if a password or a non-default mode is set.
+        if !model.airplayPassword.isEmpty || model.airplayMode != "airplay2" {
+            let ap = (existing["airplay"] as? TOMLTable) ?? TOMLTable()
+            ap["password"] = model.airplayPassword.isEmpty ? nil : model.airplayPassword
+            ap["mode"] = model.airplayMode
             existing["airplay"] = ap
         } else {
             existing["airplay"] = nil
