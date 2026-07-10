@@ -151,11 +151,23 @@ appcast over R2, universal build).
   port, group_volume_mode, unknown_clients, default_zone (zone picker), http port.
 - **MAC-T31** ✅ source integrations — Subsonic stream-format picker + `tls_skip_verify`,
   AirPlay protocol (airplay1/2), and a Spotify section (enable + device name + bitrate).
-- **MAC-T32** ⭑ partial — **API keys** list done (`[http].api_keys`). **KNX matrix deferred**
-  (37 zone + 11 client group-address fields with DPT/direction — the largest surface; do
-  phased Role+Gateway+subset first).
-- **MAC-T33** deferred — live file reconciliation (FSEvents watch → reload on external edit).
+- **MAC-T32** ⭑ partial — **API keys** (`[http].api_keys`) and the **global `[knx]`** section
+  (role, gateway URL, individual address, persist/restart-after-ETS) done. **Per-zone/client GA
+  matrix deferred** (37 `[[zone]].knx` + 11 `[[client]].knx` group-address fields — largest,
+  lowest-UI-value surface; GAs are normally set in ETS). The global `[knx]` write preserves any
+  existing GA tables.
+- **MAC-T33** ✅ reload-on-focus — the Settings window reloads the TOML when it regains focus
+  (`controlActiveState == .key`), guarded against clobbering unsaved edits; also fixed a latent
+  spurious re-save that a `load()` triggered.
 - **MAC-T34** deferred — string-catalog i18n. Blocked on adding a `Localizable.xcstrings`
   resource to the Xcode project (pbxproj change) + translating ~all strings; do de first.
+
+### Known limitations
+- **Lossy zone/client rewrite:** `TOMLConfigParser.save` rebuilds the `[[zone]]`/`[[client]]`
+  arrays from the model (name/icon/mac/zone only), so any hand-/ETS-written per-zone or
+  per-client keys the app doesn't model — `[[zone]].knx` group addresses, `sink`,
+  `airplay_name`, `presence`, per-zone `group_volume_mode`; `[[client]]` extras — are **dropped
+  on save**. Users who set those in TOML should not edit zones/clients via the app until the
+  GA matrix (MAC-T32) and a preserve-merge for these keys land.
 - **MAC-T30** rest of Server>Audio. **MAC-T31** source integrations. **MAC-T32** KNX matrix +
   API keys (phased). **MAC-T33** live file reconciliation. **MAC-T34** string-catalog i18n.

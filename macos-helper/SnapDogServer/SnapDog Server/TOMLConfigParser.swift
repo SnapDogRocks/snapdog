@@ -67,6 +67,16 @@ enum TOMLConfigParser {
             model.mqtt.baseTopic = (mqtt["base_topic"] as? String) ?? "snapdog"
         }
 
+        // KNX — global settings only (per-zone/client GA matrices are left untouched)
+        if let knx = table["knx"] as? TOMLTable {
+            model.knx.enabled = true
+            model.knx.role = (knx["role"] as? String) ?? (knx["mode"] as? String) ?? "client"
+            model.knx.url = (knx["url"] as? String) ?? ""
+            model.knx.individualAddress = (knx["individual_address"] as? String) ?? ""
+            model.knx.persistEts = (knx["persist_ets_config"] as? Bool) ?? true
+            model.knx.restartAfterEts = (knx["restart_after_ets"] as? Bool) ?? true
+        }
+
         // Zones
         if let zones = table["zone"] as? [TOMLTable] {
             model.zones = zones.map { t in
@@ -192,6 +202,20 @@ enum TOMLConfigParser {
             existing["mqtt"] = mqtt
         } else {
             existing["mqtt"] = nil
+        }
+
+        // KNX — global settings only; preserve any per-zone/client GA tables in place.
+        if model.knx.enabled {
+            let knx = (existing["knx"] as? TOMLTable) ?? TOMLTable()
+            knx["role"] = model.knx.role
+            knx["url"] = model.knx.url.isEmpty ? nil : model.knx.url
+            knx["individual_address"] =
+                model.knx.individualAddress.isEmpty ? nil : model.knx.individualAddress
+            knx["persist_ets_config"] = model.knx.persistEts
+            knx["restart_after_ets"] = model.knx.restartAfterEts
+            existing["knx"] = knx
+        } else {
+            existing["knx"] = nil
         }
 
         // Zones

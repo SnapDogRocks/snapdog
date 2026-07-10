@@ -11,6 +11,7 @@ final class ConfigModel {
     var clients: [ClientEntry] = []
     var radios: [RadioEntry] = []
     var mqtt = MqttSection()
+    var knx = KnxSection()
     var apiKeys: [ApiKeyEntry] = []
     var airplayPassword = ""
     var airplayMode = "airplay2"
@@ -40,6 +41,17 @@ final class ConfigModel {
         var enabled = false
         var name = "SnapDog"
         var bitrate = 320
+    }
+
+    /// Global `[knx]` settings only. Per-zone/client group-address matrices
+    /// (`[[zone]].knx` / `[[client]].knx`) are not managed here — see RFC MAC-0006 MAC-T32.
+    struct KnxSection: Equatable {
+        var enabled = false
+        var role = "client"
+        var url = ""
+        var individualAddress = ""
+        var persistEts = true
+        var restartAfterEts = true
     }
 
     struct ApiKeyEntry: Identifiable, Equatable {
@@ -417,6 +429,29 @@ struct ConfigView: View {
         }
 
         SwiftUI.Section {
+            Toggle("Enable KNX", isOn: $config.knx.enabled)
+            Group {
+                Picker("Role", selection: $config.knx.role) {
+                    Text("Client (connect to gateway)").tag("client")
+                    Text("Device (ETS-programmable)").tag("device")
+                }
+                TextField("Gateway URL", text: $config.knx.url,
+                          prompt: Text("udp://192.168.1.50:3671"))
+                if config.knx.role == "device" {
+                    TextField("Individual address", text: $config.knx.individualAddress,
+                              prompt: Text("1.1.100"))
+                    Toggle("Persist ETS config", isOn: $config.knx.persistEts)
+                    Toggle("Restart after ETS programming", isOn: $config.knx.restartAfterEts)
+                }
+            }
+            .disabled(!config.knx.enabled)
+        } header: {
+            Text("KNX")
+        } footer: {
+            Text("Per-zone/client group addresses are set in ETS, not managed here.")
+        }
+
+        SwiftUI.Section {
             ForEach($config.apiKeys) { $key in
                 SecureField("API key", text: $key.value, prompt: Text("Bearer token"))
             }
@@ -551,6 +586,7 @@ private struct AutoSaveObserver: ViewModifier {
             .onChange(of: config.subsonic) { _, _ in save() }
             .onChange(of: config.spotify) { _, _ in save() }
             .onChange(of: config.mqtt) { _, _ in save() }
+            .onChange(of: config.knx) { _, _ in save() }
             .onChange(of: config.apiKeys) { _, _ in save() }
             .onChange(of: config.zones) { _, _ in save() }
             .onChange(of: config.clients) { _, _ in save() }
