@@ -135,9 +135,12 @@ appcast over R2, universal build).
 - **MAC-T20** ✅ `SMAppService` login-item + start-on-launch (General tab + AppDelegate).
 - **MAC-T21** ✅ single-instance guard + clean quit (`applicationShouldTerminate` →
   `.terminateLater` + `ServerManager.shutdownForQuit` awaiting real termination).
-- **MAC-T23** ✅ app-side Sparkle beta channel (`UpdaterDelegate.allowedChannels` +
-  "Receive beta updates" toggle). **Appcast side TBD:** release.yml must tag beta items
-  with `<sparkle:channel>beta</sparkle:channel>` for the toggle to have effect.
+- **MAC-T23** ✅ Sparkle beta channel — both halves. App-side: `UpdaterDelegate.allowedChannels`
+  + "Receive beta updates" toggle. Appcast-side: release.yml tags a prerelease / `-beta` build
+  with `<sparkle:channel>beta</sparkle:channel>`, and `macos-helper/merge-appcast.py` merges it
+  into the existing appcast so the latest stable and beta items coexist (channel gating). The
+  tagging/merge/XML logic is locally unit-tested (5 scenarios + signature preservation); the R2
+  fetch/put path and Sparkle client gating are verified only on the next real (beta) release.
 - **MAC-T22** deferred — secrets → Keychain needs the snapdog server to accept secrets via
   env/CLI first (otherwise the plaintext TOML is still required); a server-side change.
 - **MAC-T24** deferred — signing hygiene (drop `--deep`, staple `.app`, entitlements file)

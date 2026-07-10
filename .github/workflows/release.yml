@@ -226,10 +226,20 @@ jobs:
       - name: Generate Sparkle appcast
         env:
           SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           VERSION=${{ needs.meta.outputs.version }}
           TAG=${{ needs.meta.outputs.tag }}
           DMG="SnapDog-Server-${VERSION}.dmg"
+
+          # Beta channel: a GitHub prerelease, or a tag carrying a pre-release identifier.
+          # Stable items carry no channel (offered to everyone); a beta item is only offered
+          # to updaters that opted into the "beta" channel (RFC MAC-0006 MAC-T23).
+          CHANNEL_LINE=""
+          if [ "$IS_PRERELEASE" = "true" ] || printf '%s' "$TAG" | grep -qiE '\-(beta|rc|alpha|pre)'; then
+            CHANNEL_LINE=$'      <sparkle:channel>beta</sparkle:channel>\n'
+            echo "Appcast item tagged for the beta channel"
+          fi
 
           # Find sign_update from the Sparkle SPM package resolved during xcodebuild
           SIGN_TOOL=$(find macos-helper/SnapDogServer/build/SourcePackages -name "sign_update" -path "*Sparkle*" 2>/dev/null | head -1)
@@ -253,7 +263,7 @@ jobs:
 
           LENGTH=$(stat -f%z "$DMG")
 
-          printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>SnapDog Server</title>\n    <item>\n      <title>Version %s</title>\n      <sparkle:version>%s</sparkle:version>\n      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>\n      <enclosure url="https://github.com/SnapDogRocks/snapdog/releases/download/%s/%s"\n        sparkle:edSignature="%s"\n        length="%s"\n        type="application/octet-stream"/>\n    </item>\n  </channel>\n</rss>\n' "$VERSION" "$VERSION" "$TAG" "$DMG" "$SIGNATURE" "$LENGTH" > appcast.xml
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>SnapDog Server</title>\n    <item>\n      <title>Version %s</title>\n%s      <sparkle:version>%s</sparkle:version>\n      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>\n      <enclosure url="https://github.com/SnapDogRocks/snapdog/releases/download/%s/%s"\n        sparkle:edSignature="%s"\n        length="%s"\n        type="application/octet-stream"/>\n    </item>\n  </channel>\n</rss>\n' "$VERSION" "$CHANNEL_LINE" "$VERSION" "$TAG" "$DMG" "$SIGNATURE" "$LENGTH" > appcast.xml
       - uses: actions/upload-artifact@v7
         with:
           name: snapdog-macos-app
@@ -347,17 +357,29 @@ jobs:
     if: ${{ needs.macos-app.result == 'success' && needs.upload-release-artifacts.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
           name: snapdog-macos-app
           path: artifacts
-      - name: Upload appcast.xml to R2
+      - name: Merge into the existing appcast and upload to R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           npm install -g wrangler
+          # Merge the freshly-built single-item appcast into the current one so the latest
+          # stable and beta builds coexist (channel gating, RFC MAC-0006 MAC-T23). Fail-safe:
+          # if there is no existing appcast (or it can't be fetched), publish the new one.
+          if wrangler r2 object get snapdog-updates/helper/appcast.xml \
+              --file existing-appcast.xml --remote 2>/dev/null && [ -s existing-appcast.xml ]; then
+            echo "Merging into the existing appcast."
+            python3 macos-helper/merge-appcast.py artifacts/appcast.xml existing-appcast.xml merged-appcast.xml
+          else
+            echo "No existing appcast on R2; publishing the new one."
+            cp artifacts/appcast.xml merged-appcast.xml
+          fi
           wrangler r2 object put snapdog-updates/helper/appcast.xml \
-            --file artifacts/appcast.xml \
+            --file merged-appcast.xml \
             --content-type "application/xml" \
             --remote
 
