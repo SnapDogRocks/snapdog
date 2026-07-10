@@ -43,7 +43,7 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing-appender = "0.2"
 
 # Audio decoding
-symphonia = { version = "0.5", features = ["aac", "mp3", "flac", "alac", "isomp4", "pcm"] }
+symphonia = { version = "0.6", features = ["aac", "mp3", "flac", "alac", "isomp4", "pcm"] }
 
 # Audio resampling
 rubato = "4.0"
