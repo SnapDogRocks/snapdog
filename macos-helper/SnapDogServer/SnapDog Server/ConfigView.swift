@@ -94,6 +94,9 @@ struct ConfigView: View {
     @AppStorage("startServerOnLaunch") private var startServerOnLaunch = false
     @AppStorage("receiveBetaUpdates") private var receiveBetaUpdates = false
     @State private var launchAtLogin = false
+    @State private var pendingSave = false
+    @State private var isLoading = false
+    @Environment(\.controlActiveState) private var controlActiveState
 
     var body: some View {
         TabView {
@@ -122,6 +125,13 @@ struct ConfigView: View {
         .onAppear {
             load()
             launchAtLogin = (SMAppService.mainApp.status == .enabled)
+        }
+        .onChange(of: controlActiveState) { _, state in
+            // Pick up edits made to the TOML outside the app when the window regains focus —
+            // but never clobber edits the user hasn't saved yet.
+            if state == .key && !pendingSave && saveState != .saving {
+                load()
+            }
         }
         .modifier(AutoSaveObserver(config: config, save: debounceSave))
     }
@@ -432,6 +442,11 @@ struct ConfigView: View {
     // MARK: - Auto-save
 
     private func debounceSave() {
+        // Ignore the model changes that a `load()` itself produces — only real user edits
+        // should schedule a write (otherwise loading would spuriously re-save and flag
+        // "Restart to apply").
+        guard !isLoading else { return }
+        pendingSave = true
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(500))
@@ -441,15 +456,22 @@ struct ConfigView: View {
     }
 
     private func load() {
+        isLoading = true
+        saveTask?.cancel()
+        pendingSave = false
         serverManager.ensureConfigExists()
         do {
             config = try TOMLConfigParser.load(from: serverManager.configPath)
         } catch {
             config = ConfigModel()
         }
+        // Re-enable saving on the next runloop turn, after the config-replacement onChange
+        // handlers have fired and been ignored.
+        DispatchQueue.main.async { isLoading = false }
     }
 
     private func save() {
+        pendingSave = false
         saveState = .saving
         do {
             try TOMLConfigParser.save(config, to: serverManager.configPath)
