@@ -168,8 +168,10 @@ appcast over R2, universal build).
 - **MAC-T33** ✅ reload-on-focus — the Settings window reloads the TOML when it regains focus
   (`controlActiveState == .key`), guarded against clobbering unsaved edits; also fixed a latent
   spurious re-save that a `load()` triggered.
-- **MAC-T34** deferred — string-catalog i18n. Blocked on adding a `Localizable.xcstrings`
-  resource to the Xcode project (pbxproj change) + translating ~all strings; do de first.
+- **MAC-T34** ⭑ initial German — added `Localizable.xcstrings` to the project (pbxproj file/build
+  refs + `de` in knownRegions) with 68 German translations for the primary UI (menu, tabs, section
+  headers, common labels). Verified: `xcstringstool compile` runs in the build. Remaining strings
+  fall back to English and can be filled in incrementally; other WebUI locales (es/fr/nl/tr) TBD.
 
 ### Fixed (5b20139) — two data-integrity bugs the review missed
 - **The parser never loaded anything.** Every read used `as?` casts (`table["x"] as? TOMLTable`,
