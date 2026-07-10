@@ -21,6 +21,12 @@ enum TOMLConfigParser {
             model.encryptionPsk = (snap["encryption_psk"] as? String) ?? ""
         }
 
+        // Audio output format
+        if let audio = table["audio"] as? TOMLTable {
+            model.sampleRate = intValue(audio["sample_rate"]) ?? 48000
+            model.bitDepth = intValue(audio["bit_depth"]) ?? 16
+        }
+
         // AirPlay
         if let ap = table["airplay"] as? TOMLTable {
             model.airplayPassword = (ap["password"] as? String) ?? ""
@@ -90,21 +96,21 @@ enum TOMLConfigParser {
             existing["http"] = http
         }
 
-        // Audio (preserve or set defaults)
-        if existing["audio"] == nil {
-            let audio = TOMLTable()
-            audio["sample_rate"] = 48000
-            audio["bit_depth"] = 16
-            audio["source_conflict"] = "last_wins"
-            audio["zone_switch_fade_ms"] = 300
-            audio["source_switch_fade_ms"] = 300
-            existing["audio"] = audio
-        }
+        // Audio — write the model's rate/depth, preserve any other keys
+        let audio = (existing["audio"] as? TOMLTable) ?? TOMLTable()
+        audio["sample_rate"] = model.sampleRate
+        audio["bit_depth"] = model.bitDepth
+        if audio["source_conflict"] == nil { audio["source_conflict"] = "last_wins" }
+        if audio["zone_switch_fade_ms"] == nil { audio["zone_switch_fade_ms"] = 300 }
+        if audio["source_switch_fade_ms"] == nil { audio["source_switch_fade_ms"] = 300 }
+        existing["audio"] = audio
 
         // Snapcast — update codec, preserve rest
         let snap = (existing["snapcast"] as? TOMLTable) ?? TOMLTable()
         snap["codec"] = model.codec
-        if !model.encryptionPsk.isEmpty { snap["encryption_psk"] = model.encryptionPsk }
+        // Keep the pre-shared key only for the encrypted codec; drop any stale key otherwise.
+        snap["encryption_psk"] = (model.codec == "f32lz4e" && !model.encryptionPsk.isEmpty)
+            ? model.encryptionPsk : nil
         if snap["streaming_port"] == nil { snap["streaming_port"] = 1704 }
         if snap["group_volume_mode"] == nil { snap["group_volume_mode"] = "relative" }
         if snap["unknown_clients"] == nil { snap["unknown_clients"] = "accept" }
@@ -181,5 +187,16 @@ enum TOMLConfigParser {
         if !model.radios.isEmpty { existing["radio"] = radiosArr }
 
         try existing.convert().write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// TOMLKit surfaces integers as `Int`, `Int64`, or `NSNumber` depending on the value;
+    /// coerce any of them to `Int`.
+    private static func intValue(_ value: Any?) -> Int? {
+        switch value {
+        case let int as Int: return int
+        case let int64 as Int64: return Int(int64)
+        case let number as NSNumber: return number.intValue
+        default: return nil
+        }
     }
 }
