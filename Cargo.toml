@@ -46,7 +46,7 @@ tracing-appender = "0.2"
 symphonia = { version = "0.5", features = ["aac", "mp3", "flac", "alac", "isomp4", "pcm"] }
 
 # Audio resampling
-rubato = "0.16"
+rubato = "4.0"
 biquad = "0.6"
 
 # MQTT
@@ -84,14 +84,14 @@ snapcast-proto = "0.17.2"
 snapdog-common = { path = "snapdog-common" }
 
 # Utilities
-md5 = "0.7"
+md5 = "0.8"
 fastrand = "2"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 # Testing
 [workspace.dependencies.mockall]
-version = "0.13"
+version = "0.15"
 
 [workspace.dependencies.tempfile]
 version = "3"

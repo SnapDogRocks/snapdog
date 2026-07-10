@@ -5,12 +5,14 @@
 //!
 //! [`F32Resampler`] / [`F32Resampling`] — F32 samples in/out, used for all audio paths.
 //!
-//! Wraps rubato's `SincFixedIn` resampler with internal buffers to handle
-//! arbitrary input chunk sizes. Filter state is maintained across calls
-//! for artifact-free output.
+//! Wraps rubato's `Async` sinc resampler (fixed input size) with internal
+//! buffers to handle arbitrary input chunk sizes. Filter state is maintained
+//! across calls for artifact-free output.
 
+use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 
 /// Sinc filter length — 256 taps provides excellent stopband attenuation (>100 dB)
@@ -29,7 +31,7 @@ const F_CUTOFF: f32 = 0.95;
 const fn sinc_params() -> SincInterpolationParameters {
     SincInterpolationParameters {
         sinc_len: SINC_LEN,
-        f_cutoff: F_CUTOFF,
+        f_cutoff: Some(F_CUTOFF),
         interpolation: SincInterpolationType::Linear,
         oversampling_factor: OVERSAMPLING_FACTOR,
         window: WindowFunction::BlackmanHarris2,
@@ -44,7 +46,7 @@ const CHUNK_SIZE: usize = 1024;
 ///
 /// Resamples in f32→f64→f32 precision. Used for all audio paths.
 pub struct F32Resampler {
-    resampler: SincFixedIn<f64>,
+    resampler: Async<f64>,
     channels: usize,
     buffer: Vec<Vec<f64>>,
     chunk_size: usize,
@@ -58,12 +60,14 @@ impl F32Resampler {
         }
 
         let ch = channels as usize;
-        let resampler = SincFixedIn::<f64>::new(
+        let params = sinc_params();
+        let resampler = Async::<f64>::new_sinc(
             f64::from(target_rate) / f64::from(source_rate),
             2.0,
-            sinc_params(),
+            &params,
             CHUNK_SIZE,
             ch,
+            FixedAsync::Input,
         )
         .map_err(|e| tracing::error!(error = %e, "Failed to create F32 resampler"))
         .ok()?;
@@ -100,15 +104,18 @@ impl F32Resampler {
                 .map(|ch_buf| ch_buf.drain(..self.chunk_size).collect())
                 .collect();
 
-            let refs: Vec<&[f64]> = chunk.iter().map(std::vec::Vec::as_slice).collect();
-            match self.resampler.process(&refs, None) {
+            // Planar (sequential) f64 input: one Vec per channel, each `chunk_size` frames.
+            let adapter = match SequentialSliceOfVecs::new(&chunk, self.channels, self.chunk_size) {
+                Ok(a) => a,
+                Err(e) => {
+                    tracing::warn!(error = %e, "F32 resample input adapter error, dropping chunk");
+                    continue;
+                }
+            };
+            match self.resampler.process(&adapter, None) {
                 Ok(resampled) => {
-                    let out_frames = resampled[0].len();
-                    for frame in 0..out_frames {
-                        for ch in &resampled {
-                            output.push(ch[frame] as f32);
-                        }
-                    }
+                    // Interleaved f64 output ([f0c0, f0c1, f1c0, …]); cast to interleaved f32.
+                    output.extend(resampled.take_data().into_iter().map(|s| s as f32));
                 }
                 Err(e) => tracing::warn!(error = %e, "F32 resample error, dropping chunk"),
             }
