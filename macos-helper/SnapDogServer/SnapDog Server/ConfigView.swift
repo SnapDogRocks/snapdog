@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 
 // MARK: - Config Model
 
@@ -66,8 +67,15 @@ struct ConfigView: View {
         case failed(String)
     }
 
+    @AppStorage("startServerOnLaunch") private var startServerOnLaunch = false
+    @AppStorage("receiveBetaUpdates") private var receiveBetaUpdates = false
+    @State private var launchAtLogin = false
+
     var body: some View {
         TabView {
+            Tab("General", systemImage: "gearshape") {
+                Form { generalForm }.formStyle(.grouped)
+            }
             Tab("Sources", systemImage: "music.note.house") {
                 Form { sourcesForm }.formStyle(.grouped)
             }
@@ -87,7 +95,10 @@ struct ConfigView: View {
         .tabViewStyle(.automatic)
         .frame(width: 480, height: 360)
         .safeAreaInset(edge: .bottom) { statusBar }
-        .onAppear { load() }
+        .onAppear {
+            load()
+            launchAtLogin = (SMAppService.mainApp.status == .enabled)
+        }
         .onChange(of: config.subsonic) { _, _ in debounceSave() }
         .onChange(of: config.mqtt) { _, _ in debounceSave() }
         .onChange(of: config.airplayPassword) { _, _ in debounceSave() }
@@ -98,6 +109,37 @@ struct ConfigView: View {
         .onChange(of: config.zones) { _, _ in debounceSave() }
         .onChange(of: config.clients) { _, _ in debounceSave() }
         .onChange(of: config.radios) { _, _ in debounceSave() }
+    }
+
+    // MARK: - General Tab
+
+    @ViewBuilder
+    private var generalForm: some View {
+        SwiftUI.Section("Startup") {
+            Toggle("Launch SnapDog at login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { _, enabled in setLaunchAtLogin(enabled) }
+            Toggle("Start server automatically on launch", isOn: $startServerOnLaunch)
+        }
+        SwiftUI.Section {
+            Toggle("Receive beta updates", isOn: $receiveBetaUpdates)
+        } header: {
+            Text("Updates")
+        } footer: {
+            Text("Beta builds may be unstable. Takes effect on the next update check.")
+        }
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            // Revert the toggle to the real service state on failure.
+            launchAtLogin = (SMAppService.mainApp.status == .enabled)
+        }
     }
 
     // MARK: - Sources Tab

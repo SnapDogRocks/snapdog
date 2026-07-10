@@ -131,9 +131,20 @@ appcast over R2, universal build).
 - **MAC-T7** Save feedback: `saveState` enum (idle/saving/saved/failed) + status indicator.
 - **MAC-T8** Basic validation (MAC address, MQTT `host:port`, Subsonic URL) with inline errors.
 
-### Tasks — Phase 2 / 3 (later branches)
-- **MAC-T20** `SMAppService` login-item + start-on-launch. **MAC-T21** single-instance +
-  clean quit (real termination await). **MAC-T22** secrets → Keychain. **MAC-T23** Sparkle
-  Stable/Beta channels. **MAC-T24** signing hygiene (drop `--deep`, staple `.app`).
+### Tasks — Phase 2 (fix/macos-app-phase1)
+- **MAC-T20** ✅ `SMAppService` login-item + start-on-launch (General tab + AppDelegate).
+- **MAC-T21** ✅ single-instance guard + clean quit (`applicationShouldTerminate` →
+  `.terminateLater` + `ServerManager.shutdownForQuit` awaiting real termination).
+- **MAC-T23** ✅ app-side Sparkle beta channel (`UpdaterDelegate.allowedChannels` +
+  "Receive beta updates" toggle). **Appcast side TBD:** release.yml must tag beta items
+  with `<sparkle:channel>beta</sparkle:channel>` for the toggle to have effect.
+- **MAC-T22** deferred — secrets → Keychain needs the snapdog server to accept secrets via
+  env/CLI first (otherwise the plaintext TOML is still required); a server-side change.
+- **MAC-T24** deferred — signing hygiene (drop `--deep`, staple `.app`, entitlements file)
+  is release-pipeline surgery best done with a real notarized-release test.
+
+### Tasks — Phase 3 (later branches)
+- **MAC-T30** rest of Server>Audio. **MAC-T31** source integrations. **MAC-T32** KNX matrix +
+  API keys (phased). **MAC-T33** live file reconciliation. **MAC-T34** string-catalog i18n.
 - **MAC-T30** rest of Server>Audio. **MAC-T31** source integrations. **MAC-T32** KNX matrix +
   API keys (phased). **MAC-T33** live file reconciliation. **MAC-T34** string-catalog i18n.

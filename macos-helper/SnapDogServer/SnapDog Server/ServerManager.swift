@@ -6,6 +6,10 @@ import TOMLKit
 @Observable
 @MainActor
 final class ServerManager {
+    /// App-wide instance shared between the SwiftUI scenes and the AppDelegate
+    /// (which needs it for start-on-launch and clean-quit coordination).
+    static let shared = ServerManager()
+
     private(set) var isRunning = false
     private(set) var logs: [String] = []
     var lastError: String?
@@ -120,6 +124,27 @@ final class ServerManager {
         proc.interrupt() // SIGINT — graceful shutdown
         appendLog("[SERVER] Stopping...")
         logger.info("Sending SIGINT to server")
+    }
+
+    /// Graceful stop for app quit: SIGINT, then wait up to `timeout` for the process to
+    /// actually exit, escalating to SIGTERM if it doesn't. Calls `completion` on the main
+    /// actor once the process is gone, so the app can terminate without orphaning the server.
+    func shutdownForQuit(timeout: TimeInterval = 5, completion: @escaping @MainActor () -> Void) {
+        guard let proc = process, proc.isRunning else { completion(); return }
+        intentionalStop = true
+        proc.interrupt()
+        appendLog("[SERVER] Stopping for quit…")
+        Task { @MainActor in
+            let deadline = Date().addingTimeInterval(timeout)
+            while proc.isRunning && Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if proc.isRunning {
+                appendLog("[SERVER] Force-terminating (did not exit in \(Int(timeout))s)")
+                proc.terminate()
+            }
+            completion()
+        }
     }
 
     func openWebUI() {
