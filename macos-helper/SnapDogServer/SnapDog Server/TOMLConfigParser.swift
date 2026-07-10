@@ -85,22 +85,26 @@ enum TOMLConfigParser {
         // Zones
         if let zones = table["zone"]?.array {
             model.zones = zones.compactMap { $0.table }.map { z in
-                ConfigModel.ZoneEntry(
+                var entry = ConfigModel.ZoneEntry(
                     name: z["name"]?.string ?? "",
                     icon: z["icon"]?.string ?? "🏠"
                 )
+                entry.knx = readKnx(z["knx"]?.table)
+                return entry
             }
         }
 
         // Clients
         if let clients = table["client"]?.array {
             model.clients = clients.compactMap { $0.table }.map { c in
-                ConfigModel.ClientEntry(
+                var entry = ConfigModel.ClientEntry(
                     name: c["name"]?.string ?? "",
                     mac: c["mac"]?.string ?? "",
                     zone: c["zone"]?.string ?? "",
                     icon: c["icon"]?.string ?? "🔊"
                 )
+                entry.knx = readKnx(c["knx"]?.table)
+                return entry
             }
         }
 
@@ -237,6 +241,7 @@ enum TOMLConfigParser {
             let z = existingZones[zone.name] ?? TOMLTable()
             z["name"] = zone.name
             z["icon"] = zone.icon
+            writeKnx(zone.knx, into: z)
             zonesArr.append(z)
         }
         if !model.zones.isEmpty { existing["zone"] = zonesArr }
@@ -258,6 +263,7 @@ enum TOMLConfigParser {
             c["mac"] = client.mac
             c["zone"] = client.zone
             c["icon"] = client.icon
+            writeKnx(client.knx, into: c)
             clientsArr.append(c)
         }
         if !model.clients.isEmpty { existing["client"] = clientsArr }
@@ -275,5 +281,29 @@ enum TOMLConfigParser {
         if !model.radios.isEmpty { existing["radio"] = radiosArr }
 
         try existing.convert().write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Read a `[…].knx` sub-table into a `[field: group-address]` dictionary (all string keys,
+    /// so unknown/future fields are preserved through an edit).
+    private static func readKnx(_ table: TOMLTable?) -> [String: String] {
+        guard let table else { return [:] }
+        var out: [String: String] = [:]
+        for key in table.keys {
+            if let value = table[key]?.string { out[key] = value }
+        }
+        return out
+    }
+
+    /// Write the `knx` dictionary back as a sub-table (dropping empty values); removes the
+    /// sub-table entirely when nothing is set.
+    private static func writeKnx(_ ga: [String: String], into table: TOMLTable) {
+        let filtered = ga.filter { !$0.value.isEmpty }
+        if filtered.isEmpty {
+            table["knx"] = nil
+        } else {
+            let knx = TOMLTable()
+            for (key, value) in filtered { knx[key] = value }
+            table["knx"] = knx
+        }
     }
 }

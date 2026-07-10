@@ -156,11 +156,10 @@ appcast over R2, universal build).
   port, group_volume_mode, unknown_clients, default_zone (zone picker), http port.
 - **MAC-T31** ✅ source integrations — Subsonic stream-format picker + `tls_skip_verify`,
   AirPlay protocol (airplay1/2), and a Spotify section (enable + device name + bitrate).
-- **MAC-T32** ⭑ partial — **API keys** (`[http].api_keys`) and the **global `[knx]`** section
-  (role, gateway URL, individual address, persist/restart-after-ETS) done. **Per-zone/client GA
-  matrix deferred** (37 `[[zone]].knx` + 11 `[[client]].knx` group-address fields — largest,
-  lowest-UI-value surface; GAs are normally set in ETS). The global `[knx]` write preserves any
-  existing GA tables.
+- **MAC-T32** ✅ — API keys (`[http].api_keys`), the **global `[knx]`** section (role, gateway
+  URL, individual address, persist/restart-after-ETS), **and** the full **per-zone/client GA
+  matrix**: a collapsible "KNX group addresses" `DisclosureGroup` on each zone (37 fields) and
+  client (11 fields), backed by a `[field: GA]` dictionary that preserves unknown/future keys.
 - **MAC-T33** ✅ reload-on-focus — the Settings window reloads the TOML when it regains focus
   (`controlActiveState == .key`), guarded against clobbering unsaved edits; also fixed a latent
   spurious re-save that a `load()` triggered.

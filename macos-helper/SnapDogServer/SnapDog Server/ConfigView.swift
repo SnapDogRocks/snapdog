@@ -72,6 +72,9 @@ final class ConfigModel {
         let id = UUID()
         var name = ""
         var icon = "🏠"
+        /// KNX group addresses (`[[zone]].knx`), keyed by field name. Unknown keys are
+        /// preserved so future server fields survive an edit.
+        var knx: [String: String] = [:]
     }
 
     struct ClientEntry: Identifiable, Equatable {
@@ -80,7 +83,24 @@ final class ConfigModel {
         var mac = ""
         var zone = ""
         var icon = "🔊"
+        var knx: [String: String] = [:]
     }
+
+    /// KNX group-address field keys (match the server's `RawZoneKnxConfig` / `RawClientKnxConfig`).
+    static let zoneKnxFields = [
+        "play", "pause", "stop", "track_next", "track_previous", "control_status",
+        "volume", "volume_status", "volume_dim", "mute", "mute_status", "mute_toggle",
+        "track_title_status", "track_artist_status", "track_album_status", "track_progress_status",
+        "track_playing_status", "track_repeat", "track_repeat_status", "track_repeat_toggle",
+        "playlist", "playlist_status", "playlist_next", "playlist_previous",
+        "shuffle", "shuffle_status", "shuffle_toggle", "repeat", "repeat_status", "repeat_toggle",
+        "presence", "presence_enable", "presence_enable_status", "presence_timeout",
+        "presence_timeout_status", "presence_timer_status", "presence_source_override",
+    ]
+    static let clientKnxFields = [
+        "volume", "volume_status", "volume_dim", "mute", "mute_status", "mute_toggle",
+        "latency", "latency_status", "zone", "zone_status", "connected_status",
+    ]
 
     struct RadioEntry: Identifiable, Equatable {
         let id = UUID()
@@ -325,16 +345,25 @@ struct ConfigView: View {
     private var zonesForm: some View {
         SwiftUI.Section {
             ForEach($config.zones) { $zone in
-                HStack {
-                    TextField("", text: $zone.icon)
-                        .frame(width: 36)
-                        .multilineTextAlignment(.center)
-                        .accessibilityLabel("Zone icon")
-                        .onTapGesture {
-                            NSApp.orderFrontCharacterPalette(nil)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        TextField("", text: $zone.icon)
+                            .frame(width: 36)
+                            .multilineTextAlignment(.center)
+                            .accessibilityLabel("Zone icon")
+                            .onTapGesture {
+                                NSApp.orderFrontCharacterPalette(nil)
+                            }
+                        TextField("Zone Name", text: $zone.name)
+                    }
+                    DisclosureGroup("KNX group addresses") {
+                        ForEach(ConfigModel.zoneKnxFields, id: \.self) { field in
+                            TextField(field, text: gaBinding($zone.knx, field), prompt: Text("1/2/3"))
+                                .font(.callout)
                         }
-                    TextField("Zone Name", text: $zone.name)
+                    }
                 }
+                .padding(.vertical, 2)
             }
             .onDelete { config.zones.remove(atOffsets: $0) }
             .onMove { config.zones.move(fromOffsets: $0, toOffset: $1) }
@@ -385,6 +414,12 @@ struct ConfigView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    DisclosureGroup("KNX group addresses") {
+                        ForEach(ConfigModel.clientKnxFields, id: \.self) { field in
+                            TextField(field, text: gaBinding($client.knx, field), prompt: Text("1/2/3"))
+                                .font(.callout)
+                        }
+                    }
                 }
                 .padding(.vertical, 2)
             }
@@ -590,6 +625,14 @@ struct ConfigView: View {
         guard let url = URL(string: s), let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https", url.host?.isEmpty == false else { return false }
         return true
+    }
+
+    /// A `Binding<String>` onto one entry of a `[field: group-address]` dictionary.
+    private func gaBinding(_ knx: Binding<[String: String]>, _ key: String) -> Binding<String> {
+        Binding(
+            get: { knx.wrappedValue[key] ?? "" },
+            set: { knx.wrappedValue[key] = $0.isEmpty ? nil : $0 }
+        )
     }
 }
 
