@@ -5,6 +5,7 @@ import Sparkle
 struct SnapDogServerApp: App {
     @State private var serverManager = ServerManager()
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     var body: some Scene {
@@ -34,12 +35,11 @@ struct SnapDogServerApp: App {
             }
 
             Section {
-                SettingsLink {
-                    Text("Configuration...")
-                }
-                .onTapGesture {
+                Button("Settings…") {
                     NSApp.activate(ignoringOtherApps: true)
+                    openSettings()
                 }
+                .keyboardShortcut(",")
                 Button("Check for Updates…") {
                     NSApp.activate(ignoringOtherApps: true)
                     updaterController.checkForUpdates(nil)

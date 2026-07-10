@@ -9,9 +9,13 @@ final class ServerManager {
     private(set) var isRunning = false
     private(set) var logs: [String] = []
     var lastError: String?
+    /// Set when the config is saved while the server is running: the on-disk change
+    /// is not live until the next (re)start. Drives the "Restart to apply" banner.
+    var configDirty = false
 
     private var process: Process?
     private var intentionalStop = false
+    private var pendingRestart = false
     private var crashCount = 0
     private var lastCrash: Date?
     private let logger = Logger(subsystem: "com.metaneutrons.snapdog.helper", category: "server")
@@ -75,6 +79,12 @@ final class ServerManager {
                     self.lastError = "Server exited with code \(code). Check logs for details."
                     self.scheduleRestart()
                 }
+                // A restart() requested a clean stop-then-start: relaunch now that the
+                // previous process has actually terminated.
+                if self.pendingRestart {
+                    self.pendingRestart = false
+                    self.start()
+                }
             }
         }
 
@@ -82,12 +92,26 @@ final class ServerManager {
             try proc.run()
             process = proc
             isRunning = true
+            configDirty = false
             appendLog("[SERVER] Started (PID \(proc.processIdentifier))")
             logger.info("Server started, PID \(proc.processIdentifier)")
         } catch {
             appendLog("[ERROR] Failed to start: \(error.localizedDescription)")
+            lastError = "Failed to start server: \(error.localizedDescription)"
             logger.error("Failed to start server: \(error.localizedDescription)")
+            scheduleRestart()
         }
+    }
+
+    /// Restart the server so a config change takes effect: stop, wait for the process to
+    /// terminate, then start again. If it is not running, just start.
+    func restart() {
+        guard isRunning, let proc = process, proc.isRunning else {
+            start()
+            return
+        }
+        pendingRestart = true
+        stop()
     }
 
     func stop() {

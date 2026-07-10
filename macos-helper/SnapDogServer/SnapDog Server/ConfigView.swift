@@ -59,6 +59,12 @@ struct ConfigView: View {
     @Bindable var serverManager: ServerManager
     @State private var config = ConfigModel()
     @State private var saveTask: Task<Void, Never>?
+    @State private var saveState: SaveState = .idle
+
+    enum SaveState: Equatable {
+        case idle, saving, saved
+        case failed(String)
+    }
 
     var body: some View {
         TabView {
@@ -80,6 +86,7 @@ struct ConfigView: View {
         }
         .tabViewStyle(.automatic)
         .frame(width: 480, height: 360)
+        .safeAreaInset(edge: .bottom) { statusBar }
         .onAppear { load() }
         .onChange(of: config.subsonic) { _, _ in debounceSave() }
         .onChange(of: config.mqtt) { _, _ in debounceSave() }
@@ -101,6 +108,9 @@ struct ConfigView: View {
             Toggle("Enable", isOn: $config.subsonic.enabled)
             if config.subsonic.enabled {
                 TextField("Server URL", text: $config.subsonic.url, prompt: Text("http://navidrome:4533"))
+                if !config.subsonic.url.isEmpty && !isValidHTTPURL(config.subsonic.url) {
+                    Text("Enter a valid http(s) URL").font(.caption).foregroundStyle(.red)
+                }
                 TextField("Username", text: $config.subsonic.username)
                 SecureField("Password", text: $config.subsonic.password)
             }
@@ -126,16 +136,17 @@ struct ConfigView: View {
             Text("Radio Stations")
         } footer: {
             HStack {
-                Button("", systemImage: "plus") {
+                Button("Add radio station", systemImage: "plus") {
                     config.radios.append(.init())
                 }
-                Button("", systemImage: "minus") {
+                Button("Remove last radio station", systemImage: "minus") {
                     if !config.radios.isEmpty { config.radios.removeLast() }
                 }
                 .disabled(config.radios.isEmpty)
                 Spacer()
             }
             .buttonStyle(.borderless)
+            .labelStyle(.iconOnly)
         }
     }
 
@@ -182,6 +193,7 @@ struct ConfigView: View {
                     TextField("", text: $zone.icon)
                         .frame(width: 36)
                         .multilineTextAlignment(.center)
+                        .accessibilityLabel("Zone icon")
                         .onTapGesture {
                             NSApp.orderFrontCharacterPalette(nil)
                         }
@@ -192,16 +204,17 @@ struct ConfigView: View {
             .onMove { config.zones.move(fromOffsets: $0, toOffset: $1) }
         } footer: {
             HStack {
-                Button("", systemImage: "plus") {
+                Button("Add zone", systemImage: "plus") {
                     config.zones.append(.init(name: "New Zone"))
                 }
-                Button("", systemImage: "minus") {
+                Button("Remove last zone", systemImage: "minus") {
                     if !config.zones.isEmpty { config.zones.removeLast() }
                 }
                 .disabled(config.zones.isEmpty)
                 Spacer()
             }
             .buttonStyle(.borderless)
+            .labelStyle(.iconOnly)
         }
     }
 
@@ -213,17 +226,29 @@ struct ConfigView: View {
                         TextField("", text: $client.icon)
                             .frame(width: 36)
                             .multilineTextAlignment(.center)
+                            .accessibilityLabel("Client icon")
                             .onTapGesture {
                                 NSApp.orderFrontCharacterPalette(nil)
                             }
                         TextField("Name", text: $client.name)
                     }
-                    HStack {
-                        TextField("MAC", text: $client.mac, prompt: Text("aa:bb:cc:dd:ee:ff"))
-                        TextField("Zone", text: $client.zone, prompt: Text("Zone name"))
+                    TextField("MAC", text: $client.mac, prompt: Text("aa:bb:cc:dd:ee:ff"))
+                        .font(.callout)
+                    if !client.mac.isEmpty && !isValidMAC(client.mac) {
+                        Text("Invalid MAC address (expected aa:bb:cc:dd:ee:ff)")
+                            .font(.caption).foregroundStyle(.red)
                     }
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    Picker("Zone", selection: $client.zone) {
+                        Text("Unassigned").tag("")
+                        ForEach(config.zones) { zone in
+                            if !zone.name.isEmpty { Text(zone.name).tag(zone.name) }
+                        }
+                        // Keep a zone that isn't in the current list so editing doesn't drop it.
+                        if !client.zone.isEmpty && !config.zones.contains(where: { $0.name == client.zone }) {
+                            Text("\(client.zone) (unknown)").tag(client.zone)
+                        }
+                    }
+                    .pickerStyle(.menu)
                 }
                 .padding(.vertical, 2)
             }
@@ -231,16 +256,17 @@ struct ConfigView: View {
             .onMove { config.clients.move(fromOffsets: $0, toOffset: $1) }
         } footer: {
             HStack {
-                Button("", systemImage: "plus") {
+                Button("Add client", systemImage: "plus") {
                     config.clients.append(.init())
                 }
-                Button("", systemImage: "minus") {
+                Button("Remove last client", systemImage: "minus") {
                     if !config.clients.isEmpty { config.clients.removeLast() }
                 }
                 .disabled(config.clients.isEmpty)
                 Spacer()
             }
             .buttonStyle(.borderless)
+            .labelStyle(.iconOnly)
         }
     }
 
@@ -252,6 +278,10 @@ struct ConfigView: View {
             Toggle("Enable MQTT", isOn: $config.mqtt.enabled)
             Group {
                 TextField("Broker", text: $config.mqtt.broker, prompt: Text("host:port"))
+                if config.mqtt.enabled && !config.mqtt.broker.isEmpty && !isValidHostPort(config.mqtt.broker) {
+                    Text("Enter host:port (e.g. broker.local:1883)")
+                        .font(.caption).foregroundStyle(.red)
+                }
                 TextField("Client ID", text: $config.mqtt.clientId)
                 TextField("Username", text: $config.mqtt.username)
                 SecureField("Password", text: $config.mqtt.password)
@@ -284,6 +314,70 @@ struct ConfigView: View {
     }
 
     private func save() {
-        try? TOMLConfigParser.save(config, to: serverManager.configPath)
+        saveState = .saving
+        do {
+            try TOMLConfigParser.save(config, to: serverManager.configPath)
+            saveState = .saved
+            // A running server read its config at launch; the on-disk change is not
+            // live until a restart.
+            if serverManager.isRunning { serverManager.configDirty = true }
+            // Auto-clear the "Saved" indicator after a moment.
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                if saveState == .saved { saveState = .idle }
+            }
+        } catch {
+            saveState = .failed(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Status / restart bar
+
+    @ViewBuilder
+    private var statusBar: some View {
+        HStack(spacing: 8) {
+            switch saveState {
+            case .idle:
+                EmptyView()
+            case .saving:
+                ProgressView().controlSize(.small)
+                Text("Saving…").font(.caption).foregroundStyle(.secondary)
+            case .saved:
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Saved").font(.caption).foregroundStyle(.secondary)
+            case .failed(let message):
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                Text(message).font(.caption).foregroundStyle(.red).lineLimit(1)
+            }
+            Spacer()
+            if serverManager.isRunning && serverManager.configDirty {
+                Text("Config changed").font(.caption).foregroundStyle(.secondary)
+                Button("Restart to apply") { serverManager.restart() }
+                    .controlSize(.small)
+            }
+        }
+        .frame(minHeight: 20)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    // MARK: - Validation
+
+    private func isValidMAC(_ s: String) -> Bool {
+        s.range(of: "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$", options: .regularExpression) != nil
+    }
+
+    private func isValidHostPort(_ s: String) -> Bool {
+        let parts = s.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty,
+              let port = Int(parts[1]), (1...65535).contains(port) else { return false }
+        return true
+    }
+
+    private func isValidHTTPURL(_ s: String) -> Bool {
+        guard let url = URL(string: s), let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https", url.host?.isEmpty == false else { return false }
+        return true
     }
 }
