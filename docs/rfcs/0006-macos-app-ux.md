@@ -148,8 +148,13 @@ appcast over R2, universal build).
   an empty `password = ""` placeholder (server-required field, env overrides it); **AirPlay
   password stays in the TOML** (no env override); api_keys are comma-joined in one Keychain item
   (a key must not contain a comma).
-- **MAC-T24** deferred — signing hygiene (drop `--deep`, staple `.app`, entitlements file)
-  is release-pipeline surgery best done with a real notarized-release test.
+- **MAC-T24** ⭑ partial — dropped `--deep` from the app signing (sign inside-out; xcodebuild
+  already signs the nested Sparkle.framework), guarded by the existing `codesign --verify --deep
+  --strict` so any under-signing fails CI before a broken DMG ships. **Deliberately not done:**
+  stapling the `.app` (DMG-only stapling is fine; app-stapling needs a separate notarization
+  pass for marginal offline-first-launch gain) and an entitlements file (this non-sandboxed app
+  needs no hardened-runtime exceptions). The `--deep` drop still wants a real notarized `-beta`
+  release + `spctl -a -vvv` / `stapler validate` to fully confirm.
 
 ### Tasks — Phase 3 (fix/macos-app-phase1)
 - **MAC-T30** ✅ rest of Server>Audio — source_conflict + zone/source fade steppers, streaming

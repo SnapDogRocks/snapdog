@@ -182,10 +182,15 @@ jobs:
           mkdir -p "$APP/Contents/Helpers"
           cp snapdog-universal "$APP/Contents/Helpers/snapdog"
           chmod +x "$APP/Contents/Helpers/snapdog"
-          # Sign embedded binary first, then the app bundle
+          # Sign inside-out: the embedded helper (added after the Xcode build), then re-seal
+          # the outer app WITHOUT --deep. `--deep` is Apple-deprecated for signing and needlessly
+          # re-signs the nested Sparkle.framework that xcodebuild already signed correctly.
+          # The `--verify --deep --strict` below is the guard: if anything ends up unsigned it
+          # fails this CI job before a broken DMG can ship (MAC-T24).
           codesign --force --options runtime --sign "$IDENTITY" "$APP/Contents/Helpers/snapdog"
-          codesign --force --deep --options runtime --sign "$IDENTITY" "$APP"
+          codesign --force --options runtime --sign "$IDENTITY" "$APP"
           codesign --verify --deep --strict "$APP"
+          codesign --display --verbose=2 "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|Sealed" || true
       - name: Create DMG
         run: |
           VERSION=${{ needs.meta.outputs.version }}
