@@ -1,6 +1,10 @@
 import Foundation
 import TOMLKit
 
+// NOTE: read values through TOMLKit's typed accessors (`?.table`, `?.string`, `?.int`,
+// `?.bool`, `?.array`). The `as?` casts that looked idiomatic (`table["x"] as? TOMLTable`,
+// `x["k"] as? String`) silently return nil in TOMLKit 0.6 — the whole parser used to load
+// nothing and round-trip only defaults. Verified against TOMLKit 0.6.0.
 enum TOMLConfigParser {
     static func load(from url: URL) throws -> ConfigModel {
         let content = try String(contentsOf: url, encoding: .utf8)
@@ -8,104 +12,105 @@ enum TOMLConfigParser {
         let model = ConfigModel()
 
         // Subsonic
-        if let sub = table["subsonic"] as? TOMLTable {
+        if let sub = table["subsonic"]?.table {
             model.subsonic.enabled = true
-            model.subsonic.url = (sub["url"] as? String) ?? ""
-            model.subsonic.username = (sub["username"] as? String) ?? ""
-            model.subsonic.password = (sub["password"] as? String) ?? ""
-            model.subsonic.format = (sub["format"] as? String) ?? "raw"
-            model.subsonic.tlsSkipVerify = (sub["tls_skip_verify"] as? Bool) ?? false
+            model.subsonic.url = sub["url"]?.string ?? ""
+            model.subsonic.username = sub["username"]?.string ?? ""
+            model.subsonic.password = sub["password"]?.string ?? ""
+            model.subsonic.format = sub["format"]?.string ?? "raw"
+            model.subsonic.tlsSkipVerify = sub["tls_skip_verify"]?.bool ?? false
         }
 
         // Spotify
-        if let sp = table["spotify"] as? TOMLTable {
+        if let sp = table["spotify"]?.table {
             model.spotify.enabled = true
-            model.spotify.name = (sp["name"] as? String) ?? "SnapDog"
-            model.spotify.bitrate = intValue(sp["bitrate"]) ?? 320
+            model.spotify.name = sp["name"]?.string ?? "SnapDog"
+            model.spotify.bitrate = sp["bitrate"]?.int ?? 320
         }
 
         // Snapcast / streaming
-        if let snap = table["snapcast"] as? TOMLTable {
-            model.codec = (snap["codec"] as? String) ?? "flac"
-            model.encryptionPsk = (snap["encryption_psk"] as? String) ?? ""
-            model.streamingPort = intValue(snap["streaming_port"]) ?? 1704
-            model.unknownClients = (snap["unknown_clients"] as? String) ?? "accept"
-            model.groupVolumeMode = (snap["group_volume_mode"] as? String) ?? "compressed"
-            model.defaultZone = (snap["default_zone"] as? String) ?? ""
+        if let snap = table["snapcast"]?.table {
+            model.codec = snap["codec"]?.string ?? "flac"
+            model.encryptionPsk = snap["encryption_psk"]?.string ?? ""
+            model.streamingPort = snap["streaming_port"]?.int ?? 1704
+            model.unknownClients = snap["unknown_clients"]?.string ?? "accept"
+            model.groupVolumeMode = snap["group_volume_mode"]?.string ?? "compressed"
+            model.defaultZone = snap["default_zone"]?.string ?? ""
         }
 
         // Audio output + mixing
-        if let audio = table["audio"] as? TOMLTable {
-            model.sampleRate = intValue(audio["sample_rate"]) ?? 48000
-            model.bitDepth = intValue(audio["bit_depth"]) ?? 16
-            model.sourceConflict = (audio["source_conflict"] as? String) ?? "last_wins"
-            model.zoneSwitchFadeMs = intValue(audio["zone_switch_fade_ms"]) ?? 300
-            model.sourceSwitchFadeMs = intValue(audio["source_switch_fade_ms"]) ?? 300
+        if let audio = table["audio"]?.table {
+            model.sampleRate = audio["sample_rate"]?.int ?? 48000
+            model.bitDepth = audio["bit_depth"]?.int ?? 16
+            model.sourceConflict = audio["source_conflict"]?.string ?? "last_wins"
+            model.zoneSwitchFadeMs = audio["zone_switch_fade_ms"]?.int ?? 300
+            model.sourceSwitchFadeMs = audio["source_switch_fade_ms"]?.int ?? 300
         }
 
         // HTTP
-        if let http = table["http"] as? TOMLTable {
-            model.httpPort = intValue(http["port"]) ?? 5555
-            if let keys = http["api_keys"] as? [String] {
-                model.apiKeys = keys.map { ConfigModel.ApiKeyEntry(value: $0) }
+        if let http = table["http"]?.table {
+            model.httpPort = http["port"]?.int ?? 5555
+            if let keys = http["api_keys"]?.array {
+                model.apiKeys = keys.compactMap { $0.string }
+                    .map { ConfigModel.ApiKeyEntry(value: $0) }
             }
         }
 
         // AirPlay
-        if let ap = table["airplay"] as? TOMLTable {
-            model.airplayPassword = (ap["password"] as? String) ?? ""
-            model.airplayMode = (ap["mode"] as? String) ?? "airplay2"
+        if let ap = table["airplay"]?.table {
+            model.airplayPassword = ap["password"]?.string ?? ""
+            model.airplayMode = ap["mode"]?.string ?? "airplay2"
         }
 
         // MQTT
-        if let mqtt = table["mqtt"] as? TOMLTable {
+        if let mqtt = table["mqtt"]?.table {
             model.mqtt.enabled = true
-            model.mqtt.broker = (mqtt["broker"] as? String) ?? ""
-            model.mqtt.clientId = (mqtt["client_id"] as? String) ?? "snapdog"
-            model.mqtt.username = (mqtt["username"] as? String) ?? ""
-            model.mqtt.password = (mqtt["password"] as? String) ?? ""
-            model.mqtt.baseTopic = (mqtt["base_topic"] as? String) ?? "snapdog"
+            model.mqtt.broker = mqtt["broker"]?.string ?? ""
+            model.mqtt.clientId = mqtt["client_id"]?.string ?? "snapdog"
+            model.mqtt.username = mqtt["username"]?.string ?? ""
+            model.mqtt.password = mqtt["password"]?.string ?? ""
+            model.mqtt.baseTopic = mqtt["base_topic"]?.string ?? "snapdog"
         }
 
         // KNX — global settings only (per-zone/client GA matrices are left untouched)
-        if let knx = table["knx"] as? TOMLTable {
+        if let knx = table["knx"]?.table {
             model.knx.enabled = true
-            model.knx.role = (knx["role"] as? String) ?? (knx["mode"] as? String) ?? "client"
-            model.knx.url = (knx["url"] as? String) ?? ""
-            model.knx.individualAddress = (knx["individual_address"] as? String) ?? ""
-            model.knx.persistEts = (knx["persist_ets_config"] as? Bool) ?? true
-            model.knx.restartAfterEts = (knx["restart_after_ets"] as? Bool) ?? true
+            model.knx.role = knx["role"]?.string ?? knx["mode"]?.string ?? "client"
+            model.knx.url = knx["url"]?.string ?? ""
+            model.knx.individualAddress = knx["individual_address"]?.string ?? ""
+            model.knx.persistEts = knx["persist_ets_config"]?.bool ?? true
+            model.knx.restartAfterEts = knx["restart_after_ets"]?.bool ?? true
         }
 
         // Zones
-        if let zones = table["zone"] as? [TOMLTable] {
-            model.zones = zones.map { t in
+        if let zones = table["zone"]?.array {
+            model.zones = zones.compactMap { $0.table }.map { z in
                 ConfigModel.ZoneEntry(
-                    name: (t["name"] as? String) ?? "",
-                    icon: (t["icon"] as? String) ?? "🏠"
+                    name: z["name"]?.string ?? "",
+                    icon: z["icon"]?.string ?? "🏠"
                 )
             }
         }
 
         // Clients
-        if let clients = table["client"] as? [TOMLTable] {
-            model.clients = clients.map { t in
+        if let clients = table["client"]?.array {
+            model.clients = clients.compactMap { $0.table }.map { c in
                 ConfigModel.ClientEntry(
-                    name: (t["name"] as? String) ?? "",
-                    mac: (t["mac"] as? String) ?? "",
-                    zone: (t["zone"] as? String) ?? "",
-                    icon: (t["icon"] as? String) ?? "🔊"
+                    name: c["name"]?.string ?? "",
+                    mac: c["mac"]?.string ?? "",
+                    zone: c["zone"]?.string ?? "",
+                    icon: c["icon"]?.string ?? "🔊"
                 )
             }
         }
 
         // Radios
-        if let radios = table["radio"] as? [TOMLTable] {
-            model.radios = radios.map { t in
+        if let radios = table["radio"]?.array {
+            model.radios = radios.compactMap { $0.table }.map { r in
                 ConfigModel.RadioEntry(
-                    name: (t["name"] as? String) ?? "",
-                    url: (t["url"] as? String) ?? "",
-                    cover: (t["cover"] as? String) ?? ""
+                    name: r["name"]?.string ?? "",
+                    url: r["url"]?.string ?? "",
+                    cover: r["cover"]?.string ?? ""
                 )
             }
         }
@@ -114,7 +119,7 @@ enum TOMLConfigParser {
     }
 
     static func save(_ model: ConfigModel, to url: URL) throws {
-        // Load existing file to preserve fields the UI doesn't manage
+        // Load the existing file so keys the UI doesn't manage are preserved.
         let existing: TOMLTable
         if let content = try? String(contentsOf: url, encoding: .utf8),
            let table = try? TOMLTable(string: content) {
@@ -123,10 +128,12 @@ enum TOMLConfigParser {
             existing = TOMLTable()
         }
 
-        // HTTP — port + API keys from the model, preserving other keys (tls, bind, …)
-        let http = (existing["http"] as? TOMLTable) ?? TOMLTable()
+        // HTTP — port + API keys, preserving other keys (tls, bind, …)
+        let http = existing["http"]?.table ?? TOMLTable()
         http["port"] = model.httpPort
-        if http["base_url"] == nil { http["base_url"] = "http://localhost:\(model.httpPort)" }
+        if http["base_url"]?.string == nil {
+            http["base_url"] = "http://localhost:\(model.httpPort)"
+        }
         let apiKeys = model.apiKeys.map(\.value).filter { !$0.isEmpty }
         if apiKeys.isEmpty {
             http["api_keys"] = nil
@@ -137,8 +144,8 @@ enum TOMLConfigParser {
         }
         existing["http"] = http
 
-        // Audio — output format + mixing from the model, preserving any other keys
-        let audio = (existing["audio"] as? TOMLTable) ?? TOMLTable()
+        // Audio — output format + mixing from the model
+        let audio = existing["audio"]?.table ?? TOMLTable()
         audio["sample_rate"] = model.sampleRate
         audio["bit_depth"] = model.bitDepth
         audio["source_conflict"] = model.sourceConflict
@@ -146,8 +153,8 @@ enum TOMLConfigParser {
         audio["source_switch_fade_ms"] = model.sourceSwitchFadeMs
         existing["audio"] = audio
 
-        // Snapcast — codec, streaming and grouping from the model, preserving the rest
-        let snap = (existing["snapcast"] as? TOMLTable) ?? TOMLTable()
+        // Snapcast — codec, streaming, grouping
+        let snap = existing["snapcast"]?.table ?? TOMLTable()
         snap["codec"] = model.codec
         // Keep the pre-shared key only for the encrypted codec; drop any stale key otherwise.
         snap["encryption_psk"] = (model.codec == "f32lz4e" && !model.encryptionPsk.isEmpty)
@@ -160,7 +167,7 @@ enum TOMLConfigParser {
 
         // Subsonic
         if model.subsonic.enabled && !model.subsonic.url.isEmpty {
-            let sub = (existing["subsonic"] as? TOMLTable) ?? TOMLTable()
+            let sub = existing["subsonic"]?.table ?? TOMLTable()
             sub["url"] = model.subsonic.url
             sub["username"] = model.subsonic.username
             sub["password"] = model.subsonic.password
@@ -173,7 +180,7 @@ enum TOMLConfigParser {
 
         // Spotify
         if model.spotify.enabled && !model.spotify.name.isEmpty {
-            let sp = (existing["spotify"] as? TOMLTable) ?? TOMLTable()
+            let sp = existing["spotify"]?.table ?? TOMLTable()
             sp["name"] = model.spotify.name
             sp["bitrate"] = model.spotify.bitrate
             existing["spotify"] = sp
@@ -183,7 +190,7 @@ enum TOMLConfigParser {
 
         // AirPlay — write the section if a password or a non-default mode is set.
         if !model.airplayPassword.isEmpty || model.airplayMode != "airplay2" {
-            let ap = (existing["airplay"] as? TOMLTable) ?? TOMLTable()
+            let ap = existing["airplay"]?.table ?? TOMLTable()
             ap["password"] = model.airplayPassword.isEmpty ? nil : model.airplayPassword
             ap["mode"] = model.airplayMode
             existing["airplay"] = ap
@@ -193,20 +200,20 @@ enum TOMLConfigParser {
 
         // MQTT
         if model.mqtt.enabled {
-            let mqtt = TOMLTable()
+            let mqtt = existing["mqtt"]?.table ?? TOMLTable()
             mqtt["broker"] = model.mqtt.broker
             mqtt["client_id"] = model.mqtt.clientId
-            if !model.mqtt.username.isEmpty { mqtt["username"] = model.mqtt.username }
-            if !model.mqtt.password.isEmpty { mqtt["password"] = model.mqtt.password }
+            mqtt["username"] = model.mqtt.username.isEmpty ? nil : model.mqtt.username
+            mqtt["password"] = model.mqtt.password.isEmpty ? nil : model.mqtt.password
             mqtt["base_topic"] = model.mqtt.baseTopic
             existing["mqtt"] = mqtt
         } else {
             existing["mqtt"] = nil
         }
 
-        // KNX — global settings only; preserve any per-zone/client GA tables in place.
+        // KNX — global settings only; per-zone/client GA tables are preserved in place.
         if model.knx.enabled {
-            let knx = (existing["knx"] as? TOMLTable) ?? TOMLTable()
+            let knx = existing["knx"]?.table ?? TOMLTable()
             knx["role"] = model.knx.role
             knx["url"] = model.knx.url.isEmpty ? nil : model.knx.url
             knx["individual_address"] =
@@ -218,53 +225,60 @@ enum TOMLConfigParser {
             existing["knx"] = nil
         }
 
-        // Zones
+        // Zones — preserve keys the app doesn't model (`.knx` GAs, `sink`, `airplay_name`,
+        // `presence`, per-zone `group_volume_mode`) by reusing the existing table with the
+        // same name; only name/icon are overwritten. Renamed/removed zones lose their extras.
+        var existingZones: [String: TOMLTable] = [:]
+        if let arr = existing["zone"]?.array {
+            for item in arr {
+                if let z = item.table, let name = z["name"]?.string, !name.isEmpty {
+                    existingZones[name] = z
+                }
+            }
+        }
         existing["zone"] = nil
         let zonesArr = TOMLArray()
         for zone in model.zones where !zone.name.isEmpty {
-            let t = TOMLTable()
-            t["name"] = zone.name
-            t["icon"] = zone.icon
-            zonesArr.append(t)
+            let z = existingZones[zone.name] ?? TOMLTable()
+            z["name"] = zone.name
+            z["icon"] = zone.icon
+            zonesArr.append(z)
         }
         if !model.zones.isEmpty { existing["zone"] = zonesArr }
 
-        // Clients
+        // Clients — same preserve-merge (keeps `.knx` GAs etc. the app doesn't model).
+        var existingClients: [String: TOMLTable] = [:]
+        if let arr = existing["client"]?.array {
+            for item in arr {
+                if let c = item.table, let name = c["name"]?.string, !name.isEmpty {
+                    existingClients[name] = c
+                }
+            }
+        }
         existing["client"] = nil
         let clientsArr = TOMLArray()
         for client in model.clients where !client.name.isEmpty {
-            let t = TOMLTable()
-            t["name"] = client.name
-            t["mac"] = client.mac
-            t["zone"] = client.zone
-            t["icon"] = client.icon
-            clientsArr.append(t)
+            let c = existingClients[client.name] ?? TOMLTable()
+            c["name"] = client.name
+            c["mac"] = client.mac
+            c["zone"] = client.zone
+            c["icon"] = client.icon
+            clientsArr.append(c)
         }
         if !model.clients.isEmpty { existing["client"] = clientsArr }
 
-        // Radios
+        // Radios (fully modelled by the app — name/url/cover)
         existing["radio"] = nil
         let radiosArr = TOMLArray()
         for radio in model.radios where !radio.name.isEmpty {
-            let t = TOMLTable()
-            t["name"] = radio.name
-            t["url"] = radio.url
-            if !radio.cover.isEmpty { t["cover"] = radio.cover }
-            radiosArr.append(t)
+            let r = TOMLTable()
+            r["name"] = radio.name
+            r["url"] = radio.url
+            if !radio.cover.isEmpty { r["cover"] = radio.cover }
+            radiosArr.append(r)
         }
         if !model.radios.isEmpty { existing["radio"] = radiosArr }
 
         try existing.convert().write(to: url, atomically: true, encoding: .utf8)
-    }
-
-    /// TOMLKit surfaces integers as `Int`, `Int64`, or `NSNumber` depending on the value;
-    /// coerce any of them to `Int`.
-    private static func intValue(_ value: Any?) -> Int? {
-        switch value {
-        case let int as Int: return int
-        case let int64 as Int64: return Int(int64)
-        case let number as NSNumber: return number.intValue
-        default: return nil
-        }
     }
 }
