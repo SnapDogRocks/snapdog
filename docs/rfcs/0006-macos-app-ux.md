@@ -141,8 +141,13 @@ appcast over R2, universal build).
   into the existing appcast so the latest stable and beta items coexist (channel gating). The
   tagging/merge/XML logic is locally unit-tested (5 scenarios + signature preservation); the R2
   fetch/put path and Sparkle client gating are verified only on the next real (beta) release.
-- **MAC-T22** deferred — secrets → Keychain needs the snapdog server to accept secrets via
-  env/CLI first (otherwise the plaintext TOML is still required); a server-side change.
+- **MAC-T22** ✅ (mostly) — Subsonic/MQTT passwords, the encryption PSK and API keys are stored
+  in the Keychain (`Secrets` in ServerManager.swift), kept out of the TOML, and injected at spawn
+  via `SNAPDOG_*` env vars (the server already reads them, `config/mod.rs:332-357`). Legacy
+  plaintext still in the TOML migrates to the Keychain on the next save. Caveats: Subsonic keeps
+  an empty `password = ""` placeholder (server-required field, env overrides it); **AirPlay
+  password stays in the TOML** (no env override); api_keys are comma-joined in one Keychain item
+  (a key must not contain a comma).
 - **MAC-T24** deferred — signing hygiene (drop `--deep`, staple `.app`, entitlements file)
   is release-pipeline surgery best done with a real notarized-release test.
 
@@ -162,12 +167,16 @@ appcast over R2, universal build).
 - **MAC-T34** deferred — string-catalog i18n. Blocked on adding a `Localizable.xcstrings`
   resource to the Xcode project (pbxproj change) + translating ~all strings; do de first.
 
-### Known limitations
-- **Lossy zone/client rewrite:** `TOMLConfigParser.save` rebuilds the `[[zone]]`/`[[client]]`
-  arrays from the model (name/icon/mac/zone only), so any hand-/ETS-written per-zone or
-  per-client keys the app doesn't model — `[[zone]].knx` group addresses, `sink`,
-  `airplay_name`, `presence`, per-zone `group_volume_mode`; `[[client]]` extras — are **dropped
-  on save**. Users who set those in TOML should not edit zones/clients via the app until the
-  GA matrix (MAC-T32) and a preserve-merge for these keys land.
+### Fixed (5b20139) — two data-integrity bugs the review missed
+- **The parser never loaded anything.** Every read used `as?` casts (`table["x"] as? TOMLTable`,
+  `x["k"] as? String`, `as? [TOMLTable]`) which silently return nil in TOMLKit 0.6, so `load()`
+  always returned an all-defaults model and the auto-save-on-load then wrote those defaults back
+  — overwriting the user's config. Rewrote reads to `?.table`/`?.string`/`?.int`/`?.bool`/`?.array`.
+- **Lossy zone/client rewrite** (drop of `[zone.knx]` GAs, `sink`, `airplay_name`, `presence`,
+  per-zone `group_volume_mode`) — now preserve-merged. Verified via a TOMLKit round-trip harness.
+
+### Known limitation (residual)
+- **Renaming** a zone/client in the app orphans its advanced keys: the preserve-merge matches on
+  `name`, so a rename reads as delete+add. Editing without renaming is safe.
 - **MAC-T30** rest of Server>Audio. **MAC-T31** source integrations. **MAC-T32** KNX matrix +
   API keys (phased). **MAC-T33** live file reconciliation. **MAC-T34** string-catalog i18n.

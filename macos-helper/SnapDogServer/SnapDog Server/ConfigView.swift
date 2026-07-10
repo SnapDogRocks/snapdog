@@ -500,6 +500,16 @@ struct ConfigView: View {
         } catch {
             config = ConfigModel()
         }
+        // Prefer Keychain-stored secrets; any legacy plaintext still in the TOML is kept as-is
+        // and migrates to the Keychain on the next save.
+        if let v = Secrets.get(Secrets.subsonicPassword), !v.isEmpty { config.subsonic.password = v }
+        if let v = Secrets.get(Secrets.mqttPassword), !v.isEmpty { config.mqtt.password = v }
+        if let v = Secrets.get(Secrets.encryptionPsk), !v.isEmpty { config.encryptionPsk = v }
+        if let v = Secrets.get(Secrets.apiKeys), !v.isEmpty {
+            config.apiKeys = v.split(separator: ",").map {
+                ConfigModel.ApiKeyEntry(value: $0.trimmingCharacters(in: .whitespaces))
+            }
+        }
         // Re-enable saving on the next runloop turn, after the config-replacement onChange
         // handlers have fired and been ignored.
         DispatchQueue.main.async { isLoading = false }
@@ -509,6 +519,14 @@ struct ConfigView: View {
         pendingSave = false
         saveState = .saving
         do {
+            // Secrets go to the Keychain; the parser writes only placeholders/omits them.
+            Secrets.set(config.subsonic.password, Secrets.subsonicPassword)
+            Secrets.set(config.mqtt.password, Secrets.mqttPassword)
+            Secrets.set(config.encryptionPsk, Secrets.encryptionPsk)
+            Secrets.set(
+                config.apiKeys.map(\.value).filter { !$0.isEmpty }.joined(separator: ","),
+                Secrets.apiKeys
+            )
             try TOMLConfigParser.save(config, to: serverManager.configPath)
             saveState = .saved
             // A running server read its config at launch; the on-disk change is not

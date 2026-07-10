@@ -1,7 +1,63 @@
 import Foundation
 import AppKit
 import os
+import Security
 import TOMLKit
+
+/// Keychain-backed store for server secrets so they stay out of the plaintext `snapdog.toml`.
+/// The values are injected as environment variables at spawn — the snapdog server reads
+/// `SNAPDOG_SUBSONIC_PASSWORD` / `SNAPDOG_MQTT_PASSWORD` / `SNAPDOG_SNAPCAST_ENCRYPTION_PSK`
+/// / `SNAPDOG_HTTP_API_KEYS`. Accounts: "subsonic.password", "mqtt.password",
+/// "snapcast.encryption_psk", "http.api_keys". (AirPlay has no env override, so its password
+/// still lives in the TOML.)
+enum Secrets {
+    static let subsonicPassword = "subsonic.password"
+    static let mqttPassword = "mqtt.password"
+    static let encryptionPsk = "snapcast.encryption_psk"
+    static let apiKeys = "http.api_keys"
+
+    private static let service = "com.metaneutrons.snapdog.helper"
+
+    static func get(_ account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let value = String(data: data, encoding: .utf8) else { return nil }
+        return value
+    }
+
+    static func set(_ value: String, _ account: String) {
+        guard !value.isEmpty else { delete(account); return }
+        let base: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let data = Data(value.utf8)
+        if SecItemCopyMatching(base as CFDictionary, nil) == errSecSuccess {
+            SecItemUpdate(base as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        } else {
+            var add = base
+            add[kSecValueData as String] = data
+            SecItemAdd(add as CFDictionary, nil)
+        }
+    }
+
+    static func delete(_ account: String) {
+        SecItemDelete([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ] as CFDictionary)
+    }
+}
 
 @Observable
 @MainActor
@@ -56,6 +112,22 @@ final class ServerManager {
         let proc = Process()
         proc.executableURL = binary
         proc.arguments = ["--config", configPath.path, "--log-level", "info"]
+
+        // Inject Keychain-stored secrets as env vars (the server applies them over the TOML).
+        var env = ProcessInfo.processInfo.environment
+        if let v = Secrets.get(Secrets.subsonicPassword), !v.isEmpty {
+            env["SNAPDOG_SUBSONIC_PASSWORD"] = v
+        }
+        if let v = Secrets.get(Secrets.mqttPassword), !v.isEmpty {
+            env["SNAPDOG_MQTT_PASSWORD"] = v
+        }
+        if let v = Secrets.get(Secrets.encryptionPsk), !v.isEmpty {
+            env["SNAPDOG_SNAPCAST_ENCRYPTION_PSK"] = v
+        }
+        if let v = Secrets.get(Secrets.apiKeys), !v.isEmpty {
+            env["SNAPDOG_HTTP_API_KEYS"] = v
+        }
+        proc.environment = env
 
         let pipe = Pipe()
         proc.standardOutput = pipe

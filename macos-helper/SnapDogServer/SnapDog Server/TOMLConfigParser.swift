@@ -128,20 +128,13 @@ enum TOMLConfigParser {
             existing = TOMLTable()
         }
 
-        // HTTP — port + API keys, preserving other keys (tls, bind, …)
+        // HTTP — port only; api_keys are Keychain-backed (injected via env), never on disk.
         let http = existing["http"]?.table ?? TOMLTable()
         http["port"] = model.httpPort
         if http["base_url"]?.string == nil {
             http["base_url"] = "http://localhost:\(model.httpPort)"
         }
-        let apiKeys = model.apiKeys.map(\.value).filter { !$0.isEmpty }
-        if apiKeys.isEmpty {
-            http["api_keys"] = nil
-        } else {
-            let arr = TOMLArray()
-            for key in apiKeys { arr.append(key) }
-            http["api_keys"] = arr
-        }
+        http["api_keys"] = nil
         existing["http"] = http
 
         // Audio — output format + mixing from the model
@@ -156,9 +149,8 @@ enum TOMLConfigParser {
         // Snapcast — codec, streaming, grouping
         let snap = existing["snapcast"]?.table ?? TOMLTable()
         snap["codec"] = model.codec
-        // Keep the pre-shared key only for the encrypted codec; drop any stale key otherwise.
-        snap["encryption_psk"] = (model.codec == "f32lz4e" && !model.encryptionPsk.isEmpty)
-            ? model.encryptionPsk : nil
+        // Encryption PSK is Keychain-backed (injected via SNAPDOG_SNAPCAST_ENCRYPTION_PSK).
+        snap["encryption_psk"] = nil
         snap["streaming_port"] = model.streamingPort
         snap["group_volume_mode"] = model.groupVolumeMode
         snap["unknown_clients"] = model.unknownClients
@@ -170,7 +162,9 @@ enum TOMLConfigParser {
             let sub = existing["subsonic"]?.table ?? TOMLTable()
             sub["url"] = model.subsonic.url
             sub["username"] = model.subsonic.username
-            sub["password"] = model.subsonic.password
+            // Placeholder only — the server requires the key to deserialize, but the real
+            // value is Keychain-backed and injected via SNAPDOG_SUBSONIC_PASSWORD.
+            sub["password"] = ""
             sub["format"] = model.subsonic.format
             sub["tls_skip_verify"] = model.subsonic.tlsSkipVerify
             existing["subsonic"] = sub
@@ -204,7 +198,8 @@ enum TOMLConfigParser {
             mqtt["broker"] = model.mqtt.broker
             mqtt["client_id"] = model.mqtt.clientId
             mqtt["username"] = model.mqtt.username.isEmpty ? nil : model.mqtt.username
-            mqtt["password"] = model.mqtt.password.isEmpty ? nil : model.mqtt.password
+            // Password is Keychain-backed (injected via SNAPDOG_MQTT_PASSWORD).
+            mqtt["password"] = nil
             mqtt["base_topic"] = model.mqtt.baseTopic
             existing["mqtt"] = mqtt
         } else {
