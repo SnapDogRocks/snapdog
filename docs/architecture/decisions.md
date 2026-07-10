@@ -59,3 +59,75 @@ without a regression net would land silently.
   §15 roadmap `IT-NG-05`, tasks `IT-T52` / `IT-T54` / `IT-T55` / `IT-T73`.
 - Workspace `Cargo.toml` — the `snapcast-*` 0.16.1 pins.
 - `snapdog/tests/snapcast_rpc.rs` — the golden JSON-RPC wire firewall.
+
+---
+
+## ADR-020 — Defer cpal 0.18 / alsa 0.12 and accept the rustls-webpki tracker (upstream-blocked bumps)
+
+- **Status:** Accepted (2026-07-10)
+- **Deciders:** maintainer
+- **Tracking:** this ADR; Dependabot alert #21; revisit triggers below.
+
+### Context
+
+The 2026-07 breaking-dependency pass upgraded most `0.x` deps cleanly and verified
+each with the pre-push hook (`cargo fmt --all -- --check`,
+`cargo clippy --all-targets -- -D warnings`, `cargo test`): **reqwest 0.13**
+(TLS backend → rustls+aws-lc), **testcontainers 0.27**, **rubato 4.0**,
+**symphonia 0.6**, **tower-http 0.7**, **md5 0.8**, **mockall 0.15**, plus the
+`fix(api)` rustls crypto-provider install. Three bumps could **not** land — each is
+blocked by an upstream release, not by our code:
+
+1. **cpal 0.17 → 0.18.** cpal 0.18.1 declares `mach2 = "^0.6"` (gated to
+   `cfg(target_vendor = "apple")`) but does **not compile** against the only
+   published mach2 0.6.0 — a type/borrow error inside cpal's own
+   `src/timestamp.rs`. No fixed cpal (0.18.2+) or mach2 (0.6.1+) exists. On Linux
+   (the receiver + CI) cpal 0.18 is fine (mach2 is apple-only), but it **breaks
+   local macOS dev builds** of `snapdog-client`.
+2. **alsa 0.11 → 0.12.** Coupled to cpal: cpal 0.18 still depends on `alsa ^0.11`,
+   so a direct `alsa 0.12` bump collides on the `alsa-sys` `links = "alsa"`
+   invariant. And cpal itself is deferred (above), so there is no path to 0.12.
+3. **rustls-webpki (Dependabot high #21).** The vulnerable `rustls-webpki 0.102.8`
+   (GHSA-82j2-j2ch-gfr8, DoS panic on a malformed CRL) enters **only** via
+   `rumqttc 0.25.1` (the latest rumqttc), which pins `rustls-webpki ^0.102` and
+   cannot take the patched 0.103.x. The other lock copy (0.103.x via reqwest) is
+   already patched.
+
+### Decision
+
+1. **Keep `cpal` at 0.17** (`snapdog-client/Cargo.toml`) until cpal ships a build
+   that compiles with mach2 0.6, or mach2 releases a fix. Do not trade a working
+   local macOS dev build for a marginal audio-output bump.
+2. **Keep `alsa` at 0.11**; it moves only together with a working cpal 0.18.
+3. **Keep Dependabot #21 open as an accepted tracker.** Dismiss the related low/med
+   rustls-webpki alerts as `tolerable_risk`; the DoS is reachable only over
+   TLS-MQTT against a hostile/MITM broker presenting a crafted CRL — an already
+   privileged position — so the residual risk is tolerable until rumqttc updates.
+
+### Consequences
+
+- SnapDog forgoes cpal 0.18 / alsa 0.12 and the rustls-webpki patch until upstream
+  moves. Accepted: a broken local macOS build and a hostile-broker-only DoS both
+  outweigh the value of the bumps.
+- The blockers are **compiler-/CI-safe as-is**: Linux builds are unaffected by the
+  cpal/alsa pins, and `cargo …-locked` passes with the current lock.
+
+### Revisit triggers (roadmap)
+
+- **cpal:** a cpal release that compiles with mach2 0.6 (watch RustAudio/cpal
+  releases and the mach2 0.6.x line) → then bump cpal 0.18 **and** re-evaluate
+  alsa 0.12 in the same change.
+- **alsa:** unblocked by the cpal revisit above (or a cpal that moves to alsa 0.12).
+- **rustls-webpki #21:** a rumqttc release (> 0.25.1) whose rustls chain uses
+  rustls-webpki ≥ 0.103.13 → then `cargo update -p rumqttc`, confirm #21 clears,
+  and drop this tracker.
+
+### References
+
+- Workspace `Cargo.toml` / `snapdog-client/Cargo.toml` — the cpal 0.17 / alsa 0.11
+  pins; the completed bumps (rubato 4.0, symphonia 0.6, tower-http 0.7, md5 0.8,
+  mockall 0.15).
+- Migration commits: `0ea85df` (rubato/md5/mockall), `71088ee` (tower-http),
+  `b716472` (symphonia), `a0c655c` (reqwest 0.13), `6d0f4a3` (testcontainers),
+  `dff2c39` (rustls crypto-provider `fix(api)`).
+- Dependabot: `SnapDogRocks/snapdog` alert #21 (rustls-webpki, kept open).

@@ -14,12 +14,12 @@ pub mod resample;
 use std::io::{Read, Seek};
 
 use anyhow::{Context, Result};
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::codecs::CodecParameters;
+use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 use tokio::sync::mpsc;
 
 use crate::config::AudioConfig;
@@ -631,28 +631,34 @@ fn decode_to_pcm(
 ) -> Result<()> {
     let hint = hint_for_content_type(content_type);
     let mss = MediaSourceStream::new(Box::new(reader), MediaSourceStreamOptions::default());
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .context("Failed to probe audio format")?;
 
-    let mut format = probed.format;
-    let track = format.default_track().context("No audio track found")?;
+    let track = format
+        .default_track(TrackType::Audio)
+        .context("No audio track found")?;
     let track_id = track.id;
+    let audio_params = track
+        .codec_params
+        .as_ref()
+        .and_then(CodecParameters::audio)
+        .context("No audio codec parameters found")?;
 
     tracing::info!(
-        codec = ?track.codec_params.codec,
-        sample_rate = track.codec_params.sample_rate,
-        channels = ?track.codec_params.channels,
+        codec = ?audio_params.codec,
+        sample_rate = audio_params.sample_rate,
+        channels = ?audio_params.channels,
         "Decoding audio"
     );
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
         .context("Failed to create decoder")?;
 
     run_decode_loop(&mut format, &mut decoder, track_id, tx)?;
@@ -698,39 +704,42 @@ fn decode_cached_file_impl(
 
     let hint = hint_for_content_type(content_type);
     let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .context("Failed to probe cached audio format")?;
 
-    let mut format = probed.format;
-    let track = format.default_track().context("No audio track found")?;
+    let track = format
+        .default_track(TrackType::Audio)
+        .context("No audio track found")?;
     let track_id = track.id;
+    let audio_params = track
+        .codec_params
+        .as_ref()
+        .and_then(CodecParameters::audio)
+        .context("No audio codec parameters found")?;
 
     tracing::info!(
-        codec = ?track.codec_params.codec,
-        sample_rate = track.codec_params.sample_rate,
-        channels = ?track.codec_params.channels,
+        codec = ?audio_params.codec,
+        sample_rate = audio_params.sample_rate,
+        channels = ?audio_params.channels,
         seek_ms,
         "Decoding cached file"
     );
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
         .context("Failed to create decoder")?;
 
     // Seek if requested
     if let Some(ms) = seek_ms {
         if ms > 0 {
             use symphonia::core::formats::{SeekMode, SeekTo};
-            let seek_time = symphonia::core::units::Time {
-                seconds: (ms / 1000) as u64,
-                frac: (ms % 1000) as f64 / 1000.0,
-            };
+            let seek_time = symphonia::core::units::Time::from_millis(ms);
             match format.seek(
                 SeekMode::Coarse,
                 SeekTo::Time {
@@ -765,13 +774,13 @@ fn hint_for_content_type(content_type: &str) -> Hint {
 /// Shared decode loop: reads packets, decodes, sends PCM + position to channel.
 fn run_decode_loop(
     format: &mut Box<dyn symphonia::core::formats::FormatReader>,
-    decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
+    decoder: &mut Box<dyn AudioDecoder>,
     track_id: u32,
     tx: &PcmSender,
 ) -> Result<()> {
     let time_base = format
-        .default_track()
-        .and_then(|t| t.codec_params.time_base);
+        .default_track(TrackType::Audio)
+        .and_then(|t| t.time_base);
     let mut format_sent = false;
     let mut last_position_sec: i64 = -1;
     let mut decoded_any_audio = false;
@@ -779,7 +788,11 @@ fn run_decode_loop(
 
     loop {
         let packet = match format.next_packet() {
-            Ok(p) => p,
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                tracing::debug!("Stream ended (EOF)");
+                break;
+            }
             Err(symphonia::core::errors::Error::IoError(e))
                 if e.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
@@ -796,7 +809,7 @@ fn run_decode_loop(
             }
         };
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
@@ -813,38 +826,33 @@ fn run_decode_loop(
         };
         consecutive_errors = 0;
 
-        let spec = *audio_buf.spec();
-        let num_frames = audio_buf.frames();
-
         if !format_sent {
+            let spec = audio_buf.spec();
             let _ = tx.blocking_send(PcmMessage::Format {
-                sample_rate: spec.rate,
-                channels: spec.channels.count() as u16,
+                sample_rate: spec.rate(),
+                channels: spec.channels().count() as u16,
             });
             format_sent = true;
         }
 
-        let mut sample_buf = SampleBuffer::<f32>::new(num_frames as u64, spec);
-        sample_buf.copy_interleaved_ref(audio_buf);
+        let mut samples: Vec<f32> = Vec::new();
+        audio_buf.copy_to_vec_interleaved(&mut samples);
 
-        if tx
-            .blocking_send(PcmMessage::Audio(sample_buf.samples().to_vec()))
-            .is_err()
-        {
+        if tx.blocking_send(PcmMessage::Audio(samples)).is_err() {
             tracing::debug!("PCM consumer dropped, stopping decode");
             return Ok(());
         }
         decoded_any_audio = true;
 
         if let Some(tb) = time_base {
-            let time = tb.calc_time(packet.ts());
-            #[allow(clippy::cast_possible_wrap)]
-            let seconds = time.seconds as i64;
-            if seconds != last_position_sec {
-                last_position_sec = seconds;
-                #[allow(clippy::cast_possible_wrap)]
-                let ms = (time.seconds as i64) * 1000 + (time.frac * 1000.0) as i64;
-                let _ = tx.blocking_send(PcmMessage::Position(ms));
+            if let Some(time) = tb.calc_time(packet.pts) {
+                let seconds = time.as_secs();
+                if seconds != last_position_sec {
+                    last_position_sec = seconds;
+                    let (secs, nanos) = time.parts();
+                    let ms = secs * 1000 + i64::from(nanos / 1_000_000);
+                    let _ = tx.blocking_send(PcmMessage::Position(ms));
+                }
             }
         }
     }
