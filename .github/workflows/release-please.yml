@@ -74,8 +74,8 @@ jobs:
             git commit -m "chore: sync Cargo.lock to the release version" -- Cargo.lock
             git push origin "HEAD:$branch"
           fi
-      - name: Trigger release workflow
-        if: steps.rp.outputs.release_created == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run release.yml --ref ${{ steps.rp.outputs.tag_name }} --repo ${{ github.repository }}
+      # NOTE: no explicit `gh workflow run release.yml` dispatch here. release-please
+      # publishes the GitHub Release with its App token, whose `release: published`
+      # event triggers release.yml on its own. An explicit dispatch would build the
+      # same version a second time and race on the release-asset / Homebrew / appcast
+      # uploads. To rebuild manually: `gh workflow run release.yml --ref vX.Y.Z`.

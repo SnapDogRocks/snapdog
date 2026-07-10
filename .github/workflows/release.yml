@@ -1,8 +1,11 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  # Single trigger: release-please publishes the GitHub Release (with its App token,
+  # whose events DO trigger workflows). Do NOT add a `push: tags` trigger or a
+  # release-please explicit dispatch alongside this — each duplicates the whole build
+  # and the duplicates race on the release-asset / Homebrew-tap / R2-appcast uploads.
+  # `workflow_dispatch` stays as a manual re-run fallback (`--ref vX.Y.Z`).
   release:
     types: [published]
   workflow_dispatch:
