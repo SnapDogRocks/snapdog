@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.4](https://github.com/SnapDogRocks/snapdog/compare/v0.23.3...v0.23.4) (2026-07-10)
+
+
+### Bug Fixes
+
+* **api:** install rustls crypto provider so TLS-configured API doesn't panic ([dff2c39](https://github.com/SnapDogRocks/snapdog/commit/dff2c39f2aac631373daf842fe60940680a7ff1a))
+
 ## [0.23.3](https://github.com/SnapDogRocks/snapdog/compare/v0.23.2...v0.23.3) (2026-07-09)
 
 
