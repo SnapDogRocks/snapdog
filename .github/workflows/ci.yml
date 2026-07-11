@@ -37,6 +37,7 @@ jobs:
       webui: ${{ steps.filter.outputs.webui }}
       knx: ${{ steps.filter.outputs.knx }}
       deps: ${{ steps.filter.outputs.deps }}
+      macos: ${{ steps.filter.outputs.macos }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -66,6 +67,19 @@ jobs:
               - '.github/workflows/**'
               - '**/Cargo.toml'
               - 'Cargo.lock'
+            macos:
+              - '.github/workflows/**'
+              - 'macos-helper/**'
+
+  i18n:
+    name: macOS i18n completeness
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: String Catalog fully translated
+        run: python3 macos-helper/check-i18n.py
 
   commit-convention:
     name: Conventional Commits

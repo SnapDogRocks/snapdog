@@ -1,74 +1,1447 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "● Running" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "● Läuft" } } } },
-    "○ Stopped" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "○ Gestoppt" } } } },
-    "Start Server" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Server starten" } } } },
-    "Stop Server" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Server stoppen" } } } },
-    "Open WebUI" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "WebUI öffnen" } } } },
-    "Settings…" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Einstellungen…" } } } },
-    "Check for Updates…" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Nach Updates suchen…" } } } },
-    "View Logs..." : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Logs anzeigen…" } } } },
-    "About SnapDog Server…" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Über SnapDog Server…" } } } },
-    "Quit SnapDog Server" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "SnapDog Server beenden" } } } },
-    "General" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Allgemein" } } } },
-    "Sources" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Quellen" } } } },
-    "Zones" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Zonen" } } } },
-    "Clients" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Clients" } } } },
-    "Integration" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Integration" } } } },
-    "Startup" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Start" } } } },
-    "Launch SnapDog at login" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "SnapDog beim Anmelden starten" } } } },
-    "Start server automatically on launch" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Server automatisch beim Start starten" } } } },
-    "Updates" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Updates" } } } },
-    "Receive beta updates" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Beta-Updates empfangen" } } } },
-    "Enable" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Aktivieren" } } } },
-    "Server URL" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Server-URL" } } } },
-    "Username" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Benutzername" } } } },
-    "Password" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Passwort" } } } },
-    "Stream format" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Stream-Format" } } } },
-    "Skip TLS verification" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "TLS-Prüfung überspringen" } } } },
-    "Protocol" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Protokoll" } } } },
-    "Enable Spotify Connect" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Spotify Connect aktivieren" } } } },
-    "Device name" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Gerätename" } } } },
-    "Bitrate" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Bitrate" } } } },
-    "Radio Stations" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Radiosender" } } } },
-    "Output Format" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Ausgabeformat" } } } },
-    "Sample Rate" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Abtastrate" } } } },
-    "Bit Depth" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Bittiefe" } } } },
-    "Mixing" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Mischung" } } } },
-    "Source conflict" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Quellkonflikt" } } } },
-    "Streaming" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Streaming" } } } },
-    "Codec" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Codec" } } } },
-    "Server" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Server" } } } },
-    "HTTP port" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "HTTP-Port" } } } },
-    "Streaming port" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Streaming-Port" } } } },
-    "Unknown clients" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Unbekannte Clients" } } } },
-    "Group volume mode" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Gruppenlautstärke-Modus" } } } },
-    "Default zone" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Standardzone" } } } },
-    "First zone" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Erste Zone" } } } },
-    "Unassigned" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Nicht zugewiesen" } } } },
-    "Zone Name" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Zonenname" } } } },
-    "Zone" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Zone" } } } },
-    "Name" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Name" } } } },
-    "Add zone" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Zone hinzufügen" } } } },
-    "Remove last zone" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Letzte Zone entfernen" } } } },
-    "Add client" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Client hinzufügen" } } } },
-    "Remove last client" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Letzten Client entfernen" } } } },
-    "Enable MQTT" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "MQTT aktivieren" } } } },
-    "Broker" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Broker" } } } },
-    "Client ID" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Client-ID" } } } },
-    "Base Topic" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Basis-Topic" } } } },
-    "Enable KNX" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "KNX aktivieren" } } } },
-    "Role" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Rolle" } } } },
-    "Gateway URL" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Gateway-URL" } } } },
-    "Individual address" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Individuelle Adresse" } } } },
-    "KNX group addresses" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "KNX-Gruppenadressen" } } } },
-    "API Keys" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "API-Schlüssel" } } } },
-    "Add API key" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "API-Schlüssel hinzufügen" } } } },
-    "Saving…" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Speichern…" } } } },
-    "Saved" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Gespeichert" } } } },
-    "Config changed" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Konfiguration geändert" } } } },
-    "Restart to apply" : { "localizations" : { "de" : { "stringUnit" : { "state" : "translated", "value" : "Zum Anwenden neu starten" } } } }
+  "sourceLanguage": "en",
+  "strings": {
+    "%@ (unknown)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (unbekannt)"
+          }
+        }
+      }
+    },
+    "1.1.100": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1.1.100"
+          }
+        }
+      }
+    },
+    "1/2/3": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1/2/3"
+          }
+        }
+      }
+    },
+    "16-bit": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16-Bit"
+          }
+        }
+      }
+    },
+    "160 kbps": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "160 kbps"
+          }
+        }
+      }
+    },
+    "24-bit": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "24-Bit"
+          }
+        }
+      }
+    },
+    "32-bit": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "32-Bit"
+          }
+        }
+      }
+    },
+    "320 kbps": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "320 kbps"
+          }
+        }
+      }
+    },
+    "44.1 kHz": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "44,1 kHz"
+          }
+        }
+      }
+    },
+    "48 kHz": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "48 kHz"
+          }
+        }
+      }
+    },
+    "88.2 kHz": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "88,2 kHz"
+          }
+        }
+      }
+    },
+    "96 kHz": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "96 kHz"
+          }
+        }
+      }
+    },
+    "96 kbps": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "96 kbps"
+          }
+        }
+      }
+    },
+    "API Keys": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-Schlüssel"
+          }
+        }
+      }
+    },
+    "API key": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-Schlüssel"
+          }
+        }
+      }
+    },
+    "About SnapDog Server…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Über SnapDog Server…"
+          }
+        }
+      }
+    },
+    "Absolute": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Absolut"
+          }
+        }
+      }
+    },
+    "Accept": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annehmen"
+          }
+        }
+      }
+    },
+    "Add API key": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-Schlüssel hinzufügen"
+          }
+        }
+      }
+    },
+    "Add client": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client hinzufügen"
+          }
+        }
+      }
+    },
+    "Add zone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zone hinzufügen"
+          }
+        }
+      }
+    },
+    "AirPlay": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay"
+          }
+        }
+      }
+    },
+    "AirPlay 1": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay 1"
+          }
+        }
+      }
+    },
+    "AirPlay 2": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay 2"
+          }
+        }
+      }
+    },
+    "Audio": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio"
+          }
+        }
+      }
+    },
+    "Base Topic": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Basis-Topic"
+          }
+        }
+      }
+    },
+    "Bearer token": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bearer-Token"
+          }
+        }
+      }
+    },
+    "Bearer token required": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bearer-Token erforderlich"
+          }
+        }
+      }
+    },
+    "Beta builds may be unstable. Takes effect on the next update check.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beta-Builds können instabil sein. Wirkt beim nächsten Update-Check."
+          }
+        }
+      }
+    },
+    "Bit Depth": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bittiefe"
+          }
+        }
+      }
+    },
+    "Bitrate": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitrate"
+          }
+        }
+      }
+    },
+    "Broker": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Broker"
+          }
+        }
+      }
+    },
+    "Build": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build"
+          }
+        }
+      }
+    },
+    "Check for Updates…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach Updates suchen…"
+          }
+        }
+      }
+    },
+    "Client (connect to gateway)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client (mit Gateway verbinden)"
+          }
+        }
+      }
+    },
+    "Client ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client-ID"
+          }
+        }
+      }
+    },
+    "Clients": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clients"
+          }
+        }
+      }
+    },
+    "Codec": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codec"
+          }
+        }
+      }
+    },
+    "Compressed": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Komprimiert"
+          }
+        }
+      }
+    },
+    "Config changed": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfiguration geändert"
+          }
+        }
+      }
+    },
+    "Default zone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standardzone"
+          }
+        }
+      }
+    },
+    "Device (ETS-programmable)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerät (ETS-programmierbar)"
+          }
+        }
+      }
+    },
+    "Device name": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerätename"
+          }
+        }
+      }
+    },
+    "Enable": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktivieren"
+          }
+        }
+      }
+    },
+    "Enable KNX": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "KNX aktivieren"
+          }
+        }
+      }
+    },
+    "Enable MQTT": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MQTT aktivieren"
+          }
+        }
+      }
+    },
+    "Enable Spotify Connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spotify Connect aktivieren"
+          }
+        }
+      }
+    },
+    "Enter a valid http(s) URL": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gültige http(s)-URL eingeben"
+          }
+        }
+      }
+    },
+    "Enter host:port (e.g. broker.local:1883)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "host:port eingeben (z. B. broker.local:1883)"
+          }
+        }
+      }
+    },
+    "F32+LZ4 (low latency)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "F32+LZ4 (geringe Latenz)"
+          }
+        }
+      }
+    },
+    "F32+LZ4 encrypted": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "F32+LZ4 verschlüsselt"
+          }
+        }
+      }
+    },
+    "FLAC": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FLAC"
+          }
+        }
+      }
+    },
+    "FLAC (lossless)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FLAC (verlustfrei)"
+          }
+        }
+      }
+    },
+    "First zone": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erste Zone"
+          }
+        }
+      }
+    },
+    "Gateway URL": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway-URL"
+          }
+        }
+      }
+    },
+    "General": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allgemein"
+          }
+        }
+      }
+    },
+    "Group volume mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gruppenlautstärke-Modus"
+          }
+        }
+      }
+    },
+    "HTTP port": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP-Port"
+          }
+        }
+      }
+    },
+    "Ignore": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignorieren"
+          }
+        }
+      }
+    },
+    "Individual address": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Individuelle Adresse"
+          }
+        }
+      }
+    },
+    "Integration": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integration"
+          }
+        }
+      }
+    },
+    "Invalid MAC address (expected aa:bb:cc:dd:ee:ff)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungültige MAC-Adresse (erwartet aa:bb:cc:dd:ee:ff)"
+          }
+        }
+      }
+    },
+    "KNX": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "KNX"
+          }
+        }
+      }
+    },
+    "KNX group addresses": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "KNX-Gruppenadressen"
+          }
+        }
+      }
+    },
+    "Last wins": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte gewinnt"
+          }
+        }
+      }
+    },
+    "Launch SnapDog at login": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SnapDog beim Anmelden starten"
+          }
+        }
+      }
+    },
+    "License": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lizenz"
+          }
+        }
+      }
+    },
+    "MAC": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAC"
+          }
+        }
+      }
+    },
+    "MP3": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MP3"
+          }
+        }
+      }
+    },
+    "MQTT": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MQTT"
+          }
+        }
+      }
+    },
+    "Mixing": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mischung"
+          }
+        }
+      }
+    },
+    "Multi-zone audio controller with AirPlay, Snapcast, MQTT, and KNX integration.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Multi-Zonen-Audio-Controller mit AirPlay-, Snapcast-, MQTT- und KNX-Integration."
+          }
+        }
+      }
+    },
+    "Name": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        }
+      }
+    },
+    "No keys → API is open": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Schlüssel → API offen"
+          }
+        }
+      }
+    },
+    "No password": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Passwort"
+          }
+        }
+      }
+    },
+    "Open WebUI": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebUI öffnen"
+          }
+        }
+      }
+    },
+    "Optional": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional"
+          }
+        }
+      }
+    },
+    "Opus": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opus"
+          }
+        }
+      }
+    },
+    "Original file": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Originaldatei"
+          }
+        }
+      }
+    },
+    "Output Format": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausgabeformat"
+          }
+        }
+      }
+    },
+    "PCM (uncompressed)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PCM (unkomprimiert)"
+          }
+        }
+      }
+    },
+    "Password": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passwort"
+          }
+        }
+      }
+    },
+    "Per-zone/client group addresses are set in ETS, not managed here.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gruppenadressen pro Zone/Client werden in ETS gesetzt, nicht hier verwaltet."
+          }
+        }
+      }
+    },
+    "Persist ETS config": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ETS-Konfiguration behalten"
+          }
+        }
+      }
+    },
+    "Pre-shared key": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorinstallierter Schlüssel"
+          }
+        }
+      }
+    },
+    "Protocol": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Protokoll"
+          }
+        }
+      }
+    },
+    "Quit SnapDog Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SnapDog Server beenden"
+          }
+        }
+      }
+    },
+    "Radio Stations": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radiosender"
+          }
+        }
+      }
+    },
+    "Receive beta updates": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beta-Updates empfangen"
+          }
+        }
+      }
+    },
+    "Receiver wins": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empfänger gewinnt"
+          }
+        }
+      }
+    },
+    "Reject": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ablehnen"
+          }
+        }
+      }
+    },
+    "Relative": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relativ"
+          }
+        }
+      }
+    },
+    "Remove last API key": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzten API-Schlüssel entfernen"
+          }
+        }
+      }
+    },
+    "Remove last client": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzten Client entfernen"
+          }
+        }
+      }
+    },
+    "Remove last zone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte Zone entfernen"
+          }
+        }
+      }
+    },
+    "Restart after ETS programming": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach ETS-Programmierung neu starten"
+          }
+        }
+      }
+    },
+    "Restart to apply": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Anwenden neu starten"
+          }
+        }
+      }
+    },
+    "Role": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rolle"
+          }
+        }
+      }
+    },
+    "Sample Rate": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abtastrate"
+          }
+        }
+      }
+    },
+    "Saved": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gespeichert"
+          }
+        }
+      }
+    },
+    "Saving…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speichern…"
+          }
+        }
+      }
+    },
+    "Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        }
+      }
+    },
+    "Server URL": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server-URL"
+          }
+        }
+      }
+    },
+    "Settings…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen…"
+          }
+        }
+      }
+    },
+    "Skip TLS verification": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TLS-Prüfung überspringen"
+          }
+        }
+      }
+    },
+    "SnapDog": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SnapDog"
+          }
+        }
+      }
+    },
+    "SnapDog Server": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SnapDog Server"
+          }
+        }
+      }
+    },
+    "Source conflict": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quellkonflikt"
+          }
+        }
+      }
+    },
+    "Sources": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quellen"
+          }
+        }
+      }
+    },
+    "Spotify": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spotify"
+          }
+        }
+      }
+    },
+    "Start Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server starten"
+          }
+        }
+      }
+    },
+    "Start server automatically on launch": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server automatisch beim Start starten"
+          }
+        }
+      }
+    },
+    "Startup": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start"
+          }
+        }
+      }
+    },
+    "Station Name": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sendername"
+          }
+        }
+      }
+    },
+    "Stop Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server stoppen"
+          }
+        }
+      }
+    },
+    "Stream format": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream-Format"
+          }
+        }
+      }
+    },
+    "Streaming": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming"
+          }
+        }
+      }
+    },
+    "Streaming port": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming-Port"
+          }
+        }
+      }
+    },
+    "Subsonic": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subsonic"
+          }
+        }
+      }
+    },
+    "Unassigned": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht zugewiesen"
+          }
+        }
+      }
+    },
+    "Unknown clients": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekannte Clients"
+          }
+        }
+      }
+    },
+    "Updates": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updates"
+          }
+        }
+      }
+    },
+    "Username": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Benutzername"
+          }
+        }
+      }
+    },
+    "Version": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
+          }
+        }
+      }
+    },
+    "View Logs...": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logs anzeigen…"
+          }
+        }
+      }
+    },
+    "Zone": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zone"
+          }
+        }
+      }
+    },
+    "Zone Name": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zonenname"
+          }
+        }
+      }
+    },
+    "Zones": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zonen"
+          }
+        }
+      }
+    },
+    "aa:bb:cc:dd:ee:ff": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aa:bb:cc:dd:ee:ff"
+          }
+        }
+      }
+    },
+    "host:port": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "host:port"
+          }
+        }
+      }
+    },
+    "http://navidrome:4533": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "http://navidrome:4533"
+          }
+        }
+      }
+    },
+    "https://...": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://..."
+          }
+        }
+      }
+    },
+    "udp://192.168.1.50:3671": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "udp://192.168.1.50:3671"
+          }
+        }
+      }
+    },
+    "v%@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "v%@"
+          }
+        }
+      }
+    },
+    "© %@ Fabian Schmieder": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© %@ Fabian Schmieder"
+          }
+        }
+      }
+    },
+    "○ Stopped": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "○ Gestoppt"
+          }
+        }
+      }
+    },
+    "● Running": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "● Läuft"
+          }
+        }
+      }
+    }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

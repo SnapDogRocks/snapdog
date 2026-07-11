@@ -168,10 +168,14 @@ appcast over R2, universal build).
 - **MAC-T33** ✅ reload-on-focus — the Settings window reloads the TOML when it regains focus
   (`controlActiveState == .key`), guarded against clobbering unsaved edits; also fixed a latent
   spurious re-save that a `load()` triggered.
-- **MAC-T34** ⭑ initial German — added `Localizable.xcstrings` to the project (pbxproj file/build
-  refs + `de` in knownRegions) with 68 German translations for the primary UI (menu, tabs, section
-  headers, common labels). Verified: `xcstringstool compile` runs in the build. Remaining strings
-  fall back to English and can be filled in incrementally; other WebUI locales (es/fr/nl/tr) TBD.
+- **MAC-T34** ✅ complete German — `Localizable.xcstrings` (in pbxproj + `de` knownRegion) with all
+  **137 strings translated** (0 untranslated). Control titles (`Button`/`Tab`/`Toggle`/`Section`/
+  `TextField`/`Picker`/`DisclosureGroup`) are **not auto-extracted** by the compiler (only `Text()`
+  is), so they carry `extractionState: "manual"` to be compiled into `de.strings` — verified the
+  built `de.lproj/Localizable.strings` contains both manual (Settings…→Einstellungen…) and
+  auto-extracted (Saved→Gespeichert) strings. A CI gate (`macos-helper/check-i18n.py`, wired into
+  `ci.yml` on macos-helper changes) fails the build if any string is untranslated. Other WebUI
+  locales (es/fr/nl/tr) TBD.
 
 ### Fixed (5b20139) — two data-integrity bugs the review missed
 - **The parser never loaded anything.** Every read used `as?` casts (`table["x"] as? TOMLTable`,
