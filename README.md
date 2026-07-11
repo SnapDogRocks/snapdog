@@ -1,17 +1,17 @@
 <div align="center">
 
 <!-- Logo placeholder — replace with actual logo -->
-<img src="https://raw.githubusercontent.com/metaneutrons/snapdog/main/assets/snapdog-logo.svg" alt="SnapDog" width="200">
+<img src="https://raw.githubusercontent.com/SnapDogRocks/snapdog/main/assets/snapdog-logo.svg" alt="SnapDog" width="200">
 
 **Multi-room audio system with smart home integration**
 
 One binary. AirPlay + Spotify + Subsonic + MQTT + KNX. Snapcast-based audio delivery.
 
-[![CI](https://github.com/metaneutrons/snapdog/actions/workflows/ci.yml/badge.svg)](https://github.com/metaneutrons/snapdog/actions/workflows/ci.yml)
-[![Release](https://github.com/metaneutrons/snapdog/actions/workflows/release.yml/badge.svg)](https://github.com/metaneutrons/snapdog/actions/workflows/release.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/metaneutrons/snapdog)](https://github.com/metaneutrons/snapdog/releases/latest)
+[![CI](https://github.com/SnapDogRocks/snapdog/actions/workflows/ci.yml/badge.svg)](https://github.com/SnapDogRocks/snapdog/actions/workflows/ci.yml)
+[![Release](https://github.com/SnapDogRocks/snapdog/actions/workflows/release.yml/badge.svg)](https://github.com/SnapDogRocks/snapdog/actions/workflows/release.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/SnapDogRocks/snapdog)](https://github.com/SnapDogRocks/snapdog/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/ghcr.io-snapdog-blue?logo=docker)](https://ghcr.io/metaneutrons/snapdog)
+[![Docker](https://img.shields.io/badge/ghcr.io-snapdog-blue?logo=docker)](https://ghcr.io/snapdogrocks/snapdog)
 
 </div>
 
@@ -48,10 +48,16 @@ SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system
 
 ```bash
 docker run -d --name snapdog \
+  --restart unless-stopped \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --stop-timeout 15 \
   -v snapdog-data:/var/lib/snapdog \
   -v ./snapdog.toml:/etc/snapdog/snapdog.toml:ro \
   -p 5555:5555 -p 1704:1704 -p 3671:3671/udp \
-  ghcr.io/metaneutrons/snapdog:latest
+  ghcr.io/snapdogrocks/snapdog:latest
 ```
 
 <details>
@@ -60,8 +66,15 @@ docker run -d --name snapdog \
 ```yaml
 services:
   snapdog:
-    image: ghcr.io/metaneutrons/snapdog:latest
+    image: ghcr.io/snapdogrocks/snapdog:latest
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
     volumes:
       - snapdog-data:/var/lib/snapdog
       - ./snapdog.toml:/etc/snapdog/snapdog.toml:ro
@@ -70,23 +83,48 @@ services:
       - "1704:1704"      # Snapcast streaming
       - "3671:3671/udp"  # KNX/IP device
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:5555/health"]
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "4", "http://127.0.0.1:5555/health/live"]
       interval: 30s
       timeout: 5s
       retries: 3
 
   snapdog-client:
-    image: ghcr.io/metaneutrons/snapdog-client:latest
+    image: ghcr.io/snapdogrocks/snapdog-client:latest
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
     devices:
       - /dev/snd
-    command: ["--server", "snapdog"]
+    command: ["tcp://snapdog:1704"]
+    depends_on:
+      snapdog:
+        condition: service_healthy
 
 volumes:
   snapdog-data:  # Persists KNX programming, state, EQ config
 ```
 
 </details>
+
+Published images are multi-architecture (`linux/amd64`, `linux/arm64`) and include
+SBOM and SLSA provenance attestations. Release manifests are signed keylessly with
+Sigstore. Verify an immutable release before deployment:
+
+```bash
+cosign verify ghcr.io/snapdogrocks/snapdog:v0.24.1 \
+  --certificate-identity-regexp '^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9].*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+For reproducible deployments, pin a version or digest instead of `latest`. On Linux,
+mDNS discovery and KNX/IP routing use multicast and generally require host networking
+or a multicast-capable macvlan/ipvlan network; published ports alone cover unicast
+traffic.
 
 ### KNX Device Mode (no config file needed)
 
@@ -109,11 +147,11 @@ configuration on start. When ETS finishes a programming session (sending
 changes take effect immediately (disable with `restart_after_ets = false`). Until a
 device has been programmed, built-in defaults are used.
 
-The `.knxprod` file for ETS import is available from [Releases](https://github.com/metaneutrons/snapdog/releases/latest).
+The `.knxprod` file for ETS import is available from [Releases](https://github.com/SnapDogRocks/snapdog/releases/latest).
 
 ### Binary
 
-Download from [Releases](https://github.com/metaneutrons/snapdog/releases/latest), then:
+Download from [Releases](https://github.com/SnapDogRocks/snapdog/releases/latest), then:
 
 ```bash
 snapdog --config snapdog.toml
@@ -145,7 +183,7 @@ brew install snapdog-client
 
 ### macOS App
 
-Download `SnapDog-Server-*.dmg` from [Releases](https://github.com/metaneutrons/snapdog/releases/latest). The menu bar app embeds the server binary, manages start/stop, and includes Sparkle auto-update.
+Download `SnapDog-Server-*.dmg` from [Releases](https://github.com/SnapDogRocks/snapdog/releases/latest). The menu bar app embeds the server binary, manages start/stop, and includes Sparkle auto-update.
 
 ### From Source
 
@@ -364,7 +402,7 @@ A specialized Snapcast client that understands SnapDog's custom protocol extensi
   ```
 - **Encryption** — PSK-based chunk encryption matching the embedded server
 
-Available as binary and Docker image (`ghcr.io/metaneutrons/snapdog-client`).
+Available as binary and Docker image (`ghcr.io/snapdogrocks/snapdog-client`).
 
 ## Architecture
 

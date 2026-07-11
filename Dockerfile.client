@@ -1,7 +1,19 @@
-# ── Build stage ────────────────────────────────────────────────
-FROM rust:1-bookworm AS builder
+# syntax=docker/dockerfile:1.19.0@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
 
-RUN apt-get update && apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev pkg-config && rm -rf /var/lib/apt/lists/*
+ARG RUST_IMAGE="rust:1.97.0-bookworm@sha256:7d0723df719e7f213b69dc7c8c595985c3f4b060cfbee4f7bc0e347a86fe3b6a"
+ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df"
+
+# ── Build stage ────────────────────────────────────────────────
+FROM ${RUST_IMAGE} AS rust-builder
+
+ARG CARGO_RELEASE_LTO=thin
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+      libasound2-dev \
+      libavahi-compat-libdnssd-dev \
+      pkg-config
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
@@ -11,26 +23,52 @@ COPY snapdog-client/ snapdog-client/
 COPY snapdog-common/ snapdog-common/
 COPY snapdog-testkit/ snapdog-testkit/
 COPY xtask/ xtask/
-# WebUI not needed for client, but workspace requires the directory
-RUN mkdir -p webui/out && cargo build --release -p snapdog-client
+
+# The workspace build script requires this path, but the client does not embed the WebUI.
+RUN mkdir -p webui/out && touch webui/out/index.html
+RUN --mount=type=cache,id=snapdog-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=snapdog-cargo-git,target=/usr/local/cargo/git/db,sharing=locked \
+    --mount=type=cache,id=snapdog-client-target,target=/build/target,sharing=locked \
+    CARGO_PROFILE_RELEASE_LTO="${CARGO_RELEASE_LTO}" cargo build --locked --release -p snapdog-client && \
+    install -Dm0755 target/release/snapdog-client /out/snapdog-client
 
 # ── Runtime stage ─────────────────────────────────────────────
-FROM debian:bookworm-slim
+FROM ${RUNTIME_IMAGE} AS runtime
 
-LABEL org.opencontainers.image.source="https://github.com/metaneutrons/snapdog"
-LABEL org.opencontainers.image.description="SnapDog audio client — receives and plays audio from a SnapDog server"
-LABEL org.opencontainers.image.licenses="GPL-3.0-only"
+ARG BUILD_VERSION="0.0.0-dev"
+ARG BUILD_REVISION="unknown"
+ARG BUILD_CREATED="1970-01-01T00:00:00Z"
+ARG SNAPDOG_UID=10001
+ARG SNAPDOG_GID=10001
+
+LABEL org.opencontainers.image.title="SnapDog Client" \
+      org.opencontainers.image.description="Synchronized audio client for SnapDog" \
+      org.opencontainers.image.source="https://github.com/SnapDogRocks/snapdog" \
+      org.opencontainers.image.url="https://snapdog.rocks" \
+      org.opencontainers.image.documentation="https://github.com/SnapDogRocks/snapdog#snapdog-client" \
+      org.opencontainers.image.vendor="SnapDog" \
+      org.opencontainers.image.licenses="GPL-3.0-only" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.revision="${BUILD_REVISION}" \
+      org.opencontainers.image.created="${BUILD_CREATED}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libasound2 libavahi-client3 libavahi-compat-libdnssd1 ca-certificates dumb-init \
-    && rm -rf /var/lib/apt/lists/*
+      ca-certificates \
+      dumb-init \
+      libasound2 \
+      libavahi-client3 \
+      libavahi-compat-libdnssd1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid "${SNAPDOG_GID}" snapdog \
+    && useradd --uid "${SNAPDOG_UID}" --gid snapdog --groups audio --no-log-init \
+         --home-dir /var/lib/snapdog-client --no-create-home --shell /usr/sbin/nologin snapdog \
+    && install -d -o snapdog -g snapdog -m 0750 /var/lib/snapdog-client
 
-COPY --from=builder /build/target/release/snapdog-client /usr/local/bin/
+COPY --from=rust-builder --chmod=0755 /out/snapdog-client /usr/local/bin/snapdog-client
 
-RUN useradd -r -s /bin/false -G audio snapdog
+USER snapdog:snapdog
+WORKDIR /var/lib/snapdog-client
 
-USER snapdog
-WORKDIR /tmp
-
-ENTRYPOINT ["dumb-init", "snapdog-client"]
-CMD ["--server", "snapdog"]
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/usr/local/bin/snapdog-client"]
+CMD ["tcp://snapdog:1704"]

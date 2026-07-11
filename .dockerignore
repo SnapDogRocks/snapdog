@@ -1,7 +1,31 @@
-target/
-devcontainer/
-.git/
-.github/
+# Deny by default: only files required by the production builds are exposed to
+# Docker or remote BuildKit builders. This keeps local configs, signing keys,
+# logs, editor state, release artifacts, and unrelated platform builds out of
+# the build context.
+**
+
+!Cargo.toml
+!Cargo.lock
+
+!assets/
+!assets/**
+
+!snapdog/
+!snapdog/**
+!snapdog-client/
+!snapdog-client/**
+!snapdog-common/
+!snapdog-common/**
+!snapdog-testkit/
+!snapdog-testkit/**
+!xtask/
+!xtask/**
+
+!webui/
+!webui/**
 webui/node_modules/
 webui/.next/
-*.md
+webui/out/
+webui/coverage/
+webui/.env*
+webui/*.log
