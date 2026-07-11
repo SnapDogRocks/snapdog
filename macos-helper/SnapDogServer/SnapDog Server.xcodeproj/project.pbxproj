@@ -123,6 +123,9 @@
 				Base,
 				en,
 				de,
+				es,
+				fr,
+				nl,
 			);
 			mainGroup = 5DB5D79A52A8F7B73D14BA50;
 			minimizedProjectReferenceProxies = 1;

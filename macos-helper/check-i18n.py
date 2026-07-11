@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 CATALOG = Path(__file__).parent / "SnapDogServer" / "SnapDog Server" / "Localizable.xcstrings"
-REQUIRED_LOCALES = ["de"]
+REQUIRED_LOCALES = ["de", "es", "fr", "nl"]
 
 
 def main() -> int:
