@@ -11,7 +11,7 @@ Consequences · References**.
 
 ## ADR-019 — Pin snapcast at 0.16.1 until the seam firewall is complete
 
-- **Status:** Accepted (2026-06-30)
+- **Status:** Accepted (2026-06-30) — **executed and superseded by ADR-021 (2026-07-04)**
 - **Deciders:** maintainer
 - **Tracking:** RFC 0003 `IT-T08` (this decision), `IT-NG-05` (the upgrade itself)
 
@@ -131,3 +131,63 @@ blocked by an upstream release, not by our code:
   `b716472` (symphonia), `a0c655c` (reqwest 0.13), `6d0f4a3` (testcontainers),
   `dff2c39` (rustls crypto-provider `fix(api)`).
 - Dependabot: `SnapDogRocks/snapdog` alert #21 (rustls-webpki, kept open).
+
+---
+
+## ADR-021 — Upgrade to snapcast-rs 0.17.2 behind the IT-0003 firewall
+
+- **Status:** Accepted (2026-07-04)
+- **Deciders:** maintainer
+- **Supersedes:** ADR-019
+- **Tracking:** RFC 0003 `IT-NG-05` (the upgrade); shipped in snapdog v0.22.0
+
+### Context
+
+ADR-019 deferred the `snapcast-rs` 0.16.1 → 0.17 jump until the compiler-invisible
+JSON-RPC / event seam had a regression net. That net (RFC 0003) is now complete and
+green — the golden JSON-RPC vectors (`IT-T54`), the exhaustive `ServerEvent →
+SnapcastEvent` map (`IT-T52`), the F32 sender (`IT-T55`), and the feature
+build-smoke matrix (`IT-T73`) — so ADR-019's sequencing rule is satisfied and the
+upgrade (`IT-NG-05`) was carried out.
+
+0.17.0 inverts the embedded-server API: the library no longer binds the audio port
+(the embedder injects a `TcpListener` and calls `serve()`) and no longer persists
+state (`ServerConfig.state_file` → `initial_state`; the embedder loads any initial
+snapshot and persists `ServerEvent::StateChanged` itself).
+
+### Decision
+
+1. **Adopt snapcast-rs 0.17.2** for `snapcast-server` / `snapcast-client` /
+   `snapcast-proto`. The firewall held — zero wire/signature surprises.
+2. **snapdog's `Store` is the single source of truth; no snapcast-level state
+   persistence** (`initial_state: None`). The embedded server starts stateless and
+   snapdog re-applies each client's persisted volume, mute, latency, and EQ on
+   reconnect (`ClientConnected`). The library's `snapcast.json` is redundant and is
+   no longer written. `ServerEvent::StateChanged` is deliberately dropped (pinned by
+   a test).
+3. **The embedder owns the audio listener** — bind synchronously on all interfaces
+   and **fail boot on a port clash** (fail-fast) rather than logging inside the
+   spawned server task.
+4. **FLAC via pure-Rust `flacenc`** (0.17.1 dropped `libflac-sys`). No C toolchain
+   or libFLAC is needed for the `flac` feature; `cmake` remains only for the TLS
+   path (`aws-lc-sys` ← `axum-server`).
+
+### Consequences
+
+- Cross-restart state flows entirely through snapdog's `Store` — one persistence
+  model instead of two. A regression test (`snapcast/events.rs`) pins that volume,
+  mute, **and** latency are all re-applied on reconnect, so the SSOT contract can't
+  silently rot (latency initially slipped through and reset on restart until this
+  test + the reconnect push were added — snapdog v0.22.1).
+- A port clash now aborts startup with a clear error instead of a limping server
+  task — a deliberate, more debuggable behaviour change.
+- Dropping `libflac-sys` removes a C dependency from the `flac` build path.
+- Shipped in snapdog **v0.22.0**; **v0.22.1** added the latency restore-on-connect.
+
+### References
+
+- ADR-019 (superseded) — the pin-until-firewall decision this executes.
+- RFC `docs/rfcs/0003-integration-test-suite.md` — `IT-NG-05`, the seam firewall
+  (`IT-T52` / `IT-T54` / `IT-T55` / `IT-T73`).
+- `snapdog/src/snapcast/embedded.rs` — listener bind + `serve()`, `initial_state: None`.
+- `snapdog/src/snapcast/events.rs` — the reconnect SSOT push and its regression test.

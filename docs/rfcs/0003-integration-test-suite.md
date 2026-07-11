@@ -84,8 +84,9 @@ optional** and never a prerequisite for the core (`IT-DEC-10`).
   only snapdog's seam against them.
 - `IT-NG-03` **Performance / load / latency-SLA** testing (separate effort).
 - `IT-NG-04` **mDNS/zeroconf discovery** determinism (excluded from tier 1; tier-3).
-- `IT-NG-05` **Migrating** snapdog to snapcast `0.17` — separate work; this suite is
-  the safety net *for* that migration (§14, §15).
+- `IT-NG-05` **Migrating** snapdog to snapcast `0.17` — ✅ **done** (0.17.2, ADR-021,
+  snapdog v0.22.0); this suite was the safety net *for* that migration and held —
+  zero wire/signature surprises (§14, §15).
 
 ## 3. Background — verified facts (cite-checked)
 
@@ -167,7 +168,8 @@ The firewall (§9) targets exactly these.
 - **Clock:** inject a fixed clock for presence schedule resolution
   (`chrono::Local::now`, `runner.rs:1130`), or use always-matching windows.
 - **Filesystem:** `tempfile::TempDir` per test for `state_dir`
-  (`zones.json`/`eq.json`/`snapcast.json`/`server_id`); or `persist_path=None` to
+  (`zones.json`/`eq.json`/`server_id`; snapcast state is no longer persisted as of
+  ADR-021); or `persist_path=None` to
   disable the 5s auto-save loop.
 - **Network:** tier-1 sets `mdns.enabled=false`; receivers driven at the
   **handler/event boundary**, never via discovery.
@@ -474,7 +476,8 @@ range + `CustomMessage` size limit; mid-stream sample-rate change (44.1k AirPlay
 48k Snapcast).
 
 ## 15. Roadmap / out of scope (deferred)
-- **snapcast 0.17 migration** (`IT-NG-05`) — separate work; this suite is its safety net.
+- **snapcast 0.17 migration** (`IT-NG-05`) — ✅ **done**: upgraded to 0.17.2 (ADR-021,
+  snapdog v0.22.0) behind this suite, which held as its safety net.
 - **Tier-3 hardware e2e** (`IT-NG-01`) — real KNX/IP gateway, physical AirPlay/Spotify,
   real audio out; documented manual runbook, never CI.
 - **Concurrency model checking** with `loom` (zone-player + shared state) — stretch.
