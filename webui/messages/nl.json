@@ -105,6 +105,7 @@
   },
   "connection": {
     "lost": "Verbinding verbroken",
+    "serverRestarting": "Server wordt opnieuw gestart",
     "reconnecting": "Opnieuw verbinden…",
     "retryingIn": "Opnieuw proberen over {seconds}s…"
   },

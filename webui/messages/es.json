@@ -105,6 +105,7 @@
   },
   "connection": {
     "lost": "Conexión perdida",
+    "serverRestarting": "Reiniciando el servidor",
     "reconnecting": "Reconectando…",
     "retryingIn": "Reintentando en {seconds}s…"
   },

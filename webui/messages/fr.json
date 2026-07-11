@@ -105,7 +105,9 @@
   },
   "connection": {
     "lost": "Connexion perdue",
-    "reconnecting": "Reconnexion en cours…"
+    "serverRestarting": "Redémarrage du serveur",
+    "reconnecting": "Reconnexion en cours…",
+    "retryingIn": "Nouvelle tentative dans {seconds} s…"
   },
   "source": {
     "radio": "Radio",
