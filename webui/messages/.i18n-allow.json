@@ -1,0 +1,23 @@
+[
+  "about.licenseValue",
+  "about.modelLabel",
+  "about.modelValue",
+  "about.sourceLabel",
+  "about.sourceValue",
+  "about.versionLabel",
+  "app.title",
+  "client.clients",
+  "eq.gain",
+  "eq.preset",
+  "eq.title",
+  "playlist.title",
+  "source.airplay",
+  "source.radio",
+  "source.spotify",
+  "source.subsonic_playlist",
+  "source.subsonic_track",
+  "source.url",
+  "transport.pause",
+  "volume.label",
+  "zone.zones"
+]

@@ -24,7 +24,7 @@ test:
 	cargo test
 
 webui-check:
-	cd webui && npm ci && npm run lint && npm run typecheck && npm run build
+	cd webui && npm ci && npm run i18n:check && npm run lint && npm run typecheck && npm run build
 
 ## Build WebUI (Next.js static export)
 build-webui:

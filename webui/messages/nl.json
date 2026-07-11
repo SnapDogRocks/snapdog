@@ -25,7 +25,7 @@
     "label": "Volume",
     "mute": "Dempen",
     "unmute": "Dempen opheffen",
-    "maxVolume": "Maximum volume: {max}%"
+    "maxVolume": "Maximaal volume: {max}%"
   },
   "seek": {
     "label": "Zoeken"
@@ -80,7 +80,7 @@
     "playAll": "Alles afspelen",
     "showMore": "Meer tonen",
     "showLess": "Minder tonen",
-    "tracks": "{count, plural, one {# track} other {# tracks}}"
+    "tracks": "{count, plural, one {# nummer} other {# nummers}}"
   },
   "auth": {
     "title": "Authenticatie vereist",
@@ -129,10 +129,10 @@
     "description": "Multi-zone audiocontroller met AirPlay-, Spotify-, Subsonic-, MQTT- en KNX-integratie",
     "modelLabel": "MODEL",
     "modelValue": "SNAPDOG-CORE",
-    "versionLabel": "VERSION",
-    "sourceLabel": "SOURCE",
+    "versionLabel": "VERSIE",
+    "sourceLabel": "BRON",
     "sourceValue": "SnapDogRocks/snapdog ↗",
-    "licenseLabel": "LICENSE",
+    "licenseLabel": "LICENTIE",
     "licenseValue": "GPL-3.0 ↗",
     "done": "Gereed"
   },
