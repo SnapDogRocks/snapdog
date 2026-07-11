@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.0](https://github.com/SnapDogRocks/snapdog/compare/v0.23.4...v0.24.0) (2026-07-11)
+
+
+### Features
+
+* **macos:** SwiftUI server app overhaul (RFC 0006) — config parity, login-item, Sparkle beta, KNX, Keychain, i18n ([#73](https://github.com/SnapDogRocks/snapdog/issues/73)) ([c0dff80](https://github.com/SnapDogRocks/snapdog/commit/c0dff8039cb49166c65d7b06006de87e5c74ff26))
+* **webui:** complete i18n + enforce full translation (build/commit/CI gates) ([#72](https://github.com/SnapDogRocks/snapdog/issues/72)) ([b340075](https://github.com/SnapDogRocks/snapdog/commit/b340075c1d1c41b4039c7509d2d8835dc0e03655))
+
 ## [0.23.4](https://github.com/SnapDogRocks/snapdog/compare/v0.23.3...v0.23.4) (2026-07-10)
 
 
