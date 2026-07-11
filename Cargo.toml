@@ -103,9 +103,14 @@ version = "0.6"
 version = "0.15"
 
 [profile.release]
-lto = true
+# Thin LTO + parallel codegen: ~full-LTO runtime performance at a fraction of the build
+# time. Fat LTO (`lto = true`) with `codegen-units = 1` made release builds 2–4 h each
+# (the Windows leg alone ~4 h) because whole-program LTO is single-threaded and cu=1
+# disables codegen parallelism. Thin LTO parallelizes across units — cuts the matrix to
+# ~30–60 min with a negligible (~2–5 %) runtime cost.
+lto = "thin"
 strip = true
-codegen-units = 1
+codegen-units = 16
 
 [workspace.lints.clippy]
 # Pedantic — strict but reasonable
