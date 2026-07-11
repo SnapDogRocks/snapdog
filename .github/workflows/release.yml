@@ -207,13 +207,30 @@ jobs:
           mkdir -p "$APP/Contents/Helpers"
           cp snapdog-universal "$APP/Contents/Helpers/snapdog"
           chmod +x "$APP/Contents/Helpers/snapdog"
-          # Sign inside-out: the embedded helper (added after the Xcode build), then re-seal
-          # the outer app WITHOUT --deep. `--deep` is Apple-deprecated for signing and needlessly
-          # re-signs the nested Sparkle.framework that xcodebuild already signed correctly.
-          # The `--verify --deep --strict` below is the guard: if anything ends up unsigned it
-          # fails this CI job before a broken DMG can ship (MAC-T24).
-          codesign --force --options runtime --sign "$IDENTITY" "$APP/Contents/Helpers/snapdog"
-          codesign --force --options runtime --sign "$IDENTITY" "$APP"
+
+          sign() { codesign --force --options runtime --timestamp --sign "$IDENTITY" "$@"; }
+
+          # Sign inside-out. Sparkle ships its nested helpers PRE-signed by the Sparkle
+          # project (NOT our Developer ID) and xcodebuild does not re-sign them, so
+          # notarization rejects them ("not signed with a valid Developer ID" + "no secure
+          # timestamp" — MAC-T24). Re-sign every nested Sparkle Mach-O/bundle ourselves,
+          # deepest first, then the framework, the helper, and finally the outer app.
+          # --timestamp is mandatory for notarization; --deep is intentionally avoided
+          # (Apple-deprecated) in favour of this explicit inside-out pass.
+          FW="$APP/Contents/Frameworks/Sparkle.framework"
+          if [ -d "$FW" ]; then
+            V="$FW/Versions/B"
+            [ -e "$V/XPCServices/Downloader.xpc" ] && sign "$V/XPCServices/Downloader.xpc"
+            [ -e "$V/XPCServices/Installer.xpc" ]  && sign "$V/XPCServices/Installer.xpc"
+            [ -e "$V/Autoupdate" ]                 && sign "$V/Autoupdate"
+            [ -e "$V/Updater.app" ]                && sign "$V/Updater.app"
+            sign "$FW"
+          fi
+          sign "$APP/Contents/Helpers/snapdog"
+          sign "$APP"
+          # Guard: fails this job before a broken DMG can ship. (Insufficient on its own —
+          # it passes structurally-valid non-Developer-ID signatures — hence the explicit
+          # re-signing above; notarization is the real strictness gate.)
           codesign --verify --deep --strict "$APP"
           codesign --display --verbose=2 "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|Sealed" || true
       - name: Create DMG
@@ -242,11 +259,23 @@ jobs:
           VERSION=${{ needs.meta.outputs.version }}
           DMG="SnapDog-Server-${VERSION}.dmg"
           echo "$KEY_P8" | base64 --decode > AuthKey.p8
+          # On a rejected submission notarytool exits non-zero but prints only the status,
+          # not the per-file reasons — fetch the detailed log so the failure is diagnosable
+          # straight from the CI output instead of needing a manual `notarytool log` run.
+          set +e
           xcrun notarytool submit "$DMG" \
-            --key AuthKey.p8 \
-            --key-id "$KEY_ID" \
-            --issuer "$ISSUER_ID" \
-            --wait --timeout 600
+            --key AuthKey.p8 --key-id "$KEY_ID" --issuer "$ISSUER_ID" \
+            --wait --timeout 600 2>&1 | tee notary-submit.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            SUBMIT_ID=$(awk '/id:/{print $2; exit}' notary-submit.txt)
+            echo "::error::Notarization failed (rc=$rc). Detailed log for ${SUBMIT_ID}:"
+            [ -n "$SUBMIT_ID" ] && xcrun notarytool log "$SUBMIT_ID" \
+              --key AuthKey.p8 --key-id "$KEY_ID" --issuer "$ISSUER_ID" || true
+            rm -f AuthKey.p8
+            exit 1
+          fi
           xcrun stapler staple "$DMG"
           rm AuthKey.p8
           shasum -a 256 "$DMG" > "${DMG}.sha256"
