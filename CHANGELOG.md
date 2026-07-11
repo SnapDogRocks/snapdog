@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/SnapDogRocks/snapdog/compare/v0.24.0...v0.24.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **release:** sign Sparkle's nested binaries for notarization (MAC-T24) ([#76](https://github.com/SnapDogRocks/snapdog/issues/76)) ([0b0352a](https://github.com/SnapDogRocks/snapdog/commit/0b0352aff55be961295c59bbc0fb40338e9f6f12))
+
 ## [0.24.0](https://github.com/SnapDogRocks/snapdog/compare/v0.23.4...v0.24.0) (2026-07-11)
 
 
