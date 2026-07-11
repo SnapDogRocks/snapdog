@@ -28,9 +28,32 @@ jobs:
           VERSION=${TAG#v}
           { echo "tag=${TAG}"; echo "version=${VERSION}"; } >> "$GITHUB_OUTPUT"
 
+  webui:
+    name: Build WebUI
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 25
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      # The Next.js static export is target-independent — build it ONCE here and share
+      # it with every build/deb job via the webui-out artifact, instead of re-running
+      # npm in each of the 5 build-matrix targets (snapdog embeds it via rust-embed).
+      - name: Build WebUI (static export)
+        working-directory: webui
+        run: npm ci --force && npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: webui-out
+          path: webui/out
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.target }})
-    needs: meta
+    needs: [meta, webui]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -55,14 +78,16 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-      - uses: actions/setup-node@v6
+      # Reuse the WebUI built once in the `webui` job. With webui/out present,
+      # snapdog's build.rs early-returns instead of invoking npm — no Node on this runner.
+      - name: Fetch pre-built WebUI
+        uses: actions/download-artifact@v8
         with:
-          node-version: 25
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
-      - name: Build WebUI
-        working-directory: webui
-        run: npm ci --force && npm run build
+          name: webui-out
+          path: webui/out
+      - name: Verify WebUI present
+        shell: bash
+        run: test -f webui/out/index.html || { echo "::error::webui/out/index.html missing — build.rs would fall back to npm, but no Node is installed here"; exit 1; }
       - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -279,41 +304,48 @@ jobs:
 
   build-deb:
     name: Debian ${{ matrix.pkg }} (${{ matrix.arch }})
-    needs: meta
-    runs-on: ${{ matrix.os }}
+    needs: [meta, build]
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm]
-        pkg: [snapdog, snapdog-client]
         include:
-          - os: ubuntu-latest
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
+          - { pkg: snapdog,        arch: amd64, target: x86_64-unknown-linux-gnu }
+          - { pkg: snapdog,        arch: arm64, target: aarch64-unknown-linux-gnu }
+          - { pkg: snapdog-client, arch: amd64, target: x86_64-unknown-linux-gnu }
+          - { pkg: snapdog-client, arch: arm64, target: aarch64-unknown-linux-gnu }
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install deps
-        run: |
-          sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-          cargo install cargo-deb
-      - uses: actions/setup-node@v6
-        if: matrix.pkg == 'snapdog'
         with:
-          node-version: 25
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
-      - name: Build WebUI
-        if: matrix.pkg == 'snapdog'
-        working-directory: webui
-        run: npm ci --force && npm run build
-      - run: cargo build --release -p ${{ matrix.pkg }}
-      - run: cargo deb -p ${{ matrix.pkg }} --no-build
+          targets: ${{ matrix.target }}
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+      # Reuse the binary already compiled by the `build` job (same ubuntu-24.04 glibc
+      # target, so the .deb is identical) — no second snapdog compile, no WebUI rebuild,
+      # and no native arm64 runner: cargo-deb sets Architecture from --target, so both
+      # arches package on amd64.
+      - name: Fetch pre-built binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: snapdog-${{ matrix.target }}
+          path: dist
+      - name: Stage binary where cargo-deb expects it
+        run: |
+          tar xzf dist/snapdog-*-${{ matrix.target }}.tar.gz -C dist
+          bin=$(find dist -type f -name '${{ matrix.pkg }}' | head -1)
+          test -n "$bin" || { echo "::error::${{ matrix.pkg }} binary not in artifact"; find dist -type f; exit 1; }
+          install -Dm755 "$bin" "target/${{ matrix.target }}/release/${{ matrix.pkg }}"
+      # --no-strip: the binaries are already stripped ([profile.release] strip = true),
+      # and host strip/objcopy on this amd64 runner can't process the aarch64 ELF.
+      # cargo-deb writes to target/debian/ regardless of --target (arch is in the filename).
+      - name: Package .deb
+        run: cargo deb -p ${{ matrix.pkg }} --target ${{ matrix.target }} --no-build --no-strip
       - uses: actions/upload-artifact@v7
         with:
           name: deb-${{ matrix.pkg }}-${{ matrix.arch }}
           path: target/debian/*.deb
+          if-no-files-found: error
 
   knxprod:
     name: KNX Product Database
