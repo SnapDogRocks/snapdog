@@ -10,6 +10,7 @@
 		0E3812A45F373B0A57DF9D00 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7362345BB262E78D9C1B077D /* LogView.swift */; };
 		2934DF33C6BB93B8FDACD973 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F345B134174843E76874F9 /* App.swift */; };
 		2A1F1E98946CBE1DEB6EFDEF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A41907050CB9198DF85006A6 /* Assets.xcassets */; };
+		AA11BB22CC33DD44EE55F002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55F001 /* Localizable.xcstrings */; };
 		35AFFFAD23A19714B0A6169F /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 4067205D4BF4999F64B67740 /* AppIcon.icon */; };
 		3AE05A7D31BC54730A2DB903 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3000AEF8E40EA1A911AB7202 /* Sparkle */; };
 		5FE25F82D7C11EF695EE2F94 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62254E5F33C8BBB2DD07E800 /* AboutView.swift */; };
@@ -29,6 +30,7 @@
 		798CB180E614495536F2CC9E /* ServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerManager.swift; sourceTree = "<group>"; };
 		A3F345B134174843E76874F9 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		A41907050CB9198DF85006A6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE55F001 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		DB56A0FCF073986CBACB4794 /* SnapDog Server.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SnapDog Server.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -60,6 +62,7 @@
 				A3F345B134174843E76874F9 /* App.swift */,
 				4067205D4BF4999F64B67740 /* AppIcon.icon */,
 				A41907050CB9198DF85006A6 /* Assets.xcassets */,
+				AA11BB22CC33DD44EE55F001 /* Localizable.xcstrings */,
 				1A0DEE6574D3EECDCCA97D3E /* ConfigView.swift */,
 				65205740F55E2DFF66DD8D6C /* Info.plist */,
 				7362345BB262E78D9C1B077D /* LogView.swift */,
@@ -119,6 +122,10 @@
 			knownRegions = (
 				Base,
 				en,
+				de,
+				es,
+				fr,
+				nl,
 			);
 			mainGroup = 5DB5D79A52A8F7B73D14BA50;
 			minimizedProjectReferenceProxies = 1;
@@ -143,6 +150,7 @@
 			files = (
 				35AFFFAD23A19714B0A6169F /* AppIcon.icon in Resources */,
 				2A1F1E98946CBE1DEB6EFDEF /* Assets.xcassets in Resources */,
+				AA11BB22CC33DD44EE55F002 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

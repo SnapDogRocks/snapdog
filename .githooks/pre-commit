@@ -6,3 +6,8 @@ cargo fmt -- --check
 if git diff --cached --name-only | grep -q '^webui/messages/'; then
   (cd webui && npm run i18n:check)
 fi
+
+# macOS app: fail early if the String Catalog isn't fully translated (all REQUIRED_LOCALES)
+if git diff --cached --name-only | grep -q 'Localizable.xcstrings'; then
+  python3 macos-helper/check-i18n.py
+fi
