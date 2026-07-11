@@ -13,7 +13,7 @@ version = "0.24.1"
 edition = "2024"
 rust-version = "1.85"
 license = "GPL-3.0-only"
-repository = "https://github.com/metaneutrons/snapdog"
+repository = "https://github.com/SnapDogRocks/snapdog"
 authors = ["Fabian Schmieder"]
 
 [workspace.dependencies]
@@ -120,4 +120,3 @@ nursery = { level = "warn", priority = -1 }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
-
