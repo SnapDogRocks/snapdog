@@ -25,7 +25,7 @@
     "label": "Volumen",
     "mute": "Silenciar",
     "unmute": "Activar sonido",
-    "maxVolume": "Maximum volume: {max}%"
+    "maxVolume": "Volumen máximo: {max}%"
   },
   "seek": {
     "label": "Buscar"
@@ -57,7 +57,7 @@
   "eq": {
     "title": "EQ — {zone}",
     "close": "Cerrar ecualizador",
-    "toggle": "EQ on/off",
+    "toggle": "EQ activado/desactivado",
     "presets": "Presets de EQ",
     "preset": "Presets",
     "enabled": "Activado",
@@ -80,7 +80,7 @@
     "playAll": "Reproducir todo",
     "showMore": "Mostrar más",
     "showLess": "Mostrar menos",
-    "tracks": "{count, plural, one {# track} other {# tracks}}"
+    "tracks": "{count, plural, one {# pista} other {# pistas}}"
   },
   "auth": {
     "title": "Autenticación requerida",
@@ -105,6 +105,7 @@
   },
   "connection": {
     "lost": "Conexión perdida",
+    "serverRestarting": "Reiniciando el servidor",
     "reconnecting": "Reconectando…",
     "retryingIn": "Reintentando en {seconds}s…"
   },
@@ -126,12 +127,12 @@
     "dialogLabel": "Acerca de SnapDog",
     "closeLabel": "Cerrar diálogo",
     "description": "Controlador de audio multi-zona con integración de AirPlay, Spotify, Subsonic, MQTT y KNX",
-    "modelLabel": "MODEL",
+    "modelLabel": "MODELO",
     "modelValue": "SNAPDOG-CORE",
-    "versionLabel": "VERSION",
-    "sourceLabel": "SOURCE",
+    "versionLabel": "VERSIÓN",
+    "sourceLabel": "FUENTE",
     "sourceValue": "SnapDogRocks/snapdog ↗",
-    "licenseLabel": "LICENSE",
+    "licenseLabel": "LICENCIA",
     "licenseValue": "GPL-3.0 ↗",
     "done": "Hecho"
   },

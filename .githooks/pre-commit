@@ -1,2 +1,8 @@
 #!/bin/sh
-exec cargo fmt -- --check
+set -e
+cargo fmt -- --check
+
+# WebUI: fail early if a translation catalog is incomplete (missing/extra/untranslated keys)
+if git diff --cached --name-only | grep -q '^webui/messages/'; then
+  (cd webui && npm run i18n:check)
+fi
