@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/SnapDogRocks/snapdog/compare/v0.24.1...v0.24.2) (2026-07-11)
+
+
+### Performance Improvements
+
+* **release:** thin LTO + parallel codegen — cut release build time ~4x ([#79](https://github.com/SnapDogRocks/snapdog/issues/79)) ([3c54a55](https://github.com/SnapDogRocks/snapdog/commit/3c54a55ab42aa3f94b68ac28345410845ad09370))
+
 ## [0.24.1](https://github.com/SnapDogRocks/snapdog/compare/v0.24.0...v0.24.1) (2026-07-11)
 
 
