@@ -638,10 +638,13 @@ pub const CGO_CONNECTED: usize = 10;
 pub mod mem {
     use super::{MAX_CLIENTS, MAX_ZONES};
 
-    /// Zone active flags (10 × 1 byte).
-    pub const ZONE_ACTIVE: usize = 0;
+    /// Number of active zones (1 byte).
+    ///
+    /// Zones `1..=NUM_ZONES` are active; higher zones are hidden in ETS and inactive at
+    /// runtime. Replaces the former 10 per-zone active flags with a single count.
+    pub const NUM_ZONES: usize = 0;
     /// Zone default volume (10 × 1 byte).
-    pub const ZONE_DEF_VOL: usize = ZONE_ACTIVE + MAX_ZONES;
+    pub const ZONE_DEF_VOL: usize = NUM_ZONES + 1;
     /// Zone max volume (10 × 1 byte).
     pub const ZONE_MAX_VOL: usize = ZONE_DEF_VOL + MAX_ZONES;
     /// Zone `AirPlay` enabled (10 × 1 byte).

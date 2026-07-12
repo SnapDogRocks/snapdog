@@ -323,7 +323,7 @@ fn write_application_program(x: &mut String) {
     w(
         x,
         &format!(
-            r#"        <ApplicationProgram Id="{AID}" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="1" ReplacesVersions="0">"#
+            r#"        <ApplicationProgram Id="{AID}" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="2" ReplacesVersions="0 1">"#
         ),
     );
     w(x, "          <Static>");
@@ -411,6 +411,23 @@ fn write_parameter_types(x: &mut String) {
             ("Zone 10", 10),
         ],
     );
+    pt_enum(
+        x,
+        "NumZones",
+        8,
+        &[
+            ("1 Zone", 1),
+            ("2 Zonen", 2),
+            ("3 Zonen", 3),
+            ("4 Zonen", 4),
+            ("5 Zonen", 5),
+            ("6 Zonen", 6),
+            ("7 Zonen", 7),
+            ("8 Zonen", 8),
+            ("9 Zonen", 9),
+            ("10 Zonen", 10),
+        ],
+    );
     w(x, "            </ParameterTypes>");
 }
 
@@ -468,23 +485,24 @@ fn write_parameters(x: &mut String) {
     // reads); `spans` collects them so we can assert the params tile the layout exactly.
     let mut spans: Vec<(usize, usize)> = Vec::new();
 
+    // ── Zone count ────────────────────────────────────────────
+    // A single "number of zones" dropdown (shown under Allgemein) drives how many zone
+    // blocks ETS displays and how many zones the firmware activates. Replaces the former
+    // per-zone active flags.
+    param_mem(
+        x,
+        "G",
+        "000",
+        "NumZones",
+        "NumZones",
+        "Anzahl Zonen",
+        "10",
+        mem::NUM_ZONES,
+        8,
+        &mut spans,
+    );
+
     // ── Zone parameters ───────────────────────────────────────
-    for z in 1..=MAX_ZONES {
-        let p = format!("Z{z:02}");
-        let i = z - 1;
-        param_mem(
-            x,
-            &p,
-            "001",
-            "Active",
-            "YesNo",
-            "Zone aktiv",
-            "1",
-            mem::ZONE_ACTIVE + i,
-            8,
-            &mut spans,
-        );
-    }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
         let i = z - 1;
@@ -1070,25 +1088,29 @@ fn write_options(x: &mut String) {
 
 fn write_dynamic(x: &mut String) {
     w(x, "          <Dynamic>");
-    // Zones
+    // General: the "number of zones" dropdown drives which zone blocks are shown.
+    write_general_block(x);
+    // Zones — a zone block is shown when the chosen count is >= this zone's index.
     for z in 1..=MAX_ZONES {
         write_channel_block(
             x,
             "Zone",
             z,
-            &format!("{AID}_UP-Z{z:02}001"),
+            &format!("{AID}_UP-G000"),
+            &format!("{z}..{MAX_ZONES}"),
             &format!("{AID}_P-Z{z:02}000"),
             ZONE_GROUPS,
             &format!("Z{z:02}"),
         );
     }
-    // Clients
+    // Clients — still gated per-client (always-on default; count feature is zones-only).
     for c in 1..=MAX_CLIENTS {
         write_channel_block(
             x,
             "Client",
             c,
             &format!("{AID}_UP-C{c:02}001"),
+            "1",
             &format!("{AID}_P-C{c:02}000"),
             CLIENT_GROUPS,
             &format!("C{c:02}"),
@@ -1097,22 +1119,42 @@ fn write_dynamic(x: &mut String) {
     w(x, "          </Dynamic>");
 }
 
+/// Top-level "Allgemein" block holding the number-of-zones dropdown. Displayed via the
+/// `P-` parameter ref (like the channel name fields); the zone `<choose>` conditions gate
+/// on the same parameter's `UP-` ref.
+fn write_general_block(x: &mut String) {
+    let num_ref = format!("{AID}_P-G000_R-{AID}_P-G000");
+    w(
+        x,
+        &format!(
+            r#"            <ParameterBlock Id="{AID}_PB-General" Name="General" Text="Allgemein">"#
+        ),
+    );
+    w(
+        x,
+        &format!(r#"              <ParameterRefRef RefId="{num_ref}" />"#),
+    );
+    w(x, "            </ParameterBlock>");
+}
+
+#[allow(clippy::too_many_arguments)]
 fn write_channel_block(
     x: &mut String,
     prefix: &str,
     idx: usize,
-    active_param_id: &str,
+    cond_param_id: &str,
+    test: &str,
     name_param_id: &str,
     groups: &[CoGroup],
     id_prefix: &str,
 ) {
-    let active_ref = format!("{active_param_id}_R-{active_param_id}");
+    let cond_ref = format!("{cond_param_id}_R-{cond_param_id}");
     let name_ref = format!("{name_param_id}_R-{name_param_id}");
     w(
         x,
-        &format!(r#"            <choose ParamRefId="{active_ref}">"#),
+        &format!(r#"            <choose ParamRefId="{cond_ref}">"#),
     );
-    w(x, r#"              <when test="1">"#);
+    w(x, &format!(r#"              <when test="{test}">"#));
     w(
         x,
         &format!(

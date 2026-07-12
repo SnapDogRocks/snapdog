@@ -194,9 +194,11 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
     if data.len() < mem::TOTAL {
         return p;
     }
-    // Numeric — zones
+    // Numeric — zones. A single "number of zones" byte replaces the former per-zone active
+    // flags: zones 1..=NUM_ZONES are active (contiguous), the rest are off.
+    let num_zones = usize::from(data[mem::NUM_ZONES]).min(MAX_ZONES);
     for i in 0..MAX_ZONES {
-        p.zone_active[i] = data[mem::ZONE_ACTIVE + i] != 0;
+        p.zone_active[i] = i < num_zones;
         p.zone_default_volume[i] = data[mem::ZONE_DEF_VOL + i];
         p.zone_max_volume[i] = data[mem::ZONE_MAX_VOL + i];
         p.zone_airplay[i] = data[mem::ZONE_AIRPLAY + i] != 0;
@@ -805,8 +807,7 @@ mod tests {
     #[test]
     fn parse_ets_memory_values() {
         let mut data = vec![0u8; mem::TOTAL];
-        data[mem::ZONE_ACTIVE] = 1;
-        data[mem::ZONE_ACTIVE + 2] = 1;
+        data[mem::NUM_ZONES] = 3; // zones 1..=3 active (contiguous)
         data[mem::ZONE_MAX_VOL] = 80;
         data[mem::CLIENT_ACTIVE] = 1;
         data[mem::CLIENT_MAX_VOL] = 60;
@@ -814,8 +815,9 @@ mod tests {
         data[mem::CLIENT_DEF_LAT] = 50;
         let p = parse_ets_memory(&data);
         assert!(p.zone_active[0]);
-        assert!(!p.zone_active[1]);
+        assert!(p.zone_active[1]);
         assert!(p.zone_active[2]);
+        assert!(!p.zone_active[3]);
         assert_eq!(p.zone_max_volume[0], 80);
         assert!(p.client_active[0]);
         assert_eq!(p.client_max_volume[0], 60);
