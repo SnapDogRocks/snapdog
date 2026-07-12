@@ -100,6 +100,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
       - name: Install Linux build dependencies
         if: matrix.container != ''
         run: |
@@ -116,7 +118,7 @@ jobs:
         shell: bash
         run: test -f webui/out/index.html || { echo "::error::webui/out/index.html missing — build.rs would fall back to npm, but no Node is installed here"; exit 1; }
       - name: Build release
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} -p snapdog -p snapdog-client
       - name: Package binary
         shell: bash
         env:
