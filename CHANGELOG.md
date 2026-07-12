@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.3](https://github.com/SnapDogRocks/snapdog/compare/v0.24.2...v0.24.3) (2026-07-12)
+
+
+### Bug Fixes
+
+* **ci:** optimize release build times with target-specific caching and scoped compilation ([#83](https://github.com/SnapDogRocks/snapdog/issues/83)) ([236643a](https://github.com/SnapDogRocks/snapdog/commit/236643adbf00ea490ebf1d914db6ab9714798fff))
+
 ## [0.24.2](https://github.com/SnapDogRocks/snapdog/compare/v0.24.1...v0.24.2) (2026-07-11)
 
 
