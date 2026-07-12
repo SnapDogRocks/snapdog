@@ -21,6 +21,11 @@
 !xtask/
 !xtask/**
 
+# Prebuilt release binaries, staged by the release `docker` job for BIN_STAGE=prebuilt.
+# Absent for local/CI builds (BIN_STAGE=compile), where this simply matches nothing.
+!bins/
+!bins/**
+
 !webui/
 !webui/**
 webui/node_modules/
