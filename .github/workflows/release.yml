@@ -70,14 +70,21 @@ jobs:
     name: Build (${{ matrix.target }})
     needs: [meta, webui]
     runs-on: ${{ matrix.os }}
+    # Linux targets build inside a Debian bookworm container so the binaries link against
+    # bookworm's glibc (2.36) — matching the Docker RUNTIME_IMAGE (so the release `docker`
+    # job can reuse them with no second compile) and keeping the tarballs/.debs portable to
+    # Debian 12+. Native per-arch (amd64 + arm64 runners); no cross-compilation.
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            container: rust:1.97.0-bookworm@sha256:7d0723df719e7f213b69dc7c8c595985c3f4b060cfbee4f7bc0e347a86fe3b6a
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
+            container: rust:1.97.0-bookworm@sha256:7d0723df719e7f213b69dc7c8c595985c3f4b060cfbee4f7bc0e347a86fe3b6a
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
@@ -86,13 +93,18 @@ jobs:
             os: windows-2025
     steps:
       - uses: actions/checkout@v6
+      # In the bookworm container Rust 1.97 is preinstalled; only the mac/windows runners
+      # need rustup plus the cross target installed.
       - uses: dtolnay/rust-toolchain@stable
+        if: matrix.container == ''
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
+      - name: Install Linux build dependencies
+        if: matrix.container != ''
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            cmake pkg-config libasound2-dev libavahi-compat-libdnssd-dev
       # Reuse the WebUI built once in the `webui` job. With webui/out present,
       # snapdog's build.rs early-returns instead of invoking npm — no Node on this runner.
       - name: Fetch pre-built WebUI
@@ -103,27 +115,6 @@ jobs:
       - name: Verify WebUI present
         shell: bash
         run: test -f webui/out/index.html || { echo "::error::webui/out/index.html missing — build.rs would fall back to npm, but no Node is installed here"; exit 1; }
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo dpkg --add-architecture arm64
-          . /etc/os-release
-          sudo sed -i 's/^Types: deb$/Types: deb\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
-          {
-            printf 'deb [arch=arm64] http://ports.ubuntu.com/ %s main restricted universe\n' "$VERSION_CODENAME"
-            printf 'deb [arch=arm64] http://ports.ubuntu.com/ %s-updates main restricted universe\n' "$VERSION_CODENAME"
-            printf 'deb [arch=arm64] http://ports.ubuntu.com/ %s-security main restricted universe\n' "$VERSION_CODENAME"
-          } | sudo tee /etc/apt/sources.list.d/arm64.list
-          sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake libssl-dev:arm64 libasound2-dev:arm64 libavahi-compat-libdnssd-dev:arm64 pkg-config
-          {
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc"
-            echo "PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu"
-            echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig"
-            echo "OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu"
-            echo "OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu"
-          } >> "$GITHUB_ENV"
       - name: Build release
         run: cargo build --release --target ${{ matrix.target }}
       - name: Package binary
@@ -370,10 +361,10 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Install cargo-deb
         run: cargo install cargo-deb
-      # Reuse the binary already compiled by the `build` job (same ubuntu-24.04 glibc
-      # target, so the .deb is identical) — no second snapdog compile, no WebUI rebuild,
-      # and no native arm64 runner: cargo-deb sets Architecture from --target, so both
-      # arches package on amd64.
+      # Reuse the binary already compiled by the `build` job (bookworm glibc, so the .deb
+      # runs on Debian 12+ and matching distros) — no second snapdog compile, no WebUI
+      # rebuild, and no native arm64 runner: cargo-deb sets Architecture from --target, so
+      # both arches package on amd64.
       - name: Fetch pre-built binaries
         uses: actions/download-artifact@v8
         with:
@@ -640,111 +631,120 @@ jobs:
           git push
 
   docker:
-    name: Docker ${{ matrix.image }} (${{ matrix.platform }})
-    needs: meta
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - image: snapdog
-            file: Dockerfile
-            platform: linux/amd64
-            suffix: amd64
-            runner: ubuntu-latest
-          - image: snapdog
-            file: Dockerfile
-            platform: linux/arm64
-            suffix: arm64
-            runner: ubuntu-24.04-arm
-          - image: snapdog-client
-            file: Dockerfile.client
-            platform: linux/amd64
-            suffix: amd64
-            runner: ubuntu-latest
-          - image: snapdog-client
-            file: Dockerfile.client
-            platform: linux/arm64
-            suffix: arm64
-            runner: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push platform image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: ${{ matrix.file }}
-          platforms: ${{ matrix.platform }}
-          push: true
-          tags: ghcr.io/snapdogrocks/${{ matrix.image }}:${{ needs.meta.outputs.tag }}-${{ matrix.suffix }}
-          build-args: |
-            BUILD_VERSION=${{ needs.meta.outputs.version }}
-            BUILD_REVISION=${{ needs.meta.outputs.revision }}
-            BUILD_CREATED=${{ needs.meta.outputs.created }}
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.suffix }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.suffix }}
-          provenance: mode=max
-          sbom: true
-
-  docker-manifest:
-    name: Docker Manifest (${{ matrix.image }})
-    needs: [meta, docker]
+    name: Docker ${{ matrix.image }}
+    # Reuse the Linux binaries compiled once by the `build` job instead of recompiling
+    # snapdog inside Docker per arch. The binary is only COPYd (never recompiled), so a
+    # single multi-arch buildx build is cheap; only the small runtime layer (apt + user
+    # setup) runs under arm64 emulation — hence setup-qemu-action below. The container then
+    # ships the exact same binary as the tarball.
+    needs: [meta, build]
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - image: snapdog
+            file: Dockerfile
             repo: ghcr.io/snapdogrocks/snapdog
           - image: snapdog-client
+            file: Dockerfile.client
             repo: ghcr.io/snapdogrocks/snapdog-client
     permissions:
       contents: read
-      id-token: write
       packages: write
+      id-token: write
     steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # The prebuilt binary is only COPYd, but the runtime stage still RUNs apt-get +
+      # groupadd/useradd, which execute as the target arch — so building the arm64 layer on
+      # this amd64 runner needs a binfmt/QEMU handler registered. amd64 is native.
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: arm64
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Fetch pre-built Linux binaries
+        uses: actions/download-artifact@v8
         with:
-          cosign-release: v3.1.1
-      - name: Create, verify, and sign multi-arch manifest
+          pattern: snapdog-*-unknown-linux-gnu
+          path: dl
+      - name: Stage binaries for the prebuilt Docker stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A arch=( [x86_64-unknown-linux-gnu]=amd64 [aarch64-unknown-linux-gnu]=arm64 )
+          for triple in "${!arch[@]}"; do
+            tb=$(find dl -type f -name "snapdog-*-${triple}.tar.gz" | head -1)
+            test -n "$tb" || { echo "::error::missing ${triple} tarball in build artifacts"; find dl -type f; exit 1; }
+            mkdir -p "extract/${triple}"
+            tar xzf "$tb" -C "extract/${triple}"
+            bin=$(find "extract/${triple}" -type f -name "${{ matrix.image }}" | head -1)
+            test -n "$bin" || { echo "::error::${{ matrix.image }} not in ${triple} tarball"; find "extract/${triple}" -type f; exit 1; }
+            install -Dm0755 "$bin" "bins/${arch[$triple]}/${{ matrix.image }}"
+          done
+          ls -R bins
+      - name: Compute image tags
+        id: tags
         shell: bash
         env:
           REPO: ${{ matrix.repo }}
           TAG: ${{ needs.meta.outputs.tag }}
         run: |
           set -euo pipefail
-
-          tags=(-t "${REPO}:${TAG}")
+          tags="${REPO}:${TAG}"
+          # Only a final release (no pre-release identifier) moves the :latest tag.
           if [[ "${TAG}" != *-* ]]; then
-            tags+=(-t "${REPO}:latest")
+            tags="${tags}"$'\n'"${REPO}:latest"
           fi
-
-          docker buildx imagetools create \
-            "${tags[@]}" \
-            "${REPO}:${TAG}-amd64" \
-            "${REPO}:${TAG}-arm64"
-
-          docker buildx imagetools inspect "${REPO}:${TAG}"
-          digest=$(docker buildx imagetools inspect "${REPO}:${TAG}" | awk '$1 == "Digest:" { print $2; exit }')
-          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::Could not resolve final image digest for ${REPO}:${TAG}: '${digest}'"
+          { echo 'list<<EOF'; printf '%s\n' "$tags"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.1
+      - name: Build and push multi-arch image (prebuilt binary — no recompile)
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: |
+            BIN_STAGE=prebuilt
+            BUILD_VERSION=${{ needs.meta.outputs.version }}
+            BUILD_REVISION=${{ needs.meta.outputs.revision }}
+            BUILD_CREATED=${{ needs.meta.outputs.created }}
+          provenance: mode=max
+          sbom: true
+      - name: Smoke-test the published image (both arches)
+        env:
+          REF: ${{ matrix.repo }}:${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Pull-and-run each published variant to prove the prebuilt binary is placed
+          # correctly and is glibc-compatible with the runtime. amd64 runs natively; arm64
+          # runs via the QEMU binfmt handler registered above. The release (prebuilt) path is
+          # NOT covered by the PR container-images job, which builds BIN_STAGE=compile.
+          for platform in linux/amd64 linux/arm64; do
+            echo "::group::smoke ${platform}"
+            docker run --rm --platform "${platform}" "${REF}" --version
+            echo "::endgroup::"
+          done
+      - name: Sign the published image by digest
+        env:
+          REPO: ${{ matrix.repo }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::build-push-action returned no valid image digest: '${DIGEST}'"
             exit 1
           fi
-
-          cosign sign --yes "${REPO}@${digest}"
+          cosign sign --yes "${REPO}@${DIGEST}"
 
   bump-snapdog-os:
     name: Bump version in snapdog-os

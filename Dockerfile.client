@@ -3,8 +3,14 @@
 ARG RUST_IMAGE="rust:1.97.0-bookworm@sha256:7d0723df719e7f213b69dc7c8c595985c3f4b060cfbee4f7bc0e347a86fe3b6a"
 ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df"
 
-# ── Build stage ────────────────────────────────────────────────
-FROM ${RUST_IMAGE} AS rust-builder
+# Which stage supplies the snapdog-client binary at /out/snapdog-client:
+#   compile  (default) — build from source (local `docker build .`, PR CI).
+#   prebuilt           — copy the binary already built by the release `build` job
+#                        (bookworm glibc) from the context under bins/<arch>/.
+ARG BIN_STAGE=compile
+
+# ── Build stage (compile path only) ───────────────────────────
+FROM ${RUST_IMAGE} AS compile
 
 ARG CARGO_RELEASE_LTO=thin
 
@@ -31,6 +37,18 @@ RUN --mount=type=cache,id=snapdog-cargo-registry,target=/usr/local/cargo/registr
     --mount=type=cache,id=snapdog-client-target,target=/build/target,sharing=locked \
     CARGO_PROFILE_RELEASE_LTO="${CARGO_RELEASE_LTO}" cargo build --locked --release -p snapdog-client && \
     install -Dm0755 target/release/snapdog-client /out/snapdog-client
+
+# ── Prebuilt binary stage (release path only) ─────────────────
+# The release `build` job compiles the binary once (bookworm glibc) and drops it in
+# the context under bins/<arch>/. TARGETARCH is set by buildx per target platform; this
+# stage only copies (no second compile, no emulation) — the runtime stage's apt/user setup
+# is what runs under QEMU for the arm64 platform.
+FROM scratch AS prebuilt
+ARG TARGETARCH
+COPY bins/${TARGETARCH}/snapdog-client /out/snapdog-client
+
+# Select the binary source: `compile` (default) or `prebuilt`.
+FROM ${BIN_STAGE} AS binary
 
 # ── Runtime stage ─────────────────────────────────────────────
 FROM ${RUNTIME_IMAGE} AS runtime
@@ -64,7 +82,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
          --home-dir /var/lib/snapdog-client --no-create-home --shell /usr/sbin/nologin snapdog \
     && install -d -o snapdog -g snapdog -m 0750 /var/lib/snapdog-client
 
-COPY --from=rust-builder --chmod=0755 /out/snapdog-client /usr/local/bin/snapdog-client
+COPY --from=binary --chmod=0755 /out/snapdog-client /usr/local/bin/snapdog-client
 
 USER snapdog:snapdog
 WORKDIR /var/lib/snapdog-client

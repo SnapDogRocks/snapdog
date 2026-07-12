@@ -6,7 +6,16 @@ ARG NODE_IMAGE="node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9
 ARG RUST_IMAGE="rust:1.97.0-bookworm@sha256:7d0723df719e7f213b69dc7c8c595985c3f4b060cfbee4f7bc0e347a86fe3b6a"
 ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df"
 
-# ── WebUI build stage ─────────────────────────────────────────
+# Which stage supplies the snapdog binary at /out/snapdog:
+#   compile  (default) — build from source in this Dockerfile. Used by local
+#              `docker build .` and the PR `container-images` CI job.
+#   prebuilt           — copy a binary already built by the release `build` job
+#              (compiled once against bookworm glibc, matching RUNTIME_IMAGE) from
+#              the context under bins/<arch>/. The release pipeline sets this so the
+#              image ships the exact same binary as the tarball, with no second compile.
+ARG BIN_STAGE=compile
+
+# ── WebUI build stage (compile path only) ─────────────────────
 FROM ${NODE_IMAGE} AS webui-builder
 
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -19,8 +28,8 @@ RUN --mount=type=cache,id=snapdog-npm,target=/root/.npm,sharing=locked \
 COPY webui/ ./
 RUN npm run build && test -f out/index.html
 
-# ── Rust build stage ──────────────────────────────────────────
-FROM ${RUST_IMAGE} AS rust-builder
+# ── Rust build stage (compile path only) ─────────────────────
+FROM ${RUST_IMAGE} AS compile
 
 ARG CARGO_RELEASE_LTO=thin
 
@@ -47,6 +56,19 @@ RUN --mount=type=cache,id=snapdog-cargo-registry,target=/usr/local/cargo/registr
     --mount=type=cache,id=snapdog-server-target,target=/build/target,sharing=locked \
     CARGO_PROFILE_RELEASE_LTO="${CARGO_RELEASE_LTO}" cargo build --locked --release -p snapdog && \
     install -Dm0755 target/release/snapdog /out/snapdog
+
+# ── Prebuilt binary stage (release path only) ─────────────────
+# The release `build` job compiles the binary once (bookworm glibc) and drops it in
+# the context under bins/<arch>/. TARGETARCH is set by buildx per target platform, so one
+# multi-arch build selects the right binary with no second compile. This stage only copies
+# (no emulation needed); the runtime stage's apt/user setup is what runs under QEMU for the
+# arm64 platform.
+FROM scratch AS prebuilt
+ARG TARGETARCH
+COPY bins/${TARGETARCH}/snapdog /out/snapdog
+
+# Select the binary source: `compile` (default) or `prebuilt`.
+FROM ${BIN_STAGE} AS binary
 
 # ── Runtime stage ─────────────────────────────────────────────
 FROM ${RUNTIME_IMAGE} AS runtime
@@ -82,7 +104,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && install -d -o snapdog -g snapdog -m 0750 /var/lib/snapdog \
     && install -d -o root -g snapdog -m 0750 /etc/snapdog
 
-COPY --from=rust-builder --chmod=0755 /out/snapdog /usr/local/bin/snapdog
+COPY --from=binary --chmod=0755 /out/snapdog /usr/local/bin/snapdog
 
 ENV SNAPDOG_HEALTHCHECK_URL="http://127.0.0.1:5555/health/live"
 
