@@ -464,12 +464,14 @@ fn pt_num(x: &mut String, name: &str, bits: u16, typ: &str, min: u32, max: u32) 
 #[allow(clippy::too_many_lines)] // Repetitive XML parameter generation — not decomposable
 fn write_parameters(x: &mut String) {
     w(x, "            <Parameters>");
-    let mut off = 0usize;
+    // Byte offsets come straight from `mem::` (the single source of truth the firmware
+    // reads); `spans` collects them so we can assert the params tile the layout exactly.
+    let mut spans: Vec<(usize, usize)> = Vec::new();
 
     // ── Zone parameters ───────────────────────────────────────
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
-        // Active flag (offset 0-9)
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -478,12 +480,14 @@ fn write_parameters(x: &mut String) {
             "YesNo",
             "Zone aktiv",
             "1",
-            &mut off,
+            mem::ZONE_ACTIVE + i,
             8,
+            &mut spans,
         );
     }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -492,12 +496,14 @@ fn write_parameters(x: &mut String) {
             "Percent",
             "Standard-Lautstärke",
             "50",
-            &mut off,
+            mem::ZONE_DEF_VOL + i,
             8,
+            &mut spans,
         );
     }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -506,12 +512,14 @@ fn write_parameters(x: &mut String) {
             "Percent",
             "Max. Lautstärke",
             "100",
-            &mut off,
+            mem::ZONE_MAX_VOL + i,
             8,
+            &mut spans,
         );
     }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -520,12 +528,14 @@ fn write_parameters(x: &mut String) {
             "YesNo",
             "AirPlay aktiviert",
             "1",
-            &mut off,
+            mem::ZONE_AIRPLAY + i,
             8,
+            &mut spans,
         );
     }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -534,12 +544,14 @@ fn write_parameters(x: &mut String) {
             "YesNo",
             "Spotify aktiviert",
             "1",
-            &mut off,
+            mem::ZONE_SPOTIFY + i,
             8,
+            &mut spans,
         );
     }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -548,12 +560,14 @@ fn write_parameters(x: &mut String) {
             "YesNo",
             "Präsenz aktiviert",
             "0",
-            &mut off,
+            mem::ZONE_PRESENCE_EN + i,
             8,
+            &mut spans,
         );
     }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -562,12 +576,14 @@ fn write_parameters(x: &mut String) {
             "UInt16",
             "Präsenz Auto-Off (s)",
             "900",
-            &mut off,
+            mem::ZONE_PRESENCE_TO + i * 2,
             16,
+            &mut spans,
         );
     }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -576,12 +592,14 @@ fn write_parameters(x: &mut String) {
             "SampleRate",
             "Sample Rate",
             "1",
-            &mut off,
+            mem::ZONE_SRATE + i,
             8,
+            &mut spans,
         );
     }
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -590,14 +608,16 @@ fn write_parameters(x: &mut String) {
             "BitDepth",
             "Bit Depth",
             "0",
-            &mut off,
+            mem::ZONE_BITD + i,
             8,
+            &mut spans,
         );
     }
 
     // ── Client parameters ─────────────────────────────────────
     for c in 1..=MAX_CLIENTS {
         let p = format!("C{c:02}");
+        let i = c - 1;
         param_mem(
             x,
             &p,
@@ -606,12 +626,14 @@ fn write_parameters(x: &mut String) {
             "YesNo",
             "Client aktiv",
             "1",
-            &mut off,
+            mem::CLIENT_ACTIVE + i,
             8,
+            &mut spans,
         );
     }
     for c in 1..=MAX_CLIENTS {
         let p = format!("C{c:02}");
+        let i = c - 1;
         param_mem(
             x,
             &p,
@@ -620,12 +642,14 @@ fn write_parameters(x: &mut String) {
             "ZoneSelect",
             "Standard-Zone",
             "1",
-            &mut off,
+            mem::CLIENT_DEF_ZONE + i,
             8,
+            &mut spans,
         );
     }
     for c in 1..=MAX_CLIENTS {
         let p = format!("C{c:02}");
+        let i = c - 1;
         param_mem(
             x,
             &p,
@@ -634,12 +658,14 @@ fn write_parameters(x: &mut String) {
             "Percent",
             "Standard-Lautstärke",
             "100",
-            &mut off,
+            mem::CLIENT_DEF_VOL + i,
             8,
+            &mut spans,
         );
     }
     for c in 1..=MAX_CLIENTS {
         let p = format!("C{c:02}");
+        let i = c - 1;
         param_mem(
             x,
             &p,
@@ -648,12 +674,14 @@ fn write_parameters(x: &mut String) {
             "Percent",
             "Max. Lautstärke",
             "100",
-            &mut off,
+            mem::CLIENT_MAX_VOL + i,
             8,
+            &mut spans,
         );
     }
     for c in 1..=MAX_CLIENTS {
         let p = format!("C{c:02}");
+        let i = c - 1;
         param_mem(
             x,
             &p,
@@ -662,8 +690,9 @@ fn write_parameters(x: &mut String) {
             "UInt8",
             "Standard-Latenz (ms)",
             "0",
-            &mut off,
+            mem::CLIENT_DEF_LAT + i,
             8,
+            &mut spans,
         );
     }
 
@@ -676,8 +705,9 @@ fn write_parameters(x: &mut String) {
         "UInt16",
         "HTTP Port",
         "5555",
-        &mut off,
+        mem::GLOBAL_HTTP_PORT,
         16,
+        &mut spans,
     );
     param_mem(
         x,
@@ -687,19 +717,32 @@ fn write_parameters(x: &mut String) {
         "LogLevel",
         "Log Level",
         "2",
-        &mut off,
+        mem::GLOBAL_LOG_LVL,
         8,
+        &mut spans,
     );
 
     // ── Radio active flags (numeric, 20 × 1 byte) ────────────
     for r in 1..=mem::MAX_RADIOS {
         let p = format!("R{r:02}");
-        param_mem(x, &p, "002", "Active", "YesNo", "Aktiv", "0", &mut off, 8);
+        param_mem(
+            x,
+            &p,
+            "002",
+            "Active",
+            "YesNo",
+            "Aktiv",
+            "0",
+            mem::RADIO_ACTIVE + (r - 1),
+            8,
+            &mut spans,
+        );
     }
 
-    // ── String parameters (order matches mem:: layout) ────────
+    // ── String parameters (offsets from mem::) ────────────────
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
+        let i = z - 1;
         param_mem(
             x,
             &p,
@@ -708,12 +751,14 @@ fn write_parameters(x: &mut String) {
             "Name",
             "Zonenname",
             &format!("Zone {z}"),
-            &mut off,
+            mem::ZONE_NAME + i * mem::ZONE_NAME_SIZE,
             mem::ZONE_NAME_SIZE as u16 * 8,
+            &mut spans,
         );
     }
     for c in 1..=MAX_CLIENTS {
         let p = format!("C{c:02}");
+        let i = c - 1;
         param_mem(
             x,
             &p,
@@ -722,12 +767,14 @@ fn write_parameters(x: &mut String) {
             "Name",
             "Clientname",
             &format!("Client {c}"),
-            &mut off,
+            mem::CLIENT_NAME + i * mem::CLIENT_NAME_SIZE,
             mem::CLIENT_NAME_SIZE as u16 * 8,
+            &mut spans,
         );
     }
     for c in 1..=MAX_CLIENTS {
         let p = format!("C{c:02}");
+        let i = c - 1;
         param_mem(
             x,
             &p,
@@ -736,8 +783,9 @@ fn write_parameters(x: &mut String) {
             "MAC",
             "MAC-Adresse",
             "",
-            &mut off,
+            mem::CLIENT_MAC + i * mem::CLIENT_MAC_SIZE,
             mem::CLIENT_MAC_SIZE as u16 * 8,
+            &mut spans,
         );
     }
     param_mem(
@@ -748,8 +796,9 @@ fn write_parameters(x: &mut String) {
         "Text60",
         "Subsonic URL",
         "",
-        &mut off,
+        mem::GLOBAL_SUB_URL,
         mem::GLOBAL_SUB_URL_SIZE as u16 * 8,
+        &mut spans,
     );
     param_mem(
         x,
@@ -759,8 +808,9 @@ fn write_parameters(x: &mut String) {
         "Text20",
         "Subsonic Benutzer",
         "",
-        &mut off,
+        mem::GLOBAL_SUB_USER,
         mem::GLOBAL_SUB_USER_SIZE as u16 * 8,
+        &mut spans,
     );
     param_mem(
         x,
@@ -770,8 +820,9 @@ fn write_parameters(x: &mut String) {
         "Text20",
         "Subsonic Passwort",
         "",
-        &mut off,
+        mem::GLOBAL_SUB_PASS,
         mem::GLOBAL_SUB_PASS_SIZE as u16 * 8,
+        &mut spans,
     );
     param_mem(
         x,
@@ -781,8 +832,9 @@ fn write_parameters(x: &mut String) {
         "Text40",
         "MQTT Broker",
         "",
-        &mut off,
+        mem::GLOBAL_MQTT_BROKER,
         mem::GLOBAL_MQTT_BROKER_SIZE as u16 * 8,
+        &mut spans,
     );
     param_mem(
         x,
@@ -792,11 +844,13 @@ fn write_parameters(x: &mut String) {
         "Text20",
         "MQTT Base Topic",
         "snapdog",
-        &mut off,
+        mem::GLOBAL_MQTT_TOPIC,
         mem::GLOBAL_MQTT_TOPIC_SIZE as u16 * 8,
+        &mut spans,
     );
     for r in 1..=mem::MAX_RADIOS {
         let p = format!("R{r:02}");
+        let i = r - 1;
         param_mem(
             x,
             &p,
@@ -805,12 +859,14 @@ fn write_parameters(x: &mut String) {
             "Text20",
             "Stationsname",
             "",
-            &mut off,
+            mem::RADIO_NAME + i * mem::RADIO_NAME_SIZE,
             mem::RADIO_NAME_SIZE as u16 * 8,
+            &mut spans,
         );
     }
     for r in 1..=mem::MAX_RADIOS {
         let p = format!("R{r:02}");
+        let i = r - 1;
         param_mem(
             x,
             &p,
@@ -819,19 +875,33 @@ fn write_parameters(x: &mut String) {
             "Text80",
             "Stream URL",
             "",
-            &mut off,
+            mem::RADIO_URL + i * mem::RADIO_URL_SIZE,
             mem::RADIO_URL_SIZE as u16 * 8,
+            &mut spans,
         );
     }
 
     w(x, "            </Parameters>");
-    eprintln!("  Memory layout: {off} bytes used");
+
+    // Single-source guard: every param sits at its mem:: offset, so the emitted spans must
+    // tile [0, mem::TOTAL) with no gap or overlap. A wrong mem:: constant or size trips this.
+    spans.sort_unstable();
+    let mut cursor = 0usize;
+    for (offset, bytes) in &spans {
+        assert_eq!(
+            *offset, cursor,
+            "parameter memory gap/overlap: a param sits at offset {offset} but {cursor} was \
+             expected — a param_mem offset disagrees with the mem:: layout",
+        );
+        cursor += bytes;
+    }
     assert_eq!(
-        off,
+        cursor,
         mem::TOTAL,
-        "Memory layout mismatch: xtask generated {off} bytes but mem::TOTAL is {}",
+        "parameter memory covers {cursor} bytes but mem::TOTAL is {}",
         mem::TOTAL
     );
+    eprintln!("  Memory layout: {cursor} bytes used (single-sourced from mem::)");
 }
 
 /// Emit a memory-backed parameter inside a Union.
@@ -844,16 +914,18 @@ fn param_mem(
     pt: &str,
     text: &str,
     default: &str,
-    offset: &mut usize,
+    offset: usize,
     bits: u16,
+    spans: &mut Vec<(usize, usize)>,
 ) {
-    let bytes = (bits / 8) as usize;
+    // The byte offset is single-sourced from `mem::` (the layout the firmware reads).
+    // Record the span so the caller can assert the params tile mem:: exactly.
+    spans.push((offset, (bits / 8) as usize));
     w(x, &format!(r#"              <Union SizeInBit="{bits}">"#));
     w(
         x,
         &format!(
-            r#"                <Memory CodeSegment="{AID}_RS-04-00000" Offset="{}" BitOffset="0" />"#,
-            *offset
+            r#"                <Memory CodeSegment="{AID}_RS-04-00000" Offset="{offset}" BitOffset="0" />"#
         ),
     );
     w(
@@ -863,7 +935,6 @@ fn param_mem(
         ),
     );
     w(x, "              </Union>");
-    *offset += bytes;
 }
 
 fn write_com_objects(x: &mut String) {
