@@ -784,8 +784,8 @@ jobs:
           # Exact filename match: a plain grep for "…tar.gz" ALSO matches the
           # "…tar.gz.sha256" line, so `awk '{print $1}'` captured two hashes and
           # wrote a malformed two-line .hash (Buildroot then errors "No hash found").
-          # `$2 == f` selects only the tarball's line.
-          HASH=$(curl -fsSL "$URL" | awk -v f="$FILE" '$2 == f { print $1 }')
+          # Strip sha256sum's optional leading "./", then select only the tarball.
+          HASH=$(curl -fsSL "$URL" | awk -v f="$FILE" '{ name = $2; sub(/^\.\//, "", name); if (name == f) print $1 }')
           if ! printf '%s' "$HASH" | grep -qE '^[0-9a-f]{64}$'; then
             echo "::error::Expected one sha256 for ${FILE} from ${URL}, got: '${HASH}'"
             exit 1
