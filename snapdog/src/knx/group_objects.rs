@@ -638,10 +638,13 @@ pub const CGO_CONNECTED: usize = 10;
 pub mod mem {
     use super::{MAX_CLIENTS, MAX_ZONES};
 
-    /// Zone active flags (10 × 1 byte).
-    pub const ZONE_ACTIVE: usize = 0;
+    /// Number of active zones (1 byte).
+    ///
+    /// Zones `1..=NUM_ZONES` are active; higher zones are hidden in ETS and inactive at
+    /// runtime. Replaces the former 10 per-zone active flags with a single count.
+    pub const NUM_ZONES: usize = 0;
     /// Zone default volume (10 × 1 byte).
-    pub const ZONE_DEF_VOL: usize = ZONE_ACTIVE + MAX_ZONES;
+    pub const ZONE_DEF_VOL: usize = NUM_ZONES + 1;
     /// Zone max volume (10 × 1 byte).
     pub const ZONE_MAX_VOL: usize = ZONE_DEF_VOL + MAX_ZONES;
     /// Zone `AirPlay` enabled (10 × 1 byte).
@@ -652,14 +655,15 @@ pub mod mem {
     pub const ZONE_PRESENCE_EN: usize = ZONE_SPOTIFY + MAX_ZONES;
     /// Zone presence timeout (10 × 2 bytes).
     pub const ZONE_PRESENCE_TO: usize = ZONE_PRESENCE_EN + MAX_ZONES;
-    /// Zone sample rate enum (10 × 1 byte).
-    pub const ZONE_SRATE: usize = ZONE_PRESENCE_TO + MAX_ZONES * 2;
-    /// Zone bit depth enum (10 × 1 byte).
-    pub const ZONE_BITD: usize = ZONE_SRATE + MAX_ZONES;
-    /// Client active flags (10 × 1 byte).
-    pub const CLIENT_ACTIVE: usize = ZONE_BITD + MAX_ZONES;
+    /// Zone presence default source (10 × 1 byte; 0 = none, 1..=`MAX_RADIOS` = radio index).
+    pub const ZONE_PRES_SRC: usize = ZONE_PRESENCE_TO + MAX_ZONES * 2;
+    // Sample rate and bit depth are the global Snapcast output format, not per-zone —
+    // see GLOBAL_SRATE / GLOBAL_BITD below.
+    /// Clients `1..=NUM_CLIENTS` are active; higher clients are hidden in ETS and inactive
+    /// at runtime. Mirrors [`NUM_ZONES`] — replaces the former 10 per-client active flags.
+    pub const NUM_CLIENTS: usize = ZONE_PRES_SRC + MAX_ZONES;
     /// Client default zone (10 × 1 byte).
-    pub const CLIENT_DEF_ZONE: usize = CLIENT_ACTIVE + MAX_CLIENTS;
+    pub const CLIENT_DEF_ZONE: usize = NUM_CLIENTS + 1;
     /// Client default volume (10 × 1 byte).
     pub const CLIENT_DEF_VOL: usize = CLIENT_DEF_ZONE + MAX_CLIENTS;
     /// Client max volume (10 × 1 byte).
@@ -670,16 +674,29 @@ pub mod mem {
     pub const GLOBAL_HTTP_PORT: usize = CLIENT_DEF_LAT + MAX_CLIENTS;
     /// Global log level enum (1 byte).
     pub const GLOBAL_LOG_LVL: usize = GLOBAL_HTTP_PORT + 2;
-    /// Radio station active flags (20 × 1 byte).
-    pub const RADIO_ACTIVE: usize = GLOBAL_LOG_LVL + 1;
+    /// Global audio sample rate, server-wide (1 byte; index 0=44100, 1=48000, 2=96000 Hz).
+    pub const GLOBAL_SRATE: usize = GLOBAL_LOG_LVL + 1;
+    /// Global audio bit depth, server-wide (1 byte; index 0=16, 1=24, 2=32 bit).
+    pub const GLOBAL_BITD: usize = GLOBAL_SRATE + 1;
+    /// Global Snapcast codec (1 byte; index 0=pcm, 1=flac, 2=f32lz4, 3=f32lz4e).
+    pub const GLOBAL_CODEC: usize = GLOBAL_BITD + 1;
+    /// Global source-conflict policy (1 byte; index 0 = `last_wins`, 1 = `receiver_wins`).
+    pub const GLOBAL_SRC_CONFLICT: usize = GLOBAL_CODEC + 1;
+    /// Global zone-switch fade duration in ms (2 bytes).
+    pub const GLOBAL_ZONE_FADE: usize = GLOBAL_SRC_CONFLICT + 1;
+    /// Global source-switch fade duration in ms (2 bytes).
+    pub const GLOBAL_SRC_FADE: usize = GLOBAL_ZONE_FADE + 2;
+    /// Number of active radio stations (1 byte). Radios `1..=NUM_RADIOS` are active and
+    /// shown in ETS; higher ones are hidden. Mirrors [`NUM_ZONES`].
+    pub const NUM_RADIOS: usize = GLOBAL_SRC_FADE + 2;
 
     // ── String parameters (after numeric block) ───────────────
 
     /// Maximum radio stations.
-    pub const MAX_RADIOS: usize = 20;
+    pub const MAX_RADIOS: usize = 50;
 
     /// End of numeric parameters.
-    const NUMERIC_END: usize = RADIO_ACTIVE + MAX_RADIOS;
+    const NUMERIC_END: usize = NUM_RADIOS + 1;
 
     /// Zone names (10 × 20 bytes).
     pub const ZONE_NAME: usize = NUMERIC_END;
@@ -721,9 +738,43 @@ pub mod mem {
     pub const RADIO_URL: usize = RADIO_NAME + MAX_RADIOS * RADIO_NAME_SIZE;
     /// Radio URL size in bytes.
     pub const RADIO_URL_SIZE: usize = 80;
+    /// Radio cover art URLs (20 × 80 bytes).
+    pub const RADIO_COVER: usize = RADIO_URL + MAX_RADIOS * RADIO_URL_SIZE;
+    /// Radio cover size in bytes.
+    pub const RADIO_COVER_SIZE: usize = 80;
+    /// Zone `AirPlay` device names (10 × 20 bytes).
+    pub const ZONE_AIRPLAY_NAME: usize = RADIO_COVER + MAX_RADIOS * RADIO_COVER_SIZE;
+    /// Zone `AirPlay` name size in bytes.
+    pub const ZONE_AIRPLAY_NAME_SIZE: usize = 20;
+    /// Zone Spotify device names (10 × 20 bytes).
+    pub const ZONE_SPOTIFY_NAME: usize = ZONE_AIRPLAY_NAME + MAX_ZONES * ZONE_AIRPLAY_NAME_SIZE;
+    /// Zone Spotify name size in bytes.
+    pub const ZONE_SPOTIFY_NAME_SIZE: usize = 20;
+    /// Client icons (10 × 20 bytes).
+    pub const CLIENT_ICON: usize = ZONE_SPOTIFY_NAME + MAX_ZONES * ZONE_SPOTIFY_NAME_SIZE;
+    /// Client icon size in bytes.
+    pub const CLIENT_ICON_SIZE: usize = 20;
+    /// `AirPlay` password (20 bytes). Secret — stored plaintext in ETS memory by design.
+    pub const GLOBAL_AIRPLAY_PASS: usize = CLIENT_ICON + MAX_CLIENTS * CLIENT_ICON_SIZE;
+    /// `AirPlay` password size in bytes.
+    pub const GLOBAL_AIRPLAY_PASS_SIZE: usize = 20;
+    /// MQTT password (20 bytes). Secret — stored plaintext in ETS memory by design.
+    pub const GLOBAL_MQTT_PASS: usize = GLOBAL_AIRPLAY_PASS + GLOBAL_AIRPLAY_PASS_SIZE;
+    /// MQTT password size in bytes.
+    pub const GLOBAL_MQTT_PASS_SIZE: usize = 20;
+    /// Snapcast encryption PSK (64 bytes). Secret — stored plaintext in ETS memory by design.
+    pub const GLOBAL_PSK: usize = GLOBAL_MQTT_PASS + GLOBAL_MQTT_PASS_SIZE;
+    /// PSK size in bytes.
+    pub const GLOBAL_PSK_SIZE: usize = 64;
+    /// HTTP API key slot 1 (40 bytes). Secret — stored plaintext in ETS memory by design.
+    pub const GLOBAL_API_KEY1: usize = GLOBAL_PSK + GLOBAL_PSK_SIZE;
+    /// HTTP API key slot size in bytes.
+    pub const GLOBAL_API_KEY_SIZE: usize = 40;
+    /// HTTP API key slot 2 (40 bytes). Secret — stored plaintext in ETS memory by design.
+    pub const GLOBAL_API_KEY2: usize = GLOBAL_API_KEY1 + GLOBAL_API_KEY_SIZE;
 
     /// Total memory size in bytes (numeric + strings).
-    pub const TOTAL: usize = RADIO_URL + MAX_RADIOS * RADIO_URL_SIZE;
+    pub const TOTAL: usize = GLOBAL_API_KEY2 + GLOBAL_API_KEY_SIZE;
 }
 
 /// Compute the 1-based ASAP for a client group object.

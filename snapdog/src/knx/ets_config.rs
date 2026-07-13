@@ -18,9 +18,9 @@ use super::device::{EtsParams, load_persisted_ets_params};
 use super::group_objects::mem::MAX_RADIOS;
 use super::group_objects::{MAX_CLIENTS, MAX_ZONES};
 use crate::config::{
-    FileConfig, LogLevel, MqttConfig, PresenceConfig, RawClientConfig, RawClientKnxConfig,
-    RawRadioConfig, RawZoneConfig, RawZoneKnxConfig, SecretString, SubsonicCacheConfig,
-    SubsonicConfig, SubsonicFormat,
+    AudioCodec, FileConfig, LogLevel, MqttConfig, PresenceConfig, PresenceSource, RawClientConfig,
+    RawClientKnxConfig, RawRadioConfig, RawZoneConfig, RawZoneKnxConfig, SecretString,
+    SourceConflict, SubsonicCacheConfig, SubsonicConfig, SubsonicFormat,
 };
 
 /// Icon for ETS-derived zones/clients (ETS programs no icon).
@@ -57,13 +57,15 @@ pub fn ets_device_config(addr: Option<&str>) -> FileConfig {
     cfg
 }
 
-/// Map the raw ETS `log_level` byte to a [`LogLevel`] (Trace=0 … Error=4).
+/// Map the raw ETS `log_level` byte to a [`LogLevel`]. Must match the xtask
+/// `LogLevel` enum ordering exactly (Error=0, Warn=1, Info=2, Debug=3, Trace=4);
+/// an inversion here silently flips the runtime verbosity.
 const fn log_level_from_u8(b: u8) -> LogLevel {
     match b {
-        0 => LogLevel::Trace,
-        1 => LogLevel::Debug,
-        3 => LogLevel::Warn,
-        4 => LogLevel::Error,
+        0 => LogLevel::Error,
+        1 => LogLevel::Warn,
+        3 => LogLevel::Debug,
+        4 => LogLevel::Trace,
         _ => LogLevel::Info,
     }
 }
@@ -75,6 +77,16 @@ fn or_else(s: &str, fallback: impl FnOnce() -> String) -> String {
         fallback()
     } else {
         t.to_string()
+    }
+}
+
+/// `Some(trimmed)` for a non-empty ETS string, else `None`.
+fn opt(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
     }
 }
 
@@ -93,10 +105,46 @@ fn client_zone_name(ets: &EtsParams, client: usize) -> String {
 }
 
 /// Merge ETS-programmed parameters onto `base`.
+#[allow(clippy::too_many_lines)]
 fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfig {
     base.system.log_level = log_level_from_u8(ets.log_level);
     if ets.http_port != 0 {
         base.http.port = ets.http_port;
+    }
+    // Global audio format (server-wide Snapcast output). Zero means "not parsed" — leave the
+    // base value; a programmed device always yields a valid rate/depth.
+    if ets.sample_rate != 0 {
+        base.audio.sample_rate = ets.sample_rate;
+    }
+    if ets.bit_depth != 0 {
+        base.audio.bit_depth = ets.bit_depth;
+    }
+    base.snapcast.codec = match ets.codec {
+        0 => AudioCodec::Pcm,
+        2 => AudioCodec::F32lz4,
+        3 => AudioCodec::F32lz4e,
+        _ => AudioCodec::Flac,
+    };
+    base.audio.source_conflict = if ets.source_conflict == 1 {
+        SourceConflict::ReceiverWins
+    } else {
+        SourceConflict::LastWins
+    };
+    base.audio.zone_switch_fade_ms = ets.zone_switch_fade.min(1000);
+    base.audio.source_switch_fade_ms = ets.source_switch_fade.min(1000);
+    // Secrets (plaintext in ETS memory by product decision). Applied only when set.
+    if !ets.psk.trim().is_empty() {
+        base.snapcast.encryption_psk = Some(SecretString::new(ets.psk.trim().to_string()));
+    }
+    if !ets.api_keys.is_empty() {
+        base.http.api_keys = ets
+            .api_keys
+            .iter()
+            .map(|k| SecretString::new(k.trim().to_string()))
+            .collect();
+    }
+    if !ets.airplay_pass.trim().is_empty() {
+        base.airplay.password = Some(ets.airplay_pass.trim().to_string());
     }
 
     if !ets.subsonic_url.trim().is_empty() {
@@ -119,7 +167,7 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
             broker: ets.mqtt_broker.trim().to_string(),
             client_id: "snapdog".to_string(),
             username: String::new(),
-            password: SecretString::new(String::new()),
+            password: SecretString::new(ets.mqtt_pass.trim().to_string()),
             base_topic,
         });
     }
@@ -130,12 +178,15 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
             name: or_else(&ets.zone_names[i], || format!("Zone {}", i + 1)),
             icon: ETS_ICON.to_string(),
             sink: None,
-            airplay_name: None,
+            airplay_name: opt(&ets.zone_airplay_names[i]),
+            spotify_name: opt(&ets.zone_spotify_names[i]),
             knx: RawZoneKnxConfig::default(),
             group_volume_mode: None,
             presence: ets.zone_presence_enabled[i].then(|| PresenceConfig {
                 auto_off_delay: ets.zone_presence_timeout[i],
-                default_source: None,
+                // ETS presence source: 0 = none, 1..=MAX_RADIOS = radio index (1-based).
+                default_source: (ets.zone_presence_source[i] > 0)
+                    .then(|| PresenceSource::Radio(usize::from(ets.zone_presence_source[i]) - 1)),
                 schedule: Vec::new(),
             }),
         })
@@ -150,8 +201,10 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
             name: or_else(&ets.client_names[i], || format!("Client {}", i + 1)),
             mac: ets.client_macs[i].clone(),
             zone: client_zone_name(ets, i),
-            icon: ETS_ICON.to_string(),
+            icon: or_else(&ets.client_icons[i], || ETS_ICON.to_string()),
             max_volume: i32::from(ets.client_max_volume[i]),
+            default_volume: i32::from(ets.client_default_volume[i]),
+            default_latency: i32::from(ets.client_default_latency[i]),
             knx: RawClientKnxConfig::default(),
         })
         .collect();
@@ -164,7 +217,7 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
         .map(|i| RawRadioConfig {
             name: or_else(&ets.radio_names[i], || format!("Radio {}", i + 1)),
             url: ets.radio_urls[i].trim().to_string(),
-            cover: None,
+            cover: opt(&ets.radio_covers[i]),
         })
         .collect();
     if !radios.is_empty() {
@@ -180,6 +233,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn log_level_byte_map_matches_xtask_enum() {
+        // xtask LogLevel enum: Error=0, Warn=1, Info=2, Debug=3, Trace=4.
+        assert_eq!(log_level_from_u8(0), LogLevel::Error);
+        assert_eq!(log_level_from_u8(1), LogLevel::Warn);
+        assert_eq!(log_level_from_u8(2), LogLevel::Info);
+        assert_eq!(log_level_from_u8(3), LogLevel::Debug);
+        assert_eq!(log_level_from_u8(4), LogLevel::Trace);
+        assert_eq!(log_level_from_u8(99), LogLevel::Info); // default
+    }
+
+    #[test]
     fn maps_active_zones_clients_radios_and_scalars() {
         let mut ets = EtsParams::default();
         ets.zone_active[0] = true;
@@ -192,7 +256,7 @@ mod tests {
         ets.client_default_zone[0] = 2; // → "Bath"
         ets.client_max_volume[0] = 80;
         ets.http_port = 8080;
-        ets.log_level = 1; // Debug
+        ets.log_level = 3; // Debug (Error=0, Warn=1, Info=2, Debug=3, Trace=4)
         ets.subsonic_url = "https://music.example.com".into();
         ets.mqtt_broker = "mqtt.local:1883".into();
         ets.mqtt_topic = "home/audio".into();

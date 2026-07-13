@@ -145,6 +145,29 @@ use super::group_objects::{
     ZONE_GOS,
 };
 
+/// Fixed-size array of `MAX_RADIOS` values. A newtype because Rust only derives
+/// `Default` for arrays up to length 32, and `MAX_RADIOS` is 50. `Deref`/`DerefMut`
+/// to the inner array make indexing, `iter()` and assignment transparent.
+#[derive(Debug)]
+pub struct Radios<T>([T; mem::MAX_RADIOS]);
+
+impl<T: Default> Default for Radios<T> {
+    fn default() -> Self {
+        Self(std::array::from_fn(|_| T::default()))
+    }
+}
+impl<T> std::ops::Deref for Radios<T> {
+    type Target = [T; mem::MAX_RADIOS];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<T> std::ops::DerefMut for Radios<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// Parsed ETS parameters from BAU memory.
 #[derive(Debug, Default)]
 pub struct EtsParams {
@@ -163,18 +186,48 @@ pub struct EtsParams {
     pub client_default_latency: [u8; MAX_CLIENTS],
     pub http_port: u16,
     pub log_level: u8,
-    pub radio_active: [bool; mem::MAX_RADIOS],
+    /// Global Snapcast output sample rate in Hz (decoded from the ETS enum index).
+    pub sample_rate: u32,
+    /// Global Snapcast output bit depth (decoded from the ETS enum index).
+    pub bit_depth: u16,
+    /// Global Snapcast codec index (0=pcm, 1=flac, 2=f32lz4, 3=f32lz4e).
+    pub codec: u8,
+    /// Global source-conflict policy index (0 = `last_wins`, 1 = `receiver_wins`).
+    pub source_conflict: u8,
+    /// Global zone-switch fade duration in ms.
+    pub zone_switch_fade: u16,
+    /// Global source-switch fade duration in ms.
+    pub source_switch_fade: u16,
+    /// Per-zone presence default-source index (0 = none, 1..=`MAX_RADIOS` = radio index).
+    pub zone_presence_source: [u8; MAX_ZONES],
+    pub radio_active: Radios<bool>,
     // Strings
     pub zone_names: [String; MAX_ZONES],
+    /// Per-zone `AirPlay` device names (empty = derive from zone name).
+    pub zone_airplay_names: [String; MAX_ZONES],
+    /// Per-zone Spotify device names (empty = derive from zone name).
+    pub zone_spotify_names: [String; MAX_ZONES],
     pub client_names: [String; MAX_CLIENTS],
     pub client_macs: [String; MAX_CLIENTS],
+    /// Per-client icons (empty = default icon).
+    pub client_icons: [String; MAX_CLIENTS],
     pub subsonic_url: String,
     pub subsonic_user: String,
     pub subsonic_pass: String,
     pub mqtt_broker: String,
     pub mqtt_topic: String,
-    pub radio_names: [String; mem::MAX_RADIOS],
-    pub radio_urls: [String; mem::MAX_RADIOS],
+    /// MQTT password (secret, plaintext in ETS memory by design).
+    pub mqtt_pass: String,
+    /// `AirPlay` password (secret, plaintext in ETS memory by design).
+    pub airplay_pass: String,
+    /// Snapcast encryption PSK (secret, plaintext in ETS memory by design).
+    pub psk: String,
+    /// HTTP API keys (secrets, plaintext in ETS memory by design; empty slots dropped).
+    pub api_keys: Vec<String>,
+    pub radio_names: Radios<String>,
+    pub radio_urls: Radios<String>,
+    /// Per-radio cover-art URLs.
+    pub radio_covers: Radios<String>,
 }
 
 /// Read a null-terminated or fixed-length string from a byte slice.
@@ -189,14 +242,17 @@ fn read_string(data: &[u8], offset: usize, max_len: usize) -> String {
 }
 
 /// Parse ETS parameters from BAU memory area.
+#[allow(clippy::too_many_lines)]
 pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
     let mut p = EtsParams::default();
     if data.len() < mem::TOTAL {
         return p;
     }
-    // Numeric — zones
+    // Numeric — zones. A single "number of zones" byte replaces the former per-zone active
+    // flags: zones 1..=NUM_ZONES are active (contiguous), the rest are off.
+    let num_zones = usize::from(data[mem::NUM_ZONES]).min(MAX_ZONES);
     for i in 0..MAX_ZONES {
-        p.zone_active[i] = data[mem::ZONE_ACTIVE + i] != 0;
+        p.zone_active[i] = i < num_zones;
         p.zone_default_volume[i] = data[mem::ZONE_DEF_VOL + i];
         p.zone_max_volume[i] = data[mem::ZONE_MAX_VOL + i];
         p.zone_airplay[i] = data[mem::ZONE_AIRPLAY + i] != 0;
@@ -204,10 +260,13 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
         p.zone_presence_enabled[i] = data[mem::ZONE_PRESENCE_EN + i] != 0;
         let to_off = mem::ZONE_PRESENCE_TO + i * 2;
         p.zone_presence_timeout[i] = u16::from_be_bytes([data[to_off], data[to_off + 1]]);
+        p.zone_presence_source[i] = data[mem::ZONE_PRES_SRC + i];
     }
-    // Numeric — clients
+    // Numeric — clients. Like zones, a single count byte replaces the former per-client
+    // active flags: clients 1..=NUM_CLIENTS are active (contiguous), the rest are off.
+    let num_clients = usize::from(data[mem::NUM_CLIENTS]).min(MAX_CLIENTS);
     for i in 0..MAX_CLIENTS {
-        p.client_active[i] = data[mem::CLIENT_ACTIVE + i] != 0;
+        p.client_active[i] = i < num_clients;
         p.client_default_zone[i] = data[mem::CLIENT_DEF_ZONE + i];
         p.client_default_volume[i] = data[mem::CLIENT_DEF_VOL + i];
         p.client_max_volume[i] = data[mem::CLIENT_MAX_VOL + i];
@@ -217,8 +276,31 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
     p.http_port =
         u16::from_be_bytes([data[mem::GLOBAL_HTTP_PORT], data[mem::GLOBAL_HTTP_PORT + 1]]);
     p.log_level = data[mem::GLOBAL_LOG_LVL];
+    // Global audio format (server-wide Snapcast output), decoded from the ETS enum index.
+    p.sample_rate = match data[mem::GLOBAL_SRATE] {
+        0 => 44_100,
+        2 => 88_200,
+        3 => 96_000,
+        4 => 176_400,
+        5 => 192_000,
+        _ => 48_000,
+    };
+    p.bit_depth = match data[mem::GLOBAL_BITD] {
+        1 => 24,
+        2 => 32,
+        _ => 16,
+    };
+    p.codec = data[mem::GLOBAL_CODEC];
+    p.source_conflict = data[mem::GLOBAL_SRC_CONFLICT];
+    p.zone_switch_fade =
+        u16::from_be_bytes([data[mem::GLOBAL_ZONE_FADE], data[mem::GLOBAL_ZONE_FADE + 1]]);
+    p.source_switch_fade =
+        u16::from_be_bytes([data[mem::GLOBAL_SRC_FADE], data[mem::GLOBAL_SRC_FADE + 1]]);
+    // Radios: a single count byte replaces the former per-radio active flags —
+    // radios 1..=NUM_RADIOS are active (contiguous), the rest are off.
+    let num_radios = usize::from(data[mem::NUM_RADIOS]).min(mem::MAX_RADIOS);
     for i in 0..mem::MAX_RADIOS {
-        p.radio_active[i] = data[mem::RADIO_ACTIVE + i] != 0;
+        p.radio_active[i] = i < num_radios;
     }
     // Strings
     for i in 0..MAX_ZONES {
@@ -226,6 +308,16 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
             data,
             mem::ZONE_NAME + i * mem::ZONE_NAME_SIZE,
             mem::ZONE_NAME_SIZE,
+        );
+        p.zone_airplay_names[i] = read_string(
+            data,
+            mem::ZONE_AIRPLAY_NAME + i * mem::ZONE_AIRPLAY_NAME_SIZE,
+            mem::ZONE_AIRPLAY_NAME_SIZE,
+        );
+        p.zone_spotify_names[i] = read_string(
+            data,
+            mem::ZONE_SPOTIFY_NAME + i * mem::ZONE_SPOTIFY_NAME_SIZE,
+            mem::ZONE_SPOTIFY_NAME_SIZE,
         );
     }
     for i in 0..MAX_CLIENTS {
@@ -239,12 +331,30 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
             mem::CLIENT_MAC + i * mem::CLIENT_MAC_SIZE,
             mem::CLIENT_MAC_SIZE,
         );
+        p.client_icons[i] = read_string(
+            data,
+            mem::CLIENT_ICON + i * mem::CLIENT_ICON_SIZE,
+            mem::CLIENT_ICON_SIZE,
+        );
     }
     p.subsonic_url = read_string(data, mem::GLOBAL_SUB_URL, mem::GLOBAL_SUB_URL_SIZE);
     p.subsonic_user = read_string(data, mem::GLOBAL_SUB_USER, mem::GLOBAL_SUB_USER_SIZE);
     p.subsonic_pass = read_string(data, mem::GLOBAL_SUB_PASS, mem::GLOBAL_SUB_PASS_SIZE);
     p.mqtt_broker = read_string(data, mem::GLOBAL_MQTT_BROKER, mem::GLOBAL_MQTT_BROKER_SIZE);
     p.mqtt_topic = read_string(data, mem::GLOBAL_MQTT_TOPIC, mem::GLOBAL_MQTT_TOPIC_SIZE);
+    // Secrets (plaintext in ETS memory by design — see RFC / product decision).
+    p.mqtt_pass = read_string(data, mem::GLOBAL_MQTT_PASS, mem::GLOBAL_MQTT_PASS_SIZE);
+    p.airplay_pass = read_string(
+        data,
+        mem::GLOBAL_AIRPLAY_PASS,
+        mem::GLOBAL_AIRPLAY_PASS_SIZE,
+    );
+    p.psk = read_string(data, mem::GLOBAL_PSK, mem::GLOBAL_PSK_SIZE);
+    p.api_keys = [mem::GLOBAL_API_KEY1, mem::GLOBAL_API_KEY2]
+        .into_iter()
+        .map(|off| read_string(data, off, mem::GLOBAL_API_KEY_SIZE))
+        .filter(|k| !k.is_empty())
+        .collect();
     for i in 0..mem::MAX_RADIOS {
         p.radio_names[i] = read_string(
             data,
@@ -255,6 +365,11 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
             data,
             mem::RADIO_URL + i * mem::RADIO_URL_SIZE,
             mem::RADIO_URL_SIZE,
+        );
+        p.radio_covers[i] = read_string(
+            data,
+            mem::RADIO_COVER + i * mem::RADIO_COVER_SIZE,
+            mem::RADIO_COVER_SIZE,
         );
     }
     p
@@ -805,22 +920,28 @@ mod tests {
     #[test]
     fn parse_ets_memory_values() {
         let mut data = vec![0u8; mem::TOTAL];
-        data[mem::ZONE_ACTIVE] = 1;
-        data[mem::ZONE_ACTIVE + 2] = 1;
+        data[mem::NUM_ZONES] = 3; // zones 1..=3 active (contiguous)
         data[mem::ZONE_MAX_VOL] = 80;
-        data[mem::CLIENT_ACTIVE] = 1;
+        data[mem::NUM_CLIENTS] = 2; // clients 1..=2 active (contiguous)
         data[mem::CLIENT_MAX_VOL] = 60;
         data[mem::CLIENT_DEF_ZONE] = 3;
         data[mem::CLIENT_DEF_LAT] = 50;
+        data[mem::GLOBAL_SRATE] = 3; // 96000 Hz
+        data[mem::GLOBAL_BITD] = 1; // 24 bit
         let p = parse_ets_memory(&data);
         assert!(p.zone_active[0]);
-        assert!(!p.zone_active[1]);
+        assert!(p.zone_active[1]);
         assert!(p.zone_active[2]);
+        assert!(!p.zone_active[3]);
         assert_eq!(p.zone_max_volume[0], 80);
         assert!(p.client_active[0]);
+        assert!(p.client_active[1]);
+        assert!(!p.client_active[2]);
         assert_eq!(p.client_max_volume[0], 60);
         assert_eq!(p.client_default_zone[0], 3);
         assert_eq!(p.client_default_latency[0], 50);
+        assert_eq!(p.sample_rate, 96_000);
+        assert_eq!(p.bit_depth, 24);
     }
 
     #[test]
