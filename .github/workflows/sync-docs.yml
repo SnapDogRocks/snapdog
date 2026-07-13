@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout SnapDog Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -51,7 +51,7 @@ jobs:
         run: cargo run --package xtask -- gen-api-spec openapi.json
 
       - name: Checkout SnapDog Web Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: SnapDogRocks/snapdog-web
           token: ${{ secrets.SNAPDOG_WEB_SYNC_TOKEN }}
