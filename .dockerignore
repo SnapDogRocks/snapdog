@@ -21,6 +21,11 @@
 !xtask/
 !xtask/**
 
+# The prebuilt .knxprod is embedded into the binary via include_bytes!, so the
+# container build needs it in context. The source .xml is xtask-only and stays out.
+!knx/
+!knx/snapdog.knxprod
+
 # Prebuilt release binaries, staged by the release `docker` job for BIN_STAGE=prebuilt.
 # Absent for local/CI builds (BIN_STAGE=compile), where this simply matches nothing.
 !bins/

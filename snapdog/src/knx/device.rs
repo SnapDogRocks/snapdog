@@ -134,15 +134,14 @@ fn crc32(data: &[u8]) -> u32 {
 use super::group_objects::{
     self, CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS,
     CGO_MUTE_TOGGLE, CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS,
-    CLIENT_GOS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZGO_CONTROL_STATUS, ZGO_MUTE,
+    CLIENT_GOS, MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZGO_CONTROL_STATUS, ZGO_MUTE,
     ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT,
     ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
-    ZGO_PRESENCE_SOURCE_OVERRIDE, ZGO_PRESENCE_TIMEOUT, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT,
-    ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE,
-    ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING,
-    ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
-    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
-    ZONE_GOS,
+    ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
+    ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
+    ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
+    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
+    ZGO_VOLUME_STATUS, ZONE_GOS,
 };
 
 /// Fixed-size array of `MAX_RADIOS` values. A newtype because Rust only derives
@@ -350,9 +349,16 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
         mem::GLOBAL_AIRPLAY_PASS_SIZE,
     );
     p.psk = read_string(data, mem::GLOBAL_PSK, mem::GLOBAL_PSK_SIZE);
-    p.api_keys = [mem::GLOBAL_API_KEY1, mem::GLOBAL_API_KEY2]
-        .into_iter()
-        .map(|off| read_string(data, off, mem::GLOBAL_API_KEY_SIZE))
+    // API keys 1..=count are active (mirrors zone/client counts); empty slots are dropped.
+    let num_api_keys = usize::from(data[mem::GLOBAL_NUM_API_KEYS]).min(MAX_API_KEYS);
+    p.api_keys = (0..num_api_keys)
+        .map(|i| {
+            read_string(
+                data,
+                mem::GLOBAL_API_KEYS + i * mem::GLOBAL_API_KEY_SIZE,
+                mem::GLOBAL_API_KEY_SIZE,
+            )
+        })
         .filter(|k| !k.is_empty())
         .collect();
     for i in 0..mem::MAX_RADIOS {
@@ -766,10 +772,7 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
             (&knx.presence, ZGO_PRESENCE),
             (&knx.presence_enable, ZGO_PRESENCE_ENABLE),
             (&knx.presence_enable_status, ZGO_PRESENCE_ENABLE),
-            (&knx.presence_timeout, ZGO_PRESENCE_TIMEOUT),
-            (&knx.presence_timeout_status, ZGO_PRESENCE_TIMEOUT),
             (&knx.presence_timer_status, ZGO_PRESENCE_TIMER_ACTIVE),
-            (&knx.presence_source_override, ZGO_PRESENCE_SOURCE_OVERRIDE),
         ];
         for (ga_opt, go_idx) in zone_gas {
             if let Some(ga_str) = ga_opt {

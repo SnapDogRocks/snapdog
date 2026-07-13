@@ -1002,16 +1002,17 @@ async fn run(
                         tracing::debug!(zone = zone_index, "EQ updated");
                     }
                     ZoneCommand::SetPresence(present) => {
+                        // Retriggerable model: every presence trigger (`true`) starts playback
+                        // if idle and (re)arms the auto-off timer to `now + delay`. Playback runs
+                        // until the timer expires — i.e. no trigger for the configured delay — so
+                        // the presence/motion detector must send cyclically while occupied. A
+                        // `false` telegram is informational only; the timer, not the 0, stops
+                        // playback (works with pulse-only motion detectors that never send 0).
                         let enabled = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_enabled);
                         if !enabled {
                             update_and_notify(store, zone_index, notify, |z| z.presence = present).await;
                         } else if present {
-                            auto_off_armed = false;
                             let is_idle = store.read().await.zones.get(&zone_index).is_some_and(|z| z.playback == crate::state::PlaybackState::Stopped);
-                            update_and_notify(store, zone_index, notify, |z| {
-                                z.presence = true;
-                                z.auto_off_active = false;
-                            }).await;
                             if is_idle {
                                 // Resolve source: schedule → default → resume
                                 let resolved = resolve_presence_source(config, zone_index);
@@ -1037,15 +1038,22 @@ async fn run(
                                     }
                                 }
                             }
-                        } else {
-                            let should_timer = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_source && z.playback == crate::state::PlaybackState::Playing);
-                            update_and_notify(store, zone_index, notify, |z| z.presence = false).await;
-                            if should_timer {
+                            // (Re)arm the retriggerable auto-off timer while presence-initiated
+                            // playback is active. User-started playback (presence_source = false)
+                            // is left untouched — presence never hijacks or stops it.
+                            let armed = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_source);
+                            if armed {
                                 let delay = store.read().await.zones.get(&zone_index).map_or(crate::config::DEFAULT_AUTO_OFF_DELAY, |z| z.auto_off_delay);
-                                auto_off_timer.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(u64::from(delay))); auto_off_armed = true;
-                                update_and_notify(store, zone_index, notify, |z| z.auto_off_active = true).await;
-                                tracing::debug!(zone = zone_index, delay, "Presence auto-off timer started");
+                                auto_off_timer.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(u64::from(delay)));
+                                auto_off_armed = true;
+                                update_and_notify(store, zone_index, notify, |z| { z.presence = true; z.auto_off_active = true; }).await;
+                                tracing::debug!(zone = zone_index, delay, "Presence trigger: auto-off timer (re)armed");
+                            } else {
+                                update_and_notify(store, zone_index, notify, |z| z.presence = true).await;
                             }
+                        } else {
+                            // No-motion telegram: display only. The timer from the last trigger runs on.
+                            update_and_notify(store, zone_index, notify, |z| z.presence = false).await;
                         }
                         notify_presence(store, zone_index, notify).await;
                     }
@@ -1155,7 +1163,9 @@ async fn run(
             // Auto-off timer expired
             () = &mut auto_off_timer, if auto_off_armed => {
                 auto_off_armed = false;
-                let should_stop = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_source && !z.presence);
+                // Retrigger model: the timer only fires when no trigger arrived for the whole
+                // delay, so presence-initiated playback stops regardless of the last display flag.
+                let should_stop = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_source);
                 if should_stop {
                     tracing::info!(zone = zone_index, "Presence auto-off: stopping playback");
                     stop_decode(&mut current_decode, &mut decode_rx).await;
@@ -1205,8 +1215,9 @@ fn resolve_presence_source(
     let zone_cfg = config.zones.get(zone_index - 1)?;
     let presence = zone_cfg.presence.as_ref()?;
 
-    // Check schedule
-    let now = chrono::Local::now();
+    // Check schedule against the KNX-synced clock (offset is 0 unless a KNX Time GO set it).
+    let offset = crate::knx::KNX_TIME_OFFSET_SECS.load(std::sync::atomic::Ordering::Relaxed);
+    let now = chrono::Local::now() + chrono::Duration::seconds(offset);
     let now_minutes = (now.hour() * 60 + now.minute()) as u16;
 
     for entry in &presence.schedule {

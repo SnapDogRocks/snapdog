@@ -107,10 +107,7 @@ fn resolve_zone_knx(_n: usize, raw: RawZoneKnxConfig) -> ZoneKnxAddresses {
         presence: raw.presence,
         presence_enable: raw.presence_enable,
         presence_enable_status: raw.presence_enable_status,
-        presence_timeout: raw.presence_timeout,
-        presence_timeout_status: raw.presence_timeout_status,
         presence_timer_status: raw.presence_timer_status,
-        presence_source_override: raw.presence_source_override,
     }
 }
 

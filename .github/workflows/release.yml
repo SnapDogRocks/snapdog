@@ -66,9 +66,51 @@ jobs:
           path: webui/out
           if-no-files-found: error
 
+  knxprod:
+    name: Build .knxprod
+    needs: [meta, webui]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+            cmake pkg-config libasound2-dev libavahi-compat-libdnssd-dev
+      # snapdog (an xtask dependency) embeds the WebUI via rust-embed; reuse the export so
+      # its build.rs does not invoke npm here.
+      - name: Fetch pre-built WebUI
+        uses: actions/download-artifact@v8
+        with:
+          name: webui-out
+          path: webui/out
+      # Regenerate the ETS product database and RSA-sign it WHEN the ETS key secret is
+      # present, so released binaries embed a directly ETS-importable .knxprod. Without the
+      # secret it is produced unsigned — no break.
+      - name: Generate & sign .knxprod
+        env:
+          ETS_SIGNING_KEY: ${{ secrets.ETS_SIGNING_KEY }}
+        run: |
+          if [ -n "$ETS_SIGNING_KEY" ]; then
+            umask 077
+            printf '%s' "$ETS_SIGNING_KEY" > "$RUNNER_TEMP/ets-key.pem"
+            export SNAPDOG_ETS_KEY="$RUNNER_TEMP/ets-key.pem"
+            echo "::notice::ETS_SIGNING_KEY present — producing a SIGNED .knxprod"
+          else
+            echo "::warning::ETS_SIGNING_KEY not set — producing an UNSIGNED .knxprod"
+          fi
+          cargo run -p xtask -- knxprod
+          rm -f "$RUNNER_TEMP/ets-key.pem"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: knxprod
+          path: knx/snapdog.knxprod
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.target }})
-    needs: [meta, webui]
+    needs: [meta, webui, knxprod]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     # Release artifacts favor build throughput over Thin-LTO's small runtime gain.
@@ -122,6 +164,13 @@ jobs:
       - name: Verify WebUI present
         shell: bash
         run: test -f webui/out/index.html || { echo "::error::webui/out/index.html missing — build.rs would fall back to npm, but no Node is installed here"; exit 1; }
+      # Reuse the (signed-if-key) .knxprod built once in the `knxprod` job; snapdog embeds
+      # it via include_bytes!, so the download must land before the build.
+      - name: Fetch pre-built .knxprod
+        uses: actions/download-artifact@v8
+        with:
+          name: knxprod
+          path: knx
       - name: Build release
         run: cargo build --release --timings --target ${{ matrix.target }} -p snapdog -p snapdog-client
       - name: Upload Cargo timings

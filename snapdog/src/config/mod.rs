@@ -426,10 +426,7 @@ fn validate_zone_knx(knx: &RawZoneKnxConfig) -> Result<()> {
         &knx.presence,
         &knx.presence_enable,
         &knx.presence_enable_status,
-        &knx.presence_timeout,
-        &knx.presence_timeout_status,
         &knx.presence_timer_status,
-        &knx.presence_source_override,
     ];
     for ga in gas.into_iter().flatten() {
         validate_knx_ga(ga).with_context(|| format!("Invalid Group Address: '{ga}'"))?;

@@ -134,14 +134,15 @@ async fn transitions_are_isolated_per_zone() {
 
 /// IT-T82 — presence auto-off timer fires under a paused clock and stops the zone.
 ///
-/// We seed the precondition that `SetPresence(false)` checks (a presence-started
-/// source currently Playing — runner.rs:977) DIRECTLY in the store, rather than
-/// driving a real radio: the presence-default path spawns an HTTP decode whose
-/// failure (connection-refused, on real wall-clock under `start_paused`) could
-/// reset playback→Stopped before the arm, and emits a `stopped` `zone_changed` that
-/// is indistinguishable from the auto-off one. Direct seeding makes it fully
-/// deterministic. The fire barrier keys on `zone_presence_changed{timer_active:
-/// false}` because only the auto-off arm broadcasts it after arming.
+/// The auto-off timer is retriggerable: each `SetPresence(true)` (re)arms it, and the
+/// zone stops when it expires with no further trigger. We seed a presence-started source
+/// currently Playing DIRECTLY in the store, rather than driving a real radio: the
+/// presence-default path spawns an HTTP decode whose failure (connection-refused, on real
+/// wall-clock under `start_paused`) could reset playback→Stopped before the arm, and emits
+/// a `stopped` `zone_changed` that is indistinguishable from the auto-off one. Direct
+/// seeding makes it fully deterministic. The fire barrier keys on
+/// `zone_presence_changed{timer_active: false}` because only the auto-off fire broadcasts
+/// it after the timer expires.
 #[tokio::test(start_paused = true)]
 async fn presence_auto_off_stops_zone_after_delay() {
     let mut h = spawn_zone_harness(test_config()).await;
@@ -150,7 +151,6 @@ async fn presence_auto_off_stops_zone_after_delay() {
     {
         let mut s = h.store.write().await;
         let z = s.zones.get_mut(&zone).unwrap();
-        z.presence = true;
         z.presence_enabled = true; // default, made explicit
         z.presence_source = true; // playback was started by presence
         z.playback = PlaybackState::Playing;
@@ -158,32 +158,28 @@ async fn presence_auto_off_stops_zone_after_delay() {
         drop(s);
     }
 
-    // Presence lost → arms the auto-off timer.
+    // A presence trigger (re)arms the retriggerable auto-off timer.
     h.senders[&zone]
-        .send(ZoneCommand::SetPresence(false))
+        .send(ZoneCommand::SetPresence(true))
         .await
         .unwrap();
-    // Linchpin barrier: emitted only AFTER `.reset()` + `auto_off_armed = true`
-    // (runner.rs:979-986), so the pinned sleep is live and the task is parked back
-    // in `select!` before we move the clock.
+    // Linchpin barrier: emitted only AFTER `.reset()` + `auto_off_armed = true`, so the
+    // pinned sleep is live and the task is parked back in `select!` before we move the clock.
     h.await_notification(|v| {
         v["type"] == "zone_presence_changed"
             && v["zone"] == zone
-            && v["presence"] == false
+            && v["presence"] == true
             && v["timer_active"] == true
     })
     .await;
 
-    // Advance virtual time past the delay → the timer becomes ready and fires.
+    // Advance virtual time past the delay with no further trigger → the timer fires.
     tokio::time::advance(std::time::Duration::from_secs(11)).await;
 
     // Fire barrier: race-free vs the decode-error `stopped` path (which never calls
     // notify_presence).
     h.await_notification(|v| {
-        v["type"] == "zone_presence_changed"
-            && v["zone"] == zone
-            && v["presence"] == false
-            && v["timer_active"] == false
+        v["type"] == "zone_presence_changed" && v["zone"] == zone && v["timer_active"] == false
     })
     .await;
 

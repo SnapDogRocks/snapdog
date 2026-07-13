@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { api } from "@/lib/api";
+import { api, type KnxProductInfo } from "@/lib/api";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, Download04Icon } from "@hugeicons/core-free-icons";
 import { useTranslations } from "next-intl";
 
 export function AboutButton() {
@@ -34,6 +34,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
   const [hostname, setHostname] = useState<string>("");
   const [knxAvailable, setKnxAvailable] = useState(false);
   const [progMode, setProgMode] = useState(false);
+  const [knxProduct, setKnxProduct] = useState<KnxProductInfo | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>();
   const t = useTranslations("about");
 
@@ -43,6 +44,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
       setProgMode(mode);
       setKnxAvailable(true);
     }).catch(() => {});
+    api.knx.getProductInfo().then(setKnxProduct).catch(() => {});
     if (typeof window !== "undefined") {
       setTimeout(() => {
         setHostname(window.location.hostname);
@@ -218,6 +220,25 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         )}
+
+        {/* KNX ETS product database (.knxprod) download — for importing SnapDog into ETS */}
+        <button
+          onClick={() => { api.knx.downloadKnxprod().catch(() => {}); }}
+          className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer text-left"
+        >
+          <div className="flex flex-col min-w-0">
+            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">KNX / ETS</span>
+            <span className="font-semibold text-foreground text-xs sm:text-sm tracking-tight group-hover:text-primary transition-colors">
+              {t("knxprodTitle")}
+            </span>
+            {knxProduct && (
+              <span className="text-[9px] sm:text-[10px] font-mono text-muted-foreground/50 tracking-tight mt-0.5">
+                v{knxProduct.app_version} · {knxProduct.application_number} · HW {knxProduct.hardware_version}
+              </span>
+            )}
+          </div>
+          <HugeiconsIcon icon={Download04Icon} className="size-5 text-muted-foreground/60 group-hover:text-primary transition-colors shrink-0" />
+        </button>
 
         {/* Footer Group (Copyright & Done Button) */}
         <div className="w-full flex flex-col items-center gap-3 mt-1 flex-shrink-0">

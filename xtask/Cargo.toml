@@ -6,8 +6,12 @@ publish = false
 
 [dependencies]
 snapdog = { path = "../snapdog", default-features = false }
-knx-rs-prod = "0.6"
+knx-rs-prod = { version = "0.6", features = ["fetch"] }
 utoipa = { workspace = true }
+
+[dev-dependencies]
+# Read the committed .knxprod (a ZIP) in the artifact-freshness test.
+zip = "8.6"
 
 [lints]
 workspace = true

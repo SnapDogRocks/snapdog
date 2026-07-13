@@ -832,6 +832,32 @@ pub struct KnxConfig {
     /// Start with programming mode active (set via --knx-prog-mode CLI flag).
     #[serde(default)]
     pub start_prog_mode: bool,
+
+    // ── Global (device-level) group addresses ────────────────────
+    /// Cyclic "server online" heartbeat (send).
+    pub server_online: Option<String>,
+    /// "All stop" trigger — stops every zone (receive).
+    pub all_stop: Option<String>,
+    /// "All mute" switch — mutes/unmutes every zone (receive).
+    pub all_mute: Option<String>,
+    /// "All mute" status (send).
+    pub all_mute_status: Option<String>,
+    /// "System fault" alarm (send) — set while the server is unhealthy.
+    pub system_fault: Option<String>,
+    /// KNX time-of-day clock input (receive) — drives presence schedules.
+    pub knx_time: Option<String>,
+    /// Heartbeat interval in minutes for the "server online" cyclic send.
+    #[serde(default = "default_heartbeat_minutes")]
+    pub heartbeat_minutes: u16,
+    /// Also set the OS system clock from received KNX time
+    /// (set via the `--knx-sync-system-clock` CLI flag).
+    #[serde(default)]
+    pub sync_system_clock: bool,
+}
+
+/// Default heartbeat interval (minutes) for the global "server online" send.
+const fn default_heartbeat_minutes() -> u16 {
+    5
 }
 
 // ── Raw zone/client/radio (user-facing, optional fields) ──────
@@ -930,14 +956,8 @@ pub struct RawZoneKnxConfig {
     pub presence_enable: Option<String>,
     /// Presence enable status feedback.
     pub presence_enable_status: Option<String>,
-    /// Presence auto-off timeout (DPT 7.005, seconds).
-    pub presence_timeout: Option<String>,
-    /// Presence auto-off timeout status feedback.
-    pub presence_timeout_status: Option<String>,
     /// Presence auto-off timer active status (DPT 1.001).
     pub presence_timer_status: Option<String>,
-    /// Presence source override (DPT 5.010, 0=schedule).
-    pub presence_source_override: Option<String>,
 }
 
 /// Client (speaker) definition as written in TOML.
@@ -1184,14 +1204,8 @@ pub struct ZoneKnxAddresses {
     pub presence_enable: Option<String>,
     /// Presence enable status feedback.
     pub presence_enable_status: Option<String>,
-    /// Presence auto-off timeout.
-    pub presence_timeout: Option<String>,
-    /// Presence auto-off timeout status feedback.
-    pub presence_timeout_status: Option<String>,
     /// Presence auto-off timer active status.
     pub presence_timer_status: Option<String>,
-    /// Presence source override.
-    pub presence_source_override: Option<String>,
 }
 
 /// Resolved client configuration.
