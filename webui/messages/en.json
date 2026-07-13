@@ -134,7 +134,8 @@
     "sourceValue": "SnapDogRocks/snapdog ↗",
     "licenseLabel": "LICENSE",
     "licenseValue": "GPL-3.0 ↗",
-    "done": "Done"
+    "done": "Done",
+    "knxprodTitle": "Download .knxprod (ETS product database)"
   },
   "connect": {
     "title": "Connect",

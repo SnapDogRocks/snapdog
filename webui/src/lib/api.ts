@@ -89,6 +89,20 @@ async function postVoid(path: string, body?: unknown): Promise<void> {
   if (!res.ok) { check401(res); throw new ApiError(res.status, `POST ${path}: ${res.status}`); }
 }
 
+/** Fetch a binary endpoint with auth and trigger a browser download. */
+async function downloadFile(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
+  if (!res.ok) { check401(res); throw new ApiError(res.status, `GET ${path}: ${res.status}`); }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ── Zones ─────────────────────────────────────────────────────
 
 const Z = "/api/v1/zones";
@@ -225,9 +239,17 @@ export const clientEq = {
   applyPreset: (clientId: number, name: string) => postJson<EqConfig>(`${C}/${clientId}/eq/preset`, name),
 };
 
+export interface KnxProductInfo {
+  app_version: number;
+  application_number: string;
+  hardware_version: number;
+}
+
 const knx = {
   getProgrammingMode: () => get<boolean>("/api/v1/knx/programming-mode"),
   setProgrammingMode: (enabled: boolean) => putJson<boolean>("/api/v1/knx/programming-mode", enabled),
+  downloadKnxprod: () => downloadFile("/api/v1/knx/knxprod", "snapdog.knxprod"),
+  getProductInfo: () => get<KnxProductInfo>("/api/v1/knx/product-info"),
 };
 
 const speakers = {
