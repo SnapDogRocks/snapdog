@@ -143,8 +143,13 @@ fn knxprod() {
         .unwrap_or_else(|| "knx/snapdog.xml".into());
     let knxprod_path = xml_path.replace(".xml", ".knxprod");
 
-    // Step 1: Generate ETS XML
+    // Step 1: Generate ETS XML, then normalise readable string ids to the pure
+    // integers ETS parses at import (renumber + structural sanity) via knx-rs-prod —
+    // so `cargo xtask knxprod` emits ETS-importable XML directly.
     let xml = generate_xml();
+    assert_refs_resolve(&xml);
+    let xml = knx_rs_prod::normalize_ids(&xml)
+        .unwrap_or_else(|e| panic!("failed to normalise ids for ETS import: {e}"));
     std::fs::write(&xml_path, xml).expect("failed to write XML");
     eprintln!(
         "  Generated {xml_path} ({} zones × {} COs + {} clients × {} COs = {} COs)",
@@ -318,12 +323,32 @@ fn write_catalog(x: &mut String) {
     w(x, "      </Catalog>");
 }
 
+/// Bump this when the ETS program changes (memory layout, parameters, com-objects).
+/// ETS keys the program by `ApplicationNumber` + `ApplicationVersion`; re-importing an
+/// unchanged version shows the *cached* content, so a fresh import needs a higher number.
+/// Override for throwaway test builds with `SNAPDOG_APP_VERSION=<n>` (never go below the
+/// last-imported version, and never back to 1).
+const APP_VERSION: u32 = 8;
+
+fn app_version() -> u32 {
+    std::env::var("SNAPDOG_APP_VERSION")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(APP_VERSION)
+}
+
 fn write_application_program(x: &mut String) {
+    let version = app_version();
+    // ReplacesVersions lists every prior version so ETS offers an in-place upgrade.
+    let replaces = (0..version)
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
     w(x, "      <ApplicationPrograms>");
     w(
         x,
         &format!(
-            r#"        <ApplicationProgram Id="{AID}" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="2" ReplacesVersions="0 1">"#
+            r#"        <ApplicationProgram Id="{AID}" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="{version}" ReplacesVersions="{replaces}">"#
         ),
     );
     w(x, "          <Static>");
@@ -331,7 +356,9 @@ fn write_application_program(x: &mut String) {
     write_code_segment(x);
     write_parameter_types(x);
     write_parameters(x);
+    write_parameter_refs(x);
     write_com_objects(x);
+    write_com_object_refs(x);
     write_tables(x);
     write_load_procedures(x);
     write_options(x);
@@ -354,6 +381,7 @@ fn write_code_segment(x: &mut String) {
     w(x, "            </Code>");
 }
 
+#[allow(clippy::too_many_lines)]
 fn write_parameter_types(x: &mut String) {
     w(x, "            <ParameterTypes>");
     // Bool
@@ -364,6 +392,7 @@ fn write_parameter_types(x: &mut String) {
     pt_text(x, "Text40", 320);
     pt_text(x, "Text60", 480);
     pt_text(x, "Text80", 640);
+    pt_text(x, "Text64", 512); // PSK
     pt_text(x, "MAC", 136); // 17 chars
     // Numeric
     pt_num(x, "Percent", 8, "unsignedInt", 0, 100);
@@ -386,13 +415,37 @@ fn write_parameter_types(x: &mut String) {
         x,
         "SampleRate",
         8,
-        &[("44100 Hz", 0), ("48000 Hz", 1), ("96000 Hz", 2)],
+        &[
+            ("44100 Hz", 0),
+            ("48000 Hz", 1),
+            ("88200 Hz", 2),
+            ("96000 Hz", 3),
+            ("176400 Hz", 4),
+            ("192000 Hz", 5),
+        ],
     );
     pt_enum(
         x,
         "BitDepth",
         8,
         &[("16 Bit", 0), ("24 Bit", 1), ("32 Bit", 2)],
+    );
+    pt_enum(
+        x,
+        "Codec",
+        8,
+        &[
+            ("PCM (unkomprimiert)", 0),
+            ("FLAC (verlustfrei)", 1),
+            ("f32lz4", 2),
+            ("f32lz4e (verschlüsselt)", 3),
+        ],
+    );
+    pt_enum(
+        x,
+        "SourceConflict",
+        8,
+        &[("Letzte Quelle gewinnt", 0), ("Empfänger hat Vorrang", 1)],
     );
     pt_enum(
         x,
@@ -428,6 +481,39 @@ fn write_parameter_types(x: &mut String) {
             ("10 Zonen", 10),
         ],
     );
+    pt_enum(
+        x,
+        "NumClients",
+        8,
+        &[
+            ("1 Client", 1),
+            ("2 Clients", 2),
+            ("3 Clients", 3),
+            ("4 Clients", 4),
+            ("5 Clients", 5),
+            ("6 Clients", 6),
+            ("7 Clients", 7),
+            ("8 Clients", 8),
+            ("9 Clients", 9),
+            ("10 Clients", 10),
+        ],
+    );
+    // Radio count 1..=MAX_RADIOS (built dynamically to avoid a 50-line literal).
+    let radio_labels: Vec<String> = (1..=mem::MAX_RADIOS)
+        .map(|n| {
+            if n == 1 {
+                "1 Sender".into()
+            } else {
+                format!("{n} Sender")
+            }
+        })
+        .collect();
+    let radio_pairs: Vec<(&str, u16)> = radio_labels
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), (i + 1) as u16))
+        .collect();
+    pt_enum(x, "NumRadios", 8, &radio_pairs);
     w(x, "            </ParameterTypes>");
 }
 
@@ -606,49 +692,34 @@ fn write_parameters(x: &mut String) {
             x,
             &p,
             "008",
-            "SRate",
-            "SampleRate",
-            "Sample Rate",
-            "1",
-            mem::ZONE_SRATE + i,
-            8,
-            &mut spans,
-        );
-    }
-    for z in 1..=MAX_ZONES {
-        let p = format!("Z{z:02}");
-        let i = z - 1;
-        param_mem(
-            x,
-            &p,
-            "009",
-            "BitD",
-            "BitDepth",
-            "Bit Depth",
+            "PresSrc",
+            "UInt8",
+            "Präsenz-Quelle (0=keine, 1..20=Radio)",
             "0",
-            mem::ZONE_BITD + i,
+            mem::ZONE_PRES_SRC + i,
             8,
             &mut spans,
         );
     }
+    // Sample rate and bit depth are the global Snapcast output format (not per-zone) —
+    // emitted as global parameters below.
 
     // ── Client parameters ─────────────────────────────────────
-    for c in 1..=MAX_CLIENTS {
-        let p = format!("C{c:02}");
-        let i = c - 1;
-        param_mem(
-            x,
-            &p,
-            "001",
-            "Active",
-            "YesNo",
-            "Client aktiv",
-            "1",
-            mem::CLIENT_ACTIVE + i,
-            8,
-            &mut spans,
-        );
-    }
+    // A single "number of clients" dropdown (shown under Allgemein, next to Anzahl Zonen)
+    // drives how many client blocks ETS displays and how many clients the firmware
+    // activates. Mirrors NumZones; replaces the former per-client active flags.
+    param_mem(
+        x,
+        "G",
+        "003",
+        "NumClients",
+        "NumClients",
+        "Anzahl Clients",
+        "10",
+        mem::NUM_CLIENTS,
+        8,
+        &mut spans,
+    );
     for c in 1..=MAX_CLIENTS {
         let p = format!("C{c:02}");
         let i = c - 1;
@@ -739,23 +810,96 @@ fn write_parameters(x: &mut String) {
         8,
         &mut spans,
     );
+    // Global audio output format (server-wide Snapcast format, not per-zone).
+    param_mem(
+        x,
+        "G",
+        "004",
+        "SRate",
+        "SampleRate",
+        "Sample Rate",
+        "1",
+        mem::GLOBAL_SRATE,
+        8,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "005",
+        "BitD",
+        "BitDepth",
+        "Bit Depth",
+        "0",
+        mem::GLOBAL_BITD,
+        8,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "006",
+        "Codec",
+        "Codec",
+        "Codec",
+        "1",
+        mem::GLOBAL_CODEC,
+        8,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "007",
+        "SrcConflict",
+        "SourceConflict",
+        "Quellen-Konflikt",
+        "0",
+        mem::GLOBAL_SRC_CONFLICT,
+        8,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "008",
+        "ZoneFade",
+        "UInt16",
+        "Zonenwechsel-Fade (ms)",
+        "200",
+        mem::GLOBAL_ZONE_FADE,
+        16,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "009",
+        "SrcFade",
+        "UInt16",
+        "Quellenwechsel-Fade (ms)",
+        "200",
+        mem::GLOBAL_SRC_FADE,
+        16,
+        &mut spans,
+    );
 
-    // ── Radio active flags (numeric, 20 × 1 byte) ────────────
-    for r in 1..=mem::MAX_RADIOS {
-        let p = format!("R{r:02}");
-        param_mem(
-            x,
-            &p,
-            "002",
-            "Active",
-            "YesNo",
-            "Aktiv",
-            "0",
-            mem::RADIO_ACTIVE + (r - 1),
-            8,
-            &mut spans,
-        );
-    }
+    // ── Radio count ───────────────────────────────────────────
+    // A single "number of radios" dropdown (shown first on the Radiosender tab) drives how
+    // many station sections ETS displays and how many the firmware activates. Mirrors
+    // NumZones/NumClients; replaces the former per-radio active flags.
+    param_mem(
+        x,
+        "G",
+        "020",
+        "NumRadios",
+        "NumRadios",
+        "Anzahl Radiosender",
+        "10",
+        mem::NUM_RADIOS,
+        8,
+        &mut spans,
+    );
 
     // ── String parameters (offsets from mem::) ────────────────
     for z in 1..=MAX_ZONES {
@@ -771,6 +915,38 @@ fn write_parameters(x: &mut String) {
             &format!("Zone {z}"),
             mem::ZONE_NAME + i * mem::ZONE_NAME_SIZE,
             mem::ZONE_NAME_SIZE as u16 * 8,
+            &mut spans,
+        );
+    }
+    for z in 1..=MAX_ZONES {
+        let p = format!("Z{z:02}");
+        let i = z - 1;
+        param_mem(
+            x,
+            &p,
+            "010",
+            "AirName",
+            "Name",
+            "AirPlay-Name (leer = Zonenname)",
+            "",
+            mem::ZONE_AIRPLAY_NAME + i * mem::ZONE_AIRPLAY_NAME_SIZE,
+            mem::ZONE_AIRPLAY_NAME_SIZE as u16 * 8,
+            &mut spans,
+        );
+    }
+    for z in 1..=MAX_ZONES {
+        let p = format!("Z{z:02}");
+        let i = z - 1;
+        param_mem(
+            x,
+            &p,
+            "011",
+            "SpotName",
+            "Name",
+            "Spotify-Name (leer = Zonenname)",
+            "",
+            mem::ZONE_SPOTIFY_NAME + i * mem::ZONE_SPOTIFY_NAME_SIZE,
+            mem::ZONE_SPOTIFY_NAME_SIZE as u16 * 8,
             &mut spans,
         );
     }
@@ -803,6 +979,22 @@ fn write_parameters(x: &mut String) {
             "",
             mem::CLIENT_MAC + i * mem::CLIENT_MAC_SIZE,
             mem::CLIENT_MAC_SIZE as u16 * 8,
+            &mut spans,
+        );
+    }
+    for c in 1..=MAX_CLIENTS {
+        let p = format!("C{c:02}");
+        let i = c - 1;
+        param_mem(
+            x,
+            &p,
+            "011",
+            "Icon",
+            "Name",
+            "Icon (Emoji)",
+            "",
+            mem::CLIENT_ICON + i * mem::CLIENT_ICON_SIZE,
+            mem::CLIENT_ICON_SIZE as u16 * 8,
             &mut spans,
         );
     }
@@ -866,6 +1058,67 @@ fn write_parameters(x: &mut String) {
         mem::GLOBAL_MQTT_TOPIC_SIZE as u16 * 8,
         &mut spans,
     );
+    // Secrets (plaintext in ETS memory by product decision).
+    param_mem(
+        x,
+        "G",
+        "015",
+        "MqttPass",
+        "Text20",
+        "MQTT Passwort",
+        "",
+        mem::GLOBAL_MQTT_PASS,
+        mem::GLOBAL_MQTT_PASS_SIZE as u16 * 8,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "016",
+        "AirPass",
+        "Text20",
+        "AirPlay Passwort",
+        "",
+        mem::GLOBAL_AIRPLAY_PASS,
+        mem::GLOBAL_AIRPLAY_PASS_SIZE as u16 * 8,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "017",
+        "Psk",
+        "Text64",
+        "Snapcast PSK (Verschlüsselung)",
+        "",
+        mem::GLOBAL_PSK,
+        mem::GLOBAL_PSK_SIZE as u16 * 8,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "018",
+        "ApiKey1",
+        "Text40",
+        "API-Key 1",
+        "",
+        mem::GLOBAL_API_KEY1,
+        mem::GLOBAL_API_KEY_SIZE as u16 * 8,
+        &mut spans,
+    );
+    param_mem(
+        x,
+        "G",
+        "019",
+        "ApiKey2",
+        "Text40",
+        "API-Key 2",
+        "",
+        mem::GLOBAL_API_KEY2,
+        mem::GLOBAL_API_KEY_SIZE as u16 * 8,
+        &mut spans,
+    );
     for r in 1..=mem::MAX_RADIOS {
         let p = format!("R{r:02}");
         let i = r - 1;
@@ -895,6 +1148,22 @@ fn write_parameters(x: &mut String) {
             "",
             mem::RADIO_URL + i * mem::RADIO_URL_SIZE,
             mem::RADIO_URL_SIZE as u16 * 8,
+            &mut spans,
+        );
+    }
+    for r in 1..=mem::MAX_RADIOS {
+        let p = format!("R{r:02}");
+        let i = r - 1;
+        param_mem(
+            x,
+            &p,
+            "003",
+            "Cover",
+            "Text80",
+            "Cover URL (optional)",
+            "",
+            mem::RADIO_COVER + i * mem::RADIO_COVER_SIZE,
+            mem::RADIO_COVER_SIZE as u16 * 8,
             &mut spans,
         );
     }
@@ -984,6 +1253,20 @@ fn write_com_objects(x: &mut String) {
     w(x, "            </ComObjectTable>");
 }
 
+/// KNX `DatapointType` id format: the `Dpt` Display is `1.001`, but the ETS schema wants an
+/// IDREF into the master (`DPST-1-1`). Sub-numbers drop leading zeros.
+fn dpst(dpt: impl std::fmt::Display) -> String {
+    let s = dpt.to_string();
+    match s.split_once('.') {
+        Some((main, sub)) => format!(
+            "DPST-{}-{}",
+            main.parse::<u32>().unwrap_or(0),
+            sub.parse::<u32>().unwrap_or(0)
+        ),
+        None => format!("DPT-{}", s.parse::<u32>().unwrap_or(0)),
+    }
+}
+
 fn write_com_object(x: &mut String, id_suffix: &str, name: &str, go: &GoDefinition, number: usize) {
     let r = if go.flags.read { "Enabled" } else { "Disabled" };
     let wr = if go.flags.write {
@@ -1004,9 +1287,148 @@ fn write_com_object(x: &mut String, id_suffix: &str, name: &str, go: &GoDefiniti
     w(
         x,
         &format!(
-            r#"              <ComObject Id="{AID}_O-{id_suffix}" Name="{name}" Number="{number}" Text="{}" FunctionText="{}" ObjectSize="{}" DatapointType="{}" Priority="Low" ReadFlag="{r}" WriteFlag="{wr}" CommunicationFlag="Enabled" TransmitFlag="{t}" UpdateFlag="{u}" />"#,
-            go.name_de, go.name, go.size_str, go.dpt
+            r#"              <ComObject Id="{AID}_O-{id_suffix}" Name="{name}" Number="{number}" Text="{}" FunctionText="{}" ObjectSize="{}" DatapointType="{}" Priority="Low" ReadFlag="{r}" WriteFlag="{wr}" CommunicationFlag="Enabled" TransmitFlag="{t}" UpdateFlag="{u}" ReadOnInitFlag="Disabled" />"#,
+            go.name_de,
+            go.name,
+            go.size_str,
+            dpst(go.dpt)
         ),
+    );
+}
+
+/// ETS requires a `<ParameterRef>` for every parameter referenced in the Dynamic section
+/// (a missing one surfaces as an opaque `NullReferenceException` on import). We reference the
+/// zone/client name fields, the per-client active flags, and the global zone-count param;
+/// emit a self-referential ref (`{id}_R-{id}`) matching what `write_dynamic` points at.
+fn write_parameter_refs(x: &mut String) {
+    // One `<ParameterRef>` per declared `<Parameter>` (1:1). Derived by scanning the
+    // already-emitted `<Parameters>` so it stays in lock-step with `write_parameters` —
+    // every parameter becomes referenceable, so any of them can be shown in the Dynamic
+    // view (the config knobs are all wired in `write_dynamic`).
+    let ids: Vec<String> = x
+        .lines()
+        .filter_map(|l| {
+            l.trim_start()
+                .strip_prefix("<Parameter Id=\"")
+                .and_then(|r| r.split('"').next())
+                .map(str::to_string)
+        })
+        .collect();
+    w(x, "            <ParameterRefs>");
+    for p in ids {
+        w(
+            x,
+            &format!(r#"              <ParameterRef Id="{p}_R-{p}" RefId="{p}" />"#),
+        );
+    }
+    w(x, "            </ParameterRefs>");
+}
+
+/// Every `ComObject` referenced in the Dynamic needs a `<ComObjectRef>`. Mirror the
+/// `write_com_objects` numbering exactly so the `_R-<number>` ids line up.
+fn write_com_object_refs(x: &mut String) {
+    w(x, "            <ComObjectRefs>");
+    for z in 1..=MAX_ZONES {
+        for i in 0..ZONE_GOS.len() {
+            let num = (z - 1) * ZONE_GOS.len() + i + 1;
+            let id = format!("{AID}_O-Z{z:02}{i:03}");
+            w(
+                x,
+                &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
+            );
+        }
+    }
+    for c in 1..=MAX_CLIENTS {
+        for i in 0..CLIENT_GOS.len() {
+            let num = MAX_ZONES * ZONE_GOS.len() + (c - 1) * CLIENT_GOS.len() + i + 1;
+            let id = format!("{AID}_O-C{c:02}{i:03}");
+            w(
+                x,
+                &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
+            );
+        }
+    }
+    w(x, "            </ComObjectRefs>");
+}
+
+/// Guard: every ref in the Dynamic section must resolve to a defined `<ParameterRef>`/
+/// `<ComObjectRef>`, and every ref must point at an existing `<Parameter>`/`<ComObject>`. ETS
+/// reports a dangling ref only as an opaque `NullReferenceException` on import — fail here.
+fn assert_refs_resolve(xml: &str) {
+    use std::collections::HashSet;
+    // Attribute values are space-separated; the leading space avoids `RefId` matching
+    // inside `ParamRefId`/`TextParameterRefId`.
+    fn attr<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+        let key = format!(" {name}=\"");
+        let start = line.find(&key)? + key.len();
+        let rest = &line[start..];
+        Some(&rest[..rest.find('"')?])
+    }
+    let (mut params, mut comobjs) = (HashSet::new(), HashSet::new());
+    let (mut param_refs, mut co_refs) = (HashSet::new(), HashSet::new());
+    let mut ref_targets: Vec<(&str, String, String)> = Vec::new(); // (kind, ref-id, target)
+
+    for line in xml.lines() {
+        let t = line.trim_start();
+        if t.starts_with("<Parameter ")
+            && let Some(id) = attr(t, "Id")
+        {
+            params.insert(id.to_string());
+        } else if t.starts_with("<ComObject ")
+            && let Some(id) = attr(t, "Id")
+        {
+            comobjs.insert(id.to_string());
+        } else if t.starts_with("<ParameterRef ")
+            && let (Some(id), Some(rid)) = (attr(t, "Id"), attr(t, "RefId"))
+        {
+            param_refs.insert(id.to_string());
+            ref_targets.push(("Parameter", id.to_string(), rid.to_string()));
+        } else if t.starts_with("<ComObjectRef ")
+            && let (Some(id), Some(rid)) = (attr(t, "Id"), attr(t, "RefId"))
+        {
+            co_refs.insert(id.to_string());
+            ref_targets.push(("ComObject", id.to_string(), rid.to_string()));
+        }
+    }
+
+    let mut bad = Vec::new();
+    for (kind, id, target) in &ref_targets {
+        let defined = if *kind == "Parameter" {
+            &params
+        } else {
+            &comobjs
+        };
+        if !defined.contains(target) {
+            bad.push(format!("{kind}Ref {id} -> missing {kind} {target}"));
+        }
+    }
+    for line in xml.lines() {
+        let t = line.trim_start();
+        for key in ["ParamRefId", "TextParameterRefId"] {
+            if let Some(r) = attr(t, key)
+                && !param_refs.contains(r)
+            {
+                bad.push(format!("{key}={r} -> no <ParameterRef>"));
+            }
+        }
+        if t.starts_with("<ParameterRefRef ")
+            && let Some(r) = attr(t, "RefId")
+            && !param_refs.contains(r)
+        {
+            bad.push(format!("ParameterRefRef {r} -> no <ParameterRef>"));
+        }
+        if t.starts_with("<ComObjectRefRef ")
+            && let Some(r) = attr(t, "RefId")
+            && !co_refs.contains(r)
+        {
+            bad.push(format!("ComObjectRefRef {r} -> no <ComObjectRef>"));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "ETS ref integrity: {} dangling reference(s):\n{}",
+        bad.len(),
+        bad.join("\n")
     );
 }
 
@@ -1088,53 +1510,204 @@ fn write_options(x: &mut String) {
 
 fn write_dynamic(x: &mut String) {
     w(x, "          <Dynamic>");
+    // ETS only allows Channel/ChannelIndependentBlock/choose/… directly under <Dynamic>
+    // (not bare ParameterBlocks), so wrap everything in one ChannelIndependentBlock.
+    w(x, "            <ChannelIndependentBlock>");
     // General: the "number of zones" dropdown drives which zone blocks are shown.
     write_general_block(x);
     // Zones — a zone block is shown when the chosen count is >= this zone's index.
+    // Config knobs: DefVol, MaxVol, AirPlay, Spotify, PresEn, PresTO (sample rate / bit
+    // depth are global, shown in the General block).
     for z in 1..=MAX_ZONES {
         write_channel_block(
             x,
             "Zone",
             z,
             &format!("{AID}_UP-G000"),
-            &format!("{z}..{MAX_ZONES}"),
-            &format!("{AID}_P-Z{z:02}000"),
+            &format!("&gt;={z}"),
+            &format!("{AID}_UP-Z{z:02}000"),
             ZONE_GROUPS,
             &format!("Z{z:02}"),
+            &[
+                "002", "003", "004", "005", "006", "007", "008", "010", "011",
+            ],
         );
     }
-    // Clients — still gated per-client (always-on default; count feature is zones-only).
+    // Clients — a client block is shown when the chosen count is >= this client's index
+    // (same logic as zones). Config knobs: DefZone, DefVol, MaxVol, DefLat, MAC.
     for c in 1..=MAX_CLIENTS {
         write_channel_block(
             x,
             "Client",
             c,
-            &format!("{AID}_UP-C{c:02}001"),
-            "1",
-            &format!("{AID}_P-C{c:02}000"),
+            &format!("{AID}_UP-G003"),
+            &format!("&gt;={c}"),
+            &format!("{AID}_UP-C{c:02}000"),
             CLIENT_GROUPS,
             &format!("C{c:02}"),
+            &["002", "003", "004", "005", "010", "011"],
         );
     }
+    // Radio stream presets: count dropdown + gated Name / URL / Cover per station.
+    write_radio_block(x);
+    w(x, "            </ChannelIndependentBlock>");
     w(x, "          </Dynamic>");
+}
+
+/// Radio presets block: a "number of radios" dropdown, then one section per station
+/// (Name / URL / Cover), each shown when the chosen count is >= its index.
+fn write_radio_block(x: &mut String) {
+    let count_ref = format!("{AID}_UP-G020_R-{AID}_UP-G020");
+    w(
+        x,
+        &format!(
+            r#"            <ParameterBlock Id="{AID}_PB-Radios" Name="Radios" Text="Radiosender">"#
+        ),
+    );
+    // The count dropdown comes first, then gates each station section.
+    w(
+        x,
+        &format!(r#"              <ParameterRefRef RefId="{count_ref}" />"#),
+    );
+    for r in 1..=mem::MAX_RADIOS {
+        let p = format!("R{r:02}");
+        let ids = [
+            format!("{AID}_UP-{p}000"), // Name
+            format!("{AID}_UP-{p}001"), // URL
+            format!("{AID}_UP-{p}003"), // Cover
+        ];
+        w(
+            x,
+            &format!(r#"              <choose ParamRefId="{count_ref}">"#),
+        );
+        w(x, &format!(r#"                <when test="&gt;={r}">"#));
+        write_param_section(
+            x,
+            "                  ",
+            &format!("{p}-Station"),
+            &format!("Station {r}"),
+            &ids,
+        );
+        w(x, "                </when>");
+        w(x, "              </choose>");
+    }
+    w(x, "            </ParameterBlock>");
 }
 
 /// Top-level "Allgemein" block holding the number-of-zones dropdown. Displayed via the
 /// `P-` parameter ref (like the channel name fields); the zone `<choose>` conditions gate
 /// on the same parameter's `UP-` ref.
 fn write_general_block(x: &mut String) {
-    let num_ref = format!("{AID}_P-G000_R-{AID}_P-G000");
+    let zones_ref = format!("{AID}_UP-G000_R-{AID}_UP-G000");
+    let clients_ref = format!("{AID}_UP-G003_R-{AID}_UP-G003");
     w(
         x,
         &format!(
             r#"            <ParameterBlock Id="{AID}_PB-General" Name="General" Text="Allgemein">"#
         ),
     );
+    // Counts: number of zones then number of clients drive which channel blocks show.
     w(
         x,
-        &format!(r#"              <ParameterRefRef RefId="{num_ref}" />"#),
+        &format!(r#"              <ParameterRefRef RefId="{zones_ref}" />"#),
+    );
+    w(
+        x,
+        &format!(r#"              <ParameterRefRef RefId="{clients_ref}" />"#),
+    );
+    let indent = "              ";
+    // Server settings.
+    write_param_section(
+        x,
+        indent,
+        "G-Server",
+        "Server",
+        &[format!("{AID}_UP-G001"), format!("{AID}_UP-G002")],
+    );
+    // Global audio output format (server-wide, not per-zone).
+    write_param_section(
+        x,
+        indent,
+        "G-Audio",
+        "Audio",
+        &[
+            format!("{AID}_UP-G004"), // SampleRate
+            format!("{AID}_UP-G005"), // BitDepth
+            format!("{AID}_UP-G006"), // Codec
+            format!("{AID}_UP-G007"), // SourceConflict
+            format!("{AID}_UP-G008"), // ZoneFade
+            format!("{AID}_UP-G009"), // SourceFade
+        ],
+    );
+    // Subsonic.
+    write_param_section(
+        x,
+        indent,
+        "G-Subsonic",
+        "Subsonic",
+        &[
+            format!("{AID}_UP-G010"),
+            format!("{AID}_UP-G011"),
+            format!("{AID}_UP-G012"),
+        ],
+    );
+    // MQTT.
+    write_param_section(
+        x,
+        indent,
+        "G-MQTT",
+        "MQTT",
+        &[
+            format!("{AID}_UP-G013"), // Broker
+            format!("{AID}_UP-G014"), // Topic
+            format!("{AID}_UP-G015"), // Password
+        ],
+    );
+    // AirPlay.
+    write_param_section(
+        x,
+        indent,
+        "G-AirPlay",
+        "AirPlay",
+        &[format!("{AID}_UP-G016")], // Password
+    );
+    // Security / secrets (plaintext in ETS by product decision).
+    write_param_section(
+        x,
+        indent,
+        "G-Security",
+        "Sicherheit",
+        &[
+            format!("{AID}_UP-G017"), // PSK
+            format!("{AID}_UP-G018"), // API key 1
+            format!("{AID}_UP-G019"), // API key 2
+        ],
     );
     w(x, "            </ParameterBlock>");
+}
+
+/// Emit a `<ParameterSeparator>` headline followed by a `<ParameterRefRef>` for each
+/// parameter id. `indent` is the leading whitespace for the block nesting level; `sep_id`
+/// must be a document-unique `NCName`.
+fn write_param_section(
+    x: &mut String,
+    indent: &str,
+    sep_id: &str,
+    title: &str,
+    param_ids: &[String],
+) {
+    w(
+        x,
+        &format!(
+            r#"{indent}<ParameterSeparator Id="{AID}_PS-{sep_id}" Text="{title}" UIHint="Headline" />"#
+        ),
+    );
+    for pid in param_ids {
+        w(
+            x,
+            &format!(r#"{indent}<ParameterRefRef RefId="{pid}_R-{pid}" />"#),
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1147,6 +1720,7 @@ fn write_channel_block(
     name_param_id: &str,
     groups: &[CoGroup],
     id_prefix: &str,
+    config_nums: &[&str],
 ) {
     let cond_ref = format!("{cond_param_id}_R-{cond_param_id}");
     let name_ref = format!("{name_param_id}_R-{name_param_id}");
@@ -1166,13 +1740,31 @@ fn write_channel_block(
         x,
         &format!(r#"                  <ParameterRefRef RefId="{name_ref}" />"#),
     );
+    // Editable configuration knobs for this channel (memory-backed, from mem::).
+    if !config_nums.is_empty() {
+        let ids: Vec<String> = config_nums
+            .iter()
+            .map(|num| format!("{AID}_UP-{id_prefix}{num}"))
+            .collect();
+        write_param_section(
+            x,
+            "                  ",
+            &format!("{id_prefix}-Einstellungen"),
+            "Einstellungen",
+            &ids,
+        );
+    }
     // CO groups
     for group in groups {
         w(
             x,
             &format!(
                 r#"                  <ParameterSeparator Id="{AID}_PS-{id_prefix}-{}" Text="{}" UIHint="Headline" />"#,
-                group.title_en.replace(' ', ""),
+                group
+                    .title_en
+                    .chars()
+                    .filter(char::is_ascii_alphanumeric)
+                    .collect::<String>(),
                 group.title_de
             ),
         );
@@ -1209,7 +1801,10 @@ fn write_hardware(x: &mut String) {
             r#"            <Product Id="{MFR}_H-0xFF01-1_P-0xFF01" Text="SnapDog" OrderNumber="0xFF01" IsRailMounted="false" DefaultLanguage="de-DE">"#
         ),
     );
-    w(x, r"              <RegistrationInfo />");
+    w(
+        x,
+        r#"              <RegistrationInfo RegistrationStatus="Registered" />"#,
+    );
     w(x, "            </Product>");
     w(x, "          </Products>");
     w(x, "          <Hardware2Programs>");
@@ -1222,6 +1817,13 @@ fn write_hardware(x: &mut String) {
     w(
         x,
         &format!(r#"              <ApplicationProgramRef RefId="{AID}" />"#),
+    );
+    // The RegistrationNumber (any `\d{4}/\d+`) is what makes ETS treat this as a registered
+    // product from the M-00FA (OpenKNX) manufacturer space, so it imports without demanding
+    // an unregistered-product test license — matching how OpenKNX's own products import.
+    w(
+        x,
+        r#"              <RegistrationInfo RegistrationStatus="Registered" RegistrationNumber="0001/1" />"#,
     );
     w(x, "            </Hardware2Program>");
     w(x, "          </Hardware2Programs>");
