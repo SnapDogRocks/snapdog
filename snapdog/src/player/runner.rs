@@ -329,7 +329,7 @@ async fn run(
         {
             let mut sp = crate::receiver::spotify::SpotifyReceiver::new(
                 crate::config::SpotifyConfig {
-                    name: zone_config.name.clone(),
+                    name: zone_config.spotify_name.clone(),
                     bitrate: sp_config.bitrate,
                 },
                 zone_index,

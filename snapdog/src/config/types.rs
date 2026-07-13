@@ -848,6 +848,8 @@ pub struct RawZoneConfig {
     pub sink: Option<String>,
     /// Override `AirPlay` receiver name (default: zone name).
     pub airplay_name: Option<String>,
+    /// Override Spotify Connect receiver name (default: zone name).
+    pub spotify_name: Option<String>,
     /// KNX group addresses for this zone.
     #[serde(default)]
     pub knx: RawZoneKnxConfig,
@@ -953,6 +955,12 @@ pub struct RawClientConfig {
     /// Maximum volume (0–100). Limits how loud this client can go.
     #[serde(default = "default_max_volume")]
     pub max_volume: i32,
+    /// Initial volume (0–100) applied when the client first connects.
+    #[serde(default = "default_volume")]
+    pub default_volume: i32,
+    /// Initial audio latency in ms (Snapcast latency compensation).
+    #[serde(default)]
+    pub default_latency: i32,
     /// KNX group addresses for this client.
     #[serde(default)]
     pub knx: RawClientKnxConfig,
@@ -1095,6 +1103,8 @@ pub struct ZoneConfig {
     pub tcp_source_port: u16,
     /// `AirPlay` receiver name (shown in `AirPlay` picker).
     pub airplay_name: String,
+    /// Spotify Connect receiver name (shown in the Spotify device picker).
+    pub spotify_name: String,
     /// KNX group addresses.
     pub knx: ZoneKnxAddresses,
     /// Group volume mode (resolved from zone override or global default).
@@ -1199,6 +1209,10 @@ pub struct ClientConfig {
     pub icon: String,
     /// Maximum volume (0–100). Limits how loud this client can go.
     pub max_volume: i32,
+    /// Initial volume (0–100) applied when the client first connects.
+    pub default_volume: i32,
+    /// Initial audio latency in ms (Snapcast latency compensation).
+    pub default_latency: i32,
     /// KNX group addresses.
     pub knx: ClientKnxAddresses,
 }
@@ -1295,6 +1309,11 @@ fn default_client_icon() -> String {
 #[must_use]
 pub const fn default_max_volume() -> i32 {
     100
+}
+/// Default initial client volume (50%).
+#[must_use]
+pub const fn default_volume() -> i32 {
+    50
 }
 /// Serde default returning `true`.
 #[must_use]

@@ -23,6 +23,7 @@ pub fn resolve_zone(
     let _ = audio; // Reserved for future sample format in stream name
 
     let airplay_name = raw.airplay_name.unwrap_or_else(|| raw.name.clone());
+    let spotify_name = raw.spotify_name.unwrap_or_else(|| raw.name.clone());
 
     ZoneConfig {
         index,
@@ -32,6 +33,7 @@ pub fn resolve_zone(
         stream_name: format!("Zone{n}"),
         tcp_source_port: TCP_SOURCE_BASE_PORT + n as u16,
         airplay_name,
+        spotify_name,
         knx: resolve_zone_knx(n, raw.knx),
         group_volume_mode: raw.group_volume_mode.unwrap_or(snapcast.group_volume_mode),
         presence: raw.presence,
@@ -62,6 +64,8 @@ pub fn resolve_client(
         zone_index,
         icon: raw.icon,
         max_volume: raw.max_volume.clamp(0, 100),
+        default_volume: raw.default_volume.clamp(0, 100),
+        default_latency: raw.default_latency,
         knx: resolve_client_knx(index, raw.knx),
     })
 }
