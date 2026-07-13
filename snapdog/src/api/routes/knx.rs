@@ -4,6 +4,7 @@
 //! KNX device management routes.
 
 use axum::extract::State;
+use axum::http::header;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -11,6 +12,12 @@ use axum::{Json, Router};
 use crate::api::SharedState;
 use crate::api::error::{ApiError, ErrorBody};
 use crate::knx::KnxDeviceControl as _;
+use crate::knx::group_objects::{KNXPROD_APP_NUMBER, KNXPROD_APP_VERSION, KNXPROD_HW_VERSION};
+
+/// The compiled ETS product database, embedded at build time. Released binaries embed a
+/// **signed** archive when an ETS key is available to the build (see the release
+/// workflow); otherwise the committed unsigned artifact is served.
+const KNXPROD: &[u8] = include_bytes!("../../../../knx/snapdog.knxprod");
 
 pub fn router(state: SharedState) -> Router {
     Router::new()
@@ -18,7 +25,54 @@ pub fn router(state: SharedState) -> Router {
             "/programming-mode",
             get(get_programming_mode).put(set_programming_mode),
         )
+        .route("/knxprod", get(get_knxprod))
+        .route("/product-info", get(get_product_info))
         .with_state(state)
+}
+
+/// ETS product identity of the embedded `.knxprod`, shown next to the `WebUI` download so
+/// an integrator can confirm it matches this device's firmware.
+#[derive(serde::Serialize)]
+struct ProductInfo {
+    /// ETS `ApplicationVersion`.
+    app_version: u32,
+    /// `ApplicationNumber` / order number, formatted `0xFF01`.
+    application_number: String,
+    /// Hardware revision.
+    hardware_version: u8,
+}
+
+/// Product identity (version / order number / hardware revision) of the embedded
+/// `.knxprod`.
+async fn get_product_info() -> impl IntoResponse {
+    Json(ProductInfo {
+        app_version: KNXPROD_APP_VERSION,
+        application_number: format!("0x{KNXPROD_APP_NUMBER:04X}"),
+        hardware_version: KNXPROD_HW_VERSION,
+    })
+}
+
+/// Download the KNX ETS product database
+///
+/// Returns the `.knxprod` for importing `SnapDog` into ETS. Served regardless of KNX
+/// device mode so it can be fetched for commissioning at any time.
+#[utoipa::path(
+    get,
+    path = "/api/v1/knx/knxprod",
+    responses((status = 200, description = "The .knxprod product database (ZIP)")),
+    tag = "knx"
+)]
+async fn get_knxprod() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"snapdog.knxprod\"",
+            ),
+        ],
+        KNXPROD,
+    )
 }
 
 /// Get KNX programming mode status

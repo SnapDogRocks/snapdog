@@ -13,7 +13,11 @@ use knx_rs_core::dpt::{DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_U
 pub const MAX_ZONES: usize = 10;
 
 /// Maximum number of clients supported.
-pub const MAX_CLIENTS: usize = 10;
+pub const MAX_CLIENTS: usize = 30;
+
+/// Maximum number of HTTP API keys supported. The active count is chosen in ETS via a
+/// dropdown (default 1); keys `1..=count` are shown and read.
+pub const MAX_API_KEYS: usize = 10;
 
 /// Number of group objects per zone.
 pub const ZONE_GO_COUNT: usize = ZONE_GOS.len();
@@ -22,7 +26,8 @@ pub const ZONE_GO_COUNT: usize = ZONE_GOS.len();
 pub const CLIENT_GO_COUNT: usize = CLIENT_GOS.len();
 
 /// Total number of group objects.
-pub const TOTAL_GO_COUNT: usize = MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIENT_GO_COUNT;
+pub const TOTAL_GO_COUNT: usize =
+    MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIENT_GO_COUNT + GLOBAL_GO_COUNT;
 
 /// Device hardware type, served as `PID_HARDWARE_TYPE` (device object, PID 78).
 ///
@@ -33,6 +38,19 @@ pub const TOTAL_GO_COUNT: usize = MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIE
 /// (`xtask`), so the compare can never drift. Encodes hardware order number
 /// `0xFF01`, version `01` (hex `0000FF010100`).
 pub const HARDWARE_TYPE: [u8; 6] = [0x00, 0x00, 0xFF, 0x01, 0x01, 0x00];
+
+/// ETS product identity — SSOT shared by the `.knxprod` (`xtask`) and the `WebUI`
+/// product-info endpoint, so the version shown to an integrator always matches the
+/// downloaded database.
+///
+/// **Bump [`KNXPROD_APP_VERSION`] whenever the KNX memory layout changes** — ETS decides
+/// its download scope by this version, so an unchanged version after a layout change
+/// would leave a device mis-parameterized (see the xtask layout-lock guard).
+pub const KNXPROD_APP_VERSION: u32 = 11;
+/// ETS `ApplicationNumber` (== hardware order number `0xFF01`).
+pub const KNXPROD_APP_NUMBER: u16 = 0xFF01;
+/// Hardware revision (the version byte of [`HARDWARE_TYPE`]).
+pub const KNXPROD_HW_VERSION: u8 = HARDWARE_TYPE[4];
 
 /// KNX communication object flags (matching ETS flag bits).
 pub struct GoFlags {
@@ -79,6 +97,18 @@ const DPT_OCCUPANCY: Dpt = Dpt::new(1, 18);
 
 /// DPT 7.005 — Time period in seconds (`UInt16`).
 pub const DPT_TIME_PERIOD_SEC: Dpt = Dpt::new(7, 5);
+
+/// DPT 1.011 — State (used for the cyclic "server online" heartbeat).
+pub const DPT_STATE: Dpt = Dpt::new(1, 11);
+
+/// DPT 1.017 — Trigger (used for the global "all stop" command).
+pub const DPT_TRIGGER: Dpt = Dpt::new(1, 17);
+
+/// DPT 1.005 — Alarm (used for the global "system fault" status).
+pub const DPT_ALARM: Dpt = Dpt::new(1, 5);
+
+/// DPT 10.001 — Time of day (3 bytes; KNX clock input for presence schedules).
+pub const DPT_TIME_OF_DAY: Dpt = Dpt::new(10, 1);
 
 /// Definition of a single group object.
 pub struct GoDefinition {
@@ -396,6 +426,9 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-5-1",
         "1 Byte",
     ),
+    // Retriggerable presence trigger: each telegram (re)arms the auto-off timer and starts
+    // playback of the zone's configured presence source. Timeout & source are ETS
+    // parameters (Präsenz Auto-Off / Präsenz-Quelle), not group objects.
     go_recv(
         "Presence",
         "Präsenz",
@@ -412,14 +445,6 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-1-1",
         "1 Bit",
     ),
-    go_bidir(
-        "Presence Timeout",
-        "Präsenz Timeout",
-        "Presence Timeout",
-        DPT_TIME_PERIOD_SEC,
-        "DPST-7-5",
-        "2 Bytes",
-    ),
     go_send(
         "Presence Timer Active",
         "Präsenz Timer",
@@ -427,14 +452,6 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         DPT_SWITCH,
         "DPST-1-1",
         "1 Bit",
-    ),
-    go_recv(
-        "Presence Source Override",
-        "Präsenz Quelle",
-        "Presence Source",
-        DPT_VALUE_1_UCOUNT,
-        "DPST-5-10",
-        "1 Byte",
     ),
 ];
 
@@ -525,6 +542,84 @@ pub const CLIENT_GOS: &[GoDefinition] = &[
     ),
 ];
 
+// ── Global group objects (device-level, not per zone/client) ──
+//
+// One set for the whole server. Emitted after all zone and client COs in the ComObject
+// table and shown under a dedicated "System" drawer in ETS.
+
+/// Device-level group objects, shared by the whole server.
+pub const GLOBAL_GOS: &[GoDefinition] = &[
+    // Cyclic heartbeat — sent every `heartbeat` interval (an ETS parameter) so the bus can
+    // detect the server going offline.
+    go_send(
+        "Server Online",
+        "Server Online",
+        "Server Online",
+        DPT_STATE,
+        "DPST-1-11",
+        "1 Bit",
+    ),
+    // Stop playback in every zone (e.g. a leaving-home scene).
+    go_recv(
+        "All Stop",
+        "Alle Stopp",
+        "All Stop",
+        DPT_TRIGGER,
+        "DPST-1-17",
+        "1 Bit",
+    ),
+    // Mute / unmute every zone at once; the status is sent back on change.
+    go_bidir(
+        "All Mute",
+        "Alle Stumm",
+        "All Mute",
+        DPT_SWITCH,
+        "DPST-1-1",
+        "1 Bit",
+    ),
+    // Set when the server enters a fault state, cleared when it recovers.
+    go_send(
+        "System Fault",
+        "Systemstörung",
+        "System Fault",
+        DPT_ALARM,
+        "DPST-1-5",
+        "1 Bit",
+    ),
+    // KNX clock input — syncs the local time that drives presence schedules.
+    go_recv(
+        "KNX Time",
+        "KNX Uhrzeit",
+        "KNX Time",
+        DPT_TIME_OF_DAY,
+        "DPST-10-1",
+        "3 Bytes",
+    ),
+];
+
+/// Number of global group objects.
+pub const GLOBAL_GO_COUNT: usize = GLOBAL_GOS.len();
+
+// ── Named GO indices (global) ─────────────────────────────────
+
+/// Global GO index — cyclic "server online" heartbeat (send).
+pub const GGO_SERVER_ONLINE: usize = 0;
+/// Global GO index — "all stop" trigger (receive).
+pub const GGO_ALL_STOP: usize = 1;
+/// Global GO index — "all mute" switch (bidirectional).
+pub const GGO_ALL_MUTE: usize = 2;
+/// Global GO index — "system fault" alarm (send).
+pub const GGO_SYSTEM_FAULT: usize = 3;
+/// Global GO index — KNX time-of-day clock input (receive).
+pub const GGO_KNX_TIME: usize = 4;
+
+/// Compute the 1-based ASAP for a global group object (0-based `go_index` within
+/// [`GLOBAL_GOS`]). Globals follow every zone and client GO.
+#[must_use]
+pub const fn global_asap(go_index: usize) -> u16 {
+    (MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIENT_GO_COUNT + go_index + 1) as u16
+}
+
 /// Compute the 1-based ASAP for a zone group object.
 ///
 /// Zone `zone_index` (1-based), GO `go_index` (0-based within `ZONE_GOS`).
@@ -596,16 +691,12 @@ pub const ZGO_TRACK_ARTIST: usize = 27;
 pub const ZGO_TRACK_ALBUM: usize = 28;
 /// Zone GO index.
 pub const ZGO_TRACK_PROGRESS: usize = 29;
-/// Zone GO index.
+/// Zone GO index — retriggerable presence trigger input.
 pub const ZGO_PRESENCE: usize = 30;
 /// Zone GO index.
 pub const ZGO_PRESENCE_ENABLE: usize = 31;
-/// Zone GO index.
-pub const ZGO_PRESENCE_TIMEOUT: usize = 32;
-/// Zone GO index.
-pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 33;
-/// Zone GO index.
-pub const ZGO_PRESENCE_SOURCE_OVERRIDE: usize = 34;
+/// Zone GO index — status: presence-triggered playback / auto-off timer active.
+pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 32;
 
 // ── Named GO indices (client) ─────────────────────────────────
 
@@ -636,7 +727,7 @@ pub const CGO_CONNECTED: usize = 10;
 
 /// Byte offsets for ETS parameters in BAU memory.
 pub mod mem {
-    use super::{MAX_CLIENTS, MAX_ZONES};
+    use super::{MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES};
 
     /// Number of active zones (1 byte).
     ///
@@ -766,15 +857,20 @@ pub mod mem {
     pub const GLOBAL_PSK: usize = GLOBAL_MQTT_PASS + GLOBAL_MQTT_PASS_SIZE;
     /// PSK size in bytes.
     pub const GLOBAL_PSK_SIZE: usize = 64;
-    /// HTTP API key slot 1 (40 bytes). Secret — stored plaintext in ETS memory by design.
-    pub const GLOBAL_API_KEY1: usize = GLOBAL_PSK + GLOBAL_PSK_SIZE;
+    /// Number of active HTTP API keys (1 byte). Keys `1..=count` are shown in ETS and read
+    /// by the firmware; mirrors [`NUM_ZONES`]. Chosen via a dropdown, default 1.
+    pub const GLOBAL_NUM_API_KEYS: usize = GLOBAL_PSK + GLOBAL_PSK_SIZE;
+    /// HTTP API key slots (`MAX_API_KEYS` × 40 bytes). Secrets — stored plaintext in ETS
+    /// memory by design. Slot `i` (0-based) is at `GLOBAL_API_KEYS + i * GLOBAL_API_KEY_SIZE`.
+    pub const GLOBAL_API_KEYS: usize = GLOBAL_NUM_API_KEYS + 1;
     /// HTTP API key slot size in bytes.
     pub const GLOBAL_API_KEY_SIZE: usize = 40;
-    /// HTTP API key slot 2 (40 bytes). Secret — stored plaintext in ETS memory by design.
-    pub const GLOBAL_API_KEY2: usize = GLOBAL_API_KEY1 + GLOBAL_API_KEY_SIZE;
+    /// Heartbeat interval index (1 byte; enum → 1/3/5/10/15/30/45/60 minutes) for the
+    /// global "Server Online" cyclic send.
+    pub const GLOBAL_HEARTBEAT: usize = GLOBAL_API_KEYS + MAX_API_KEYS * GLOBAL_API_KEY_SIZE;
 
     /// Total memory size in bytes (numeric + strings).
-    pub const TOTAL: usize = GLOBAL_API_KEY2 + GLOBAL_API_KEY_SIZE;
+    pub const TOTAL: usize = GLOBAL_HEARTBEAT + 1;
 }
 
 /// Compute the 1-based ASAP for a client group object.
@@ -792,7 +888,7 @@ mod tests {
 
     #[test]
     fn zone_go_count() {
-        assert_eq!(ZONE_GOS.len(), 35);
+        assert_eq!(ZONE_GOS.len(), 33);
     }
 
     #[test]
@@ -802,29 +898,37 @@ mod tests {
 
     #[test]
     fn total_go_count() {
-        assert_eq!(TOTAL_GO_COUNT, 460);
+        // 10 zones × 33 + 30 clients × 11 + 5 global.
+        assert_eq!(TOTAL_GO_COUNT, 665);
     }
 
     #[test]
     fn zone_asap_layout() {
         // Zone 1, first GO → ASAP 1
         assert_eq!(zone_asap(1, 0), 1);
-        // Zone 1, last GO → ASAP 30
-        assert_eq!(zone_asap(1, 34), 35);
-        // Zone 2, first GO → ASAP 31
-        assert_eq!(zone_asap(2, 0), 36);
-        // Zone 10, last GO → ASAP 300
-        assert_eq!(zone_asap(10, 34), 350);
+        // Zone 1, last GO (index 32) → ASAP 33
+        assert_eq!(zone_asap(1, 32), 33);
+        // Zone 2, first GO → ASAP 34
+        assert_eq!(zone_asap(2, 0), 34);
+        // Zone 10, last GO → ASAP 330
+        assert_eq!(zone_asap(10, 32), 330);
     }
 
     #[test]
     fn client_asap_layout() {
-        // Client 1, first GO → ASAP 301
-        assert_eq!(client_asap(1, 0), 351);
-        // Client 1, last GO → ASAP 311
-        assert_eq!(client_asap(1, 10), 361);
-        // Client 10, last GO → ASAP 410
-        assert_eq!(client_asap(10, 10), 460);
+        // Client 1, first GO → ASAP 331 (after 10×33 zone GOs)
+        assert_eq!(client_asap(1, 0), 331);
+        // Client 1, last GO → ASAP 341
+        assert_eq!(client_asap(1, 10), 341);
+        // Client 10, last GO → ASAP 440
+        assert_eq!(client_asap(10, 10), 440);
+    }
+
+    #[test]
+    fn global_asap_layout() {
+        // Globals follow all zone + client GOs: 10×33 + 30×11 = 660 → first global ASAP 661.
+        assert_eq!(global_asap(0), 661);
+        assert_eq!(global_asap(GLOBAL_GOS.len() - 1), 665);
     }
 
     #[test]

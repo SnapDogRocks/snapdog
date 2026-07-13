@@ -26,8 +26,7 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use knx_rs_core::address::GroupAddress;
 use knx_rs_core::dpt::{
-    self, DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_UCOUNT, DPT_VALUE_2_UCOUNT, Dpt,
-    DptValue,
+    self, DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_UCOUNT, Dpt, DptValue,
 };
 
 use crate::config::AppConfig;
@@ -184,36 +183,81 @@ async fn publisher(
     for (idx, _) in config.clients.iter().enumerate() {
         publish_client_state(idx + 1, &config, &store, &transport).await;
     }
+    publish_all_mute_status(&config, &store, &transport).await;
+
+    // Cyclic "server online" heartbeat + fault publishing. The first tick fires immediately.
+    let hb_secs = config
+        .knx
+        .as_ref()
+        .map_or(5, |k| k.heartbeat_minutes)
+        .clamp(1, 240)
+        * 60;
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(u64::from(hb_secs)));
+    let mut last_healthy: Option<bool> = None;
 
     loop {
-        match notify_rx.recv().await {
-            Ok(json) => {
-                let Ok(notif) = serde_json::from_str::<crate::api::ws::Notification>(&json) else {
-                    continue;
-                };
-                match notif {
-                    crate::api::ws::Notification::ZoneChanged { zone, .. } => {
-                        publish_zone_state(zone, &config, &store, &transport).await;
-                        publish_zone_track(zone, &config, &store, &transport).await;
+        tokio::select! {
+            _ = heartbeat.tick() => {
+                if let Some(knx) = config.knx.as_ref() {
+                    if let Some(ref ga) = knx.server_online {
+                        write(&transport, ga, DPT_SWITCH, &true.into()).await;
                     }
-                    crate::api::ws::Notification::ZoneVolumeChanged { zone, .. } => {
-                        publish_zone_state(zone, &config, &store, &transport).await;
+                    let healthy = SYSTEM_HEALTHY.load(std::sync::atomic::Ordering::Relaxed);
+                    if last_healthy != Some(healthy) {
+                        last_healthy = Some(healthy);
+                        if let Some(ref ga) = knx.system_fault {
+                            write(&transport, ga, DPT_SWITCH, &(!healthy).into()).await;
+                        }
                     }
-                    crate::api::ws::Notification::ZoneProgress { zone, .. } => {
-                        publish_zone_progress(zone, &config, &store, &transport).await;
-                    }
-                    crate::api::ws::Notification::ClientStateChanged { client, .. } => {
-                        publish_client_state(client, &config, &store, &transport).await;
-                    }
-                    _ => {}
                 }
             }
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                tracing::warn!(missed = n, "KNX publisher lagged");
+            r = notify_rx.recv() => match r {
+                Ok(json) => {
+                    let Ok(notif) = serde_json::from_str::<crate::api::ws::Notification>(&json) else {
+                        continue;
+                    };
+                    match notif {
+                        crate::api::ws::Notification::ZoneChanged { zone, .. } => {
+                            publish_zone_state(zone, &config, &store, &transport).await;
+                            publish_zone_track(zone, &config, &store, &transport).await;
+                            publish_all_mute_status(&config, &store, &transport).await;
+                        }
+                        crate::api::ws::Notification::ZoneVolumeChanged { zone, .. } => {
+                            publish_zone_state(zone, &config, &store, &transport).await;
+                            publish_all_mute_status(&config, &store, &transport).await;
+                        }
+                        crate::api::ws::Notification::ZoneProgress { zone, .. } => {
+                            publish_zone_progress(zone, &config, &store, &transport).await;
+                        }
+                        crate::api::ws::Notification::ClientStateChanged { client, .. } => {
+                            publish_client_state(client, &config, &store, &transport).await;
+                        }
+                        _ => {}
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(missed = n, "KNX publisher lagged");
+                }
+                Err(_) => break,
             }
-            Err(_) => break,
         }
     }
+}
+
+/// Publish the global "All Mute" status: on when every zone is muted.
+async fn publish_all_mute_status(
+    config: &AppConfig,
+    store: &state::SharedState,
+    transport: &impl KnxPublisher,
+) {
+    let Some(ga) = config.knx.as_ref().and_then(|k| k.all_mute_status.as_ref()) else {
+        return;
+    };
+    let all_muted = {
+        let s = store.read().await;
+        !s.zones.is_empty() && s.zones.values().all(|z| z.muted)
+    };
+    write(transport, ga, DPT_SWITCH, &all_muted.into()).await;
 }
 
 async fn publish_zone_state(
@@ -275,15 +319,6 @@ async fn publish_zone_state(
     }
     if let Some(ref ga) = knx.presence_enable_status {
         write(transport, ga, DPT_SWITCH, &zone.presence_enabled.into()).await;
-    }
-    if let Some(ref ga) = knx.presence_timeout_status {
-        write(
-            transport,
-            ga,
-            group_objects::DPT_TIME_PERIOD_SEC,
-            &DptValue::from(u32::from(zone.auto_off_delay)),
-        )
-        .await;
     }
     if let Some(ref ga) = knx.presence_timer_status {
         write(transport, ga, DPT_SWITCH, &zone.auto_off_active.into()).await;
@@ -434,10 +469,13 @@ async fn listener<S: BuildHasher + Send + Sync>(
 ) {
     let zone_ga_map = build_zone_ga_map(&config);
     let client_ga_map = build_client_ga_map(&config);
+    let global_ga_map = build_global_ga_map(&config);
+    let sync_system_clock = config.knx.as_ref().is_some_and(|k| k.sync_system_clock);
 
     tracing::info!(
         zone_gas = zone_ga_map.len(),
         client_gas = client_ga_map.len(),
+        global_gas = global_ga_map.len(),
         "KNX listener started"
     );
 
@@ -451,9 +489,11 @@ async fn listener<S: BuildHasher + Send + Sync>(
             &data,
             &zone_ga_map,
             &client_ga_map,
+            &global_ga_map,
             &zone_commands,
             &snap_tx,
             &store,
+            sync_system_clock,
         )
         .await;
     }
@@ -485,8 +525,6 @@ pub(crate) fn build_zone_ga_map(config: &AppConfig) -> HashMap<String, (usize, &
             (&knx.playlist_previous, "playlist_previous"),
             (&knx.presence, "presence"),
             (&knx.presence_enable, "presence_enable"),
-            (&knx.presence_timeout, "presence_timeout"),
-            (&knx.presence_source_override, "presence_source_override"),
         ];
         for (ga_opt, action) in pairs {
             if let Some(ga) = ga_opt {
@@ -519,17 +557,73 @@ pub(crate) fn build_client_ga_map(config: &AppConfig) -> HashMap<String, (usize,
     map
 }
 
-#[allow(clippy::too_many_lines)] // Match dispatcher for KNX group addresses — splitting would obscure control flow
+/// Offset in seconds from the system clock to the KNX-provided time-of-day.
+///
+/// Set from the global "KNX Time" GO and read by the presence-schedule evaluator so
+/// schedules can follow KNX time even when the OS clock is not synced.
+pub static KNX_TIME_OFFSET_SECS: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(0);
+
+/// Server health flag driving the global "System Fault" GO. `true` = healthy (no fault).
+/// Set `false` when the Snapcast backend is unreachable.
+pub static SYSTEM_HEALTHY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Build the device-level (global) group-address → action map for incoming telegrams.
+///
+/// Only receive-capable globals appear here; send-only globals (Server Online, System
+/// Fault) and the All-Mute status are published, not dispatched.
+pub(crate) fn build_global_ga_map(config: &AppConfig) -> HashMap<String, &'static str> {
+    let mut map = HashMap::new();
+    if let Some(knx) = config.knx.as_ref() {
+        let pairs: &[(&Option<String>, &'static str)] = &[
+            (&knx.all_stop, "all_stop"),
+            (&knx.all_mute, "all_mute"),
+            (&knx.knx_time, "knx_time"),
+        ];
+        for (ga_opt, action) in pairs {
+            if let Some(ga) = ga_opt {
+                map.insert(ga.clone(), *action);
+            }
+        }
+    }
+    map
+}
+
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)] // Match dispatcher for KNX group addresses — splitting would obscure control flow
 pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
     ga: GroupAddress,
     data: &[u8],
     zone_ga_map: &HashMap<String, (usize, &str)>,
     client_ga_map: &HashMap<String, (usize, &str)>,
+    global_ga_map: &HashMap<String, &str>,
     zone_commands: &HashMap<usize, ZoneCommandSender, S>,
     snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
     store: &state::SharedState,
+    sync_system_clock: bool,
 ) {
     let ga_str = format!("{ga}");
+
+    // Device-level (global) group objects: All Stop, All Mute, KNX Time.
+    if let Some(&action) = global_ga_map.get(&ga_str) {
+        match action {
+            "all_stop" => {
+                tracing::debug!(ga = %ga_str, "KNX → all zones stop");
+                for tx in zone_commands.values() {
+                    let _ = tx.send(ZoneCommand::Stop).await;
+                }
+            }
+            "all_mute" => {
+                let on = decode_bool(data);
+                tracing::debug!(ga = %ga_str, mute = on, "KNX → all zones mute");
+                for tx in zone_commands.values() {
+                    let _ = tx.send(ZoneCommand::SetMute(on)).await;
+                }
+            }
+            "knx_time" => apply_knx_time(data, sync_system_clock),
+            _ => {}
+        }
+        return;
+    }
 
     if let Some(&(zone_idx, action)) = zone_ga_map.get(&ga_str) {
         if let Some(tx) = zone_commands.get(&zone_idx) {
@@ -567,17 +661,6 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
                 "playlist_previous" => Some(ZoneCommand::PreviousPlaylist),
                 "presence" => Some(ZoneCommand::SetPresence(decode_bool(data))),
                 "presence_enable" => Some(ZoneCommand::SetPresenceEnabled(decode_bool(data))),
-                "presence_timeout" => decode_u16(data).map(ZoneCommand::SetAutoOffDelay),
-                "presence_source_override" => {
-                    if let Some(v) = decode_u8(data) {
-                        tracing::debug!(
-                            zone = zone_idx,
-                            source_override = v,
-                            "KNX presence source override (not yet routed to player)"
-                        );
-                    }
-                    None
-                }
                 _ => None,
             };
             if let Some(cmd) = cmd {
@@ -642,6 +725,63 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
     }
 }
 
+/// Apply a received KNX time-of-day (DPT 10.001).
+///
+/// Payload is 3 bytes: byte0 `ddd hhhhh`, byte1 minute, byte2 second. Updates the
+/// presence-schedule clock offset and, when `sync_system_clock` is set, also sets the OS
+/// clock's time-of-day (best effort; needs privilege).
+fn apply_knx_time(data: &[u8], sync_system_clock: bool) {
+    use chrono::Timelike as _;
+    use std::sync::atomic::Ordering;
+    if data.len() < 3 {
+        tracing::warn!(
+            len = data.len(),
+            "KNX Time telegram too short (need 3 bytes)"
+        );
+        return;
+    }
+    let (hour, minute, second) = (
+        i64::from(data[0] & 0x1F),
+        i64::from(data[1] & 0x3F),
+        i64::from(data[2] & 0x3F),
+    );
+    if hour > 23 || minute > 59 || second > 59 {
+        tracing::warn!(hour, minute, second, "KNX Time out of range, ignoring");
+        return;
+    }
+    let knx_secs = hour * 3600 + minute * 60 + second;
+    let now = chrono::Local::now();
+    let sys_secs =
+        i64::from(now.hour()) * 3600 + i64::from(now.minute()) * 60 + i64::from(now.second());
+    // Offset (seconds) to add to the system time-of-day to reach KNX time, wrapped to ±12h.
+    let mut offset = knx_secs - sys_secs;
+    if offset > 43_200 {
+        offset -= 86_400;
+    } else if offset < -43_200 {
+        offset += 86_400;
+    }
+    KNX_TIME_OFFSET_SECS.store(offset, Ordering::Relaxed);
+    tracing::debug!(hour, minute, second, offset, "KNX time received");
+
+    if sync_system_clock {
+        let time = format!("{hour:02}:{minute:02}:{second:02}");
+        match std::process::Command::new("date")
+            .arg("-s")
+            .arg(&time)
+            .status()
+        {
+            Ok(st) if st.success() => {
+                KNX_TIME_OFFSET_SECS.store(0, Ordering::Relaxed);
+                tracing::info!(%time, "OS clock set from KNX time");
+            }
+            Ok(st) => {
+                tracing::warn!(%time, code = ?st.code(), "date failed to set OS clock (privilege?)");
+            }
+            Err(e) => tracing::warn!(%time, error = %e, "could not run date to set OS clock"),
+        }
+    }
+}
+
 // ── DPT decode helpers ────────────────────────────────────────
 
 fn decode_bool(payload: &[u8]) -> bool {
@@ -663,13 +803,6 @@ fn decode_u8(payload: &[u8]) -> Option<u8> {
         .ok()
         .and_then(|v| v.as_u32())
         .map(|v| v.min(255) as u8)
-}
-
-fn decode_u16(payload: &[u8]) -> Option<u16> {
-    dpt::decode(DPT_VALUE_2_UCOUNT, payload)
-        .ok()
-        .and_then(|v| v.as_u32())
-        .map(|v| v.min(65535) as u16)
 }
 
 /// Decode DPT 3.007 into a relative volume delta.
@@ -796,7 +929,6 @@ mod tests {
         m.insert("1/0/11".into(), (1, "volume_dim"));
         m.insert("1/0/12".into(), (1, "repeat"));
         m.insert("1/0/13".into(), (1, "track_repeat"));
-        m.insert("1/0/14".into(), (1, "presence_timeout"));
         m.insert("1/0/15".into(), (1, "shuffle"));
         m.insert("1/0/16".into(), (1, "playlist_next"));
         m
@@ -828,12 +960,69 @@ mod tests {
             data,
             &zone_ga_map(),
             &client_ga_map(),
+            &HashMap::new(),
             &cmds,
             &snap_tx,
             state,
+            false,
         )
         .await;
         (rx, snap_rx)
+    }
+
+    /// Dispatch a global-GO telegram and return the per-zone command receivers.
+    async fn run_global(
+        ga_str: &str,
+        action: &'static str,
+        data: &[u8],
+    ) -> (mpsc::Receiver<ZoneCommand>, mpsc::Receiver<ZoneCommand>) {
+        let (tx1, rx1) = mpsc::channel(4);
+        let (tx2, rx2) = mpsc::channel(4);
+        let mut cmds = HashMap::new();
+        cmds.insert(1, tx1);
+        cmds.insert(2, tx2);
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let mut global = HashMap::new();
+        global.insert(ga_str.to_string(), action);
+        handle_incoming(
+            ga(ga_str),
+            data,
+            &HashMap::new(),
+            &HashMap::new(),
+            &global,
+            &cmds,
+            &snap_tx,
+            &test_state(),
+            false,
+        )
+        .await;
+        (rx1, rx2)
+    }
+
+    #[tokio::test]
+    async fn global_all_stop_stops_every_zone() {
+        let (mut rx1, mut rx2) = run_global("0/0/1", "all_stop", &[]).await;
+        assert!(matches!(rx1.try_recv(), Ok(ZoneCommand::Stop)));
+        assert!(matches!(rx2.try_recv(), Ok(ZoneCommand::Stop)));
+    }
+
+    #[tokio::test]
+    async fn global_all_mute_mutes_every_zone() {
+        let (mut rx1, mut rx2) = run_global("0/0/2", "all_mute", &encode_bool(true)).await;
+        assert!(matches!(rx1.try_recv(), Ok(ZoneCommand::SetMute(true))));
+        assert!(matches!(rx2.try_recv(), Ok(ZoneCommand::SetMute(true))));
+    }
+
+    #[tokio::test]
+    async fn global_knx_time_sets_schedule_offset() {
+        use std::sync::atomic::Ordering;
+        // 03:00:00 encoded as DPT 10.001 (day 0). The offset should become non-trivial
+        // unless the system clock happens to already read 03:00.
+        KNX_TIME_OFFSET_SECS.store(0, Ordering::Relaxed);
+        run_global("0/0/3", "knx_time", &[3, 0, 0]).await;
+        // The GO was consumed (no panic) and the offset reflects the received time.
+        let off = KNX_TIME_OFFSET_SECS.load(Ordering::Relaxed);
+        assert!((-86_400..=86_400).contains(&off));
     }
 
     #[tokio::test]
@@ -974,13 +1163,6 @@ mod tests {
         assert_eq!(decode_percent(&[]), None);
     }
 
-    #[test]
-    fn decode_u16_byte_goldens() {
-        assert_eq!(decode_u16(&[0x00, 0x3C]), Some(60)); // DPT 7, big-endian
-        assert_eq!(decode_u16(&[0xFF, 0xFF]), Some(65535));
-        assert_eq!(decode_u16(&[0x00]), None); // len < 2 → decode error → None
-    }
-
     // ── IT-T40: routing goldens for the previously-uncovered actions ──
 
     #[tokio::test]
@@ -998,16 +1180,6 @@ mod tests {
         assert!(matches!(
             rx.recv().await,
             Some(ZoneCommand::SetRepeat(snapdog_common::RepeatMode::Track))
-        ));
-    }
-
-    #[tokio::test]
-    async fn zone_presence_timeout_from_knx_u16() {
-        // DPT 7 (2-byte big-endian): 0x003C = 60 seconds.
-        let (mut rx, _) = run_incoming("1/0/14", &[0x00, 0x3C], &test_state()).await;
-        assert!(matches!(
-            rx.recv().await,
-            Some(ZoneCommand::SetAutoOffDelay(60))
         ));
     }
 

@@ -16,15 +16,15 @@ use std::fmt::Write as _;
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
     CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_COUNT,
-    CLIENT_GOS, GoDefinition, MAX_CLIENTS, MAX_ZONES, ZGO_CONTROL_STATUS, ZGO_MUTE,
+    CLIENT_GOS, GLOBAL_GO_COUNT, GLOBAL_GOS, GoDefinition, KNXPROD_APP_NUMBER, KNXPROD_APP_VERSION,
+    KNXPROD_HW_VERSION, MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, ZGO_CONTROL_STATUS, ZGO_MUTE,
     ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT,
     ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
-    ZGO_PRESENCE_SOURCE_OVERRIDE, ZGO_PRESENCE_TIMEOUT, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT,
-    ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE,
-    ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING,
-    ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
-    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
-    ZONE_GO_COUNT, ZONE_GOS, mem,
+    ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
+    ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
+    ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
+    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
+    ZGO_VOLUME_STATUS, ZONE_GO_COUNT, ZONE_GOS, mem,
 };
 
 const AID: &str = "M-00FA_A-FF01-01-0000";
@@ -150,6 +150,9 @@ fn knxprod() {
     assert_refs_resolve(&xml);
     let xml = knx_rs_prod::normalize_ids(&xml)
         .unwrap_or_else(|e| panic!("failed to normalise ids for ETS import: {e}"));
+    // Schema version for the master download (only used when signing below).
+    let ns_version =
+        knx_rs_prod::parse::extract_metadata_from_str(&xml).map_or(20, |m| m.ns_version);
     std::fs::write(&xml_path, xml).expect("failed to write XML");
     eprintln!(
         "  Generated {xml_path} ({} zones × {} COs + {} clients × {} COs = {} COs)",
@@ -160,10 +163,26 @@ fn knxprod() {
         MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len()
     );
 
-    // Step 2: Generate .knxprod (signed ZIP archive for ETS import)
+    // Step 2: package the .knxprod. When `SNAPDOG_ETS_KEY` points at an ETS signing key
+    // (the release build with the secret set) the archive is RSA-signed and directly
+    // ETS-importable; otherwise an unsigned archive is produced.
     let xml_file = std::path::Path::new(&xml_path);
     let knxprod_file = std::path::Path::new(&knxprod_path);
-    match knx_rs_prod::generate_knxprod(xml_file, knxprod_file) {
+    let result = match std::env::var("SNAPDOG_ETS_KEY") {
+        Ok(key_path) if !key_path.trim().is_empty() => {
+            use knx_rs_prod::knx_master::KnxMaster;
+            use knx_rs_prod::signature::SigningKey;
+            let key = SigningKey::from_path(std::path::Path::new(&key_path))
+                .unwrap_or_else(|e| panic!("failed to load ETS signing key {key_path}: {e}"));
+            let master = KnxMaster::download(ns_version).unwrap_or_else(|e| {
+                panic!("failed to fetch knx_master.xml (project/{ns_version}): {e}")
+            });
+            eprintln!("  Signing .knxprod with the ETS key from SNAPDOG_ETS_KEY");
+            knx_rs_prod::generate_signed_knxprod(xml_file, knxprod_file, &key, &master)
+        }
+        _ => knx_rs_prod::generate_knxprod(xml_file, knxprod_file),
+    };
+    match result {
         Ok(metadata) => {
             let size = std::fs::metadata(knxprod_file).map_or(0, |m| m.len());
             eprintln!(
@@ -248,13 +267,7 @@ const ZONE_GROUPS: &[CoGroup] = &[
     CoGroup {
         title_de: "Präsenz",
         title_en: "Presence",
-        indices: &[
-            ZGO_PRESENCE,
-            ZGO_PRESENCE_ENABLE,
-            ZGO_PRESENCE_TIMEOUT,
-            ZGO_PRESENCE_TIMER_ACTIVE,
-            ZGO_PRESENCE_SOURCE_OVERRIDE,
-        ],
+        indices: &[ZGO_PRESENCE, ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE],
     },
 ];
 
@@ -323,18 +336,18 @@ fn write_catalog(x: &mut String) {
     w(x, "      </Catalog>");
 }
 
-/// Bump this when the ETS program changes (memory layout, parameters, com-objects).
-/// ETS keys the program by `ApplicationNumber` + `ApplicationVersion`; re-importing an
-/// unchanged version shows the *cached* content, so a fresh import needs a higher number.
-/// Override for throwaway test builds with `SNAPDOG_APP_VERSION=<n>` (never go below the
-/// last-imported version, and never back to 1).
-const APP_VERSION: u32 = 8;
-
+/// The ETS `ApplicationVersion`, sourced from the firmware SSOT
+/// [`KNXPROD_APP_VERSION`](snapdog::knx::group_objects::KNXPROD_APP_VERSION) so the `WebUI`
+/// product-info and the `.knxprod` always agree. ETS keys the program by
+/// `ApplicationNumber` + `ApplicationVersion`; re-importing an unchanged version shows
+/// the *cached* content, so a fresh import needs a higher number. **Bump
+/// `KNXPROD_APP_VERSION` in `group_objects.rs`** on any layout/parameter change. Override
+/// for throwaway test builds with `SNAPDOG_APP_VERSION=<n>`.
 fn app_version() -> u32 {
     std::env::var("SNAPDOG_APP_VERSION")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(APP_VERSION)
+        .unwrap_or(KNXPROD_APP_VERSION)
 }
 
 fn write_application_program(x: &mut String) {
@@ -348,7 +361,7 @@ fn write_application_program(x: &mut String) {
     w(
         x,
         &format!(
-            r#"        <ApplicationProgram Id="{AID}" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="{version}" ReplacesVersions="{replaces}">"#
+            r#"        <ApplicationProgram Id="{AID}" ProgramType="ApplicationProgram" MaskVersion="MV-57B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="{version}" ReplacesVersions="{replaces}">"#
         ),
     );
     w(x, "          <Static>");
@@ -481,23 +494,22 @@ fn write_parameter_types(x: &mut String) {
             ("10 Zonen", 10),
         ],
     );
-    pt_enum(
-        x,
-        "NumClients",
-        8,
-        &[
-            ("1 Client", 1),
-            ("2 Clients", 2),
-            ("3 Clients", 3),
-            ("4 Clients", 4),
-            ("5 Clients", 5),
-            ("6 Clients", 6),
-            ("7 Clients", 7),
-            ("8 Clients", 8),
-            ("9 Clients", 9),
-            ("10 Clients", 10),
-        ],
-    );
+    // Client count 1..=MAX_CLIENTS (dynamic to avoid a long literal).
+    let client_labels: Vec<String> = (1..=MAX_CLIENTS)
+        .map(|n| {
+            if n == 1 {
+                "1 Client".into()
+            } else {
+                format!("{n} Clients")
+            }
+        })
+        .collect();
+    let client_pairs: Vec<(&str, u16)> = client_labels
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), (i + 1) as u16))
+        .collect();
+    pt_enum(x, "NumClients", 8, &client_pairs);
     // Radio count 1..=MAX_RADIOS (built dynamically to avoid a 50-line literal).
     let radio_labels: Vec<String> = (1..=mem::MAX_RADIOS)
         .map(|n| {
@@ -514,6 +526,39 @@ fn write_parameter_types(x: &mut String) {
         .map(|(i, s)| (s.as_str(), (i + 1) as u16))
         .collect();
     pt_enum(x, "NumRadios", 8, &radio_pairs);
+    // API-key count 1..=MAX_API_KEYS (default 1) — drives how many key fields ETS shows.
+    let api_key_labels: Vec<String> = (1..=MAX_API_KEYS)
+        .map(|n| {
+            if n == 1 {
+                "1 API-Key".into()
+            } else {
+                format!("{n} API-Keys")
+            }
+        })
+        .collect();
+    let api_key_pairs: Vec<(&str, u16)> = api_key_labels
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), (i + 1) as u16))
+        .collect();
+    pt_enum(x, "NumApiKeys", 8, &api_key_pairs);
+    // Heartbeat interval for the global "Server Online" cyclic send. The stored value is
+    // the interval in minutes so the firmware reads it directly.
+    pt_enum(
+        x,
+        "Heartbeat",
+        8,
+        &[
+            ("1 Minute", 1),
+            ("3 Minuten", 3),
+            ("5 Minuten", 5),
+            ("10 Minuten", 10),
+            ("15 Minuten", 15),
+            ("30 Minuten", 30),
+            ("45 Minuten", 45),
+            ("60 Minuten", 60),
+        ],
+    );
     w(x, "            </ParameterTypes>");
 }
 
@@ -1095,28 +1140,46 @@ fn write_parameters(x: &mut String) {
         mem::GLOBAL_PSK_SIZE as u16 * 8,
         &mut spans,
     );
+    // API-key count dropdown (default 1), then MAX_API_KEYS memory-backed key slots. The
+    // General block reveals key N only when the count is >= N (mirrors the radio presets).
     param_mem(
         x,
         "G",
-        "018",
-        "ApiKey1",
-        "Text40",
-        "API-Key 1",
-        "",
-        mem::GLOBAL_API_KEY1,
-        mem::GLOBAL_API_KEY_SIZE as u16 * 8,
+        "021",
+        "NumApiKeys",
+        "NumApiKeys",
+        "Anzahl API-Keys",
+        "1",
+        mem::GLOBAL_NUM_API_KEYS,
+        8,
         &mut spans,
     );
+    for k in 1..=MAX_API_KEYS {
+        let num = format!("{:03}", 21 + k); // G022..
+        param_mem(
+            x,
+            "G",
+            &num,
+            &format!("ApiKey{k}"),
+            "Text40",
+            &format!("API-Key {k}"),
+            "",
+            mem::GLOBAL_API_KEYS + (k - 1) * mem::GLOBAL_API_KEY_SIZE,
+            mem::GLOBAL_API_KEY_SIZE as u16 * 8,
+            &mut spans,
+        );
+    }
+    // Heartbeat interval (minutes) for the global "Server Online" cyclic send.
     param_mem(
         x,
         "G",
-        "019",
-        "ApiKey2",
-        "Text40",
-        "API-Key 2",
-        "",
-        mem::GLOBAL_API_KEY2,
-        mem::GLOBAL_API_KEY_SIZE as u16 * 8,
+        "040",
+        "Heartbeat",
+        "Heartbeat",
+        "Heartbeat-Intervall",
+        "5",
+        mem::GLOBAL_HEARTBEAT,
+        8,
         &mut spans,
     );
     for r in 1..=mem::MAX_RADIOS {
@@ -1189,6 +1252,88 @@ fn write_parameters(x: &mut String) {
         mem::TOTAL
     );
     eprintln!("  Memory layout: {cursor} bytes used (single-sourced from mem::)");
+
+    // Fail if the byte layout drifts without an APP_VERSION bump (see below).
+    assert_layout_locked(&spans);
+}
+
+/// Committed fingerprint of the exact ETS memory layout. Update this **together with**
+/// `KNXPROD_APP_VERSION` (`group_objects.rs`) whenever the layout changes — the assertion
+/// below prints the new value.
+const EXPECTED_LAYOUT_HASH: u64 = 0x3298_e5c0_ecd8_640d;
+
+/// Guard: fail `.knxprod` generation when the ETS product definition drifts from the
+/// committed fingerprint. ETS decides download scope by `ApplicationVersion`; a change
+/// shipped under an unchanged version lets ETS reuse a programmed device's stale config
+/// bytes → a mis-parameterized device. This ties every such change to a conscious
+/// `APP_VERSION` bump.
+///
+/// The fingerprint covers both dimensions that can silently mis-parameterize a device:
+/// the **parameter byte layout** (every `(offset, size)` span plus the `mem::` totals and
+/// object counts) *and* each **communication object's semantics** (`DPT`, object size,
+/// comm flags). The latter matters because a `DPT`/flag change at an *unchanged* byte
+/// offset leaves the layout hash untouched yet makes ETS interpret the object differently.
+/// Display names are deliberately excluded — a label edit should not force a version bump.
+///
+/// Enforced in three places: the CI `KNX Product Database` job (runs `cargo xtask
+/// knxprod`), the `cargo test` suite (the `ets_memory_layout_is_locked` test drives the
+/// same generation with no file writes), and the local pre-push hook.
+fn assert_layout_locked(spans: &[(usize, usize)]) {
+    const fn feed(mut h: u64, v: usize) -> u64 {
+        let bytes = (v as u64).to_le_bytes();
+        let mut i = 0;
+        while i < 8 {
+            h ^= bytes[i] as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3); // FNV-1a prime
+            i += 1;
+        }
+        h
+    }
+    fn feed_bytes(mut h: u64, bytes: &[u8]) -> u64 {
+        for &b in bytes {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        h
+    }
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a offset basis
+    for v in [
+        mem::TOTAL,
+        MAX_ZONES,
+        MAX_CLIENTS,
+        mem::MAX_RADIOS,
+        ZONE_GOS.len(),
+        CLIENT_GOS.len(),
+        GLOBAL_GO_COUNT,
+    ] {
+        h = feed(h, v);
+    }
+    for (off, size) in spans {
+        h = feed(h, *off);
+        h = feed(h, *size);
+    }
+    // Fold each communication object's ETS semantics so a DPT/flag change at an unchanged
+    // byte offset also trips the guard (see the doc comment above).
+    for go in ZONE_GOS.iter().chain(CLIENT_GOS).chain(GLOBAL_GOS) {
+        h = feed_bytes(h, go.dpt_str.as_bytes());
+        h = feed_bytes(h, go.size_str.as_bytes());
+        h = feed(
+            h,
+            usize::from(go.flags.communicate)
+                | usize::from(go.flags.read) << 1
+                | usize::from(go.flags.write) << 2
+                | usize::from(go.flags.transmit) << 3
+                | usize::from(go.flags.update) << 4,
+        );
+    }
+    assert_eq!(
+        h, EXPECTED_LAYOUT_HASH,
+        "\n\n  ETS PRODUCT DEFINITION CHANGED (fingerprint {h:#018x}).\n  \
+         Bump KNXPROD_APP_VERSION (group_objects.rs) and set\n  \
+         EXPECTED_LAYOUT_HASH = {h:#018x} in xtask/src/main.rs.\n  \
+         (Shipping a layout/DPT/flag change under an unchanged version lets ETS reuse a\n  \
+         device's stale config bytes — a mis-parameterized device.)\n"
+    );
 }
 
 /// Emit a memory-backed parameter inside a Union.
@@ -1249,6 +1394,11 @@ fn write_com_objects(x: &mut String) {
                 num,
             );
         }
+    }
+    // Global (device-level) COs follow every zone and client CO.
+    for (i, go) in GLOBAL_GOS.iter().enumerate() {
+        let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
+        write_com_object(x, &format!("GG{i:03}"), go.name, go, num);
     }
     w(x, "            </ComObjectTable>");
 }
@@ -1347,6 +1497,14 @@ fn write_com_object_refs(x: &mut String) {
                 &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
             );
         }
+    }
+    for i in 0..GLOBAL_GOS.len() {
+        let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
+        let id = format!("{AID}_O-GG{i:03}");
+        w(
+            x,
+            &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
+        );
     }
     w(x, "            </ComObjectRefs>");
 }
@@ -1550,6 +1708,8 @@ fn write_dynamic(x: &mut String) {
     }
     // Radio stream presets: count dropdown + gated Name / URL / Cover per station.
     write_radio_block(x);
+    // Device-level "System" block: heartbeat interval param + the global group objects.
+    write_system_block(x);
     w(x, "            </ChannelIndependentBlock>");
     w(x, "          </Dynamic>");
 }
@@ -1616,14 +1776,35 @@ fn write_general_block(x: &mut String) {
         &format!(r#"              <ParameterRefRef RefId="{clients_ref}" />"#),
     );
     let indent = "              ";
-    // Server settings.
+    // Server settings + HTTP API keys — the key authenticates the HTTP API configured
+    // here, so it lives next to the port. The count dropdown gates how many key fields
+    // show; key N is revealed when NumApiKeys >= N (mirrors the radio presets).
     write_param_section(
         x,
         indent,
         "G-Server",
         "Server",
-        &[format!("{AID}_UP-G001"), format!("{AID}_UP-G002")],
+        &[
+            format!("{AID}_UP-G001"), // HTTP port
+            format!("{AID}_UP-G002"), // Log level
+            format!("{AID}_UP-G021"), // Number of API keys
+        ],
     );
+    let api_count_ref = format!("{AID}_UP-G021_R-{AID}_UP-G021");
+    for k in 1..=MAX_API_KEYS {
+        let kid = format!("{AID}_UP-G{:03}", 21 + k);
+        w(
+            x,
+            &format!(r#"{indent}<choose ParamRefId="{api_count_ref}">"#),
+        );
+        w(x, &format!(r#"{indent}  <when test="&gt;={k}">"#));
+        w(
+            x,
+            &format!(r#"{indent}    <ParameterRefRef RefId="{kid}_R-{kid}" />"#),
+        );
+        w(x, &format!("{indent}  </when>"));
+        w(x, &format!("{indent}</choose>"));
+    }
     // Global audio output format (server-wide, not per-zone).
     write_param_section(
         x,
@@ -1637,6 +1818,7 @@ fn write_general_block(x: &mut String) {
             format!("{AID}_UP-G007"), // SourceConflict
             format!("{AID}_UP-G008"), // ZoneFade
             format!("{AID}_UP-G009"), // SourceFade
+            format!("{AID}_UP-G017"), // Snapcast PSK (encrypts the audio stream)
         ],
     );
     // Subsonic.
@@ -1671,19 +1853,64 @@ fn write_general_block(x: &mut String) {
         "AirPlay",
         &[format!("{AID}_UP-G016")], // Password
     );
-    // Security / secrets (plaintext in ETS by product decision).
-    write_param_section(
-        x,
-        indent,
-        "G-Security",
-        "Sicherheit",
-        &[
-            format!("{AID}_UP-G017"), // PSK
-            format!("{AID}_UP-G018"), // API key 1
-            format!("{AID}_UP-G019"), // API key 2
-        ],
-    );
+    // Secrets are grouped with their subsystem (API keys → Server, PSK → Audio, MQTT /
+    // AirPlay / Subsonic passwords in their own sections) — no separate Security heading.
+    write_info_section(x, indent);
     w(x, "            </ParameterBlock>");
+}
+
+/// Device-level "System" block: the heartbeat-interval parameter plus the global group
+/// objects (Server Online, All Stop, All Mute, System Fault, KNX Time), shown under their
+/// own drawer in the `ComObject` tree.
+fn write_system_block(x: &mut String) {
+    w(
+        x,
+        &format!(
+            r#"            <ParameterBlock Id="{AID}_PB-System" Name="System" Text="System" ShowInComObjectTree="true">"#
+        ),
+    );
+    w(
+        x,
+        &format!(r#"              <ParameterRefRef RefId="{AID}_UP-G040_R-{AID}_UP-G040" />"#),
+    );
+    for i in 0..GLOBAL_GOS.len() {
+        let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
+        w(
+            x,
+            &format!(r#"              <ComObjectRefRef RefId="{AID}_O-GG{i:03}_R-{num}" />"#),
+        );
+    }
+    w(x, "            </ParameterBlock>");
+}
+
+/// Read-only "Info" block at the end of the General tab: product / copyright / license /
+/// source and the DB identity. Pure `ParameterSeparator` display text — no memory, so it
+/// neither touches the layout fingerprint nor needs an app-version bump. Identity fields
+/// are single-sourced from the `KNXPROD_*` consts so they can never drift from the artifact.
+fn write_info_section(x: &mut String, indent: &str) {
+    w(
+        x,
+        &format!(
+            r#"{indent}<ParameterSeparator Id="{AID}_PS-Info" Text="Info" UIHint="Headline" />"#
+        ),
+    );
+    let info_lines = [
+        "SnapDog — Multiroom Audio Server".to_string(),
+        "© 2026 Fabian Schmieder".to_string(),
+        "Lizenz: GPL-3.0-only · Open-Source-Firmware".to_string(),
+        "Quellcode &amp; Support: github.com/SnapDogRocks/snapdog".to_string(),
+        format!(
+            "Produkt-DB v{KNXPROD_APP_VERSION} · App 0x{KNXPROD_APP_NUMBER:04X} · HW {KNXPROD_HW_VERSION} · KNXnet/IP System B"
+        ),
+    ];
+    for (i, line) in info_lines.iter().enumerate() {
+        w(
+            x,
+            &format!(
+                r#"{indent}<ParameterSeparator Id="{AID}_PS-Info-{i}" Text="{line}" UIHint="Information" />"#
+            ),
+        );
+    }
 }
 
 /// Emit a `<ParameterSeparator>` headline followed by a `<ParameterRefRef>` for each
@@ -1811,7 +2038,7 @@ fn write_hardware(x: &mut String) {
     w(
         x,
         &format!(
-            r#"            <Hardware2Program Id="{MFR}_H-0xFF01-1_HP-FF01-01-0000" MediumTypes="MT-0">"#
+            r#"            <Hardware2Program Id="{MFR}_H-0xFF01-1_HP-FF01-01-0000" MediumTypes="MT-5">"#
         ),
     );
     w(
@@ -1834,4 +2061,66 @@ fn write_hardware(x: &mut String) {
 fn w(s: &mut String, line: &str) {
     s.push_str(line);
     s.push('\n');
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read as _;
+
+    /// Runs the same generation the release job does (`generate_xml` →
+    /// `assert_layout_locked`) but purely in memory — no file writes, no network. Any drift
+    /// of the ETS byte layout or object semantics from the committed `EXPECTED_LAYOUT_HASH`
+    /// panics here, so `cargo test` (CI + `cargo xtask ci` + pre-push) fails fast rather
+    /// than only when the `.knxprod` is regenerated. Bump `KNXPROD_APP_VERSION` and the
+    /// hash together to fix.
+    #[test]
+    fn ets_memory_layout_is_locked() {
+        let xml = super::generate_xml();
+        assert!(xml.contains("<KNX"), "generation produced no XML");
+    }
+
+    /// Freshness guard: the committed `knx/snapdog.knxprod` — embedded verbatim by the
+    /// server via `include_bytes!` and served for ETS import — must carry the current
+    /// `KNXPROD_APP_VERSION`. The layout guard forces a version bump on any layout/DPT
+    /// change; this ensures that bump actually reached the shipped bytes, catching a
+    /// "bumped the version but forgot to regenerate the artifact" mistake. Fix by running
+    /// `cargo xtask knxprod` and committing the regenerated `.knxprod`.
+    #[test]
+    fn committed_knxprod_matches_app_version() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../knx/snapdog.knxprod");
+        let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("cannot open {path}: {e}"));
+        let mut zip =
+            zip::ZipArchive::new(file).expect("committed .knxprod is not a valid ZIP archive");
+
+        let mut shipped: Option<u32> = None;
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).expect("read zip entry");
+            let mut xml = String::new();
+            // Skip non-text entries (e.g. a signature blob in a signed archive).
+            if entry.read_to_string(&mut xml).is_err() {
+                continue;
+            }
+            // Pin to the ApplicationProgram element's own attribute.
+            if let Some(v) = xml
+                .split("<ApplicationProgram ")
+                .nth(1)
+                .and_then(|tag| tag.split("ApplicationVersion=\"").nth(1))
+                .and_then(|rest| rest.split('"').next())
+                .and_then(|s| s.parse::<u32>().ok())
+            {
+                shipped = Some(v);
+                break;
+            }
+        }
+        let shipped =
+            shipped.expect("no ApplicationProgram/ApplicationVersion in committed .knxprod");
+        assert_eq!(
+            shipped,
+            super::KNXPROD_APP_VERSION,
+            "\n\n  STALE ARTIFACT: committed knx/snapdog.knxprod ships \
+             ApplicationVersion={shipped} but KNXPROD_APP_VERSION={}.\n  \
+             Run `cargo xtask knxprod` and commit the regenerated knx/snapdog.knxprod.\n",
+            super::KNXPROD_APP_VERSION,
+        );
+    }
 }

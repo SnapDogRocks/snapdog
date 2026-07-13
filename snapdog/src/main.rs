@@ -53,6 +53,10 @@ struct Cli {
     #[arg(long, requires = "knx_device")]
     knx_prog_mode: bool,
 
+    /// Set the OS system clock from the KNX Time group object (best effort; needs privilege)
+    #[arg(long)]
+    knx_sync_system_clock: bool,
+
     /// HTTP API port
     #[arg(short, long)]
     port: Option<u16>,
@@ -218,6 +222,11 @@ pub async fn run_app() -> Result<()> {
         if let Some(ref mut knx) = app_config.knx {
             knx.start_prog_mode = true;
         }
+    }
+
+    // --knx-sync-system-clock: allow the KNX Time GO to set the OS clock
+    if cli.knx_sync_system_clock {
+        app_config.knx.get_or_insert_default().sync_system_clock = true;
     }
 
     // CLI overrides
