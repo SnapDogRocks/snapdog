@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 snapdog = { path = "../snapdog", default-features = false }
-knx-rs-prod = "0.5"
+knx-rs-prod = "0.6"
 utoipa = { workspace = true }
 
 [lints]
