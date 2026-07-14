@@ -53,7 +53,7 @@ biquad = "0.6"
 rumqttc = "0.25"
 
 # KNX
-knx-rs-core = { version = "0.5", package = "knx-rs-core" }
+knx-rs-core = { version = "0.7", package = "knx-rs-core" }
 knx-rs-ip = { version = "0.5", package = "knx-rs-ip" }
 knx-rs-device = { version = "0.5", package = "knx-rs-device" }
 

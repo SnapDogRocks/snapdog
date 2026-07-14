@@ -2703,12 +2703,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "knx-rs-core"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3c9d9499cad75d83439fff4a91cf8af1bbcce713d32db9d4be8d1eb48d2a797"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "knx-rs-device"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8bfc6b478636d008dd6d4c2d1dd1b24d3d99c89a1d7d4c2c7b9c1494aa40f0"
 dependencies = [
- "knx-rs-core",
+ "knx-rs-core 0.5.2",
 ]
 
 [[package]]
@@ -2717,7 +2726,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6aa13f120b5af837c2caa086863e555f8653e91067b12fa8e89291b53b79448b"
 dependencies = [
- "knx-rs-core",
+ "knx-rs-core 0.5.2",
  "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
@@ -5221,7 +5230,7 @@ dependencies = [
  "futures-util",
  "gethostname",
  "image",
- "knx-rs-core",
+ "knx-rs-core 0.7.0",
  "knx-rs-device",
  "knx-rs-ip",
  "librespot-connect",
