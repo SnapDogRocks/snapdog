@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/SnapDogRocks/snapdog/compare/v0.25.0...v0.25.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **release:** remove duplicate knxprod job that broke workflow validation ([#111](https://github.com/SnapDogRocks/snapdog/issues/111)) ([178741f](https://github.com/SnapDogRocks/snapdog/commit/178741fdff8830afdbb15e143557137d41df7200))
+
 ## [0.25.0](https://github.com/SnapDogRocks/snapdog/compare/v0.24.3...v0.25.0) (2026-07-14)
 
 
