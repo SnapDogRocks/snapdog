@@ -26,8 +26,6 @@ use snapdog::knx::group_objects::{
 };
 
 const AID: &str = "M-00FA_A-FF01-01-0000";
-const MFR: &str = "M-00FA";
-
 fn main() {
     let cmd = std::env::args().nth(1).unwrap_or_default();
     match cmd.as_str() {
@@ -297,23 +295,80 @@ const CLIENT_GROUPS: &[CoGroup] = &[
 // ── XML generation ────────────────────────────────────────────
 
 fn generate_xml() -> String {
+    use knx_rs_prod::author::ProgramInfo;
+
+    // ETS keys the program by ApplicationNumber + ApplicationVersion; System B (KNXnet/IP)
+    // uses MaskVersion MV-57B0. Every other <ApplicationProgram> attribute is a ProgramInfo
+    // default (ProgramType, LoadProcedureStyle, PeiType, DynamicTableManagement, Linkable,
+    // MinEtsVersion, IPConfig) matching what SnapDog emitted before the migration.
+    let info = ProgramInfo::new("SnapDog", "MV-57B0", "de-DE", 65281, app_version());
     let mut x = String::with_capacity(128 * 1024);
-    w(&mut x, r#"<?xml version="1.0" encoding="utf-8"?>"#);
-    w(
-        &mut x,
-        r#"<KNX xmlns="http://knx.org/xml/project/20" CreatedBy="SnapDog xtask" ToolVersion="1.0">"#,
-    );
-    w(&mut x, "  <ManufacturerData>");
-    w(&mut x, &format!(r#"    <Manufacturer RefId="{MFR}">"#));
-
-    write_catalog(&mut x);
-    write_application_program(&mut x);
-    write_hardware(&mut x);
-
-    w(&mut x, "    </Manufacturer>");
-    w(&mut x, "  </ManufacturerData>");
-    w(&mut x, "</KNX>");
+    build_app().write_knx_document(&info, "SnapDog xtask", "1.0", &mut x);
     x
+}
+
+/// The single typed product model behind the whole `.knxprod` document. Every `<Static>`
+/// section (catalog, hardware, code segment, parameter types, parameters, com-objects,
+/// tables, load procedures, messages, options) plus the `<Dynamic>` UI tree is registered
+/// here, then rendered in ETS schema order by
+/// [`write_knx_document`](knx_rs_prod::author::AppProgram::write_knx_document).
+fn build_app() -> knx_rs_prod::author::AppProgram {
+    use knx_rs_prod::author::{
+        AppProgram, CatalogItem, CatalogSection, Hardware, Hardware2Program, Options, Product,
+        Segment,
+    };
+
+    let mut app = AppProgram::new(AID);
+
+    // Catalog — the product/hardware refs are derived by the author from the shared HW_*
+    // identity, so they can't drift from <Hardware>.
+    app.add_catalog_section(
+        CatalogSection::new("SnapDog", "SnapDog", "SnapDog", "de-DE").with_item(CatalogItem::new(
+            "SnapDog", "1", HW_SERIAL, HW_VERSION, HW_ORDER, "de-DE",
+        )),
+    );
+
+    // Hardware — MT-5 is the KNXnet/IP (System B) medium; the \d{4}/\d+ RegistrationNumber
+    // makes ETS import it as a registered M-00FA (OpenKNX) product without a test license.
+    app.add_hardware(
+        Hardware::new(HW_SERIAL, HW_VERSION, "SnapDog")
+            .with_product(Product::new(HW_ORDER, "SnapDog", "de-DE"))
+            .with_program(Hardware2Program::new("MT-5", "0001/1")),
+    );
+
+    // Code segment — the relative "Parameters" segment the memory-backed params live in,
+    // pinned as the parameter segment so every <Memory CodeSegment> resolves to it.
+    let seg = app.add_segment(Segment::Relative {
+        name: Some("Parameters".into()),
+        size: mem::TOTAL as u32,
+        load_state_machine: 4,
+        offset: 0,
+    });
+    app.set_parameter_segment(seg);
+
+    // Parameter types + parameters + com-objects (the interdependent core). Order matters:
+    // param_mem resolves its type handle by name, and the Dynamic tree (below) resolves its
+    // param/com-object refs by suffix.
+    register_types(&mut app);
+    register_params(&mut app);
+    register_com_objects(&mut app);
+
+    // Address + association tables (System B max entries).
+    app.set_address_table(2047);
+    app.set_association_table(2047);
+
+    // Download machine + the diagnostics message it references on a version mismatch.
+    register_load_procedures(&mut app);
+    register_messages(&mut app);
+
+    // Text encoding + extended memory/property service support flags.
+    app.set_options(Options::new("iso-8859-15", true, true));
+
+    // Dynamic UI tree — resolves its refs against the params/com-objects registered above.
+    let tree = build_dynamic(&app);
+    app.add_dynamic(tree);
+
+    app
 }
 
 /// Hardware identity (serial + version + order number). ETS threads these through the
@@ -321,24 +376,6 @@ fn generate_xml() -> String {
 const HW_SERIAL: &str = "0xFF01";
 const HW_VERSION: u32 = 1;
 const HW_ORDER: &str = "0xFF01";
-
-fn write_catalog(x: &mut String) {
-    build_catalog().write_catalog(6, x);
-}
-
-/// Build the `<Catalog>` model. The `CatalogItem` product/hardware refs are derived by
-/// the author from the shared `HW_*` identity, so they can't drift from `<Hardware>`.
-fn build_catalog() -> knx_rs_prod::author::AppProgram {
-    use knx_rs_prod::author::{AppProgram, CatalogItem, CatalogSection};
-
-    let mut app = AppProgram::new(AID);
-    app.add_catalog_section(
-        CatalogSection::new("SnapDog", "SnapDog", "SnapDog", "de-DE").with_item(CatalogItem::new(
-            "SnapDog", "1", HW_SERIAL, HW_VERSION, HW_ORDER, "de-DE",
-        )),
-    );
-    app
-}
 
 /// The ETS `ApplicationVersion`, sourced from the firmware SSOT
 /// [`KNXPROD_APP_VERSION`](snapdog::knx::group_objects::KNXPROD_APP_VERSION) so the `WebUI`
@@ -352,60 +389,6 @@ fn app_version() -> u32 {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(KNXPROD_APP_VERSION)
-}
-
-fn write_application_program(x: &mut String) {
-    let version = app_version();
-    // ReplacesVersions lists every prior version so ETS offers an in-place upgrade.
-    let replaces = (0..version)
-        .map(|v| v.to_string())
-        .collect::<Vec<_>>()
-        .join(" ");
-    w(x, "      <ApplicationPrograms>");
-    w(
-        x,
-        &format!(
-            r#"        <ApplicationProgram Id="{AID}" ProgramType="ApplicationProgram" MaskVersion="MV-57B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="{version}" ReplacesVersions="{replaces}">"#
-        ),
-    );
-    w(x, "          <Static>");
-
-    write_code_segment(x);
-    write_parameter_types(x);
-    write_parameters(x);
-    write_parameter_refs(x);
-    write_com_objects(x);
-    write_com_object_refs(x);
-    write_tables(x);
-    write_load_procedures(x);
-    write_options(x);
-
-    w(x, "          </Static>");
-    write_dynamic(x);
-    w(x, "        </ApplicationProgram>");
-    w(x, "      </ApplicationPrograms>");
-}
-
-fn write_code_segment(x: &mut String) {
-    use knx_rs_prod::author::{AppProgram, Segment};
-    let mut app = AppProgram::new(AID);
-    app.add_segment(Segment::Relative {
-        name: Some("Parameters".into()),
-        size: mem::TOTAL as u32,
-        load_state_machine: 4,
-        offset: 0,
-    });
-    app.write_code(12, x);
-}
-
-fn write_parameter_types(x: &mut String) {
-    build_parameter_types().write_parameter_types(12, x);
-}
-
-fn build_parameter_types() -> knx_rs_prod::author::AppProgram {
-    let mut app = knx_rs_prod::author::AppProgram::new(AID);
-    register_types(&mut app);
-    app
 }
 
 #[allow(clippy::too_many_lines)]
@@ -606,25 +589,10 @@ fn pt_num(
     ));
 }
 
-#[allow(clippy::too_many_lines)] // Repetitive XML parameter generation — not decomposable
-fn write_parameters(x: &mut String) {
-    build_params_app().write_parameters(12, x);
-}
-
-/// Build an [`AppProgram`](knx_rs_prod::author::AppProgram) populated with every
-/// parameter type and every `<Parameter>` — the shared model behind both the
-/// `<Parameters>` block and the `<ParameterRefs>` block, and the seed the full document
-/// builder extends. The `mem::` offsets remain single-sourced and span-asserted here.
-fn build_params_app() -> knx_rs_prod::author::AppProgram {
-    let mut app = knx_rs_prod::author::AppProgram::new(AID);
-    register_types(&mut app);
-    register_params(&mut app);
-    app
-}
-
 /// Register every `<Parameter>` (the full #89 inline layout) into `app`, asserting the
 /// `mem::` span tiling and the committed layout fingerprint. `register_types` must have run
 /// first, since `param_mem` resolves each parameter's type handle by name.
+#[allow(clippy::too_many_lines)]
 fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
     // Byte offsets come straight from `mem::` (the single source of truth the firmware
     // reads); `spans` collects them so we can assert the params tile the layout exactly.
@@ -1378,18 +1346,6 @@ fn param_mem(
     ));
 }
 
-fn write_com_objects(x: &mut String) {
-    build_co_app().write_com_object_table(12, x);
-}
-
-/// Build an [`AppProgram`](knx_rs_prod::author::AppProgram) populated with every group
-/// object — the shared model behind both `<ComObjectTable>` and `<ComObjectRefs>`.
-fn build_co_app() -> knx_rs_prod::author::AppProgram {
-    let mut app = knx_rs_prod::author::AppProgram::new(AID);
-    register_com_objects(&mut app);
-    app
-}
-
 /// Register every zone, client and device-level global group object into `app`, in the
 /// exact `Number` order ETS expects, and return the suffix→handle map the Dynamic tree
 /// resolves its `<ComObjectRefRef>`s through. Numbering is #89's verbatim arithmetic.
@@ -1461,24 +1417,6 @@ fn go_com_object(
             update: go.flags.update,
         },
     )
-}
-
-/// ETS requires a `<ParameterRef>` for every parameter referenced in the Dynamic section
-/// (a missing one surfaces as an opaque `NullReferenceException` on import). We reference the
-/// zone/client name fields, the per-client active flags, and the global zone-count param;
-/// emit a self-referential ref (`{id}_R-{id}`) matching what `write_dynamic` points at.
-fn write_parameter_refs(x: &mut String) {
-    // One `<ParameterRef>` per declared `<Parameter>` (1:1), materialised by the author
-    // from the same parameter set `build_params_app` registers — so it stays in
-    // lock-step with `write_parameters` (every parameter becomes referenceable, so any of
-    // them can be shown in the Dynamic view, wired in `write_dynamic`).
-    build_params_app().write_parameter_refs(12, x);
-}
-
-/// Every `ComObject` referenced in the Dynamic needs a `<ComObjectRef>`. Mirror the
-/// `write_com_objects` numbering exactly so the `_R-<number>` ids line up.
-fn write_com_object_refs(x: &mut String) {
-    build_co_app().write_com_object_refs(12, x);
 }
 
 /// Guard: every ref in the Dynamic section must resolve to a defined `<ParameterRef>`/
@@ -1560,19 +1498,6 @@ fn assert_refs_resolve(xml: &str) {
         bad.len(),
         bad.join("\n")
     );
-}
-
-fn write_tables(x: &mut String) {
-    knx_rs_prod::author::write_address_table(12, 2047, x);
-    knx_rs_prod::author::write_association_table(12, 2047, x);
-}
-
-fn write_load_procedures(x: &mut String) {
-    let mut app = knx_rs_prod::author::AppProgram::new(AID);
-    register_load_procedures(&mut app);
-    register_messages(&mut app);
-    app.write_load_procedures(12, x);
-    app.write_messages(12, x);
 }
 
 /// Register the ETS download machine through the typed `author` model. `InlineData` on the
@@ -1670,23 +1595,6 @@ fn register_messages(app: &mut knx_rs_prod::author::AppProgram) {
         "VersionMismatch",
         "Application and firmware version mismatch.",
     ));
-}
-
-fn write_options(x: &mut String) {
-    knx_rs_prod::author::Options::new("iso-8859-15", true, true).write(12, x);
-}
-
-fn write_dynamic(x: &mut String) {
-    // The Dynamic tree references params and com-objects by handle, so it needs the full
-    // typed model registered first; the author then materialises the block ids and every
-    // `_R-` ref (a dangling ref is a build-time panic, not an opaque ETS import error).
-    let mut app = knx_rs_prod::author::AppProgram::new(AID);
-    register_types(&mut app);
-    register_params(&mut app);
-    register_com_objects(&mut app);
-    let tree = build_dynamic(&app);
-    app.add_dynamic(tree);
-    app.write_dynamic(10, x);
 }
 
 /// Build the `<Dynamic>` UI tree: one `<ChannelIndependentBlock>` holding the General block,
@@ -1991,33 +1899,6 @@ fn build_channel_block(
     }
 }
 
-fn write_hardware(x: &mut String) {
-    build_hardware().write_hardware(6, x);
-}
-
-/// Build the `<Hardware>` model. All ids (`_H-`, `_P-`, `_HP-`) are derived by the
-/// author from the shared `HW_*` identity + the application-program tail. `MT-5` is the
-/// System-B (KNXnet/IP) medium.
-fn build_hardware() -> knx_rs_prod::author::AppProgram {
-    use knx_rs_prod::author::{AppProgram, Hardware, Hardware2Program, Product};
-
-    let mut app = AppProgram::new(AID);
-    // The RegistrationNumber (any `\d{4}/\d+`) is what makes ETS treat this as a registered
-    // product from the M-00FA (OpenKNX) manufacturer space, so it imports without demanding
-    // an unregistered-product test license — matching how OpenKNX's own products import.
-    app.add_hardware(
-        Hardware::new(HW_SERIAL, HW_VERSION, "SnapDog")
-            .with_product(Product::new(HW_ORDER, "SnapDog", "de-DE"))
-            .with_program(Hardware2Program::new("MT-5", "0001/1")),
-    );
-    app
-}
-
-fn w(s: &mut String, line: &str) {
-    s.push_str(line);
-    s.push('\n');
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::Read as _;
@@ -2079,7 +1960,7 @@ mod tests {
         );
     }
 
-    /// Byte-exact snapshot of `generate_xml()`. The knx-rs-prod::author migration
+    /// Byte-exact snapshot of `generate_xml()`. The `knx-rs-prod::author` migration
     /// strangles the hand-written generator section-by-section; this test must stay
     /// byte-identical against the pre-migration baseline at every step. Run with
     /// `BLESS=1` to (re)capture after a *conscious* product change.
