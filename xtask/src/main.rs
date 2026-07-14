@@ -11,12 +11,10 @@
 // on internal helpers is noise.
 #![allow(clippy::cast_possible_truncation)]
 
-use std::fmt::Write as _;
-
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
-    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_COUNT,
-    CLIENT_GOS, GLOBAL_GO_COUNT, GLOBAL_GOS, GoDefinition, KNXPROD_APP_NUMBER, KNXPROD_APP_VERSION,
+    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GOS,
+    GLOBAL_GO_COUNT, GLOBAL_GOS, GoDefinition, KNXPROD_APP_NUMBER, KNXPROD_APP_VERSION,
     KNXPROD_HW_VERSION, MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, ZGO_CONTROL_STATUS, ZGO_MUTE,
     ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT,
     ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
@@ -24,12 +22,10 @@ use snapdog::knx::group_objects::{
     ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
     ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
     ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
-    ZGO_VOLUME_STATUS, ZONE_GO_COUNT, ZONE_GOS, mem,
+    ZGO_VOLUME_STATUS, ZONE_GOS, mem,
 };
 
 const AID: &str = "M-00FA_A-FF01-01-0000";
-const MFR: &str = "M-00FA";
-
 fn main() {
     let cmd = std::env::args().nth(1).unwrap_or_default();
     match cmd.as_str() {
@@ -299,42 +295,87 @@ const CLIENT_GROUPS: &[CoGroup] = &[
 // ── XML generation ────────────────────────────────────────────
 
 fn generate_xml() -> String {
+    use knx_rs_prod::author::ProgramInfo;
+
+    // ETS keys the program by ApplicationNumber + ApplicationVersion; System B (KNXnet/IP)
+    // uses MaskVersion MV-57B0. Every other <ApplicationProgram> attribute is a ProgramInfo
+    // default (ProgramType, LoadProcedureStyle, PeiType, DynamicTableManagement, Linkable,
+    // MinEtsVersion, IPConfig) matching what SnapDog emitted before the migration.
+    let info = ProgramInfo::new("SnapDog", "MV-57B0", "de-DE", 65281, app_version());
     let mut x = String::with_capacity(128 * 1024);
-    w(&mut x, r#"<?xml version="1.0" encoding="utf-8"?>"#);
-    w(
-        &mut x,
-        r#"<KNX xmlns="http://knx.org/xml/project/20" CreatedBy="SnapDog xtask" ToolVersion="1.0">"#,
-    );
-    w(&mut x, "  <ManufacturerData>");
-    w(&mut x, &format!(r#"    <Manufacturer RefId="{MFR}">"#));
-
-    write_catalog(&mut x);
-    write_application_program(&mut x);
-    write_hardware(&mut x);
-
-    w(&mut x, "    </Manufacturer>");
-    w(&mut x, "  </ManufacturerData>");
-    w(&mut x, "</KNX>");
+    build_app().write_knx_document(&info, "SnapDog xtask", "1.0", &mut x);
     x
 }
 
-fn write_catalog(x: &mut String) {
-    w(x, "      <Catalog>");
-    w(
-        x,
-        &format!(
-            r#"        <CatalogSection Id="{MFR}_CS-SnapDog" Name="SnapDog" Number="SnapDog" DefaultLanguage="de-DE">"#
-        ),
+/// The single typed product model behind the whole `.knxprod` document. Every `<Static>`
+/// section (catalog, hardware, code segment, parameter types, parameters, com-objects,
+/// tables, load procedures, messages, options) plus the `<Dynamic>` UI tree is registered
+/// here, then rendered in ETS schema order by
+/// [`write_knx_document`](knx_rs_prod::author::AppProgram::write_knx_document).
+fn build_app() -> knx_rs_prod::author::AppProgram {
+    use knx_rs_prod::author::{
+        AppProgram, CatalogItem, CatalogSection, Hardware, Hardware2Program, Options, Product,
+        Segment,
+    };
+
+    let mut app = AppProgram::new(AID);
+
+    // Catalog — the product/hardware refs are derived by the author from the shared HW_*
+    // identity, so they can't drift from <Hardware>.
+    app.add_catalog_section(
+        CatalogSection::new("SnapDog", "SnapDog", "SnapDog", "de-DE").with_item(CatalogItem::new(
+            "SnapDog", "1", HW_SERIAL, HW_VERSION, HW_ORDER, "de-DE",
+        )),
     );
-    w(
-        x,
-        &format!(
-            r#"          <CatalogItem Id="{MFR}_H-0xFF01-1_HP-FF01-01-0000_CI-0xFF01-1" Name="SnapDog" Number="1" ProductRefId="{MFR}_H-0xFF01-1_P-0xFF01" Hardware2ProgramRefId="{MFR}_H-0xFF01-1_HP-FF01-01-0000" DefaultLanguage="de-DE" />"#
-        ),
+
+    // Hardware — MT-5 is the KNXnet/IP (System B) medium; the \d{4}/\d+ RegistrationNumber
+    // makes ETS import it as a registered M-00FA (OpenKNX) product without a test license.
+    app.add_hardware(
+        Hardware::new(HW_SERIAL, HW_VERSION, "SnapDog")
+            .with_product(Product::new(HW_ORDER, "SnapDog", "de-DE"))
+            .with_program(Hardware2Program::new("MT-5", "0001/1")),
     );
-    w(x, "        </CatalogSection>");
-    w(x, "      </Catalog>");
+
+    // Code segment — the relative "Parameters" segment the memory-backed params live in,
+    // pinned as the parameter segment so every <Memory CodeSegment> resolves to it.
+    let seg = app.add_segment(Segment::Relative {
+        name: Some("Parameters".into()),
+        size: mem::TOTAL as u32,
+        load_state_machine: 4,
+        offset: 0,
+    });
+    app.set_parameter_segment(seg);
+
+    // Parameter types + parameters + com-objects (the interdependent core). Order matters:
+    // param_mem resolves its type handle by name, and the Dynamic tree (below) resolves its
+    // param/com-object refs by suffix.
+    register_types(&mut app);
+    register_params(&mut app);
+    register_com_objects(&mut app);
+
+    // Address + association tables (System B max entries).
+    app.set_address_table(2047);
+    app.set_association_table(2047);
+
+    // Download machine + the diagnostics message it references on a version mismatch.
+    register_load_procedures(&mut app);
+    register_messages(&mut app);
+
+    // Text encoding + extended memory/property service support flags.
+    app.set_options(Options::new("iso-8859-15", true, true));
+
+    // Dynamic UI tree — resolves its refs against the params/com-objects registered above.
+    let tree = build_dynamic(&app);
+    app.add_dynamic(tree);
+
+    app
 }
+
+/// Hardware identity (serial + version + order number). ETS threads these through the
+/// `<Hardware>` and `<Catalog>` id grammars; kept here once so the two sections agree.
+const HW_SERIAL: &str = "0xFF01";
+const HW_VERSION: u32 = 1;
+const HW_ORDER: &str = "0xFF01";
 
 /// The ETS `ApplicationVersion`, sourced from the firmware SSOT
 /// [`KNXPROD_APP_VERSION`](snapdog::knx::group_objects::KNXPROD_APP_VERSION) so the `WebUI`
@@ -350,53 +391,8 @@ fn app_version() -> u32 {
         .unwrap_or(KNXPROD_APP_VERSION)
 }
 
-fn write_application_program(x: &mut String) {
-    let version = app_version();
-    // ReplacesVersions lists every prior version so ETS offers an in-place upgrade.
-    let replaces = (0..version)
-        .map(|v| v.to_string())
-        .collect::<Vec<_>>()
-        .join(" ");
-    w(x, "      <ApplicationPrograms>");
-    w(
-        x,
-        &format!(
-            r#"        <ApplicationProgram Id="{AID}" ProgramType="ApplicationProgram" MaskVersion="MV-57B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="{version}" ReplacesVersions="{replaces}">"#
-        ),
-    );
-    w(x, "          <Static>");
-
-    write_code_segment(x);
-    write_parameter_types(x);
-    write_parameters(x);
-    write_parameter_refs(x);
-    write_com_objects(x);
-    write_com_object_refs(x);
-    write_tables(x);
-    write_load_procedures(x);
-    write_options(x);
-
-    w(x, "          </Static>");
-    write_dynamic(x);
-    w(x, "        </ApplicationProgram>");
-    w(x, "      </ApplicationPrograms>");
-}
-
-fn write_code_segment(x: &mut String) {
-    let memory_size = mem::TOTAL;
-    w(x, "            <Code>");
-    w(
-        x,
-        &format!(
-            r#"              <RelativeSegment Id="{AID}_RS-04-00000" Name="Parameters" Offset="0" Size="{memory_size}" LoadStateMachine="4" />"#
-        ),
-    );
-    w(x, "            </Code>");
-}
-
 #[allow(clippy::too_many_lines)]
-fn write_parameter_types(x: &mut String) {
-    w(x, "            <ParameterTypes>");
+fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     // Bool
     pt_enum(x, "YesNo", 8, &[("Nein", 0), ("Ja", 1)]);
     // Text types
@@ -559,59 +555,45 @@ fn write_parameter_types(x: &mut String) {
             ("60 Minuten", 60),
         ],
     );
-    w(x, "            </ParameterTypes>");
 }
 
-fn pt_enum(x: &mut String, name: &str, bits: u16, values: &[(&str, u16)]) {
-    w(
-        x,
-        &format!(r#"              <ParameterType Id="{AID}_PT-{name}" Name="{name}">"#),
-    );
-    w(
-        x,
-        &format!(r#"                <TypeRestriction Base="Value" SizeInBit="{bits}">"#),
-    );
-    for (i, (text, val)) in values.iter().enumerate() {
-        w(
-            x,
-            &format!(
-                r#"                  <Enumeration Text="{text}" Value="{val}" Id="{AID}_PT-{name}_EN-{i}" />"#
-            ),
-        );
-    }
-    w(x, "                </TypeRestriction>");
-    w(x, "              </ParameterType>");
+fn pt_enum(x: &mut knx_rs_prod::author::AppProgram, name: &str, bits: u16, values: &[(&str, u16)]) {
+    x.add_parameter_type(knx_rs_prod::author::ParameterType::enumeration(
+        name,
+        bits,
+        values
+            .iter()
+            .map(|&(text, val)| (text.to_string(), i64::from(val)))
+            .collect(),
+    ));
 }
 
-fn pt_text(x: &mut String, name: &str, bits: u16) {
-    w(
-        x,
-        &format!(r#"              <ParameterType Id="{AID}_PT-{name}" Name="{name}">"#),
-    );
-    w(
-        x,
-        &format!(r#"                <TypeText SizeInBit="{bits}" />"#),
-    );
-    w(x, "              </ParameterType>");
+fn pt_text(x: &mut knx_rs_prod::author::AppProgram, name: &str, bits: u16) {
+    x.add_parameter_type(knx_rs_prod::author::ParameterType::text(name, bits));
 }
 
-fn pt_num(x: &mut String, name: &str, bits: u16, typ: &str, min: u32, max: u32) {
-    w(
-        x,
-        &format!(r#"              <ParameterType Id="{AID}_PT-{name}" Name="{name}">"#),
-    );
-    w(
-        x,
-        &format!(
-            r#"                <TypeNumber SizeInBit="{bits}" Type="{typ}" minInclusive="{min}" maxInclusive="{max}" />"#
-        ),
-    );
-    w(x, "              </ParameterType>");
+fn pt_num(
+    x: &mut knx_rs_prod::author::AppProgram,
+    name: &str,
+    bits: u16,
+    typ: &str,
+    min: u32,
+    max: u32,
+) {
+    x.add_parameter_type(knx_rs_prod::author::ParameterType::number(
+        name,
+        bits,
+        typ,
+        i64::from(min),
+        i64::from(max),
+    ));
 }
 
-#[allow(clippy::too_many_lines)] // Repetitive XML parameter generation — not decomposable
-fn write_parameters(x: &mut String) {
-    w(x, "            <Parameters>");
+/// Register every `<Parameter>` (the full #89 inline layout) into `app`, asserting the
+/// `mem::` span tiling and the committed layout fingerprint. `register_types` must have run
+/// first, since `param_mem` resolves each parameter's type handle by name.
+#[allow(clippy::too_many_lines)]
+fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
     // Byte offsets come straight from `mem::` (the single source of truth the firmware
     // reads); `spans` collects them so we can assert the params tile the layout exactly.
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -1231,8 +1213,6 @@ fn write_parameters(x: &mut String) {
         );
     }
 
-    w(x, "            </Parameters>");
-
     // Single-source guard: every param sits at its mem:: offset, so the emitted spans must
     // tile [0, mem::TOTAL) with no gap or overlap. A wrong mem:: constant or size trips this.
     spans.sort_unstable();
@@ -1339,7 +1319,7 @@ fn assert_layout_locked(spans: &[(usize, usize)]) {
 /// Emit a memory-backed parameter inside a Union.
 #[allow(clippy::too_many_arguments)]
 fn param_mem(
-    x: &mut String,
+    x: &mut knx_rs_prod::author::AppProgram,
     prefix: &str,
     num: &str,
     name: &str,
@@ -1351,162 +1331,92 @@ fn param_mem(
     spans: &mut Vec<(usize, usize)>,
 ) {
     // The byte offset is single-sourced from `mem::` (the layout the firmware reads).
-    // Record the span so the caller can assert the params tile mem:: exactly.
+    // Record the span so the caller can assert the params tile mem:: exactly. The
+    // `<Union>` width, the `_PT-` reference and the `_RS-04-00000` CodeSegment default
+    // are all drawn from the type handle + the author, so they can't drift.
     spans.push((offset, (bits / 8) as usize));
-    w(x, &format!(r#"              <Union SizeInBit="{bits}">"#));
-    w(
-        x,
-        &format!(
-            r#"                <Memory CodeSegment="{AID}_RS-04-00000" Offset="{offset}" BitOffset="0" />"#
-        ),
-    );
-    w(
-        x,
-        &format!(
-            r#"                <Parameter Id="{AID}_UP-{prefix}{num}" Name="{prefix}_{name}" Offset="0" BitOffset="0" ParameterType="{AID}_PT-{pt}" Text="{text}" Value="{default}" />"#
-        ),
-    );
-    w(x, "              </Union>");
+    let ty = x.parameter_type_id(pt);
+    x.add_param(knx_rs_prod::author::Parameter::new(
+        format!("{prefix}{num}"),
+        format!("{prefix}_{name}"),
+        ty,
+        text,
+        default,
+        offset,
+    ));
 }
 
-fn write_com_objects(x: &mut String) {
-    w(x, "            <ComObjectTable>");
+/// Register every zone, client and device-level global group object into `app`, in the
+/// exact `Number` order ETS expects, and return the suffix→handle map the Dynamic tree
+/// resolves its `<ComObjectRefRef>`s through. Numbering is #89's verbatim arithmetic.
+fn register_com_objects(
+    app: &mut knx_rs_prod::author::AppProgram,
+) -> std::collections::HashMap<String, knx_rs_prod::author::ComObjectRefId> {
+    let mut oref: std::collections::HashMap<String, knx_rs_prod::author::ComObjectRefId> =
+        std::collections::HashMap::new();
     for z in 1..=MAX_ZONES {
         for (i, go) in ZONE_GOS.iter().enumerate() {
             let num = (z - 1) * ZONE_GOS.len() + i + 1;
-            write_com_object(
-                x,
-                &format!("Z{z:02}{i:03}"),
+            let suffix = format!("Z{z:02}{i:03}");
+            let (_, r) = app.add_com_object(go_com_object(
+                &suffix,
                 &format!("Zone {z} {}", go.name),
-                go,
                 num,
-            );
+                go,
+            ));
+            oref.insert(suffix, r);
         }
     }
     for c in 1..=MAX_CLIENTS {
         for (i, go) in CLIENT_GOS.iter().enumerate() {
             let num = MAX_ZONES * ZONE_GOS.len() + (c - 1) * CLIENT_GOS.len() + i + 1;
-            write_com_object(
-                x,
-                &format!("C{c:02}{i:03}"),
+            let suffix = format!("C{c:02}{i:03}");
+            let (_, r) = app.add_com_object(go_com_object(
+                &suffix,
                 &format!("Client {c} {}", go.name),
-                go,
                 num,
-            );
+                go,
+            ));
+            oref.insert(suffix, r);
         }
     }
     // Global (device-level) COs follow every zone and client CO.
     for (i, go) in GLOBAL_GOS.iter().enumerate() {
         let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
-        write_com_object(x, &format!("GG{i:03}"), go.name, go, num);
+        let suffix = format!("GG{i:03}");
+        let (_, r) = app.add_com_object(go_com_object(&suffix, go.name, num, go));
+        oref.insert(suffix, r);
     }
-    w(x, "            </ComObjectTable>");
+    oref
 }
 
-/// KNX `DatapointType` id format: the `Dpt` Display is `1.001`, but the ETS schema wants an
-/// IDREF into the master (`DPST-1-1`). Sub-numbers drop leading zeros.
-fn dpst(dpt: impl std::fmt::Display) -> String {
-    let s = dpt.to_string();
-    match s.split_once('.') {
-        Some((main, sub)) => format!(
-            "DPST-{}-{}",
-            main.parse::<u32>().unwrap_or(0),
-            sub.parse::<u32>().unwrap_or(0)
-        ),
-        None => format!("DPT-{}", s.parse::<u32>().unwrap_or(0)),
-    }
-}
+/// Map a firmware [`GoDefinition`] to the typed authoring `ComObject`. DPT main/sub are
+/// parsed from the `Dpt` Display ("1.001") exactly as the old `dpst` helper did.
+fn go_com_object(
+    suffix: &str,
+    name: &str,
+    number: usize,
+    go: &GoDefinition,
+) -> knx_rs_prod::author::ComObject {
+    use knx_rs_prod::author::{ComObject, Dpt, Flags};
 
-fn write_com_object(x: &mut String, id_suffix: &str, name: &str, go: &GoDefinition, number: usize) {
-    let r = if go.flags.read { "Enabled" } else { "Disabled" };
-    let wr = if go.flags.write {
-        "Enabled"
-    } else {
-        "Disabled"
-    };
-    let t = if go.flags.transmit {
-        "Enabled"
-    } else {
-        "Disabled"
-    };
-    let u = if go.flags.update {
-        "Enabled"
-    } else {
-        "Disabled"
-    };
-    w(
-        x,
-        &format!(
-            r#"              <ComObject Id="{AID}_O-{id_suffix}" Name="{name}" Number="{number}" Text="{}" FunctionText="{}" ObjectSize="{}" DatapointType="{}" Priority="Low" ReadFlag="{r}" WriteFlag="{wr}" CommunicationFlag="Enabled" TransmitFlag="{t}" UpdateFlag="{u}" ReadOnInitFlag="Disabled" />"#,
-            go.name_de,
-            go.name,
-            go.size_str,
-            dpst(go.dpt)
-        ),
-    );
-}
-
-/// ETS requires a `<ParameterRef>` for every parameter referenced in the Dynamic section
-/// (a missing one surfaces as an opaque `NullReferenceException` on import). We reference the
-/// zone/client name fields, the per-client active flags, and the global zone-count param;
-/// emit a self-referential ref (`{id}_R-{id}`) matching what `write_dynamic` points at.
-fn write_parameter_refs(x: &mut String) {
-    // One `<ParameterRef>` per declared `<Parameter>` (1:1). Derived by scanning the
-    // already-emitted `<Parameters>` so it stays in lock-step with `write_parameters` —
-    // every parameter becomes referenceable, so any of them can be shown in the Dynamic
-    // view (the config knobs are all wired in `write_dynamic`).
-    let ids: Vec<String> = x
-        .lines()
-        .filter_map(|l| {
-            l.trim_start()
-                .strip_prefix("<Parameter Id=\"")
-                .and_then(|r| r.split('"').next())
-                .map(str::to_string)
-        })
-        .collect();
-    w(x, "            <ParameterRefs>");
-    for p in ids {
-        w(
-            x,
-            &format!(r#"              <ParameterRef Id="{p}_R-{p}" RefId="{p}" />"#),
-        );
-    }
-    w(x, "            </ParameterRefs>");
-}
-
-/// Every `ComObject` referenced in the Dynamic needs a `<ComObjectRef>`. Mirror the
-/// `write_com_objects` numbering exactly so the `_R-<number>` ids line up.
-fn write_com_object_refs(x: &mut String) {
-    w(x, "            <ComObjectRefs>");
-    for z in 1..=MAX_ZONES {
-        for i in 0..ZONE_GOS.len() {
-            let num = (z - 1) * ZONE_GOS.len() + i + 1;
-            let id = format!("{AID}_O-Z{z:02}{i:03}");
-            w(
-                x,
-                &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
-            );
-        }
-    }
-    for c in 1..=MAX_CLIENTS {
-        for i in 0..CLIENT_GOS.len() {
-            let num = MAX_ZONES * ZONE_GOS.len() + (c - 1) * CLIENT_GOS.len() + i + 1;
-            let id = format!("{AID}_O-C{c:02}{i:03}");
-            w(
-                x,
-                &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
-            );
-        }
-    }
-    for i in 0..GLOBAL_GOS.len() {
-        let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
-        let id = format!("{AID}_O-GG{i:03}");
-        w(
-            x,
-            &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
-        );
-    }
-    w(x, "            </ComObjectRefs>");
+    let s = go.dpt.to_string();
+    let (main, sub) = s.split_once('.').unwrap_or((s.as_str(), "0"));
+    ComObject::new(
+        suffix,
+        name,
+        number as u32,
+        go.name_de,
+        go.name,
+        go.size_str,
+        Dpt::new(main.parse().unwrap_or(0), sub.parse().unwrap_or(0)),
+        Flags {
+            read: go.flags.read,
+            write: go.flags.write,
+            transmit: go.flags.transmit,
+            update: go.flags.update,
+        },
+    )
 }
 
 /// Guard: every ref in the Dynamic section must resolve to a defined `<ParameterRef>`/
@@ -1590,477 +1500,403 @@ fn assert_refs_resolve(xml: &str) {
     );
 }
 
-fn write_tables(x: &mut String) {
-    w(x, r#"            <AddressTable MaxEntries="2047" />"#);
-    w(x, r#"            <AssociationTable MaxEntries="2047" />"#);
+/// Register the ETS download machine through the typed `author` model. `InlineData` on the
+/// compare step is the firmware `HARDWARE_TYPE` SSOT; the segment size is `mem::TOTAL`, so
+/// the download can't drift from the memory layout.
+fn register_load_procedures(app: &mut knx_rs_prod::author::AppProgram) {
+    use knx_rs_prod::author::{
+        ErrorCause, LoadControl, LoadProcedure, ObjTarget, OnError, ProcType, StepBase,
+    };
+    use snapdog::knx::group_objects::HARDWARE_TYPE;
+
+    let size = mem::TOTAL as u32;
+
+    app.add_load_procedure(LoadProcedure::with_merge_id(1).step_with(
+        LoadControl::CompareProp {
+            target: ObjTarget::ObjIdx {
+                obj_idx: 0,
+                occurrence: 0,
+            },
+            prop_id: 78,
+            inline_data: Some(HARDWARE_TYPE.to_vec()),
+        },
+        StepBase {
+            applies_to: None,
+            on_error: vec![OnError {
+                cause: ErrorCause::CompareMismatch,
+                ignore: false,
+                message_ref: Some(format!("{AID}_M-1")),
+            }],
+        },
+    ));
+
+    app.add_load_procedure(
+        LoadProcedure::with_merge_id(2)
+            .step_with(
+                LoadControl::RelSegment {
+                    target: ObjTarget::Lsm(4),
+                    size,
+                    mode: 1,
+                    fill: 0,
+                },
+                StepBase {
+                    applies_to: Some(ProcType::Full),
+                    on_error: Vec::new(),
+                },
+            )
+            .step_with(
+                LoadControl::RelSegment {
+                    target: ObjTarget::Lsm(4),
+                    size,
+                    mode: 0,
+                    fill: 0,
+                },
+                StepBase {
+                    applies_to: Some(ProcType::Par),
+                    on_error: Vec::new(),
+                },
+            ),
+    );
+
+    app.add_load_procedure(LoadProcedure::with_merge_id(4).step_with(
+        LoadControl::WriteRelMem {
+            target: ObjTarget::ObjIdx {
+                obj_idx: 4,
+                occurrence: 0,
+            },
+            offset: 0,
+            size,
+            verify: true,
+            inline_data: None,
+        },
+        StepBase {
+            applies_to: Some(ProcType::FullPar),
+            on_error: Vec::new(),
+        },
+    ));
+
+    app.add_load_procedure(
+        LoadProcedure::with_merge_id(7).step(LoadControl::LoadImageProp {
+            target: ObjTarget::ObjIdx {
+                obj_idx: 4,
+                occurrence: 0,
+            },
+            prop_id: 27,
+        }),
+    );
 }
 
-fn write_load_procedures(x: &mut String) {
-    let memory_size = mem::TOTAL;
-    w(x, "            <LoadProcedures>");
-    w(x, r#"              <LoadProcedure MergeId="1">"#);
-    // InlineData is the device HardwareType (PID 78) — SSOT with the firmware
-    // (`group_objects::HARDWARE_TYPE`), so the download-gate compare can't drift.
-    let hardware_type_hex =
-        snapdog::knx::group_objects::HARDWARE_TYPE
-            .iter()
-            .fold(String::new(), |mut s, b| {
-                let _ = write!(s, "{b:02X}");
-                s
-            });
-    w(
-        x,
-        &format!(
-            r#"                <LdCtrlCompareProp InlineData="{hardware_type_hex}" ObjIdx="0" PropId="78">"#
-        ),
-    );
-    w(
-        x,
-        &format!(r#"                  <OnError Cause="CompareMismatch" MessageRef="{AID}_M-1" />"#),
-    );
-    w(x, "                </LdCtrlCompareProp>");
-    w(x, "              </LoadProcedure>");
-    w(x, r#"              <LoadProcedure MergeId="2">"#);
-    w(
-        x,
-        &format!(
-            r#"                <LdCtrlRelSegment LsmIdx="4" Size="{memory_size}" Mode="1" Fill="0" AppliesTo="full" />"#
-        ),
-    );
-    w(
-        x,
-        &format!(
-            r#"                <LdCtrlRelSegment LsmIdx="4" Size="{memory_size}" Mode="0" Fill="0" AppliesTo="par" />"#
-        ),
-    );
-    w(x, "              </LoadProcedure>");
-    w(x, r#"              <LoadProcedure MergeId="4">"#);
-    w(
-        x,
-        &format!(
-            r#"                <LdCtrlWriteRelMem ObjIdx="4" Offset="0" Size="{memory_size}" Verify="true" AppliesTo="full,par" />"#
-        ),
-    );
-    w(x, "              </LoadProcedure>");
-    w(x, r#"              <LoadProcedure MergeId="7">"#);
-    w(
-        x,
-        r#"                <LdCtrlLoadImageProp ObjIdx="4" PropId="27" />"#,
-    );
-    w(x, "              </LoadProcedure>");
-    w(x, "            </LoadProcedures>");
-    w(x, "            <Messages>");
-    w(
-        x,
-        &format!(
-            r#"              <Message Id="{AID}_M-1" Name="VersionMismatch" Text="Application and firmware version mismatch." />"#
-        ),
-    );
-    w(x, "            </Messages>");
+/// Register the `<Messages>` model — the diagnostics load procedures reference on error.
+fn register_messages(app: &mut knx_rs_prod::author::AppProgram) {
+    use knx_rs_prod::author::Message;
+
+    app.add_message(Message::new(
+        "1",
+        "VersionMismatch",
+        "Application and firmware version mismatch.",
+    ));
 }
 
-fn write_options(x: &mut String) {
-    w(
-        x,
-        r#"            <Options TextParameterEncoding="iso-8859-15" SupportsExtendedMemoryServices="true" SupportsExtendedPropertyServices="true" />"#,
-    );
-}
+/// Build the `<Dynamic>` UI tree: one `<ChannelIndependentBlock>` holding the General block,
+/// a gated block per zone and per client, the radio presets and the device System block —
+/// the exact structure #89 emitted, now resolved through the typed `Dyn` model.
+fn build_dynamic(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::Dyn;
 
-fn write_dynamic(x: &mut String) {
-    w(x, "          <Dynamic>");
-    // ETS only allows Channel/ChannelIndependentBlock/choose/… directly under <Dynamic>
-    // (not bare ParameterBlocks), so wrap everything in one ChannelIndependentBlock.
-    w(x, "            <ChannelIndependentBlock>");
-    // General: the "number of zones" dropdown drives which zone blocks are shown.
-    write_general_block(x);
-    // Zones — a zone block is shown when the chosen count is >= this zone's index.
-    // Config knobs: DefVol, MaxVol, AirPlay, Spotify, PresEn, PresTO (sample rate / bit
-    // depth are global, shown in the General block).
+    let mut blocks: Vec<Dyn> = Vec::new();
+    // General: the "number of zones"/"number of clients" dropdowns drive which blocks show.
+    blocks.push(build_general_block(app));
+    // Zones — a zone block is shown when the chosen count is >= this zone's index. Config
+    // knobs: DefVol, MaxVol, AirPlay, Spotify, PresEn, PresTO (sample rate / bit depth are
+    // global, shown in the General block).
     for z in 1..=MAX_ZONES {
-        write_channel_block(
-            x,
+        blocks.push(build_channel_block(
+            app,
             "Zone",
             z,
-            &format!("{AID}_UP-G000"),
-            &format!("&gt;={z}"),
-            &format!("{AID}_UP-Z{z:02}000"),
+            "G000",
+            &format!(">={z}"),
+            &format!("Z{z:02}000"),
             ZONE_GROUPS,
             &format!("Z{z:02}"),
             &[
                 "002", "003", "004", "005", "006", "007", "008", "010", "011",
             ],
-        );
+        ));
     }
-    // Clients — a client block is shown when the chosen count is >= this client's index
-    // (same logic as zones). Config knobs: DefZone, DefVol, MaxVol, DefLat, MAC.
+    // Clients — same gating as zones. Config knobs: DefZone, DefVol, MaxVol, DefLat, MAC.
     for c in 1..=MAX_CLIENTS {
-        write_channel_block(
-            x,
+        blocks.push(build_channel_block(
+            app,
             "Client",
             c,
-            &format!("{AID}_UP-G003"),
-            &format!("&gt;={c}"),
-            &format!("{AID}_UP-C{c:02}000"),
+            "G003",
+            &format!(">={c}"),
+            &format!("C{c:02}000"),
             CLIENT_GROUPS,
             &format!("C{c:02}"),
             &["002", "003", "004", "005", "010", "011"],
-        );
+        ));
     }
     // Radio stream presets: count dropdown + gated Name / URL / Cover per station.
-    write_radio_block(x);
+    blocks.push(build_radio_block(app));
     // Device-level "System" block: heartbeat interval param + the global group objects.
-    write_system_block(x);
-    w(x, "            </ChannelIndependentBlock>");
-    w(x, "          </Dynamic>");
+    blocks.push(build_system_block(app));
+    Dyn::ChannelIndependentBlock(blocks)
 }
 
 /// Radio presets block: a "number of radios" dropdown, then one section per station
 /// (Name / URL / Cover), each shown when the chosen count is >= its index.
-fn write_radio_block(x: &mut String) {
-    let count_ref = format!("{AID}_UP-G020_R-{AID}_UP-G020");
-    w(
-        x,
-        &format!(
-            r#"            <ParameterBlock Id="{AID}_PB-Radios" Name="Radios" Text="Radiosender">"#
-        ),
-    );
+fn build_radio_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::{Dyn, When};
+
+    let count = app.param_ref("G020");
+    let mut children: Vec<Dyn> = Vec::new();
     // The count dropdown comes first, then gates each station section.
-    w(
-        x,
-        &format!(r#"              <ParameterRefRef RefId="{count_ref}" />"#),
-    );
+    children.push(Dyn::ParamRefRef(count));
     for r in 1..=mem::MAX_RADIOS {
         let p = format!("R{r:02}");
-        let ids = [
-            format!("{AID}_UP-{p}000"), // Name
-            format!("{AID}_UP-{p}001"), // URL
-            format!("{AID}_UP-{p}003"), // Cover
-        ];
-        w(
-            x,
-            &format!(r#"              <choose ParamRefId="{count_ref}">"#),
-        );
-        w(x, &format!(r#"                <when test="&gt;={r}">"#));
-        write_param_section(
-            x,
-            "                  ",
+        let name = format!("{p}000"); // Name
+        let url = format!("{p}001"); // URL
+        let cover = format!("{p}003"); // Cover
+        let mut station: Vec<Dyn> = Vec::new();
+        push_param_section(
+            app,
+            &mut station,
             &format!("{p}-Station"),
             &format!("Station {r}"),
-            &ids,
+            &[name.as_str(), url.as_str(), cover.as_str()],
         );
-        w(x, "                </when>");
-        w(x, "              </choose>");
+        children.push(Dyn::Choose {
+            param_ref: count,
+            whens: vec![When {
+                test: format!(">={r}"),
+                children: station,
+            }],
+        });
     }
-    w(x, "            </ParameterBlock>");
+    Dyn::ParameterBlock {
+        suffix: "Radios".to_string(),
+        name: "Radios".to_string(),
+        text: "Radiosender".to_string(),
+        text_param_ref: None,
+        show_in_com_object_tree: false,
+        children,
+    }
 }
 
 /// Top-level "Allgemein" block holding the number-of-zones dropdown. Displayed via the
 /// `P-` parameter ref (like the channel name fields); the zone `<choose>` conditions gate
 /// on the same parameter's `UP-` ref.
-fn write_general_block(x: &mut String) {
-    let zones_ref = format!("{AID}_UP-G000_R-{AID}_UP-G000");
-    let clients_ref = format!("{AID}_UP-G003_R-{AID}_UP-G003");
-    w(
-        x,
-        &format!(
-            r#"            <ParameterBlock Id="{AID}_PB-General" Name="General" Text="Allgemein">"#
-        ),
-    );
+fn build_general_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::{Dyn, When};
+
+    let mut children: Vec<Dyn> = Vec::new();
     // Counts: number of zones then number of clients drive which channel blocks show.
-    w(
-        x,
-        &format!(r#"              <ParameterRefRef RefId="{zones_ref}" />"#),
-    );
-    w(
-        x,
-        &format!(r#"              <ParameterRefRef RefId="{clients_ref}" />"#),
-    );
-    let indent = "              ";
-    // Server settings + HTTP API keys — the key authenticates the HTTP API configured
-    // here, so it lives next to the port. The count dropdown gates how many key fields
-    // show; key N is revealed when NumApiKeys >= N (mirrors the radio presets).
-    write_param_section(
-        x,
-        indent,
+    children.push(Dyn::ParamRefRef(app.param_ref("G000")));
+    children.push(Dyn::ParamRefRef(app.param_ref("G003")));
+    // Server settings + HTTP API keys — the key authenticates the HTTP API configured here,
+    // so it lives next to the port. The count dropdown gates how many key fields show; key N
+    // is revealed when NumApiKeys >= N (mirrors the radio presets).
+    push_param_section(
+        app,
+        &mut children,
         "G-Server",
         "Server",
-        &[
-            format!("{AID}_UP-G001"), // HTTP port
-            format!("{AID}_UP-G002"), // Log level
-            format!("{AID}_UP-G021"), // Number of API keys
-        ],
+        &["G001", "G002", "G021"], // HTTP port, Log level, Number of API keys
     );
-    let api_count_ref = format!("{AID}_UP-G021_R-{AID}_UP-G021");
+    let api_count = app.param_ref("G021");
     for k in 1..=MAX_API_KEYS {
-        let kid = format!("{AID}_UP-G{:03}", 21 + k);
-        w(
-            x,
-            &format!(r#"{indent}<choose ParamRefId="{api_count_ref}">"#),
-        );
-        w(x, &format!(r#"{indent}  <when test="&gt;={k}">"#));
-        w(
-            x,
-            &format!(r#"{indent}    <ParameterRefRef RefId="{kid}_R-{kid}" />"#),
-        );
-        w(x, &format!("{indent}  </when>"));
-        w(x, &format!("{indent}</choose>"));
+        let kid = format!("G{:03}", 21 + k);
+        children.push(Dyn::Choose {
+            param_ref: api_count,
+            whens: vec![When {
+                test: format!(">={k}"),
+                children: vec![Dyn::ParamRefRef(app.param_ref(&kid))],
+            }],
+        });
     }
-    // Global audio output format (server-wide, not per-zone).
-    write_param_section(
-        x,
-        indent,
+    // Global audio output format (server-wide, not per-zone): SampleRate, BitDepth, Codec,
+    // SourceConflict, ZoneFade, SourceFade, Snapcast PSK.
+    push_param_section(
+        app,
+        &mut children,
         "G-Audio",
         "Audio",
-        &[
-            format!("{AID}_UP-G004"), // SampleRate
-            format!("{AID}_UP-G005"), // BitDepth
-            format!("{AID}_UP-G006"), // Codec
-            format!("{AID}_UP-G007"), // SourceConflict
-            format!("{AID}_UP-G008"), // ZoneFade
-            format!("{AID}_UP-G009"), // SourceFade
-            format!("{AID}_UP-G017"), // Snapcast PSK (encrypts the audio stream)
-        ],
+        &["G004", "G005", "G006", "G007", "G008", "G009", "G017"],
     );
     // Subsonic.
-    write_param_section(
-        x,
-        indent,
+    push_param_section(
+        app,
+        &mut children,
         "G-Subsonic",
         "Subsonic",
-        &[
-            format!("{AID}_UP-G010"),
-            format!("{AID}_UP-G011"),
-            format!("{AID}_UP-G012"),
-        ],
+        &["G010", "G011", "G012"],
     );
-    // MQTT.
-    write_param_section(
-        x,
-        indent,
+    // MQTT: Broker, Topic, Password.
+    push_param_section(
+        app,
+        &mut children,
         "G-MQTT",
         "MQTT",
-        &[
-            format!("{AID}_UP-G013"), // Broker
-            format!("{AID}_UP-G014"), // Topic
-            format!("{AID}_UP-G015"), // Password
-        ],
+        &["G013", "G014", "G015"],
     );
-    // AirPlay.
-    write_param_section(
-        x,
-        indent,
-        "G-AirPlay",
-        "AirPlay",
-        &[format!("{AID}_UP-G016")], // Password
-    );
+    // AirPlay: Password.
+    push_param_section(app, &mut children, "G-AirPlay", "AirPlay", &["G016"]);
     // Secrets are grouped with their subsystem (API keys → Server, PSK → Audio, MQTT /
     // AirPlay / Subsonic passwords in their own sections) — no separate Security heading.
-    write_info_section(x, indent);
-    w(x, "            </ParameterBlock>");
+    push_info_section(&mut children);
+    Dyn::ParameterBlock {
+        suffix: "General".to_string(),
+        name: "General".to_string(),
+        text: "Allgemein".to_string(),
+        text_param_ref: None,
+        show_in_com_object_tree: false,
+        children,
+    }
 }
 
 /// Device-level "System" block: the heartbeat-interval parameter plus the global group
 /// objects (Server Online, All Stop, All Mute, System Fault, KNX Time), shown under their
 /// own drawer in the `ComObject` tree.
-fn write_system_block(x: &mut String) {
-    w(
-        x,
-        &format!(
-            r#"            <ParameterBlock Id="{AID}_PB-System" Name="System" Text="System" ShowInComObjectTree="true">"#
-        ),
-    );
-    w(
-        x,
-        &format!(r#"              <ParameterRefRef RefId="{AID}_UP-G040_R-{AID}_UP-G040" />"#),
-    );
+fn build_system_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::Dyn;
+
+    let mut children: Vec<Dyn> = Vec::new();
+    children.push(Dyn::ParamRefRef(app.param_ref("G040")));
     for i in 0..GLOBAL_GOS.len() {
-        let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
-        w(
-            x,
-            &format!(r#"              <ComObjectRefRef RefId="{AID}_O-GG{i:03}_R-{num}" />"#),
-        );
+        children.push(Dyn::ComObjRefRef(app.com_object_ref(&format!("GG{i:03}"))));
     }
-    w(x, "            </ParameterBlock>");
+    Dyn::ParameterBlock {
+        suffix: "System".to_string(),
+        name: "System".to_string(),
+        text: "System".to_string(),
+        text_param_ref: None,
+        show_in_com_object_tree: true,
+        children,
+    }
 }
 
 /// Read-only "Info" block at the end of the General tab: product / copyright / license /
 /// source and the DB identity. Pure `ParameterSeparator` display text — no memory, so it
 /// neither touches the layout fingerprint nor needs an app-version bump. Identity fields
 /// are single-sourced from the `KNXPROD_*` consts so they can never drift from the artifact.
-fn write_info_section(x: &mut String, indent: &str) {
-    w(
-        x,
-        &format!(
-            r#"{indent}<ParameterSeparator Id="{AID}_PS-Info" Text="Info" UIHint="Headline" />"#
-        ),
-    );
+fn push_info_section(out: &mut Vec<knx_rs_prod::author::Dyn>) {
+    use knx_rs_prod::author::Dyn;
+
+    out.push(Dyn::Separator {
+        suffix: "Info".to_string(),
+        text: "Info".to_string(),
+        ui_hint: "Headline".to_string(),
+    });
+    // Note the raw `&` (not `&amp;`): the author escape_attr's separator text, so a
+    // pre-escaped entity would double-escape. The other lines are plain UTF-8, unescaped.
     let info_lines = [
         "SnapDog — Multiroom Audio Server".to_string(),
         "© 2026 Fabian Schmieder".to_string(),
         "Lizenz: GPL-3.0-only · Open-Source-Firmware".to_string(),
-        "Quellcode &amp; Support: github.com/SnapDogRocks/snapdog".to_string(),
+        "Quellcode & Support: github.com/SnapDogRocks/snapdog".to_string(),
         format!(
             "Produkt-DB v{KNXPROD_APP_VERSION} · App 0x{KNXPROD_APP_NUMBER:04X} · HW {KNXPROD_HW_VERSION} · KNXnet/IP System B"
         ),
     ];
     for (i, line) in info_lines.iter().enumerate() {
-        w(
-            x,
-            &format!(
-                r#"{indent}<ParameterSeparator Id="{AID}_PS-Info-{i}" Text="{line}" UIHint="Information" />"#
-            ),
-        );
+        out.push(Dyn::Separator {
+            suffix: format!("Info-{i}"),
+            text: line.clone(),
+            ui_hint: "Information".to_string(),
+        });
     }
 }
 
-/// Emit a `<ParameterSeparator>` headline followed by a `<ParameterRefRef>` for each
-/// parameter id. `indent` is the leading whitespace for the block nesting level; `sep_id`
-/// must be a document-unique `NCName`.
-fn write_param_section(
-    x: &mut String,
-    indent: &str,
+/// Push a `<ParameterSeparator>` headline followed by a `<ParameterRefRef>` for each
+/// parameter suffix onto `out`. `sep_id` must be a document-unique `NCName`; each suffix is
+/// resolved to its ref handle via `AppProgram::param_ref`.
+fn push_param_section(
+    app: &knx_rs_prod::author::AppProgram,
+    out: &mut Vec<knx_rs_prod::author::Dyn>,
     sep_id: &str,
     title: &str,
-    param_ids: &[String],
+    param_suffixes: &[&str],
 ) {
-    w(
-        x,
-        &format!(
-            r#"{indent}<ParameterSeparator Id="{AID}_PS-{sep_id}" Text="{title}" UIHint="Headline" />"#
-        ),
-    );
-    for pid in param_ids {
-        w(
-            x,
-            &format!(r#"{indent}<ParameterRefRef RefId="{pid}_R-{pid}" />"#),
-        );
+    use knx_rs_prod::author::Dyn;
+
+    out.push(Dyn::Separator {
+        suffix: sep_id.to_string(),
+        text: title.to_string(),
+        ui_hint: "Headline".to_string(),
+    });
+    for suffix in param_suffixes {
+        out.push(Dyn::ParamRefRef(app.param_ref(suffix)));
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_channel_block(
-    x: &mut String,
+fn build_channel_block(
+    app: &knx_rs_prod::author::AppProgram,
     prefix: &str,
     idx: usize,
-    cond_param_id: &str,
+    cond_suffix: &str,
     test: &str,
-    name_param_id: &str,
+    name_suffix: &str,
     groups: &[CoGroup],
     id_prefix: &str,
     config_nums: &[&str],
-) {
-    let cond_ref = format!("{cond_param_id}_R-{cond_param_id}");
-    let name_ref = format!("{name_param_id}_R-{name_param_id}");
-    w(
-        x,
-        &format!(r#"            <choose ParamRefId="{cond_ref}">"#),
-    );
-    w(x, &format!(r#"              <when test="{test}">"#));
-    w(
-        x,
-        &format!(
-            r#"                <ParameterBlock Id="{AID}_PB-{id_prefix}" Name="{prefix}{idx}" Text="{prefix} {idx}: {{{{0: ...}}}}" TextParameterRefId="{name_ref}" ShowInComObjectTree="true">"#
-        ),
-    );
+) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::{Dyn, When};
+
+    let name_ref = app.param_ref(name_suffix);
+    let mut block: Vec<Dyn> = Vec::new();
     // Name parameter
-    w(
-        x,
-        &format!(r#"                  <ParameterRefRef RefId="{name_ref}" />"#),
-    );
+    block.push(Dyn::ParamRefRef(name_ref));
     // Editable configuration knobs for this channel (memory-backed, from mem::).
     if !config_nums.is_empty() {
         let ids: Vec<String> = config_nums
             .iter()
-            .map(|num| format!("{AID}_UP-{id_prefix}{num}"))
+            .map(|num| format!("{id_prefix}{num}"))
             .collect();
-        write_param_section(
-            x,
-            "                  ",
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        push_param_section(
+            app,
+            &mut block,
             &format!("{id_prefix}-Einstellungen"),
             "Einstellungen",
-            &ids,
+            &id_refs,
         );
     }
-    // CO groups
+    // CO groups — the `_R-<number>` comes from the com-object handle, so it can't drift
+    // from `register_com_objects`' numbering.
     for group in groups {
-        w(
-            x,
-            &format!(
-                r#"                  <ParameterSeparator Id="{AID}_PS-{id_prefix}-{}" Text="{}" UIHint="Headline" />"#,
-                group
-                    .title_en
-                    .chars()
-                    .filter(char::is_ascii_alphanumeric)
-                    .collect::<String>(),
-                group.title_de
-            ),
-        );
+        let sanitized: String = group
+            .title_en
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect();
+        block.push(Dyn::Separator {
+            suffix: format!("{id_prefix}-{sanitized}"),
+            text: group.title_de.to_string(),
+            ui_hint: "Headline".to_string(),
+        });
         for &i in group.indices {
-            let co_id = format!("{AID}_O-{id_prefix}{i:03}");
-            let num = if prefix == "Zone" {
-                (idx - 1) * ZONE_GO_COUNT + i + 1
-            } else {
-                MAX_ZONES * ZONE_GO_COUNT + (idx - 1) * CLIENT_GO_COUNT + i + 1
-            };
-            w(
-                x,
-                &format!(r#"                  <ComObjectRefRef RefId="{co_id}_R-{num}" />"#),
-            );
+            block.push(Dyn::ComObjRefRef(
+                app.com_object_ref(&format!("{id_prefix}{i:03}")),
+            ));
         }
     }
-    w(x, "                </ParameterBlock>");
-    w(x, "              </when>");
-    w(x, "            </choose>");
-}
-
-fn write_hardware(x: &mut String) {
-    w(x, "      <Hardware>");
-    w(
-        x,
-        &format!(
-            r#"        <Hardware Id="{MFR}_H-0xFF01-1" Name="SnapDog" SerialNumber="0xFF01" VersionNumber="1" BusCurrent="0" HasIndividualAddress="true" HasApplicationProgram="true">"#
-        ),
-    );
-    w(x, "          <Products>");
-    w(
-        x,
-        &format!(
-            r#"            <Product Id="{MFR}_H-0xFF01-1_P-0xFF01" Text="SnapDog" OrderNumber="0xFF01" IsRailMounted="false" DefaultLanguage="de-DE">"#
-        ),
-    );
-    w(
-        x,
-        r#"              <RegistrationInfo RegistrationStatus="Registered" />"#,
-    );
-    w(x, "            </Product>");
-    w(x, "          </Products>");
-    w(x, "          <Hardware2Programs>");
-    w(
-        x,
-        &format!(
-            r#"            <Hardware2Program Id="{MFR}_H-0xFF01-1_HP-FF01-01-0000" MediumTypes="MT-5">"#
-        ),
-    );
-    w(
-        x,
-        &format!(r#"              <ApplicationProgramRef RefId="{AID}" />"#),
-    );
-    // The RegistrationNumber (any `\d{4}/\d+`) is what makes ETS treat this as a registered
-    // product from the M-00FA (OpenKNX) manufacturer space, so it imports without demanding
-    // an unregistered-product test license — matching how OpenKNX's own products import.
-    w(
-        x,
-        r#"              <RegistrationInfo RegistrationStatus="Registered" RegistrationNumber="0001/1" />"#,
-    );
-    w(x, "            </Hardware2Program>");
-    w(x, "          </Hardware2Programs>");
-    w(x, "        </Hardware>");
-    w(x, "      </Hardware>");
-}
-
-fn w(s: &mut String, line: &str) {
-    s.push_str(line);
-    s.push('\n');
+    Dyn::Choose {
+        param_ref: app.param_ref(cond_suffix),
+        whens: vec![When {
+            test: test.to_string(),
+            children: vec![Dyn::ParameterBlock {
+                suffix: id_prefix.to_string(),
+                name: format!("{prefix}{idx}"),
+                text: format!("{prefix} {idx}: {{{{0: ...}}}}"),
+                text_param_ref: Some(name_ref),
+                show_in_com_object_tree: true,
+                children: block,
+            }],
+        }],
+    }
 }
 
 #[cfg(test)]
@@ -2121,6 +1957,29 @@ mod tests {
              ApplicationVersion={shipped} but KNXPROD_APP_VERSION={}.\n  \
              Run `cargo xtask knxprod` and commit the regenerated knx/snapdog.knxprod.\n",
             super::KNXPROD_APP_VERSION,
+        );
+    }
+
+    /// Byte-exact snapshot of `generate_xml()`. The `knx-rs-prod::author` migration
+    /// strangles the hand-written generator section-by-section; this test must stay
+    /// byte-identical against the pre-migration baseline at every step. Run with
+    /// `BLESS=1` to (re)capture after a *conscious* product change.
+    #[test]
+    fn generate_xml_matches_golden() {
+        let generated = super::generate_xml();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/product.xml");
+        let exists = std::path::Path::new(path).exists();
+        if std::env::var_os("BLESS").is_some() || !exists {
+            if let Some(dir) = std::path::Path::new(path).parent() {
+                std::fs::create_dir_all(dir).expect("create golden dir");
+            }
+            std::fs::write(path, &generated).expect("write golden");
+            return;
+        }
+        let golden = std::fs::read_to_string(path).expect("read golden");
+        assert_eq!(
+            generated, golden,
+            "generate_xml() drifted from the golden baseline — set BLESS=1 after a conscious change"
         );
     }
 }
