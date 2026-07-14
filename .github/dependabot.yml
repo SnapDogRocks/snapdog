@@ -23,7 +23,6 @@ updates:
     target-branch: main
     commit-message:
       prefix: chore
-    versioning-strategy: increase
     open-pull-requests-limit: 5
     labels:
       - dependencies
