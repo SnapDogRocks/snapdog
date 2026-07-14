@@ -318,22 +318,28 @@ fn generate_xml() -> String {
     x
 }
 
+/// Hardware identity (serial + version + order number). ETS threads these through the
+/// `<Hardware>` and `<Catalog>` id grammars; kept here once so the two sections agree.
+const HW_SERIAL: &str = "0xFF01";
+const HW_VERSION: u32 = 1;
+const HW_ORDER: &str = "0xFF01";
+
 fn write_catalog(x: &mut String) {
-    w(x, "      <Catalog>");
-    w(
-        x,
-        &format!(
-            r#"        <CatalogSection Id="{MFR}_CS-SnapDog" Name="SnapDog" Number="SnapDog" DefaultLanguage="de-DE">"#
-        ),
+    build_catalog().write_catalog(6, x);
+}
+
+/// Build the `<Catalog>` model. The `CatalogItem` product/hardware refs are derived by
+/// the author from the shared `HW_*` identity, so they can't drift from `<Hardware>`.
+fn build_catalog() -> knx_rs_prod::author::AppProgram {
+    use knx_rs_prod::author::{AppProgram, CatalogItem, CatalogSection};
+
+    let mut app = AppProgram::new(AID);
+    app.add_catalog_section(
+        CatalogSection::new("SnapDog", "SnapDog", "SnapDog", "de-DE").with_item(CatalogItem::new(
+            "SnapDog", "1", HW_SERIAL, HW_VERSION, HW_ORDER, "de-DE",
+        )),
     );
-    w(
-        x,
-        &format!(
-            r#"          <CatalogItem Id="{MFR}_H-0xFF01-1_HP-FF01-01-0000_CI-0xFF01-1" Name="SnapDog" Number="1" ProductRefId="{MFR}_H-0xFF01-1_P-0xFF01" Hardware2ProgramRefId="{MFR}_H-0xFF01-1_HP-FF01-01-0000" DefaultLanguage="de-DE" />"#
-        ),
-    );
-    w(x, "        </CatalogSection>");
-    w(x, "      </Catalog>");
+    app
 }
 
 /// The ETS `ApplicationVersion`, sourced from the firmware SSOT
@@ -2014,48 +2020,25 @@ fn write_channel_block(
 }
 
 fn write_hardware(x: &mut String) {
-    w(x, "      <Hardware>");
-    w(
-        x,
-        &format!(
-            r#"        <Hardware Id="{MFR}_H-0xFF01-1" Name="SnapDog" SerialNumber="0xFF01" VersionNumber="1" BusCurrent="0" HasIndividualAddress="true" HasApplicationProgram="true">"#
-        ),
-    );
-    w(x, "          <Products>");
-    w(
-        x,
-        &format!(
-            r#"            <Product Id="{MFR}_H-0xFF01-1_P-0xFF01" Text="SnapDog" OrderNumber="0xFF01" IsRailMounted="false" DefaultLanguage="de-DE">"#
-        ),
-    );
-    w(
-        x,
-        r#"              <RegistrationInfo RegistrationStatus="Registered" />"#,
-    );
-    w(x, "            </Product>");
-    w(x, "          </Products>");
-    w(x, "          <Hardware2Programs>");
-    w(
-        x,
-        &format!(
-            r#"            <Hardware2Program Id="{MFR}_H-0xFF01-1_HP-FF01-01-0000" MediumTypes="MT-5">"#
-        ),
-    );
-    w(
-        x,
-        &format!(r#"              <ApplicationProgramRef RefId="{AID}" />"#),
-    );
+    build_hardware().write_hardware(6, x);
+}
+
+/// Build the `<Hardware>` model. All ids (`_H-`, `_P-`, `_HP-`) are derived by the
+/// author from the shared `HW_*` identity + the application-program tail. `MT-5` is the
+/// System-B (KNXnet/IP) medium.
+fn build_hardware() -> knx_rs_prod::author::AppProgram {
+    use knx_rs_prod::author::{AppProgram, Hardware, Hardware2Program, Product};
+
+    let mut app = AppProgram::new(AID);
     // The RegistrationNumber (any `\d{4}/\d+`) is what makes ETS treat this as a registered
     // product from the M-00FA (OpenKNX) manufacturer space, so it imports without demanding
     // an unregistered-product test license — matching how OpenKNX's own products import.
-    w(
-        x,
-        r#"              <RegistrationInfo RegistrationStatus="Registered" RegistrationNumber="0001/1" />"#,
+    app.add_hardware(
+        Hardware::new(HW_SERIAL, HW_VERSION, "SnapDog")
+            .with_product(Product::new(HW_ORDER, "SnapDog", "de-DE"))
+            .with_program(Hardware2Program::new("MT-5", "0001/1")),
     );
-    w(x, "            </Hardware2Program>");
-    w(x, "          </Hardware2Programs>");
-    w(x, "        </Hardware>");
-    w(x, "      </Hardware>");
+    app
 }
 
 fn w(s: &mut String, line: &str) {
