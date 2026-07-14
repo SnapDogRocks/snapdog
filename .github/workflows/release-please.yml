@@ -29,7 +29,7 @@ jobs:
       # no-op until the two RELEASE_PLEASE_APP_* secrets exist: without them the
       # token step fails softly and release-please falls back to GITHUB_TOKEN
       # (i.e. the old close+reopen workaround still applies).
-      - uses: actions/create-github-app-token@v2
+      - uses: actions/create-github-app-token@v3
         id: app-token
         continue-on-error: true
         with:
