@@ -8,6 +8,7 @@ use axum::http::header;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
+use utoipa::ToSchema;
 
 use crate::api::SharedState;
 use crate::api::error::{ApiError, ErrorBody};
@@ -32,8 +33,8 @@ pub fn router(state: SharedState) -> Router {
 
 /// ETS product identity of the embedded `.knxprod`, shown next to the `WebUI` download so
 /// an integrator can confirm it matches this device's firmware.
-#[derive(serde::Serialize)]
-struct ProductInfo {
+#[derive(serde::Serialize, ToSchema)]
+pub struct ProductInfo {
     /// ETS `ApplicationVersion`.
     app_version: u32,
     /// `ApplicationNumber` / order number, formatted `0xFF01`.
@@ -44,7 +45,13 @@ struct ProductInfo {
 
 /// Product identity (version / order number / hardware revision) of the embedded
 /// `.knxprod`.
-async fn get_product_info() -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/knx/product-info",
+    responses((status = 200, description = "Embedded ETS product identity", body = ProductInfo)),
+    tag = "knx"
+)]
+pub async fn get_product_info() -> impl IntoResponse {
     Json(ProductInfo {
         app_version: KNXPROD_APP_VERSION,
         application_number: format!("0x{KNXPROD_APP_NUMBER:04X}"),
@@ -62,7 +69,7 @@ async fn get_product_info() -> impl IntoResponse {
     responses((status = 200, description = "The .knxprod product database (ZIP)")),
     tag = "knx"
 )]
-async fn get_knxprod() -> impl IntoResponse {
+pub async fn get_knxprod() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "application/octet-stream"),
