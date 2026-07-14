@@ -49,6 +49,9 @@ COPY snapdog-client/ snapdog-client/
 COPY snapdog-common/ snapdog-common/
 COPY snapdog-testkit/ snapdog-testkit/
 COPY xtask/ xtask/
+# The prebuilt ETS product database is embedded into the binary via include_bytes!
+# (api/routes/knx.rs → ../../../../knx/snapdog.knxprod), so it must be in the image build.
+COPY knx/snapdog.knxprod knx/snapdog.knxprod
 COPY --from=webui-builder /build/webui/out webui/out
 
 RUN --mount=type=cache,id=snapdog-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
