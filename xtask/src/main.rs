@@ -389,15 +389,15 @@ fn write_application_program(x: &mut String) {
 }
 
 fn write_code_segment(x: &mut String) {
-    let memory_size = mem::TOTAL;
-    w(x, "            <Code>");
-    w(
-        x,
-        &format!(
-            r#"              <RelativeSegment Id="{AID}_RS-04-00000" Name="Parameters" Offset="0" Size="{memory_size}" LoadStateMachine="4" />"#
-        ),
-    );
-    w(x, "            </Code>");
+    use knx_rs_prod::author::{AppProgram, Segment};
+    let mut app = AppProgram::new(AID);
+    app.add_segment(Segment::Relative {
+        name: Some("Parameters".into()),
+        size: mem::TOTAL as u32,
+        load_state_machine: 4,
+        offset: 0,
+    });
+    app.write_code(12, x);
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1597,8 +1597,8 @@ fn assert_refs_resolve(xml: &str) {
 }
 
 fn write_tables(x: &mut String) {
-    w(x, r#"            <AddressTable MaxEntries="2047" />"#);
-    w(x, r#"            <AssociationTable MaxEntries="2047" />"#);
+    knx_rs_prod::author::write_address_table(12, 2047, x);
+    knx_rs_prod::author::write_association_table(12, 2047, x);
 }
 
 fn write_load_procedures(x: &mut String) {
@@ -1666,10 +1666,7 @@ fn write_load_procedures(x: &mut String) {
 }
 
 fn write_options(x: &mut String) {
-    w(
-        x,
-        r#"            <Options TextParameterEncoding="iso-8859-15" SupportsExtendedMemoryServices="true" SupportsExtendedPropertyServices="true" />"#,
-    );
+    knx_rs_prod::author::Options::new("iso-8859-15", true, true).write(12, x);
 }
 
 fn write_dynamic(x: &mut String) {
