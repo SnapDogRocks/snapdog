@@ -11,8 +11,6 @@
 // on internal helpers is noise.
 #![allow(clippy::cast_possible_truncation)]
 
-use std::fmt::Write as _;
-
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
     CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_COUNT,
@@ -1565,67 +1563,108 @@ fn write_tables(x: &mut String) {
 }
 
 fn write_load_procedures(x: &mut String) {
-    let memory_size = mem::TOTAL;
-    w(x, "            <LoadProcedures>");
-    w(x, r#"              <LoadProcedure MergeId="1">"#);
-    // InlineData is the device HardwareType (PID 78) — SSOT with the firmware
-    // (`group_objects::HARDWARE_TYPE`), so the download-gate compare can't drift.
-    let hardware_type_hex =
-        snapdog::knx::group_objects::HARDWARE_TYPE
-            .iter()
-            .fold(String::new(), |mut s, b| {
-                let _ = write!(s, "{b:02X}");
-                s
-            });
-    w(
-        x,
-        &format!(
-            r#"                <LdCtrlCompareProp InlineData="{hardware_type_hex}" ObjIdx="0" PropId="78">"#
-        ),
+    let mut app = knx_rs_prod::author::AppProgram::new(AID);
+    register_load_procedures(&mut app);
+    register_messages(&mut app);
+    app.write_load_procedures(12, x);
+    app.write_messages(12, x);
+}
+
+/// Register the ETS download machine through the typed `author` model. `InlineData` on the
+/// compare step is the firmware `HARDWARE_TYPE` SSOT; the segment size is `mem::TOTAL`, so
+/// the download can't drift from the memory layout.
+fn register_load_procedures(app: &mut knx_rs_prod::author::AppProgram) {
+    use knx_rs_prod::author::{
+        ErrorCause, LoadControl, LoadProcedure, ObjTarget, OnError, ProcType, StepBase,
+    };
+    use snapdog::knx::group_objects::HARDWARE_TYPE;
+
+    let size = mem::TOTAL as u32;
+
+    app.add_load_procedure(LoadProcedure::with_merge_id(1).step_with(
+        LoadControl::CompareProp {
+            target: ObjTarget::ObjIdx {
+                obj_idx: 0,
+                occurrence: 0,
+            },
+            prop_id: 78,
+            inline_data: Some(HARDWARE_TYPE.to_vec()),
+        },
+        StepBase {
+            applies_to: None,
+            on_error: vec![OnError {
+                cause: ErrorCause::CompareMismatch,
+                ignore: false,
+                message_ref: Some(format!("{AID}_M-1")),
+            }],
+        },
+    ));
+
+    app.add_load_procedure(
+        LoadProcedure::with_merge_id(2)
+            .step_with(
+                LoadControl::RelSegment {
+                    target: ObjTarget::Lsm(4),
+                    size,
+                    mode: 1,
+                    fill: 0,
+                },
+                StepBase {
+                    applies_to: Some(ProcType::Full),
+                    on_error: Vec::new(),
+                },
+            )
+            .step_with(
+                LoadControl::RelSegment {
+                    target: ObjTarget::Lsm(4),
+                    size,
+                    mode: 0,
+                    fill: 0,
+                },
+                StepBase {
+                    applies_to: Some(ProcType::Par),
+                    on_error: Vec::new(),
+                },
+            ),
     );
-    w(
-        x,
-        &format!(r#"                  <OnError Cause="CompareMismatch" MessageRef="{AID}_M-1" />"#),
+
+    app.add_load_procedure(LoadProcedure::with_merge_id(4).step_with(
+        LoadControl::WriteRelMem {
+            target: ObjTarget::ObjIdx {
+                obj_idx: 4,
+                occurrence: 0,
+            },
+            offset: 0,
+            size,
+            verify: true,
+            inline_data: None,
+        },
+        StepBase {
+            applies_to: Some(ProcType::FullPar),
+            on_error: Vec::new(),
+        },
+    ));
+
+    app.add_load_procedure(
+        LoadProcedure::with_merge_id(7).step(LoadControl::LoadImageProp {
+            target: ObjTarget::ObjIdx {
+                obj_idx: 4,
+                occurrence: 0,
+            },
+            prop_id: 27,
+        }),
     );
-    w(x, "                </LdCtrlCompareProp>");
-    w(x, "              </LoadProcedure>");
-    w(x, r#"              <LoadProcedure MergeId="2">"#);
-    w(
-        x,
-        &format!(
-            r#"                <LdCtrlRelSegment LsmIdx="4" Size="{memory_size}" Mode="1" Fill="0" AppliesTo="full" />"#
-        ),
-    );
-    w(
-        x,
-        &format!(
-            r#"                <LdCtrlRelSegment LsmIdx="4" Size="{memory_size}" Mode="0" Fill="0" AppliesTo="par" />"#
-        ),
-    );
-    w(x, "              </LoadProcedure>");
-    w(x, r#"              <LoadProcedure MergeId="4">"#);
-    w(
-        x,
-        &format!(
-            r#"                <LdCtrlWriteRelMem ObjIdx="4" Offset="0" Size="{memory_size}" Verify="true" AppliesTo="full,par" />"#
-        ),
-    );
-    w(x, "              </LoadProcedure>");
-    w(x, r#"              <LoadProcedure MergeId="7">"#);
-    w(
-        x,
-        r#"                <LdCtrlLoadImageProp ObjIdx="4" PropId="27" />"#,
-    );
-    w(x, "              </LoadProcedure>");
-    w(x, "            </LoadProcedures>");
-    w(x, "            <Messages>");
-    w(
-        x,
-        &format!(
-            r#"              <Message Id="{AID}_M-1" Name="VersionMismatch" Text="Application and firmware version mismatch." />"#
-        ),
-    );
-    w(x, "            </Messages>");
+}
+
+/// Register the `<Messages>` model — the diagnostics load procedures reference on error.
+fn register_messages(app: &mut knx_rs_prod::author::AppProgram) {
+    use knx_rs_prod::author::Message;
+
+    app.add_message(Message::new(
+        "1",
+        "VersionMismatch",
+        "Application and firmware version mismatch.",
+    ));
 }
 
 fn write_options(x: &mut String) {
