@@ -827,14 +827,19 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.SNAPDOG_OS_PAT }}
-          commit-message: "chore(deps): bump snapdog to ${{ needs.meta.outputs.version }}"
-          title: "chore(deps): bump snapdog to ${{ needs.meta.outputs.version }}"
+          # `fix(deps)` (NOT `chore(deps)`): release-please only cuts a release for
+          # fix/feat commits, so this type is what makes merging the PR open a
+          # snapdog-os release-please PR — i.e. every snapdog release ships in the OS.
+          commit-message: "fix(deps): bump snapdog to ${{ needs.meta.outputs.version }}"
+          title: "fix(deps): bump snapdog to ${{ needs.meta.outputs.version }}"
           body: |
             Automated version bump from [snapdog ${{ needs.meta.outputs.tag }}](https://github.com/SnapDogRocks/snapdog/releases/tag/${{ needs.meta.outputs.tag }}).
 
             This is a **rolling** PR: a later snapdog release re-pushes this same
-            branch and updates this PR in place (new version, hash, title) instead
-            of opening another one. Merge it whenever the OS should pick up snapdog.
+            branch and updates it in place (new version, hash, title) instead of
+            opening another one. Merging it lands a `fix(deps)` on `main`, which
+            makes release-please open a snapdog-os release PR so the new snapdog
+            ships in the next OS image.
           # Stable branch name (NOT `deps/snapdog-<version>`): peter-evans reuses an
           # open PR on this branch and force-updates it each release, so successive
           # releases roll one PR forward instead of stacking a new deps PR every time.
