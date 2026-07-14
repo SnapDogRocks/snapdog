@@ -2123,4 +2123,27 @@ mod tests {
             super::KNXPROD_APP_VERSION,
         );
     }
+
+    /// Byte-exact snapshot of `generate_xml()`. The knx-rs-prod::author migration
+    /// strangles the hand-written generator section-by-section; this test must stay
+    /// byte-identical against the pre-migration baseline at every step. Run with
+    /// `BLESS=1` to (re)capture after a *conscious* product change.
+    #[test]
+    fn generate_xml_matches_golden() {
+        let generated = super::generate_xml();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/product.xml");
+        let exists = std::path::Path::new(path).exists();
+        if std::env::var_os("BLESS").is_some() || !exists {
+            if let Some(dir) = std::path::Path::new(path).parent() {
+                std::fs::create_dir_all(dir).expect("create golden dir");
+            }
+            std::fs::write(path, &generated).expect("write golden");
+            return;
+        }
+        let golden = std::fs::read_to_string(path).expect("read golden");
+        assert_eq!(
+            generated, golden,
+            "generate_xml() drifted from the golden baseline — set BLESS=1 after a conscious change"
+        );
+    }
 }
