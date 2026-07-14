@@ -13,8 +13,8 @@
 
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
-    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_COUNT,
-    CLIENT_GOS, GLOBAL_GO_COUNT, GLOBAL_GOS, GoDefinition, KNXPROD_APP_NUMBER, KNXPROD_APP_VERSION,
+    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GOS,
+    GLOBAL_GO_COUNT, GLOBAL_GOS, GoDefinition, KNXPROD_APP_NUMBER, KNXPROD_APP_VERSION,
     KNXPROD_HW_VERSION, MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, ZGO_CONTROL_STATUS, ZGO_MUTE,
     ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT,
     ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
@@ -22,7 +22,7 @@ use snapdog::knx::group_objects::{
     ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
     ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
     ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
-    ZGO_VOLUME_STATUS, ZONE_GO_COUNT, ZONE_GOS, mem,
+    ZGO_VOLUME_STATUS, ZONE_GOS, mem,
 };
 
 const AID: &str = "M-00FA_A-FF01-01-0000";
@@ -618,7 +618,14 @@ fn write_parameters(x: &mut String) {
 fn build_params_app() -> knx_rs_prod::author::AppProgram {
     let mut app = knx_rs_prod::author::AppProgram::new(AID);
     register_types(&mut app);
-    let x = &mut app;
+    register_params(&mut app);
+    app
+}
+
+/// Register every `<Parameter>` (the full #89 inline layout) into `app`, asserting the
+/// `mem::` span tiling and the committed layout fingerprint. `register_types` must have run
+/// first, since `param_mem` resolves each parameter's type handle by name.
+fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
     // Byte offsets come straight from `mem::` (the single source of truth the firmware
     // reads); `spans` collects them so we can assert the params tile the layout exactly.
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -1260,8 +1267,6 @@ fn build_params_app() -> knx_rs_prod::author::AppProgram {
 
     // Fail if the byte layout drifts without an APP_VERSION bump (see below).
     assert_layout_locked(&spans);
-
-    app
 }
 
 /// Committed fingerprint of the exact ETS memory layout. Update this **together with**
@@ -1672,350 +1677,318 @@ fn write_options(x: &mut String) {
 }
 
 fn write_dynamic(x: &mut String) {
-    w(x, "          <Dynamic>");
-    // ETS only allows Channel/ChannelIndependentBlock/choose/… directly under <Dynamic>
-    // (not bare ParameterBlocks), so wrap everything in one ChannelIndependentBlock.
-    w(x, "            <ChannelIndependentBlock>");
-    // General: the "number of zones" dropdown drives which zone blocks are shown.
-    write_general_block(x);
-    // Zones — a zone block is shown when the chosen count is >= this zone's index.
-    // Config knobs: DefVol, MaxVol, AirPlay, Spotify, PresEn, PresTO (sample rate / bit
-    // depth are global, shown in the General block).
+    // The Dynamic tree references params and com-objects by handle, so it needs the full
+    // typed model registered first; the author then materialises the block ids and every
+    // `_R-` ref (a dangling ref is a build-time panic, not an opaque ETS import error).
+    let mut app = knx_rs_prod::author::AppProgram::new(AID);
+    register_types(&mut app);
+    register_params(&mut app);
+    register_com_objects(&mut app);
+    let tree = build_dynamic(&app);
+    app.add_dynamic(tree);
+    app.write_dynamic(10, x);
+}
+
+/// Build the `<Dynamic>` UI tree: one `<ChannelIndependentBlock>` holding the General block,
+/// a gated block per zone and per client, the radio presets and the device System block —
+/// the exact structure #89 emitted, now resolved through the typed `Dyn` model.
+fn build_dynamic(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::Dyn;
+
+    let mut blocks: Vec<Dyn> = Vec::new();
+    // General: the "number of zones"/"number of clients" dropdowns drive which blocks show.
+    blocks.push(build_general_block(app));
+    // Zones — a zone block is shown when the chosen count is >= this zone's index. Config
+    // knobs: DefVol, MaxVol, AirPlay, Spotify, PresEn, PresTO (sample rate / bit depth are
+    // global, shown in the General block).
     for z in 1..=MAX_ZONES {
-        write_channel_block(
-            x,
+        blocks.push(build_channel_block(
+            app,
             "Zone",
             z,
-            &format!("{AID}_UP-G000"),
-            &format!("&gt;={z}"),
-            &format!("{AID}_UP-Z{z:02}000"),
+            "G000",
+            &format!(">={z}"),
+            &format!("Z{z:02}000"),
             ZONE_GROUPS,
             &format!("Z{z:02}"),
             &[
                 "002", "003", "004", "005", "006", "007", "008", "010", "011",
             ],
-        );
+        ));
     }
-    // Clients — a client block is shown when the chosen count is >= this client's index
-    // (same logic as zones). Config knobs: DefZone, DefVol, MaxVol, DefLat, MAC.
+    // Clients — same gating as zones. Config knobs: DefZone, DefVol, MaxVol, DefLat, MAC.
     for c in 1..=MAX_CLIENTS {
-        write_channel_block(
-            x,
+        blocks.push(build_channel_block(
+            app,
             "Client",
             c,
-            &format!("{AID}_UP-G003"),
-            &format!("&gt;={c}"),
-            &format!("{AID}_UP-C{c:02}000"),
+            "G003",
+            &format!(">={c}"),
+            &format!("C{c:02}000"),
             CLIENT_GROUPS,
             &format!("C{c:02}"),
             &["002", "003", "004", "005", "010", "011"],
-        );
+        ));
     }
     // Radio stream presets: count dropdown + gated Name / URL / Cover per station.
-    write_radio_block(x);
+    blocks.push(build_radio_block(app));
     // Device-level "System" block: heartbeat interval param + the global group objects.
-    write_system_block(x);
-    w(x, "            </ChannelIndependentBlock>");
-    w(x, "          </Dynamic>");
+    blocks.push(build_system_block(app));
+    Dyn::ChannelIndependentBlock(blocks)
 }
 
 /// Radio presets block: a "number of radios" dropdown, then one section per station
 /// (Name / URL / Cover), each shown when the chosen count is >= its index.
-fn write_radio_block(x: &mut String) {
-    let count_ref = format!("{AID}_UP-G020_R-{AID}_UP-G020");
-    w(
-        x,
-        &format!(
-            r#"            <ParameterBlock Id="{AID}_PB-Radios" Name="Radios" Text="Radiosender">"#
-        ),
-    );
+fn build_radio_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::{Dyn, When};
+
+    let count = app.param_ref("G020");
+    let mut children: Vec<Dyn> = Vec::new();
     // The count dropdown comes first, then gates each station section.
-    w(
-        x,
-        &format!(r#"              <ParameterRefRef RefId="{count_ref}" />"#),
-    );
+    children.push(Dyn::ParamRefRef(count));
     for r in 1..=mem::MAX_RADIOS {
         let p = format!("R{r:02}");
-        let ids = [
-            format!("{AID}_UP-{p}000"), // Name
-            format!("{AID}_UP-{p}001"), // URL
-            format!("{AID}_UP-{p}003"), // Cover
-        ];
-        w(
-            x,
-            &format!(r#"              <choose ParamRefId="{count_ref}">"#),
-        );
-        w(x, &format!(r#"                <when test="&gt;={r}">"#));
-        write_param_section(
-            x,
-            "                  ",
+        let name = format!("{p}000"); // Name
+        let url = format!("{p}001"); // URL
+        let cover = format!("{p}003"); // Cover
+        let mut station: Vec<Dyn> = Vec::new();
+        push_param_section(
+            app,
+            &mut station,
             &format!("{p}-Station"),
             &format!("Station {r}"),
-            &ids,
+            &[name.as_str(), url.as_str(), cover.as_str()],
         );
-        w(x, "                </when>");
-        w(x, "              </choose>");
+        children.push(Dyn::Choose {
+            param_ref: count,
+            whens: vec![When {
+                test: format!(">={r}"),
+                children: station,
+            }],
+        });
     }
-    w(x, "            </ParameterBlock>");
+    Dyn::ParameterBlock {
+        suffix: "Radios".to_string(),
+        name: "Radios".to_string(),
+        text: "Radiosender".to_string(),
+        text_param_ref: None,
+        show_in_com_object_tree: false,
+        children,
+    }
 }
 
 /// Top-level "Allgemein" block holding the number-of-zones dropdown. Displayed via the
 /// `P-` parameter ref (like the channel name fields); the zone `<choose>` conditions gate
 /// on the same parameter's `UP-` ref.
-fn write_general_block(x: &mut String) {
-    let zones_ref = format!("{AID}_UP-G000_R-{AID}_UP-G000");
-    let clients_ref = format!("{AID}_UP-G003_R-{AID}_UP-G003");
-    w(
-        x,
-        &format!(
-            r#"            <ParameterBlock Id="{AID}_PB-General" Name="General" Text="Allgemein">"#
-        ),
-    );
+fn build_general_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::{Dyn, When};
+
+    let mut children: Vec<Dyn> = Vec::new();
     // Counts: number of zones then number of clients drive which channel blocks show.
-    w(
-        x,
-        &format!(r#"              <ParameterRefRef RefId="{zones_ref}" />"#),
-    );
-    w(
-        x,
-        &format!(r#"              <ParameterRefRef RefId="{clients_ref}" />"#),
-    );
-    let indent = "              ";
-    // Server settings + HTTP API keys — the key authenticates the HTTP API configured
-    // here, so it lives next to the port. The count dropdown gates how many key fields
-    // show; key N is revealed when NumApiKeys >= N (mirrors the radio presets).
-    write_param_section(
-        x,
-        indent,
+    children.push(Dyn::ParamRefRef(app.param_ref("G000")));
+    children.push(Dyn::ParamRefRef(app.param_ref("G003")));
+    // Server settings + HTTP API keys — the key authenticates the HTTP API configured here,
+    // so it lives next to the port. The count dropdown gates how many key fields show; key N
+    // is revealed when NumApiKeys >= N (mirrors the radio presets).
+    push_param_section(
+        app,
+        &mut children,
         "G-Server",
         "Server",
-        &[
-            format!("{AID}_UP-G001"), // HTTP port
-            format!("{AID}_UP-G002"), // Log level
-            format!("{AID}_UP-G021"), // Number of API keys
-        ],
+        &["G001", "G002", "G021"], // HTTP port, Log level, Number of API keys
     );
-    let api_count_ref = format!("{AID}_UP-G021_R-{AID}_UP-G021");
+    let api_count = app.param_ref("G021");
     for k in 1..=MAX_API_KEYS {
-        let kid = format!("{AID}_UP-G{:03}", 21 + k);
-        w(
-            x,
-            &format!(r#"{indent}<choose ParamRefId="{api_count_ref}">"#),
-        );
-        w(x, &format!(r#"{indent}  <when test="&gt;={k}">"#));
-        w(
-            x,
-            &format!(r#"{indent}    <ParameterRefRef RefId="{kid}_R-{kid}" />"#),
-        );
-        w(x, &format!("{indent}  </when>"));
-        w(x, &format!("{indent}</choose>"));
+        let kid = format!("G{:03}", 21 + k);
+        children.push(Dyn::Choose {
+            param_ref: api_count,
+            whens: vec![When {
+                test: format!(">={k}"),
+                children: vec![Dyn::ParamRefRef(app.param_ref(&kid))],
+            }],
+        });
     }
-    // Global audio output format (server-wide, not per-zone).
-    write_param_section(
-        x,
-        indent,
+    // Global audio output format (server-wide, not per-zone): SampleRate, BitDepth, Codec,
+    // SourceConflict, ZoneFade, SourceFade, Snapcast PSK.
+    push_param_section(
+        app,
+        &mut children,
         "G-Audio",
         "Audio",
-        &[
-            format!("{AID}_UP-G004"), // SampleRate
-            format!("{AID}_UP-G005"), // BitDepth
-            format!("{AID}_UP-G006"), // Codec
-            format!("{AID}_UP-G007"), // SourceConflict
-            format!("{AID}_UP-G008"), // ZoneFade
-            format!("{AID}_UP-G009"), // SourceFade
-            format!("{AID}_UP-G017"), // Snapcast PSK (encrypts the audio stream)
-        ],
+        &["G004", "G005", "G006", "G007", "G008", "G009", "G017"],
     );
     // Subsonic.
-    write_param_section(
-        x,
-        indent,
+    push_param_section(
+        app,
+        &mut children,
         "G-Subsonic",
         "Subsonic",
-        &[
-            format!("{AID}_UP-G010"),
-            format!("{AID}_UP-G011"),
-            format!("{AID}_UP-G012"),
-        ],
+        &["G010", "G011", "G012"],
     );
-    // MQTT.
-    write_param_section(
-        x,
-        indent,
+    // MQTT: Broker, Topic, Password.
+    push_param_section(
+        app,
+        &mut children,
         "G-MQTT",
         "MQTT",
-        &[
-            format!("{AID}_UP-G013"), // Broker
-            format!("{AID}_UP-G014"), // Topic
-            format!("{AID}_UP-G015"), // Password
-        ],
+        &["G013", "G014", "G015"],
     );
-    // AirPlay.
-    write_param_section(
-        x,
-        indent,
-        "G-AirPlay",
-        "AirPlay",
-        &[format!("{AID}_UP-G016")], // Password
-    );
+    // AirPlay: Password.
+    push_param_section(app, &mut children, "G-AirPlay", "AirPlay", &["G016"]);
     // Secrets are grouped with their subsystem (API keys → Server, PSK → Audio, MQTT /
     // AirPlay / Subsonic passwords in their own sections) — no separate Security heading.
-    write_info_section(x, indent);
-    w(x, "            </ParameterBlock>");
+    push_info_section(&mut children);
+    Dyn::ParameterBlock {
+        suffix: "General".to_string(),
+        name: "General".to_string(),
+        text: "Allgemein".to_string(),
+        text_param_ref: None,
+        show_in_com_object_tree: false,
+        children,
+    }
 }
 
 /// Device-level "System" block: the heartbeat-interval parameter plus the global group
 /// objects (Server Online, All Stop, All Mute, System Fault, KNX Time), shown under their
 /// own drawer in the `ComObject` tree.
-fn write_system_block(x: &mut String) {
-    w(
-        x,
-        &format!(
-            r#"            <ParameterBlock Id="{AID}_PB-System" Name="System" Text="System" ShowInComObjectTree="true">"#
-        ),
-    );
-    w(
-        x,
-        &format!(r#"              <ParameterRefRef RefId="{AID}_UP-G040_R-{AID}_UP-G040" />"#),
-    );
+fn build_system_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::Dyn;
+
+    let mut children: Vec<Dyn> = Vec::new();
+    children.push(Dyn::ParamRefRef(app.param_ref("G040")));
     for i in 0..GLOBAL_GOS.len() {
-        let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
-        w(
-            x,
-            &format!(r#"              <ComObjectRefRef RefId="{AID}_O-GG{i:03}_R-{num}" />"#),
-        );
+        children.push(Dyn::ComObjRefRef(app.com_object_ref(&format!("GG{i:03}"))));
     }
-    w(x, "            </ParameterBlock>");
+    Dyn::ParameterBlock {
+        suffix: "System".to_string(),
+        name: "System".to_string(),
+        text: "System".to_string(),
+        text_param_ref: None,
+        show_in_com_object_tree: true,
+        children,
+    }
 }
 
 /// Read-only "Info" block at the end of the General tab: product / copyright / license /
 /// source and the DB identity. Pure `ParameterSeparator` display text — no memory, so it
 /// neither touches the layout fingerprint nor needs an app-version bump. Identity fields
 /// are single-sourced from the `KNXPROD_*` consts so they can never drift from the artifact.
-fn write_info_section(x: &mut String, indent: &str) {
-    w(
-        x,
-        &format!(
-            r#"{indent}<ParameterSeparator Id="{AID}_PS-Info" Text="Info" UIHint="Headline" />"#
-        ),
-    );
+fn push_info_section(out: &mut Vec<knx_rs_prod::author::Dyn>) {
+    use knx_rs_prod::author::Dyn;
+
+    out.push(Dyn::Separator {
+        suffix: "Info".to_string(),
+        text: "Info".to_string(),
+        ui_hint: "Headline".to_string(),
+    });
+    // Note the raw `&` (not `&amp;`): the author escape_attr's separator text, so a
+    // pre-escaped entity would double-escape. The other lines are plain UTF-8, unescaped.
     let info_lines = [
         "SnapDog — Multiroom Audio Server".to_string(),
         "© 2026 Fabian Schmieder".to_string(),
         "Lizenz: GPL-3.0-only · Open-Source-Firmware".to_string(),
-        "Quellcode &amp; Support: github.com/SnapDogRocks/snapdog".to_string(),
+        "Quellcode & Support: github.com/SnapDogRocks/snapdog".to_string(),
         format!(
             "Produkt-DB v{KNXPROD_APP_VERSION} · App 0x{KNXPROD_APP_NUMBER:04X} · HW {KNXPROD_HW_VERSION} · KNXnet/IP System B"
         ),
     ];
     for (i, line) in info_lines.iter().enumerate() {
-        w(
-            x,
-            &format!(
-                r#"{indent}<ParameterSeparator Id="{AID}_PS-Info-{i}" Text="{line}" UIHint="Information" />"#
-            ),
-        );
+        out.push(Dyn::Separator {
+            suffix: format!("Info-{i}"),
+            text: line.clone(),
+            ui_hint: "Information".to_string(),
+        });
     }
 }
 
-/// Emit a `<ParameterSeparator>` headline followed by a `<ParameterRefRef>` for each
-/// parameter id. `indent` is the leading whitespace for the block nesting level; `sep_id`
-/// must be a document-unique `NCName`.
-fn write_param_section(
-    x: &mut String,
-    indent: &str,
+/// Push a `<ParameterSeparator>` headline followed by a `<ParameterRefRef>` for each
+/// parameter suffix onto `out`. `sep_id` must be a document-unique `NCName`; each suffix is
+/// resolved to its ref handle via `AppProgram::param_ref`.
+fn push_param_section(
+    app: &knx_rs_prod::author::AppProgram,
+    out: &mut Vec<knx_rs_prod::author::Dyn>,
     sep_id: &str,
     title: &str,
-    param_ids: &[String],
+    param_suffixes: &[&str],
 ) {
-    w(
-        x,
-        &format!(
-            r#"{indent}<ParameterSeparator Id="{AID}_PS-{sep_id}" Text="{title}" UIHint="Headline" />"#
-        ),
-    );
-    for pid in param_ids {
-        w(
-            x,
-            &format!(r#"{indent}<ParameterRefRef RefId="{pid}_R-{pid}" />"#),
-        );
+    use knx_rs_prod::author::Dyn;
+
+    out.push(Dyn::Separator {
+        suffix: sep_id.to_string(),
+        text: title.to_string(),
+        ui_hint: "Headline".to_string(),
+    });
+    for suffix in param_suffixes {
+        out.push(Dyn::ParamRefRef(app.param_ref(suffix)));
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_channel_block(
-    x: &mut String,
+fn build_channel_block(
+    app: &knx_rs_prod::author::AppProgram,
     prefix: &str,
     idx: usize,
-    cond_param_id: &str,
+    cond_suffix: &str,
     test: &str,
-    name_param_id: &str,
+    name_suffix: &str,
     groups: &[CoGroup],
     id_prefix: &str,
     config_nums: &[&str],
-) {
-    let cond_ref = format!("{cond_param_id}_R-{cond_param_id}");
-    let name_ref = format!("{name_param_id}_R-{name_param_id}");
-    w(
-        x,
-        &format!(r#"            <choose ParamRefId="{cond_ref}">"#),
-    );
-    w(x, &format!(r#"              <when test="{test}">"#));
-    w(
-        x,
-        &format!(
-            r#"                <ParameterBlock Id="{AID}_PB-{id_prefix}" Name="{prefix}{idx}" Text="{prefix} {idx}: {{{{0: ...}}}}" TextParameterRefId="{name_ref}" ShowInComObjectTree="true">"#
-        ),
-    );
+) -> knx_rs_prod::author::Dyn {
+    use knx_rs_prod::author::{Dyn, When};
+
+    let name_ref = app.param_ref(name_suffix);
+    let mut block: Vec<Dyn> = Vec::new();
     // Name parameter
-    w(
-        x,
-        &format!(r#"                  <ParameterRefRef RefId="{name_ref}" />"#),
-    );
+    block.push(Dyn::ParamRefRef(name_ref));
     // Editable configuration knobs for this channel (memory-backed, from mem::).
     if !config_nums.is_empty() {
         let ids: Vec<String> = config_nums
             .iter()
-            .map(|num| format!("{AID}_UP-{id_prefix}{num}"))
+            .map(|num| format!("{id_prefix}{num}"))
             .collect();
-        write_param_section(
-            x,
-            "                  ",
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        push_param_section(
+            app,
+            &mut block,
             &format!("{id_prefix}-Einstellungen"),
             "Einstellungen",
-            &ids,
+            &id_refs,
         );
     }
-    // CO groups
+    // CO groups — the `_R-<number>` comes from the com-object handle, so it can't drift
+    // from `register_com_objects`' numbering.
     for group in groups {
-        w(
-            x,
-            &format!(
-                r#"                  <ParameterSeparator Id="{AID}_PS-{id_prefix}-{}" Text="{}" UIHint="Headline" />"#,
-                group
-                    .title_en
-                    .chars()
-                    .filter(char::is_ascii_alphanumeric)
-                    .collect::<String>(),
-                group.title_de
-            ),
-        );
+        let sanitized: String = group
+            .title_en
+            .chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect();
+        block.push(Dyn::Separator {
+            suffix: format!("{id_prefix}-{sanitized}"),
+            text: group.title_de.to_string(),
+            ui_hint: "Headline".to_string(),
+        });
         for &i in group.indices {
-            let co_id = format!("{AID}_O-{id_prefix}{i:03}");
-            let num = if prefix == "Zone" {
-                (idx - 1) * ZONE_GO_COUNT + i + 1
-            } else {
-                MAX_ZONES * ZONE_GO_COUNT + (idx - 1) * CLIENT_GO_COUNT + i + 1
-            };
-            w(
-                x,
-                &format!(r#"                  <ComObjectRefRef RefId="{co_id}_R-{num}" />"#),
-            );
+            block.push(Dyn::ComObjRefRef(
+                app.com_object_ref(&format!("{id_prefix}{i:03}")),
+            ));
         }
     }
-    w(x, "                </ParameterBlock>");
-    w(x, "              </when>");
-    w(x, "            </choose>");
+    Dyn::Choose {
+        param_ref: app.param_ref(cond_suffix),
+        whens: vec![When {
+            test: test.to_string(),
+            children: vec![Dyn::ParameterBlock {
+                suffix: id_prefix.to_string(),
+                name: format!("{prefix}{idx}"),
+                text: format!("{prefix} {idx}: {{{{0: ...}}}}"),
+                text_param_ref: Some(name_ref),
+                show_in_com_object_tree: true,
+                children: block,
+            }],
+        }],
+    }
 }
 
 fn write_hardware(x: &mut String) {
