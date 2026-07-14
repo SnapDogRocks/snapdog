@@ -404,10 +404,14 @@ fn write_parameter_types(x: &mut String) {
     build_parameter_types().write_parameter_types(12, x);
 }
 
-#[allow(clippy::too_many_lines)]
 fn build_parameter_types() -> knx_rs_prod::author::AppProgram {
     let mut app = knx_rs_prod::author::AppProgram::new(AID);
-    let x = &mut app;
+    register_types(&mut app);
+    app
+}
+
+#[allow(clippy::too_many_lines)]
+fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     // Bool
     pt_enum(x, "YesNo", 8, &[("Nein", 0), ("Ja", 1)]);
     // Text types
@@ -570,7 +574,6 @@ fn build_parameter_types() -> knx_rs_prod::author::AppProgram {
             ("60 Minuten", 60),
         ],
     );
-    app
 }
 
 fn pt_enum(x: &mut knx_rs_prod::author::AppProgram, name: &str, bits: u16, values: &[(&str, u16)]) {
@@ -607,7 +610,17 @@ fn pt_num(
 
 #[allow(clippy::too_many_lines)] // Repetitive XML parameter generation — not decomposable
 fn write_parameters(x: &mut String) {
-    w(x, "            <Parameters>");
+    build_params_app().write_parameters(12, x);
+}
+
+/// Build an [`AppProgram`](knx_rs_prod::author::AppProgram) populated with every
+/// parameter type and every `<Parameter>` — the shared model behind both the
+/// `<Parameters>` block and the `<ParameterRefs>` block, and the seed the full document
+/// builder extends. The `mem::` offsets remain single-sourced and span-asserted here.
+fn build_params_app() -> knx_rs_prod::author::AppProgram {
+    let mut app = knx_rs_prod::author::AppProgram::new(AID);
+    register_types(&mut app);
+    let x = &mut app;
     // Byte offsets come straight from `mem::` (the single source of truth the firmware
     // reads); `spans` collects them so we can assert the params tile the layout exactly.
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -1227,8 +1240,6 @@ fn write_parameters(x: &mut String) {
         );
     }
 
-    w(x, "            </Parameters>");
-
     // Single-source guard: every param sits at its mem:: offset, so the emitted spans must
     // tile [0, mem::TOTAL) with no gap or overlap. A wrong mem:: constant or size trips this.
     spans.sort_unstable();
@@ -1251,6 +1262,8 @@ fn write_parameters(x: &mut String) {
 
     // Fail if the byte layout drifts without an APP_VERSION bump (see below).
     assert_layout_locked(&spans);
+
+    app
 }
 
 /// Committed fingerprint of the exact ETS memory layout. Update this **together with**
@@ -1335,7 +1348,7 @@ fn assert_layout_locked(spans: &[(usize, usize)]) {
 /// Emit a memory-backed parameter inside a Union.
 #[allow(clippy::too_many_arguments)]
 fn param_mem(
-    x: &mut String,
+    x: &mut knx_rs_prod::author::AppProgram,
     prefix: &str,
     num: &str,
     name: &str,
@@ -1347,22 +1360,19 @@ fn param_mem(
     spans: &mut Vec<(usize, usize)>,
 ) {
     // The byte offset is single-sourced from `mem::` (the layout the firmware reads).
-    // Record the span so the caller can assert the params tile mem:: exactly.
+    // Record the span so the caller can assert the params tile mem:: exactly. The
+    // `<Union>` width, the `_PT-` reference and the `_RS-04-00000` CodeSegment default
+    // are all drawn from the type handle + the author, so they can't drift.
     spans.push((offset, (bits / 8) as usize));
-    w(x, &format!(r#"              <Union SizeInBit="{bits}">"#));
-    w(
-        x,
-        &format!(
-            r#"                <Memory CodeSegment="{AID}_RS-04-00000" Offset="{offset}" BitOffset="0" />"#
-        ),
-    );
-    w(
-        x,
-        &format!(
-            r#"                <Parameter Id="{AID}_UP-{prefix}{num}" Name="{prefix}_{name}" Offset="0" BitOffset="0" ParameterType="{AID}_PT-{pt}" Text="{text}" Value="{default}" />"#
-        ),
-    );
-    w(x, "              </Union>");
+    let ty = x.parameter_type_id(pt);
+    x.add_param(knx_rs_prod::author::Parameter::new(
+        format!("{prefix}{num}"),
+        format!("{prefix}_{name}"),
+        ty,
+        text,
+        default,
+        offset,
+    ));
 }
 
 fn write_com_objects(x: &mut String) {
