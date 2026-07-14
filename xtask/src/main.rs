@@ -400,9 +400,14 @@ fn write_code_segment(x: &mut String) {
     app.write_code(12, x);
 }
 
-#[allow(clippy::too_many_lines)]
 fn write_parameter_types(x: &mut String) {
-    w(x, "            <ParameterTypes>");
+    build_parameter_types().write_parameter_types(12, x);
+}
+
+#[allow(clippy::too_many_lines)]
+fn build_parameter_types() -> knx_rs_prod::author::AppProgram {
+    let mut app = knx_rs_prod::author::AppProgram::new(AID);
+    let x = &mut app;
     // Bool
     pt_enum(x, "YesNo", 8, &[("Nein", 0), ("Ja", 1)]);
     // Text types
@@ -565,54 +570,39 @@ fn write_parameter_types(x: &mut String) {
             ("60 Minuten", 60),
         ],
     );
-    w(x, "            </ParameterTypes>");
+    app
 }
 
-fn pt_enum(x: &mut String, name: &str, bits: u16, values: &[(&str, u16)]) {
-    w(
-        x,
-        &format!(r#"              <ParameterType Id="{AID}_PT-{name}" Name="{name}">"#),
-    );
-    w(
-        x,
-        &format!(r#"                <TypeRestriction Base="Value" SizeInBit="{bits}">"#),
-    );
-    for (i, (text, val)) in values.iter().enumerate() {
-        w(
-            x,
-            &format!(
-                r#"                  <Enumeration Text="{text}" Value="{val}" Id="{AID}_PT-{name}_EN-{i}" />"#
-            ),
-        );
-    }
-    w(x, "                </TypeRestriction>");
-    w(x, "              </ParameterType>");
+fn pt_enum(x: &mut knx_rs_prod::author::AppProgram, name: &str, bits: u16, values: &[(&str, u16)]) {
+    x.add_parameter_type(knx_rs_prod::author::ParameterType::enumeration(
+        name,
+        bits,
+        values
+            .iter()
+            .map(|&(text, val)| (text.to_string(), i64::from(val)))
+            .collect(),
+    ));
 }
 
-fn pt_text(x: &mut String, name: &str, bits: u16) {
-    w(
-        x,
-        &format!(r#"              <ParameterType Id="{AID}_PT-{name}" Name="{name}">"#),
-    );
-    w(
-        x,
-        &format!(r#"                <TypeText SizeInBit="{bits}" />"#),
-    );
-    w(x, "              </ParameterType>");
+fn pt_text(x: &mut knx_rs_prod::author::AppProgram, name: &str, bits: u16) {
+    x.add_parameter_type(knx_rs_prod::author::ParameterType::text(name, bits));
 }
 
-fn pt_num(x: &mut String, name: &str, bits: u16, typ: &str, min: u32, max: u32) {
-    w(
-        x,
-        &format!(r#"              <ParameterType Id="{AID}_PT-{name}" Name="{name}">"#),
-    );
-    w(
-        x,
-        &format!(
-            r#"                <TypeNumber SizeInBit="{bits}" Type="{typ}" minInclusive="{min}" maxInclusive="{max}" />"#
-        ),
-    );
-    w(x, "              </ParameterType>");
+fn pt_num(
+    x: &mut knx_rs_prod::author::AppProgram,
+    name: &str,
+    bits: u16,
+    typ: &str,
+    min: u32,
+    max: u32,
+) {
+    x.add_parameter_type(knx_rs_prod::author::ParameterType::number(
+        name,
+        bits,
+        typ,
+        i64::from(min),
+        i64::from(max),
+    ));
 }
 
 #[allow(clippy::too_many_lines)] // Repetitive XML parameter generation — not decomposable
