@@ -1,13 +1,13 @@
-name: Sync OpenAPI & Docs to Web Portal
+name: Sync OpenAPI to Web Portal
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
     paths:
       - 'snapdog/src/api/**'
       - 'xtask/**'
-      - 'docs/**'
 
 jobs:
   # Gate on the cross-repo token. Secrets can't be read in a job-level `if:`, so a
@@ -57,11 +57,20 @@ jobs:
           token: ${{ secrets.SNAPDOG_WEB_SYNC_TOKEN }}
           path: snapdog-web
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: snapdog-web/package-lock.json
+
       - name: Copy Spec and Commit
         run: |
           mkdir -p snapdog-web/src/assets
           cp openapi.json snapdog-web/src/assets/openapi.json
           cd snapdog-web
+          npm ci
+          npm run docs:check
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           if ! git diff --quiet; then

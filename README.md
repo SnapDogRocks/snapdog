@@ -17,7 +17,7 @@ One binary. AirPlay + Spotify + Subsonic + MQTT + KNX. Snapcast-based audio deli
 
 ---
 
-SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system with deep smart home integration. It embeds a [Snapcast](https://github.com/badaix/snapcast) compatible server completly reimplemented in pure Rust (see [snapcast-rs](https://github.com/metaneutrons/snapcast-rs)), runs AirPlay and Spotify Connect receivers per zone, streams from subsonic-compatible media servers like [Navidrome](https://www.navidrome.org), plays internet radio — and bridges everything tightly to MQTT and KNX.
+SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system with deep smart home integration. It embeds a [Snapcast](https://github.com/badaix/snapcast) compatible server completely reimplemented in pure Rust (see [snapcast-rs](https://github.com/metaneutrons/snapcast-rs)), runs AirPlay and Spotify Connect receivers per zone, streams from subsonic-compatible media servers like [Navidrome](https://www.navidrome.org), plays internet radio — and bridges everything tightly to MQTT and KNX.
 
 
 
@@ -37,7 +37,7 @@ SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system
 | 🔊 **Speaker Correction** | Per-client Spinorama profiles (1000+ speakers from (https://spinorama.org)) |
 | 🔀 **Audio Fade** | Smooth transitions: zone switch (client-side) and source switch (server-side) |
 | 🏠 **MQTT** | Bidirectional smart home integration, Home Assistant auto-discovery |
-| 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 35 group objects per zone, 11 group objects per client, presence detection mode) |
+| 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 35 group objects per zone, 11 per client, plus device-level global objects) |
 | 🌐 **REST API** | ~90 endpoints, full zone/client/media control |
 | 📡 **WebSocket** | Real-time state push notifications |
 | 🖥️ **WebUI** | Responsive SPA, drag-and-drop, tabbed EQ overlay, i18n (5 languages) |
@@ -116,7 +116,7 @@ SBOM and SLSA provenance attestations. Release manifests are signed keylessly wi
 Sigstore. Verify an immutable release before deployment:
 
 ```bash
-cosign verify ghcr.io/snapdogrocks/snapdog:v0.24.1 \
+cosign verify ghcr.io/snapdogrocks/snapdog:v0.25.1 \
   --certificate-identity-regexp '^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9].*$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
@@ -148,6 +148,10 @@ changes take effect immediately (disable with `restart_after_ets = false`). Unti
 device has been programmed, built-in defaults are used.
 
 The `.knxprod` file for ETS import is available from [Releases](https://github.com/SnapDogRocks/snapdog/releases/latest).
+Running servers also expose the exact embedded product database at
+`GET /api/v1/knx/knxprod` and its application/hardware identity at
+`GET /api/v1/knx/product-info`, so integrators can verify that ETS and firmware
+use the same product version.
 
 ### Binary
 
@@ -167,7 +171,7 @@ sc start SnapDog
 ### Debian/Ubuntu (APT)
 
 ```bash
-echo "deb [trusted=yes] https://metaneutrons.github.io/snapdog/debian stable main" \
+echo "deb [trusted=yes] https://snapdogrocks.github.io/snapdog/debian stable main" \
   | sudo tee /etc/apt/sources.list.d/snapdog.list
 sudo apt update
 sudo apt install snapdog snapdog-client

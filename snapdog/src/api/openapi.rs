@@ -18,6 +18,8 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
         // KNX
         crate::api::routes::knx::get_programming_mode,
         crate::api::routes::knx::set_programming_mode,
+        crate::api::routes::knx::get_knxprod,
+        crate::api::routes::knx::get_product_info,
 
         // Equalizer
         crate::api::routes::eq::get_eq,
