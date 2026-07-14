@@ -1376,80 +1376,88 @@ fn param_mem(
 }
 
 fn write_com_objects(x: &mut String) {
-    w(x, "            <ComObjectTable>");
+    build_co_app().write_com_object_table(12, x);
+}
+
+/// Build an [`AppProgram`](knx_rs_prod::author::AppProgram) populated with every group
+/// object — the shared model behind both `<ComObjectTable>` and `<ComObjectRefs>`.
+fn build_co_app() -> knx_rs_prod::author::AppProgram {
+    let mut app = knx_rs_prod::author::AppProgram::new(AID);
+    register_com_objects(&mut app);
+    app
+}
+
+/// Register every zone, client and device-level global group object into `app`, in the
+/// exact `Number` order ETS expects, and return the suffix→handle map the Dynamic tree
+/// resolves its `<ComObjectRefRef>`s through. Numbering is #89's verbatim arithmetic.
+fn register_com_objects(
+    app: &mut knx_rs_prod::author::AppProgram,
+) -> std::collections::HashMap<String, knx_rs_prod::author::ComObjectRefId> {
+    let mut oref: std::collections::HashMap<String, knx_rs_prod::author::ComObjectRefId> =
+        std::collections::HashMap::new();
     for z in 1..=MAX_ZONES {
         for (i, go) in ZONE_GOS.iter().enumerate() {
             let num = (z - 1) * ZONE_GOS.len() + i + 1;
-            write_com_object(
-                x,
-                &format!("Z{z:02}{i:03}"),
+            let suffix = format!("Z{z:02}{i:03}");
+            let (_, r) = app.add_com_object(go_com_object(
+                &suffix,
                 &format!("Zone {z} {}", go.name),
-                go,
                 num,
-            );
+                go,
+            ));
+            oref.insert(suffix, r);
         }
     }
     for c in 1..=MAX_CLIENTS {
         for (i, go) in CLIENT_GOS.iter().enumerate() {
             let num = MAX_ZONES * ZONE_GOS.len() + (c - 1) * CLIENT_GOS.len() + i + 1;
-            write_com_object(
-                x,
-                &format!("C{c:02}{i:03}"),
+            let suffix = format!("C{c:02}{i:03}");
+            let (_, r) = app.add_com_object(go_com_object(
+                &suffix,
                 &format!("Client {c} {}", go.name),
-                go,
                 num,
-            );
+                go,
+            ));
+            oref.insert(suffix, r);
         }
     }
     // Global (device-level) COs follow every zone and client CO.
     for (i, go) in GLOBAL_GOS.iter().enumerate() {
         let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
-        write_com_object(x, &format!("GG{i:03}"), go.name, go, num);
+        let suffix = format!("GG{i:03}");
+        let (_, r) = app.add_com_object(go_com_object(&suffix, go.name, num, go));
+        oref.insert(suffix, r);
     }
-    w(x, "            </ComObjectTable>");
+    oref
 }
 
-/// KNX `DatapointType` id format: the `Dpt` Display is `1.001`, but the ETS schema wants an
-/// IDREF into the master (`DPST-1-1`). Sub-numbers drop leading zeros.
-fn dpst(dpt: impl std::fmt::Display) -> String {
-    let s = dpt.to_string();
-    match s.split_once('.') {
-        Some((main, sub)) => format!(
-            "DPST-{}-{}",
-            main.parse::<u32>().unwrap_or(0),
-            sub.parse::<u32>().unwrap_or(0)
-        ),
-        None => format!("DPT-{}", s.parse::<u32>().unwrap_or(0)),
-    }
-}
+/// Map a firmware [`GoDefinition`] to the typed authoring `ComObject`. DPT main/sub are
+/// parsed from the `Dpt` Display ("1.001") exactly as the old `dpst` helper did.
+fn go_com_object(
+    suffix: &str,
+    name: &str,
+    number: usize,
+    go: &GoDefinition,
+) -> knx_rs_prod::author::ComObject {
+    use knx_rs_prod::author::{ComObject, Dpt, Flags};
 
-fn write_com_object(x: &mut String, id_suffix: &str, name: &str, go: &GoDefinition, number: usize) {
-    let r = if go.flags.read { "Enabled" } else { "Disabled" };
-    let wr = if go.flags.write {
-        "Enabled"
-    } else {
-        "Disabled"
-    };
-    let t = if go.flags.transmit {
-        "Enabled"
-    } else {
-        "Disabled"
-    };
-    let u = if go.flags.update {
-        "Enabled"
-    } else {
-        "Disabled"
-    };
-    w(
-        x,
-        &format!(
-            r#"              <ComObject Id="{AID}_O-{id_suffix}" Name="{name}" Number="{number}" Text="{}" FunctionText="{}" ObjectSize="{}" DatapointType="{}" Priority="Low" ReadFlag="{r}" WriteFlag="{wr}" CommunicationFlag="Enabled" TransmitFlag="{t}" UpdateFlag="{u}" ReadOnInitFlag="Disabled" />"#,
-            go.name_de,
-            go.name,
-            go.size_str,
-            dpst(go.dpt)
-        ),
-    );
+    let s = go.dpt.to_string();
+    let (main, sub) = s.split_once('.').unwrap_or((s.as_str(), "0"));
+    ComObject::new(
+        suffix,
+        name,
+        number as u32,
+        go.name_de,
+        go.name,
+        go.size_str,
+        Dpt::new(main.parse().unwrap_or(0), sub.parse().unwrap_or(0)),
+        Flags {
+            read: go.flags.read,
+            write: go.flags.write,
+            transmit: go.flags.transmit,
+            update: go.flags.update,
+        },
+    )
 }
 
 /// ETS requires a `<ParameterRef>` for every parameter referenced in the Dynamic section
@@ -1457,62 +1465,17 @@ fn write_com_object(x: &mut String, id_suffix: &str, name: &str, go: &GoDefiniti
 /// zone/client name fields, the per-client active flags, and the global zone-count param;
 /// emit a self-referential ref (`{id}_R-{id}`) matching what `write_dynamic` points at.
 fn write_parameter_refs(x: &mut String) {
-    // One `<ParameterRef>` per declared `<Parameter>` (1:1). Derived by scanning the
-    // already-emitted `<Parameters>` so it stays in lock-step with `write_parameters` —
-    // every parameter becomes referenceable, so any of them can be shown in the Dynamic
-    // view (the config knobs are all wired in `write_dynamic`).
-    let ids: Vec<String> = x
-        .lines()
-        .filter_map(|l| {
-            l.trim_start()
-                .strip_prefix("<Parameter Id=\"")
-                .and_then(|r| r.split('"').next())
-                .map(str::to_string)
-        })
-        .collect();
-    w(x, "            <ParameterRefs>");
-    for p in ids {
-        w(
-            x,
-            &format!(r#"              <ParameterRef Id="{p}_R-{p}" RefId="{p}" />"#),
-        );
-    }
-    w(x, "            </ParameterRefs>");
+    // One `<ParameterRef>` per declared `<Parameter>` (1:1), materialised by the author
+    // from the same parameter set `build_params_app` registers — so it stays in
+    // lock-step with `write_parameters` (every parameter becomes referenceable, so any of
+    // them can be shown in the Dynamic view, wired in `write_dynamic`).
+    build_params_app().write_parameter_refs(12, x);
 }
 
 /// Every `ComObject` referenced in the Dynamic needs a `<ComObjectRef>`. Mirror the
 /// `write_com_objects` numbering exactly so the `_R-<number>` ids line up.
 fn write_com_object_refs(x: &mut String) {
-    w(x, "            <ComObjectRefs>");
-    for z in 1..=MAX_ZONES {
-        for i in 0..ZONE_GOS.len() {
-            let num = (z - 1) * ZONE_GOS.len() + i + 1;
-            let id = format!("{AID}_O-Z{z:02}{i:03}");
-            w(
-                x,
-                &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
-            );
-        }
-    }
-    for c in 1..=MAX_CLIENTS {
-        for i in 0..CLIENT_GOS.len() {
-            let num = MAX_ZONES * ZONE_GOS.len() + (c - 1) * CLIENT_GOS.len() + i + 1;
-            let id = format!("{AID}_O-C{c:02}{i:03}");
-            w(
-                x,
-                &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
-            );
-        }
-    }
-    for i in 0..GLOBAL_GOS.len() {
-        let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
-        let id = format!("{AID}_O-GG{i:03}");
-        w(
-            x,
-            &format!(r#"              <ComObjectRef Id="{id}_R-{num}" RefId="{id}" />"#),
-        );
-    }
-    w(x, "            </ComObjectRefs>");
+    build_co_app().write_com_object_refs(12, x);
 }
 
 /// Guard: every ref in the Dynamic section must resolve to a defined `<ParameterRef>`/
