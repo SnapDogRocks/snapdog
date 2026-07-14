@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.25.0](https://github.com/SnapDogRocks/snapdog/compare/v0.24.3...v0.25.0) (2026-07-14)
+
+
+### Features
+
+* **knx:** full ETS parameter surface — zone/client/radio counts, config, secrets, pure-Rust renumber ([#88](https://github.com/SnapDogRocks/snapdog/issues/88)) ([631b7fb](https://github.com/SnapDogRocks/snapdog/commit/631b7fbe1764013e258e848d31f9db51959d9202))
+* **knx:** production ETS product database + device-level global GOs ([#89](https://github.com/SnapDogRocks/snapdog/issues/89)) ([f1a5692](https://github.com/SnapDogRocks/snapdog/commit/f1a56928e54e56a3bfa30fe6ca057a1aa6ca0a35))
+
+
+### Bug Fixes
+
+* **ci:** copy knx/snapdog.knxprod into the Docker image build ([#91](https://github.com/SnapDogRocks/snapdog/issues/91)) ([1c9fef4](https://github.com/SnapDogRocks/snapdog/commit/1c9fef421f6ac85be445aba3bb60198080939ca3))
+* **ci:** drop invalid cargo versioning-strategy from Dependabot config ([4d83aea](https://github.com/SnapDogRocks/snapdog/commit/4d83aeaff4376894c64aa72d9d6ed890440f4227))
+* **release:** match normalized checksum paths ([3e9d1d3](https://github.com/SnapDogRocks/snapdog/commit/3e9d1d3065516854bbf92579c412f16e92cca284))
+
 ## [0.24.3](https://github.com/SnapDogRocks/snapdog/compare/v0.24.2...v0.24.3) (2026-07-12)
 
 
