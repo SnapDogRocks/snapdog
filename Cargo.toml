@@ -120,8 +120,3 @@ nursery = { level = "warn", priority = -1 }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
-
-# TEMPORARY (author re-migration): use the local knx-rs author module. Revert to the
-# published knx-rs-prod 0.7.1 (which has the same author code) before merging.
-[patch.crates-io]
-knx-rs-prod = { path = "/Volumes/Dev/Source/knx-rs/knx-rs-prod" }
