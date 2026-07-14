@@ -50,7 +50,9 @@ rubato = "4.0"
 biquad = "0.6"
 
 # MQTT
-rumqttc = "0.25"
+# rumqttc 0.25's default Rustls feature pins vulnerable rustls-webpki 0.102.x
+# (GHSA advisory #21). Native TLS is supported upstream and avoids that path.
+rumqttc = { version = "0.25", default-features = false, features = ["use-native-tls"] }
 
 # KNX
 knx-rs-core = { version = "0.8", package = "knx-rs-core" }
