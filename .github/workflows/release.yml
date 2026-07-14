@@ -23,7 +23,7 @@ jobs:
       revision: ${{ steps.meta.outputs.revision }}
       created: ${{ steps.meta.outputs.created }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Parse version
         id: meta
         shell: bash
@@ -48,7 +48,7 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -139,7 +139,7 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-2025
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
       # In the bookworm container Rust 1.97 is preinstalled; only the mac/windows runners
       # need rustup plus the cross target installed.
       - uses: dtolnay/rust-toolchain@stable
@@ -215,8 +215,8 @@ jobs:
     needs: [meta, build]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: nick-fields/retry@v3
+      - uses: actions/checkout@v7.0.0
+      - uses: nick-fields/retry@v4
         with:
           timeout_minutes: 5
           max_attempts: 3
@@ -418,7 +418,7 @@ jobs:
           - { pkg: snapdog-client, arch: amd64, target: x86_64-unknown-linux-gnu }
           - { pkg: snapdog-client, arch: arm64, target: aarch64-unknown-linux-gnu }
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -454,7 +454,7 @@ jobs:
     name: KNX Product Database
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
@@ -497,7 +497,7 @@ jobs:
     if: ${{ needs.macos-app.result == 'success' && needs.upload-release-artifacts.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
       - uses: actions/download-artifact@v8
         with:
           name: snapdog-macos-app
@@ -619,7 +619,7 @@ jobs:
           - pkg: snapdog-client
             pkgbuild: aur/snapdog-client/PKGBUILD
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
       - name: Update PKGBUILD version
         run: |
           VERSION=${{ needs.meta.outputs.version }}
@@ -642,7 +642,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           ref: gh-pages
           path: gh-pages
@@ -717,7 +717,7 @@ jobs:
       packages: write
       id-token: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # The prebuilt binary is only COPYd, but the runtime stage still RUNs apt-get +
       # groupadd/useradd, which execute as the target arch — so building the arm64 layer on
       # this amd64 runner needs a binfmt/QEMU handler registered. amd64 is native.
@@ -814,7 +814,7 @@ jobs:
     needs: [meta, upload-release-artifacts]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           repository: SnapDogRocks/snapdog-os
           token: ${{ secrets.SNAPDOG_OS_PAT }}

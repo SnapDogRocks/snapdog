@@ -1559,7 +1559,7 @@ app.get('/api/v1/speakers/:name/profile', (req, res) => {
 });
 
 // Fallback: Catch-all for Next.js routing (client-side routing)
-app.get('*', (req, res, next) => {
+app.get('/*splat', (req, res, next) => {
   if (req.path.startsWith('/api/') || req.path === '/health' || req.path.startsWith('/health/')) {
     return next();
   }
