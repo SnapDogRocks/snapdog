@@ -2726,9 +2726,9 @@ dependencies = [
 
 [[package]]
 name = "knx-rs-prod"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87685133f84f9f4aec58246c880cb4e87df807bdc2af22ad3840b3ef1fc618a7"
+checksum = "e0b5cb22604551d14282300864e6e52c6930dffcedc4e4619d634b029bee34b9"
 dependencies = [
  "base64",
  "clap",
