@@ -45,7 +45,7 @@ jobs:
           # Full history so paths-filter can resolve the base commit on push:main
           # (a shallow checkout can leave the base missing and mis-detect changes).
           fetch-depth: 0
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
