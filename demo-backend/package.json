@@ -9,6 +9,6 @@
   "dependencies": {
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
-    "ws": "^8.17.0"
+    "ws": "^8.21.1"
   }
 }
