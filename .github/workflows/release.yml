@@ -48,7 +48,7 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -71,7 +71,7 @@ jobs:
     needs: [meta, webui]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install build dependencies
@@ -139,7 +139,7 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-2025
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       # In the bookworm container Rust 1.97 is preinstalled; only the mac/windows runners
       # need rustup plus the cross target installed.
       - uses: dtolnay/rust-toolchain@stable
@@ -215,7 +215,7 @@ jobs:
     needs: [meta, build]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       - uses: nick-fields/retry@v4
         with:
           timeout_minutes: 5
@@ -418,7 +418,7 @@ jobs:
           - { pkg: snapdog-client, arch: amd64, target: x86_64-unknown-linux-gnu }
           - { pkg: snapdog-client, arch: arm64, target: aarch64-unknown-linux-gnu }
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -479,7 +479,7 @@ jobs:
     if: ${{ needs.macos-app.result == 'success' && needs.upload-release-artifacts.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: snapdog-macos-app
@@ -601,7 +601,7 @@ jobs:
           - pkg: snapdog-client
             pkgbuild: aur/snapdog-client/PKGBUILD
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       - name: Update PKGBUILD version
         run: |
           VERSION=${{ needs.meta.outputs.version }}
@@ -624,7 +624,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
         with:
           ref: gh-pages
           path: gh-pages
@@ -796,7 +796,7 @@ jobs:
     needs: [meta, upload-release-artifacts]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
         with:
           repository: SnapDogRocks/snapdog-os
           token: ${{ secrets.SNAPDOG_OS_PAT }}
