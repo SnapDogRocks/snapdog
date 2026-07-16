@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/SnapDogRocks/snapdog/compare/v0.25.2...v0.26.0) (2026-07-16)
+
+
+### Features
+
+* **webui:** add Italian localization ([#129](https://github.com/SnapDogRocks/snapdog/issues/129)) ([ef13b99](https://github.com/SnapDogRocks/snapdog/commit/ef13b99180b2b682b2af4549414bab95ec01fbe2))
+
 ## [0.25.2](https://github.com/SnapDogRocks/snapdog/compare/v0.25.1...v0.25.2) (2026-07-15)
 
 
