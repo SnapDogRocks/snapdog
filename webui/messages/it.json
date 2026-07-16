@@ -1,0 +1,149 @@
+{
+  "app": {
+    "title": "SnapDog",
+    "skipToContent": "Vai al contenuto",
+    "connected": "Connesso",
+    "disconnected": "Disconnesso",
+    "language": "Lingua"
+  },
+  "transport": {
+    "play": "Riproduci",
+    "pause": "Pausa",
+    "stop": "Interrompi",
+    "next": "Successivo",
+    "previous": "Precedente"
+  },
+  "shuffle": {
+    "on": "Riproduzione casuale attiva",
+    "off": "Riproduzione casuale disattiva",
+    "repeatOn": "Ripetizione attiva",
+    "repeatOff": "Ripetizione disattiva",
+    "trackRepeatOn": "Ripetizione brano attiva",
+    "trackRepeatOff": "Ripetizione brano disattiva"
+  },
+  "volume": {
+    "label": "Volume",
+    "mute": "Disattiva audio",
+    "unmute": "Riattiva audio",
+    "maxVolume": "Volume massimo: {max}%"
+  },
+  "seek": {
+    "label": "Posizione"
+  },
+  "zone": {
+    "idle": "Inattiva",
+    "noAudio": "Nessun audio in riproduzione",
+    "playing": "In riproduzione",
+    "navigation": "Navigazione tra le zone",
+    "zones": "Zone",
+    "unknownTitle": "Sconosciuto",
+    "unknownArtist": "Artista sconosciuto",
+    "error": "Si è verificato un errore",
+    "retry": "Riprova",
+    "presenceDetected": "Presenza rilevata",
+    "presenceTimerActive": "Timer di spegnimento automatico per presenza attivo"
+  },
+  "client": {
+    "clients": "{count, plural, one {# client} other {# client}}",
+    "expand": "Espandi client",
+    "collapse": "Comprimi client",
+    "moveTo": "Sposta nella zona",
+    "moveToLabel": "Sposta in",
+    "connected": "Connesso",
+    "disconnected": "Disconnesso",
+    "showOffline": "{count, plural, one {# offline — mostra} other {# offline — mostra}}",
+    "hideOffline": "Nascondi offline"
+  },
+  "eq": {
+    "title": "EQ — {zone}",
+    "close": "Chiudi equalizzatore",
+    "toggle": "Attiva/disattiva EQ",
+    "presets": "Preimpostazioni EQ",
+    "preset": "Preset",
+    "enabled": "Attivo",
+    "addBand": "+ Aggiungi banda",
+    "removeBand": "Rimuovi banda",
+    "filterType": "Tipo di filtro della banda {n}",
+    "frequency": "Frequenza",
+    "gain": "Guadagno",
+    "qFactor": "Fattore Q",
+    "curve": "Curva della risposta in frequenza EQ"
+  },
+  "playlist": {
+    "title": "Playlist",
+    "search": "Cerca playlist…",
+    "browse": "Sfoglia contenuti multimediali",
+    "loading": "Caricamento playlist…",
+    "empty": "Nessuna playlist disponibile",
+    "noResults": "Nessuna playlist trovata",
+    "play": "Riproduci {name}",
+    "playAll": "Riproduci tutto",
+    "showMore": "Mostra altro",
+    "showLess": "Mostra meno",
+    "tracks": "{count, plural, one {# brano} other {# brani}}"
+  },
+  "auth": {
+    "title": "Autenticazione richiesta",
+    "description": "Questa istanza di SnapDog richiede una chiave API. Inserisci una delle chiavi configurate in {configKey} nel file {configFile}.",
+    "placeholder": "Chiave API",
+    "submit": "Autentica",
+    "checking": "Verifica…",
+    "invalid": "Chiave API non valida. Riprova."
+  },
+  "connection": {
+    "lost": "Connessione persa",
+    "serverRestarting": "Riavvio del server",
+    "reconnecting": "Riconnessione…",
+    "retryingIn": "Nuovo tentativo tra {seconds} s…"
+  },
+  "knx": {
+    "progModeOn": "Attiva modalità di programmazione",
+    "progModeOff": "Disattiva modalità di programmazione",
+    "progActive": "Modalità di programmazione attiva",
+    "progInactive": "Modalità di programmazione inattiva",
+    "confirmOn": "Attivare la modalità di programmazione?",
+    "confirmOnDesc": "Il dispositivo sarà rilevabile da ETS. Attiva questa modalità solo durante la programmazione.",
+    "confirmOff": "Disattivare la modalità di programmazione?",
+    "confirmOffDesc": "ETS non potrà più rilevare questo dispositivo tramite la modalità di programmazione.",
+    "cancel": "Annulla",
+    "enable": "Attiva",
+    "disable": "Disattiva"
+  },
+  "source": {
+    "radio": "Radio",
+    "subsonic_playlist": "Subsonic",
+    "subsonic_track": "Subsonic",
+    "airplay": "AirPlay",
+    "spotify": "Spotify",
+    "url": "URL"
+  },
+  "empty": {
+    "title": "Nessuna zona configurata",
+    "description": "Attiva la modalità di programmazione KNX per consentire a ETS di configurare zone e client oppure fornisci un file di configurazione snapdog.toml.",
+    "programmingMode": "Modalità di programmazione KNX"
+  },
+  "about": {
+    "title": "Informazioni",
+    "dialogLabel": "Informazioni su SnapDog",
+    "closeLabel": "Chiudi finestra",
+    "description": "Controller audio multizona con integrazione AirPlay, Spotify, Subsonic, MQTT e KNX",
+    "modelLabel": "MODELLO",
+    "modelValue": "SNAPDOG-CORE",
+    "versionLabel": "VERSIONE",
+    "sourceLabel": "SORGENTE",
+    "sourceValue": "SnapDogRocks/snapdog ↗",
+    "licenseLabel": "LICENZA",
+    "licenseValue": "GPL-3.0 ↗",
+    "done": "Fatto",
+    "knxprodTitle": "Scarica .knxprod (database prodotti ETS)"
+  },
+  "connect": {
+    "title": "Connetti",
+    "dialogLabel": "Connetti a SnapDog",
+    "closeLabel": "Chiudi finestra",
+    "description": "Scansiona con il telefono per aprire l'app SnapDog o la WebUI",
+    "share": "Condividi link",
+    "copied": "Copiato!",
+    "securityNote": "Questo codice QR contiene la tua chiave API. Condividilo solo con persone fidate."
+  }
+}
