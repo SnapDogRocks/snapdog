@@ -10,6 +10,7 @@ const labels: Record<Locale, string> = {
   de: "Deutsch",
   fr: "Français",
   es: "Español",
+  it: "Italiano",
   nl: "Nederlands",
 };
 
