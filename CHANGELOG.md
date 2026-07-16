@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2](https://github.com/SnapDogRocks/snapdog/compare/v0.25.1...v0.25.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* **deps:** remove vulnerable rustls-webpki path ([#115](https://github.com/SnapDogRocks/snapdog/issues/115)) ([08e035f](https://github.com/SnapDogRocks/snapdog/commit/08e035f30c280bb2e3d82f8d98cc6eb877c6c0ff))
+
 ## [0.25.1](https://github.com/SnapDogRocks/snapdog/compare/v0.25.0...v0.25.1) (2026-07-14)
 
 
