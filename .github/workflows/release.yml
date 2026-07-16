@@ -607,7 +607,7 @@ jobs:
           VERSION=${{ needs.meta.outputs.version }}
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" ${{ matrix.pkgbuild }}
           sed -i "s/^pkgrel=.*/pkgrel=1/" ${{ matrix.pkgbuild }}
-      - uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+      - uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
         with:
           pkgname: ${{ matrix.pkg }}
           pkgbuild: ${{ matrix.pkgbuild }}
