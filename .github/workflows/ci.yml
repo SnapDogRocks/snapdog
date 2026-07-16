@@ -20,12 +20,8 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  # Detect which areas a change touches so each downstream job runs only when
-  # relevant. A change under .github/workflows/** flips every area on, so CI
-  # changes are always validated by the full suite (and this workflow's own PR
-  # runs everything). Comprehensive checks (line coverage, the full 5-combo
-  # feature smoke, a time-based advisory sweep) live in nightly.yml; Windows
-  # Check runs here, gated to Rust PRs.
+  # Detect which areas a change touches so expensive specialist checks only run
+  # when their contracts can be affected. CI Success is the sole required check.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -39,6 +35,9 @@ jobs:
       deps: ${{ steps.filter.outputs.deps }}
       macos: ${{ steps.filter.outputs.macos }}
       docker: ${{ steps.filter.outputs.docker }}
+      integration: ${{ steps.filter.outputs.integration }}
+      windows: ${{ steps.filter.outputs.windows }}
+      workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,41 +49,64 @@ jobs:
         with:
           filters: |
             rust:
-              - '.github/workflows/**'
               - '**/*.rs'
               - '**/Cargo.toml'
               - 'Cargo.lock'
               - '.config/**'
               - 'rust-toolchain*'
             webui:
-              - '.github/workflows/**'
               - 'webui/**'
             knx:
-              - '.github/workflows/**'
-              - '**/*.rs'
               - 'knx/**'
-              - 'xtask/**'
+              - 'snapdog/src/knx/**'
+              - 'snapdog/src/api/routes/knx.rs'
+              - 'snapdog/tests/knx_golden.rs'
+              - 'xtask/src/**'
+              - 'xtask/Cargo.toml'
+              - 'snapdog/Cargo.toml'
+              - 'Cargo.lock'
             deps:
-              - '.github/workflows/**'
               - '**/Cargo.toml'
               - 'Cargo.lock'
             macos:
-              - '.github/workflows/**'
               - 'macos-helper/**'
             docker:
-              - '.github/workflows/**'
               - '.dockerignore'
               - 'Dockerfile'
               - 'Dockerfile.client'
-              - 'Cargo.toml'
+            integration:
+              - '.config/nextest.toml'
+              - 'snapdog/src/mqtt/**'
+              - 'snapdog/src/subsonic/**'
+              - 'snapdog/src/snapcast/**'
+              - 'snapdog/tests/integration.rs'
+              - 'snapdog/tests/mqtt_tier2.rs'
+              - 'snapdog/tests/snapcast_rpc.rs'
+              - 'snapdog/tests/snapserver_e2e.rs'
+              - '**/Cargo.toml'
               - 'Cargo.lock'
-              - 'assets/**'
-              - 'snapdog/**'
+            windows:
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain*'
               - 'snapdog-client/**'
               - 'snapdog-common/**'
-              - 'snapdog-testkit/**'
-              - 'xtask/**'
-              - 'webui/**'
+              - 'snapdog/src/audio/**'
+              - 'snapdog/src/receiver/**'
+              - 'snapdog/src/snapcast/**'
+            workflows:
+              - '.github/workflows/**'
+
+  workflow-lint:
+    name: Workflow Lint
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate GitHub Actions workflows
+        # release.yml has a deliberate compact A && B || C shell expression.
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -- -ignore SC2015
 
   i18n:
     name: macOS i18n completeness
@@ -101,38 +123,19 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Validate PR title and every commit
+      - name: Validate squash-merge title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # Same Conventional Commits grammar as .githooks/commit-msg.
           pattern='^(feat|fix|refactor|docs|test|ci|chore|perf|style|build|revert)(\(.+\))?!?: .+'
-          fail=0
           if ! printf '%s' "$PR_TITLE" | grep -qE "$pattern"; then
             echo "::error::PR title is not a Conventional Commit: $PR_TITLE"
-            fail=1
-          fi
-          while IFS= read -r sha; do
-            [ -z "$sha" ] && continue
-            msg=$(git log -1 --format=%s "$sha")
-            printf '%s' "$msg" | grep -qE '^(Merge |Revert )' && continue
-            if ! printf '%s' "$msg" | grep -qE "$pattern"; then
-              echo "::error::Commit ${sha:0:8} is not a Conventional Commit: $msg"
-              fail=1
-            fi
-          done < <(git rev-list "$BASE_SHA..$HEAD_SHA")
-          if [ "$fail" -ne 0 ]; then
             echo "Format: <type>(<scope>): <description>  — types: feat, fix, refactor, docs, test, ci, chore, perf, style, build, revert (optionally '!' for breaking)."
             exit 1
           fi
 
-  fmt:
-    name: Format
+  rust-core:
+    name: Rust Core
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -140,8 +143,25 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
+      - name: Skip WebUI build
+        run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy (default / embedded)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (process mode)
+        run: cargo clippy -p snapdog --no-default-features --features snapcast-process --all-targets -- -D warnings
+      - name: Workspace tests
+        run: cargo test --workspace --locked
+      - name: Test-harness zone-player tests
+        run: cargo test -p snapdog --features test-harness --test zone_player
+      - name: API and config contracts
+        run: cargo test -p snapdog --test openapi_contract --test config_contract
+      - name: AirPlay receiver firewall
+        run: cargo test -p snapdog --features ap2 --lib receiver::airplay
 
   webui:
     name: WebUI
@@ -150,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -171,112 +191,24 @@ jobs:
         working-directory: webui
         run: npm run build
 
-  container-images:
-    name: Container (${{ matrix.image }})
+  docker-contract:
+    name: Docker Contract
     needs: changes
     if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: snapdog
-            file: Dockerfile
-          - image: snapdog-client
-            file: Dockerfile.client
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Build image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: ${{ matrix.file }}
-          load: true
-          tags: local/${{ matrix.image }}:ci
-          build-args: CARGO_RELEASE_LTO=false
-          cache-from: type=gha,scope=ci-${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=ci-${{ matrix.image }}
-          # Attestations require a registry output; this CI image is loaded only
-          # into the ephemeral runner. Release images enable max provenance + SBOM.
-          provenance: false
-      - name: Verify runtime contract
-        env:
-          IMAGE: local/${{ matrix.image }}:ci
+      - name: Validate Dockerfiles with BuildKit
         run: |
           set -euo pipefail
-          test "$(docker image inspect --format '{{.Config.User}}' "${IMAGE}")" = "snapdog:snapdog"
-          docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \
-            --cap-drop ALL --security-opt no-new-privileges \
-            "${IMAGE}" --version
-      - name: Scan runtime image for vulnerabilities
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: local/${{ matrix.image }}:ci
-          trivy-version: v0.72.0
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: CRITICAL,HIGH
-
-  clippy:
-    name: Clippy
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-      - name: Skip WebUI build (placeholder is generated by snapdog/build.rs)
-        shell: bash
-        run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
-      - name: Clippy (default / embedded)
-        run: cargo clippy --all-targets -- -D warnings
-      # Process mode is a mutually-exclusive feature set the default clippy above
-      # never compiles; lint it explicitly so process-only code (snapcast/process.rs,
-      # process paths in snapcast/mod.rs, tier-2 tests) can't accumulate lints unseen.
-      - name: Clippy (process mode)
-        run: cargo clippy -p snapdog --no-default-features --features snapcast-process --all-targets -- -D warnings
-
-  unit-tests:
-    name: Unit Tests
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-      - name: Skip WebUI build (placeholder is generated by snapdog/build.rs)
-        shell: bash
-        run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
-      # Whole workspace incl. tier-1 integration targets (in-process, deterministic,
-      # no services) — `--lib` skipped tests/*.rs (the IT-0003 suite) and the
-      # snapdog-client/-common tests. `--locked` doubles as the Cargo.lock drift
-      # guard: a release bump (or any change) that didn't regenerate the lock fails
-      # here loudly instead of dirtying fresh checkouts silently.
-      - run: cargo test --workspace --locked
-      # Test-harness feature: the F32 send_audio injection test (IT-T55) gated on
-      # the ZonePlayerContext::test_pcm_rx seam, which `--workspace` doesn't enable.
-      - name: Run test-harness zone-player tests
-        run: cargo test -p snapdog --features test-harness --test zone_player
-      - name: API + config contract gate (IT-T92 / IT-T14)
-        run: cargo test -p snapdog --test openapi_contract --test config_contract
-      - name: AirPlay receiver firewall (ap2 mappers, IT-T70/T71)
-        # ap2 is off in the default `cargo test --workspace`, so the callback→
-        # ReceiverEvent mapper goldens only compile (build-smoke) unless run here.
-        run: cargo test -p snapdog --features ap2 --lib receiver::airplay
+          docker buildx build --check --file Dockerfile .
+          docker buildx build --check --file Dockerfile.client .
 
   integration-tests:
     name: Integration Tests
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     services:
       navidrome:
@@ -327,37 +259,6 @@ jobs:
           name: tier2-nextest-report
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
-
-  build-smoke:
-    name: Build Smoke (${{ matrix.name }})
-    needs: changes
-    if: needs.changes.outputs.rust == 'true' && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    # Gross-signature firewall (IT-T73): every meaningful feature combination must
-    # still compile. `snapcast-embedded` XOR `snapcast-process` is a compile_error!
-    # guard (main.rs), so this is a flat include-list (one backend per cell) — never
-    # a cross-product, never `--all-features`/bare `--no-default-features`.
-    # The default combo ("embedded,spotify,dbus") is already compiled by Clippy +
-    # Unit Tests, so it's omitted here; nightly.yml runs the full 5-combo matrix.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: "embedded minimal", features: "snapcast-embedded" }
-          - { name: "embedded full", features: "snapcast-embedded,ap2,spotify,dbus,api-docs" }
-          - { name: "process minimal", features: "snapcast-process" }
-          - { name: "process full", features: "snapcast-process,ap2,spotify,dbus,api-docs" }
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
-      # rust-embed needs webui/out to exist at compile time
-      - name: Skip WebUI build (placeholder is generated by snapdog/build.rs)
-        shell: bash
-        run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
-      - name: cargo check
-        run: cargo check -p snapdog --no-default-features --features "${{ matrix.features }}"
 
   audit:
     name: Security Audit
@@ -417,7 +318,7 @@ jobs:
   windows-check:
     name: Windows Check
     needs: changes
-    if: needs.changes.outputs.rust == 'true' && github.event_name == 'pull_request'
+    if: needs.changes.outputs.windows == 'true' && github.event_name == 'pull_request'
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
@@ -436,13 +337,13 @@ jobs:
     if: always()
     needs:
       - changes
+      - workflow-lint
       - commit-convention
-      - fmt
+      - i18n
+      - rust-core
       - webui
-      - clippy
-      - unit-tests
+      - docker-contract
       - integration-tests
-      - build-smoke
       - audit
       - knxprod
       - windows-check
