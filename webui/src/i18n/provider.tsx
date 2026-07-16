@@ -10,6 +10,7 @@ const messageImports: Record<Locale, () => Promise<{ default: Record<string, unk
   de: () => import("../../messages/de.json"),
   fr: () => import("../../messages/fr.json"),
   es: () => import("../../messages/es.json"),
+  it: () => import("../../messages/it.json"),
   nl: () => import("../../messages/nl.json"),
 };
 
