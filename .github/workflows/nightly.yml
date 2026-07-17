@@ -28,7 +28,7 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
@@ -54,9 +54,7 @@ jobs:
   build-smoke-full:
     name: Build Smoke (${{ matrix.name }})
     runs-on: ubuntu-latest
-    # Full feature-combo firewall — the default combo runs on PRs (Clippy + Unit
-    # Tests) and the other four in ci.yml's build-smoke; here all five compile
-    # together as the nightly source of truth.
+    # Full feature-combo firewall kept off the pull-request critical path.
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +65,7 @@ jobs:
           - { name: "process minimal", features: "snapcast-process" }
           - { name: "process full", features: "snapcast-process,ap2,spotify,dbus,api-docs" }
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libavahi-compat-libdnssd-dev
@@ -77,11 +75,101 @@ jobs:
       - name: cargo check
         run: cargo check -p snapdog --no-default-features --features "${{ matrix.features }}"
 
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      navidrome:
+        image: deluan/navidrome:latest
+        ports:
+          - 4533:4533
+        env:
+          ND_SCANSCHEDULE: "0"
+          ND_LOGLEVEL: error
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Install test services
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y snapserver libasound2-dev libavahi-compat-libdnssd-dev mosquitto
+          printf "listener 1883\nallow_anonymous true\n" | sudo tee /etc/mosquitto/conf.d/ci.conf
+          sudo systemctl restart mosquitto
+      - name: Create test environment
+        run: |
+          cat > .env.test << EOF
+          SNAPDOG_TEST_SUBSONIC_URL=http://localhost:4533
+          SNAPDOG_TEST_SUBSONIC_USERNAME=admin
+          SNAPDOG_TEST_SUBSONIC_PASSWORD=admin
+          SNAPDOG_TEST_MQTT_BROKER=localhost:1883
+          SNAPDOG_TEST_MQTT_USERNAME=
+          SNAPDOG_TEST_MQTT_PASSWORD=
+          EOF
+      - name: Run real-service integration tests
+        run: |
+          cargo nextest run -p snapdog --profile ci --no-default-features --features snapcast-process \
+            -E 'binary(integration) | binary(snapcast_rpc) | binary(snapserver_e2e) | binary(mqtt_tier2)'
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: nightly-nextest-report
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  container-images:
+    name: Container (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: snapdog
+            file: Dockerfile
+          - image: snapdog-client
+            file: Dockerfile.client
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Build image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          load: true
+          tags: local/${{ matrix.image }}:nightly
+          build-args: CARGO_RELEASE_LTO=false
+          cache-from: type=gha,scope=nightly-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=nightly-${{ matrix.image }}
+          provenance: false
+      - name: Verify runtime contract
+        env:
+          IMAGE: local/${{ matrix.image }}:nightly
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Config.User}}' "${IMAGE}")" = "snapdog:snapdog"
+          docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --cap-drop ALL --security-opt no-new-privileges "${IMAGE}" --version
+      - name: Scan runtime image for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: local/${{ matrix.image }}:nightly
+          trivy-version: v0.72.0
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
   audit-sweep:
     name: Security Audit (advisory sweep)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with:

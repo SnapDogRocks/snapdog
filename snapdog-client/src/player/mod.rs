@@ -506,15 +506,17 @@ fn run_cpal(
     let channels = config.channels as usize;
 
     let cpal_stream = device.build_output_stream(
-        &config,
+        config,
         move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
             let num_frames = data.len() / channels;
 
-            let buffer_dac_usec = info
-                .timestamp()
-                .playback
-                .duration_since(&info.timestamp().callback)
-                .map_or(0, |d| d.as_micros() as i64)
+            let buffer_dac_usec = i64::try_from(
+                info.timestamp()
+                    .playback
+                    .duration_since(info.timestamp().callback)
+                    .as_micros(),
+            )
+            .unwrap_or(i64::MAX)
                 + {
                     #[allow(clippy::cast_possible_wrap)]
                     let v = num_frames as i64;
@@ -657,7 +659,7 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
     let done_cb = done.clone();
 
     let stream = device.build_output_stream(
-        &stream_config,
+        stream_config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             for frame in data.chunks_mut(channels) {
                 if sample_idx >= total_samples {
