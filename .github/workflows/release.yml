@@ -321,8 +321,7 @@ jobs:
             --icon-size 80 \
             --no-internet-enable \
             "$DMG" \
-            "SnapDog Server.app" || true
-          # create-dmg returns 2 on "DMG created but background not set" — still valid
+            "SnapDog Server.app"
           test -f "$DMG"
       - name: Notarize DMG
         env:
