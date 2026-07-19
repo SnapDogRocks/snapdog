@@ -84,7 +84,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=binary --chmod=0755 /out/snapdog-client /usr/local/bin/snapdog-client
 
-USER snapdog:snapdog
+# Keep the named passwd/group entries for diagnostics while exposing an
+# unambiguous non-root identity to runtimes and policy scanners.
+USER ${SNAPDOG_UID}:${SNAPDOG_GID}
 WORKDIR /var/lib/snapdog-client
 
 STOPSIGNAL SIGTERM
