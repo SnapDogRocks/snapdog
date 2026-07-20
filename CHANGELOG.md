@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.1](https://github.com/SnapDogRocks/snapdog/compare/v0.26.0...v0.26.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* improve macOS DMG readability ([2cfdac6](https://github.com/SnapDogRocks/snapdog/commit/2cfdac6c4cbca36f85d3795d9a5ab2f475a58fdd))
+
 ## [0.26.0](https://github.com/SnapDogRocks/snapdog/compare/v0.25.2...v0.26.0) (2026-07-16)
 
 
