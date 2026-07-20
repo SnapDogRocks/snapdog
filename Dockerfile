@@ -111,7 +111,9 @@ COPY --from=binary --chmod=0755 /out/snapdog /usr/local/bin/snapdog
 
 ENV SNAPDOG_HEALTHCHECK_URL="http://127.0.0.1:5555/health/live"
 
-USER snapdog:snapdog
+# Keep the named passwd/group entries for diagnostics while exposing an
+# unambiguous non-root identity to runtimes and policy scanners.
+USER ${SNAPDOG_UID}:${SNAPDOG_GID}
 WORKDIR /var/lib/snapdog
 
 # Persist ETS programming, application state, pairing data, and EQ settings.

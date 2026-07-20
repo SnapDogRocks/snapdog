@@ -106,7 +106,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Validate GitHub Actions workflows
         # release.yml has a deliberate compact A && B || C shell expression.
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -- -ignore SC2015
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -ignore SC2015
 
   i18n:
     name: macOS i18n completeness

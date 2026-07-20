@@ -151,7 +151,7 @@ jobs:
           IMAGE: local/${{ matrix.image }}:nightly
         run: |
           set -euo pipefail
-          test "$(docker image inspect --format '{{.Config.User}}' "${IMAGE}")" = "snapdog:snapdog"
+          test "$(docker image inspect --format '{{.Config.User}}' "${IMAGE}")" = "10001:10001"
           docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \
             --cap-drop ALL --security-opt no-new-privileges "${IMAGE}" --version
       - name: Scan runtime image for vulnerabilities
