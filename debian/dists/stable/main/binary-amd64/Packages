@@ -1,29 +1,29 @@
 Package: snapdog
-Version: 0.26.0-1
+Version: 0.26.1-1
 Architecture: amd64
 Maintainer: Fabian Schmieder
-Installed-Size: 35505
+Installed-Size: 35695
 Depends: libasound2, libavahi-compat-libdnssd1
-Filename: pool/snapdog_0.26.0-1_amd64.deb
-Size: 10220216
-MD5sum: 72328ce395997124eb1717f870838788
-SHA1: 447923a717af511fb0028e1f6a1fad553e76dbca
-SHA256: 993145ca1b48c0df11abbbd2435e0a67e4c01763fb62cabe5c606f79cf6fbc91
+Filename: pool/snapdog_0.26.1-1_amd64.deb
+Size: 10275632
+MD5sum: af7751600c340d7028e53acdb09f78a7
+SHA1: 9a02bdd1dffa8b81b3d62a9b218df144f2fa2d8d
+SHA256: a3aea54c83ca5cb32e2e4c66691d50bdff83c118fa34a14b655ad25cbd42a43a
 Section: sound
 Priority: optional
 Homepage: https://github.com/SnapDogRocks/snapdog
 Description: Multi-zone audio controller with AirPlay, Snapcast, MQTT, and KNX integration
 
 Package: snapdog-client
-Version: 0.26.0-1
+Version: 0.26.1-1
 Architecture: amd64
-Installed-Size: 6764
+Installed-Size: 6793
 Depends: libasound2, libavahi-compat-libdnssd1
-Filename: pool/snapdog-client_0.26.0-1_amd64.deb
-Size: 1982300
-MD5sum: 1092c5f7def881465f2a193d05de1d75
-SHA1: 2c2f192beebb4062adbe51d08fab56ae7237e25f
-SHA256: 1e0f6e51a31c26a0081f78c8b0778d29e89582e7b683552913e97cb483302632
+Filename: pool/snapdog-client_0.26.1-1_amd64.deb
+Size: 1992392
+MD5sum: 10a02d194b221de4e3020d31b0d63a6c
+SHA1: d56c49e9750e4761d0f3f239e807a4dbd974a018
+SHA256: 631d01bbdeab7595a47f3b6bf7956dee46efe27184678b804d6fb50f7b839907
 Section: sound
 Priority: optional
 Description: SnapDog multiroom audio client
