@@ -88,7 +88,16 @@ fn lightweight_variants_round_trip_with_snake_case_tag() {
 fn zone_eq_changed_flattens_config() {
     let n = Notification::ZoneEqChanged {
         zone: 1,
-        config: snapdog::audio::eq::EqConfig::default(),
+        config: snapdog::audio::eq::EqConfig {
+            enabled: true,
+            bands: vec![snapdog::audio::eq::EqBand {
+                freq: 1_000.0,
+                gain: 2.5,
+                q: 0.7,
+                filter_type: snapdog::audio::eq::FilterType::Peaking,
+            }],
+            preset: None,
+        },
     };
     let v = serde_json::to_value(&n).expect("serialize");
     assert_eq!(v["type"], "zone_eq_changed");
@@ -102,6 +111,10 @@ fn zone_eq_changed_flattens_config() {
         v.get("enabled").is_some() || v.get("bands").is_some(),
         "flattened Eq fields should appear at top level: {v}"
     );
+    assert_eq!(v["bands"][0]["freq"], 1_000.0);
+    assert_eq!(v["bands"][0]["type"], "peaking");
+    assert!(v["bands"][0].get("frequency").is_none());
+    assert!(v["bands"][0].get("filter_type").is_none());
 }
 
 #[test]
