@@ -14,6 +14,11 @@ import { useOptimisticValue } from "@/hooks/useOptimisticValue";
 
 const VOLUME_DEBOUNCE_MS = 50;
 const VOLUME_HIGH_THRESHOLD = 50;
+const ABSOLUTE_MAX_VOLUME = 100;
+
+function clampVolume(value: number, max: number) {
+  return Math.max(0, Math.min(max, value));
+}
 
 interface VolumeSliderProps {
   volume: number;
@@ -39,34 +44,37 @@ export function VolumeSlider({
   const t = useTranslations("volume");
   const { value: localVolume, setOptimistic, commit } = useOptimisticValue(volume);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const effectiveMax = clampVolume(max, ABSOLUTE_MAX_VOLUME);
+  const displayVolume = clampVolume(localVolume, effectiveMax);
 
   // Clean up debounce timer on unmount
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
   const volumeIcon = muted
     ? VolumeMute02Icon
-    : localVolume > VOLUME_HIGH_THRESHOLD
+    : displayVolume > VOLUME_HIGH_THRESHOLD
       ? VolumeHighIcon
       : VolumeLowIcon;
 
   const handleChange = useCallback(
     (value: number[]) => {
-      const v = value[0];
+      const v = clampVolume(value[0], effectiveMax);
       setOptimistic(v);
       if (muted) onUnmute();
       clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => onVolumeChange(v), VOLUME_DEBOUNCE_MS);
     },
-    [muted, onVolumeChange, onUnmute, setOptimistic],
+    [effectiveMax, muted, onVolumeChange, onUnmute, setOptimistic],
   );
 
   const handleCommit = useCallback(
     (value: number[]) => {
+      const v = clampVolume(value[0], effectiveMax);
       clearTimeout(timerRef.current);
-      commit(value[0]);
-      onVolumeChange(value[0]);
+      commit(v);
+      onVolumeChange(v);
     },
-    [commit, onVolumeChange],
+    [commit, effectiveMax, onVolumeChange],
   );
 
   const iconSize = compact ? 14 : 18;
@@ -78,7 +86,10 @@ export function VolumeSlider({
       onWheel={(e) => {
         e.preventDefault();
         const delta = e.deltaY < 0 ? 5 : -5;
-        onVolumeChange(Math.max(0, Math.min(100, volume + delta)));
+        const nextVolume = clampVolume(displayVolume + delta, effectiveMax);
+        if (muted) onUnmute();
+        commit(nextVolume);
+        onVolumeChange(nextVolume);
       }}
     >
       <Button
@@ -93,8 +104,8 @@ export function VolumeSlider({
       </Button>
       <div className="relative flex-1 min-w-0">
         <Slider
-          value={[muted ? 0 : localVolume]}
-          max={max}
+          value={[muted ? 0 : displayVolume]}
+          max={ABSOLUTE_MAX_VOLUME}
           step={1}
           onValueChange={handleChange}
           onValueCommit={handleCommit}
@@ -102,20 +113,20 @@ export function VolumeSlider({
           className="flex-1 min-w-0"
           aria-label={t("label")}
         />
-        {max < 100 && (
+        {effectiveMax < ABSOLUTE_MAX_VOLUME && (
           <>
             <div
               className="absolute top-0 h-full w-0.5 bg-red-500/70 rounded-full pointer-events-none"
-              style={{ left: `${max}%` }}
+              style={{ left: `${effectiveMax}%` }}
               role="presentation"
               aria-hidden="true"
             />
-            <span className="sr-only">{t("maxVolume", { max })}</span>
+            <span className="sr-only">{t("maxVolume", { max: effectiveMax })}</span>
           </>
         )}
       </div>
       <span className={`text-muted-foreground tabular-nums text-right ${compact ? "text-[10px] w-5" : "text-xs w-7"}`}>
-        {localVolume}
+        {displayVolume}
       </span>
     </div>
   );

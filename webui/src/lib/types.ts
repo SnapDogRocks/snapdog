@@ -197,7 +197,7 @@ export interface WsZoneEqChanged {
   type: "zone_eq_changed";
   zone: number;
   enabled: boolean;
-  bands: Array<{ filter_type: string; frequency: number; gain: number; q: number }>;
+  bands: EqBand[];
   preset?: string;
 }
 

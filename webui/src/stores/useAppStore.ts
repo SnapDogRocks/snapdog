@@ -3,6 +3,7 @@ import type {
   ZoneInfo,
   TrackMetadata,
   ClientInfo,
+  EqBand,
 } from "@/lib/types";
 import { api, type EqConfig } from "@/lib/api";
 
@@ -74,7 +75,7 @@ interface AppState {
   updateZoneVolume: (id: number, volume: number, muted: boolean) => void;
   updateZoneProgress: (id: number, position_ms: number, duration_ms: number, buffered_ms: number | null) => void;
   updateZonePresence: (id: number, presence: boolean, enabled: boolean, timerActive: boolean) => void;
-  updateZoneEq: (id: number, enabled: boolean, bands?: Array<{ filter_type: string; frequency: number; gain: number; q: number }>, preset?: string) => void;
+  updateZoneEq: (id: number, enabled: boolean, bands?: EqBand[], preset?: string) => void;
   setZoneError: (id: number, error: PlaybackErrorState | null) => void;
 
   // Client updates

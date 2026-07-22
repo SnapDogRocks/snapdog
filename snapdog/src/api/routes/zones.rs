@@ -801,6 +801,11 @@ async fn get_track_metadata(
         playlist_total: zone.playlist_total,
         playlist_track_index: zone.playlist_track_index,
         playlist_track_count: zone.playlist_track_count,
+        can_playlist_next: zone
+            .playlist_index
+            .zip(zone.playlist_total)
+            .is_some_and(|(playlist, total)| playlist + 1 < total),
+        can_playlist_prev: zone.playlist_index.is_some_and(|playlist| playlist > 0),
         can_next: zone
             .playlist_track_count
             .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
@@ -1599,7 +1604,7 @@ async fn get_presence_timer(
         .ok_or(zone_not_found())
 }
 
-#[derive(Serialize, utoipa::ToSchema)]
+#[derive(Default, Serialize, utoipa::ToSchema)]
 pub struct ZoneTrackMetadata {
     title: String,
     artist: String,
@@ -1622,6 +1627,8 @@ pub struct ZoneTrackMetadata {
     playlist_total: Option<usize>,
     playlist_track_index: Option<usize>,
     playlist_track_count: Option<usize>,
+    can_playlist_next: bool,
+    can_playlist_prev: bool,
     can_next: bool,
     can_prev: bool,
 }
@@ -1629,6 +1636,19 @@ pub struct ZoneTrackMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn track_metadata_serializes_playlist_navigation_flags() {
+        let metadata = ZoneTrackMetadata {
+            can_playlist_next: true,
+            can_playlist_prev: false,
+            ..ZoneTrackMetadata::default()
+        };
+        let json = serde_json::to_value(metadata).unwrap();
+
+        assert_eq!(json["can_playlist_next"], true);
+        assert_eq!(json["can_playlist_prev"], false);
+    }
 
     #[test]
     fn seek_request_absolute() {

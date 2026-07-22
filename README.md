@@ -466,7 +466,13 @@ cargo run -- --config snapdog.dev.toml        # Run
 cargo xtask ci                                # Run all CI checks locally
 cargo test                                    # Test
 cargo clippy -- -D warnings                   # Lint
+cargo run --package xtask -- gen-api-spec openapi.json  # Refresh API contract
 ```
+
+`openapi.json` is the committed REST contract. The OpenAPI contract test rejects
+Rust API changes until this snapshot is regenerated; after merge, automation
+opens an auto-merge PR with the updated reference in
+[`snapdog-web`](https://github.com/SnapDogRocks/snapdog-web).
 
 <details>
 <summary><strong>Dev Infrastructure (Docker Compose)</strong></summary>
