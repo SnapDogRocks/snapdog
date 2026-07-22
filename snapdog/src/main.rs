@@ -41,6 +41,10 @@ struct Cli {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
+    /// Validate the configuration and exit without starting any services
+    #[arg(long, requires = "config")]
+    check_config: bool,
+
     /// KNX device mode — ETS programs everything, no TOML required
     #[arg(long)]
     knx_device: bool,
@@ -281,6 +285,11 @@ pub async fn run_app() -> Result<()> {
         (Some(_), None) => anyhow::bail!("tls_cert is set but tls_key is missing"),
         (None, Some(_)) => anyhow::bail!("tls_key is set but tls_cert is missing"),
         _ => {}
+    }
+
+    if cli.check_config {
+        println!("Configuration is valid");
+        return Ok(());
     }
 
     let config_label = cli
