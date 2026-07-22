@@ -16,6 +16,14 @@ fn openapi_doc_is_structurally_stable() {
     let doc: serde_json::Value =
         serde_json::to_value(ApiDoc::openapi()).expect("openapi serializes");
 
+    let checked_in: serde_json::Value = serde_json::from_str(include_str!("../../openapi.json"))
+        .expect("checked-in openapi.json is valid JSON");
+    assert_eq!(
+        doc, checked_in,
+        "generated OpenAPI contract differs from openapi.json; run \
+         `cargo run --package xtask -- gen-api-spec openapi.json` and commit the result"
+    );
+
     assert_eq!(doc["openapi"], "3.1.0");
     assert_eq!(doc["info"]["title"], "SnapDog REST API");
     assert_eq!(doc["info"]["version"], "1.0.0");

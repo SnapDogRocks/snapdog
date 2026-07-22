@@ -52,6 +52,7 @@ jobs:
               - '**/*.rs'
               - '**/Cargo.toml'
               - 'Cargo.lock'
+              - 'openapi.json'
               - '.config/**'
               - 'rust-toolchain*'
             webui:

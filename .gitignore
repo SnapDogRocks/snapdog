@@ -30,8 +30,8 @@ eq.json
 sparkle_private.key
 *.dmg
 
-# Generated OpenAPI spec
-/openapi.json
+# The generated OpenAPI contract is intentionally committed. CI compares it
+# with the Rust route registry so contract changes cannot be merged silently.
 .kiro/
 
 # Dev container generated files
@@ -41,4 +41,3 @@ devcontainer/navidrome/navidrome.db
 
 # Demo Backend
 /demo-backend/node_modules/
-

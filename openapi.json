@@ -1,0 +1,5248 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SnapDog REST API",
+    "description": "SnapDog Multi-zone synchronized audio controller API",
+    "contact": {
+      "name": "Fabian Schmieder"
+    },
+    "license": {
+      "name": "GPL-3.0-only",
+      "identifier": "GPL-3.0-only"
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/clients": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get all clients details",
+        "description": "Returns a list of all clients, including their volume, mute, connection status, and assigned zone.",
+        "operationId": "get_all",
+        "responses": {
+          "200": {
+            "description": "List of all client details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClientInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/count": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get total number of clients",
+        "description": "Returns the number of configured clients in the system.",
+        "operationId": "get_count",
+        "responses": {
+          "200": {
+            "description": "Total client count",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get client details by index",
+        "description": "Returns the details of a single client specified by its 1-based index.",
+        "operationId": "get_client",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/connected": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get client connection status",
+        "description": "Returns whether the specified client is currently online and connected to the Snapcast server.",
+        "operationId": "get_connected",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/eq": {
+      "get": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "Get client Equalizer configuration",
+        "description": "Returns the current active 10-band parametric Equalizer configuration for the specified client.",
+        "operationId": "get_eq",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current equalizer configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Client does not support EQ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "Set client Equalizer configuration",
+        "description": "Updates the full 10-band parametric Equalizer configuration for the specified client.",
+        "operationId": "set_eq",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EqConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated equalizer configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many bands or validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/eq/preset": {
+      "post": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "Apply client Equalizer preset",
+        "description": "Overwrites the client's Equalizer settings with a predefined preset curve.\nSupported values: \"flat\", `bass_boost`, \"loudness\", \"vocals\", `treble_boost`.",
+        "operationId": "apply_preset",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated full equalizer configuration from preset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown preset name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/eq/{band_index}": {
+      "put": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "Update specific client Equalizer band",
+        "description": "Modifies a single filter band at the specified index within a client's Equalizer configuration.",
+        "operationId": "set_band",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "band_index",
+            "in": "path",
+            "description": "0-based index of the filter band to edit",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EqBand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated full equalizer configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client or band not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/icon": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get client icon name",
+        "description": "Returns the icon identifier string configured for the specified client.",
+        "operationId": "get_icon",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client icon name",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/latency": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get client latency setting",
+        "description": "Returns the manual latency correction in milliseconds for the specified client.",
+        "operationId": "get_latency",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current client latency in milliseconds",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Set client latency setting",
+        "description": "Updates the manual latency correction (in milliseconds) for the specified client.",
+        "operationId": "set_latency",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "integer",
+                "format": "int32"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated client latency in milliseconds",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/mute": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get client mute status",
+        "description": "Returns whether the specified client is currently muted.",
+        "operationId": "get_mute",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client mute status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Set client mute status",
+        "description": "Mutes or unmutes the specified client.",
+        "operationId": "set_mute",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "boolean"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated client mute status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/mute/toggle": {
+      "post": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Toggle client mute status",
+        "description": "Toggles the mute status of the specified client and returns the new status.",
+        "operationId": "toggle_mute",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New client mute status after toggling",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/name": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get client friendly name",
+        "description": "Returns the display name of the specified client.",
+        "operationId": "get_name",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client friendly name",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Set client friendly name",
+        "description": "Updates the friendly name of the specified client.",
+        "operationId": "set_name",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated friendly name",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/speaker": {
+      "get": {
+        "tags": [
+          "speakers"
+        ],
+        "summary": "Get client speaker correction",
+        "description": "Returns the current active speaker correction configuration (PEQ bands) applied to the specified client.",
+        "operationId": "get_speaker",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active speaker correction configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "speakers"
+        ],
+        "summary": "Apply speaker correction profile",
+        "description": "Configures speaker correction for a client using either a named spinorama profile or custom EQ bands.",
+        "operationId": "apply_speaker",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplySpeakerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Applied speaker correction configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request payload (e.g., mutually exclusive options, validation failed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client or speaker profile not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/volume": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get client volume level",
+        "description": "Returns the current volume level (0-100) of the specified client.",
+        "operationId": "get_volume",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current client volume",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Set client volume level",
+        "description": "Updates the volume level of the specified client. Supports absolute or relative values (e.g. \"+5\", \"-5\", or \"45\").",
+        "operationId": "set_volume",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeValue"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated client volume",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid volume value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clients/{client_index}/zone": {
+      "get": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Get client zone assignment",
+        "description": "Returns the index of the zone that the specified client is currently playing from.",
+        "operationId": "get_zone",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assigned zone index",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "clients"
+        ],
+        "summary": "Set client zone assignment",
+        "description": "Assigns the specified client to a target zone.",
+        "operationId": "set_zone",
+        "parameters": [
+          {
+            "name": "client_index",
+            "in": "path",
+            "description": "1-based index of the target client",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Assigned zone index",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Client or Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knx/knxprod": {
+      "get": {
+        "tags": [
+          "knx"
+        ],
+        "summary": "Download the KNX ETS product database",
+        "description": "Returns the `.knxprod` for importing `SnapDog` into ETS. Served regardless of KNX\ndevice mode so it can be fetched for commissioning at any time.",
+        "operationId": "get_knxprod",
+        "responses": {
+          "200": {
+            "description": "The .knxprod product database (ZIP)"
+          }
+        }
+      }
+    },
+    "/api/v1/knx/product-info": {
+      "get": {
+        "tags": [
+          "knx"
+        ],
+        "summary": "Product identity (version / order number / hardware revision) of the embedded\n`.knxprod`.",
+        "operationId": "get_product_info",
+        "responses": {
+          "200": {
+            "description": "Embedded ETS product identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knx/programming-mode": {
+      "get": {
+        "tags": [
+          "knx"
+        ],
+        "summary": "Get KNX programming mode status",
+        "description": "Returns whether the KNX device programming mode is currently active.\nThis endpoint is only available when the server is running in KNX device mode.",
+        "operationId": "get_programming_mode",
+        "responses": {
+          "200": {
+            "description": "Programming mode status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "KNX device mode not active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "knx"
+        ],
+        "summary": "Set KNX programming mode status",
+        "description": "Enable or disable the KNX device programming mode to allow ETS physical addressing.\nThis endpoint is only available when the server is running in KNX device mode.",
+        "operationId": "set_programming_mode",
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "boolean"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated programming mode status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "KNX device mode not active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/playlists": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get all media playlists",
+        "description": "Returns a list of all playlists available on the system, including local Radio stations and Subsonic playlists.",
+        "operationId": "get_playlists",
+        "responses": {
+          "200": {
+            "description": "List of all media playlists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PlaylistInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/playlists/{playlist_index}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get playlist details",
+        "description": "Returns details (name, track count) of a unified playlist by its index.",
+        "operationId": "get_playlist",
+        "parameters": [
+          {
+            "name": "playlist_index",
+            "in": "path",
+            "description": "0-based unified playlist index",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playlist details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/playlists/{playlist_index}/cover": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get playlist cover image",
+        "description": "Returns the cover art image binary for the specified playlist.",
+        "operationId": "get_playlist_cover",
+        "parameters": [
+          {
+            "name": "playlist_index",
+            "in": "path",
+            "description": "0-based unified playlist index",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playlist cover image",
+            "content": {
+              "image/*": {}
+            }
+          },
+          "404": {
+            "description": "Playlist or cover not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/playlists/{playlist_index}/tracks": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get playlist tracks",
+        "description": "Returns a list of all tracks in the specified playlist.",
+        "operationId": "get_playlist_tracks",
+        "parameters": [
+          {
+            "name": "playlist_index",
+            "in": "path",
+            "description": "0-based unified playlist index",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tracks in the playlist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MediaTrackInfo"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/playlists/{playlist_index}/tracks/{track_index}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get track details",
+        "description": "Returns details of a specific track within a playlist.",
+        "operationId": "get_playlist_track",
+        "parameters": [
+          {
+            "name": "playlist_index",
+            "in": "path",
+            "description": "0-based unified playlist index",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "track_index",
+            "in": "path",
+            "description": "0-based track index within the playlist",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Track details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaTrackInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Playlist or track not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/playlists/{playlist_index}/tracks/{track_index}/cover": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get track cover image",
+        "description": "Returns the cover art image binary for a specific track.",
+        "operationId": "get_track_cover_art",
+        "parameters": [
+          {
+            "name": "playlist_index",
+            "in": "path",
+            "description": "0-based unified playlist index",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "track_index",
+            "in": "path",
+            "description": "0-based track index within the playlist",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Track cover image",
+            "content": {
+              "image/*": {}
+            }
+          },
+          "404": {
+            "description": "Track or cover not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/speakers": {
+      "get": {
+        "tags": [
+          "speakers"
+        ],
+        "summary": "List available speaker profiles",
+        "description": "Returns a list of all speaker profiles available in the spinorama database.",
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "List of speaker profiles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Speaker database unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/speakers/{name}/profile": {
+      "get": {
+        "tags": [
+          "speakers"
+        ],
+        "summary": "Get speaker correction profile",
+        "description": "Returns the parametric Equalizer configuration (PEQ bands) for the specified speaker profile name.",
+        "operationId": "get_profile",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Name of the speaker profile",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Speaker PEQ profile bands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Speaker profile not found"
+          }
+        }
+      }
+    },
+    "/api/v1/system/status": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Retrieve basic system status statistics.",
+        "operationId": "get_status",
+        "responses": {
+          "200": {
+            "description": "System summary statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/version": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Retrieve application and platform version details.",
+        "operationId": "get_version",
+        "responses": {
+          "200": {
+            "description": "Version information details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get all zones details",
+        "description": "Returns a list of all zones, including volume, mute status, playback state, and presence settings.",
+        "operationId": "get_all",
+        "responses": {
+          "200": {
+            "description": "List of all zone details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ZoneInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/count": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get total number of zones",
+        "description": "Returns the number of configured zones in the system.",
+        "operationId": "get_count",
+        "responses": {
+          "200": {
+            "description": "Total zone count",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone details by index",
+        "description": "Returns the details of a single zone specified by its 1-based index.",
+        "operationId": "get_zone",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zone details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/clients": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone clients index list",
+        "description": "Returns a list of 1-based client indexes currently assigned to the specified zone.",
+        "operationId": "get_clients",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of assigned client indexes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/cover": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone cover art image",
+        "description": "Returns the cover art image binary (JPEG/PNG) of the currently playing track in the zone.\nDefaults to a placeholder icon when no cover art is loaded.",
+        "operationId": "get_zone_cover",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zone cover art image binary",
+            "content": {
+              "image/*": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/eq": {
+      "get": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "Get zone Equalizer configuration",
+        "description": "Returns the current active 10-band parametric Equalizer configuration for the specified zone.",
+        "operationId": "get_eq",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current equalizer configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "Set zone Equalizer configuration",
+        "description": "Updates the full 10-band parametric Equalizer configuration for the specified zone.",
+        "operationId": "set_eq",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EqConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated equalizer configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many bands or validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/eq/preset": {
+      "post": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "Apply Equalizer preset",
+        "description": "Overwrites the zone's Equalizer settings with a predefined preset curve.\nSupported values: \"flat\", `bass_boost`, \"loudness\", \"vocals\", `treble_boost`.",
+        "operationId": "apply_preset",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated full equalizer configuration from preset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown preset name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/eq/{band_index}": {
+      "put": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "Update specific Equalizer band",
+        "description": "Modifies a single filter band at the specified index within a zone's Equalizer configuration.",
+        "operationId": "set_band",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "band_index",
+            "in": "path",
+            "description": "0-based index of the filter band to edit",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EqBand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated full equalizer configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EqConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone or band not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/icon": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone emoji icon",
+        "description": "Returns the emoji character configured for the specified zone.",
+        "operationId": "get_icon",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zone icon character",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/mute": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone mute status",
+        "description": "Returns whether the specified zone is currently muted.",
+        "operationId": "get_mute",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zone mute status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set zone mute status",
+        "description": "Mutes or unmutes all outputs assigned to the specified zone.",
+        "operationId": "set_mute",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "boolean"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated mute status"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/mute/toggle": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Toggle zone mute status",
+        "description": "Toggles the mute status of the specified zone.",
+        "operationId": "toggle_mute",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mute toggled successfully"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/name": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone name",
+        "description": "Returns the name of the specified zone.",
+        "operationId": "get_name",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zone name",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/next": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Skip to next track",
+        "description": "Skips to the next track in the playlist for the specified zone.",
+        "operationId": "next_track",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skipped to next track"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/next/playlist": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Switch to next playlist",
+        "description": "Switches the zone to the next available unified playlist.",
+        "operationId": "next_playlist",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Switched to next playlist"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/pause": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Pause zone playback",
+        "description": "Pauses playback in the specified zone.",
+        "operationId": "pause",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playback paused"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/play": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Resume zone playback",
+        "description": "Resumes playback in the specified zone.",
+        "operationId": "play",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playback resumed"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/play/playlist": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Play unified playlist",
+        "description": "Switches the zone to a unified playlist index and starts playing at the specified track index.",
+        "operationId": "play_subsonic_playlist",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Playlist playback triggered"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/play/playlist/{playlist_index}/track": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Play track in a playlist",
+        "description": "Starts playback of the specified track index in the specified unified playlist.",
+        "operationId": "play_playlist_track",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "playlist_index",
+            "in": "path",
+            "description": "Index of the playlist",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "integer",
+                "format": "int32"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Playlist track playback started"
+          },
+          "404": {
+            "description": "Zone or playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/play/subsonic/{track_id}": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Play Subsonic track by ID",
+        "description": "Plays a specific Subsonic track directly using its unique upstream alphanumeric ID.",
+        "operationId": "play_subsonic_track",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "track_id",
+            "in": "path",
+            "description": "Unique Subsonic track ID string",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subsonic track playback started"
+          },
+          "404": {
+            "description": "Zone or track not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/play/track": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Play specific track index",
+        "description": "Starts playback of a specific track index within the active playlist.",
+        "operationId": "play_track",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "integer",
+                "format": "int32"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Track play command sent"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/play/url": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Play arbitrary audio stream URL",
+        "description": "Forces the zone to play a direct HTTP/HTTPS audio stream URL.",
+        "operationId": "play_url",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "URL playback started"
+          },
+          "400": {
+            "description": "Invalid URL schema (must be http or https)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/playback": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone playback status",
+        "description": "Returns the playback status string (\"playing\", \"paused\", \"stopped\").",
+        "operationId": "get_playback",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playback status string",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/playlist": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone playlist index",
+        "description": "Returns the index of the currently active unified playlist in the specified zone.",
+        "operationId": "get_playlist",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active playlist index",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set zone playlist",
+        "description": "Selects the specified unified playlist index. If the zone is already playing, playback switches\nto the selected playlist; otherwise the playlist is loaded and can be started with transport play.",
+        "operationId": "set_playlist",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Playlist changed successfully"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/playlist/count": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get playlist track count",
+        "description": "Returns the number of tracks currently in the active playlist.",
+        "operationId": "get_playlist_count",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playlist track count",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/playlist/info": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get active playlist summary info",
+        "description": "Returns high-level details about the active playlist (name, current track index, total tracks).",
+        "operationId": "get_playlist_info",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active playlist summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZonePlaylistInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/playlist/name": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get active playlist name",
+        "description": "Returns the display name of the currently active playlist in the zone.",
+        "operationId": "get_playlist_name",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active playlist display name",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/presence": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get presence occupancy status",
+        "description": "Returns true if presence/motion is currently active in the zone.",
+        "operationId": "get_presence",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current occupancy status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set presence occupancy status",
+        "description": "Triggers presence/occupancy manually (true = presence active, false = presence cleared).",
+        "operationId": "set_presence",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "boolean"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Presence status updated successfully"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/presence/enable": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get presence detection enable status",
+        "description": "Returns whether presence detection is enabled for the specified zone.",
+        "operationId": "get_presence_enabled",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Presence sensor system status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set presence detection enable status",
+        "description": "Enables or disables the presence/motion detection system for the specified zone.",
+        "operationId": "set_presence_enabled",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "boolean"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Presence sensor status updated"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/presence/timeout": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get presence timeout delay",
+        "description": "Returns the auto-off delay in seconds after presence is cleared.",
+        "operationId": "get_presence_timeout",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Auto-off timeout in seconds",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set presence timeout delay",
+        "description": "Updates the auto-off timeout delay (in seconds) after presence is cleared.",
+        "operationId": "set_presence_timeout",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Presence timeout updated"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/presence/timer": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get presence timer active status",
+        "description": "Returns whether the auto-off timer is currently running (countdown to turn off playback).",
+        "operationId": "get_presence_timer",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "True if auto-off countdown timer is active",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/previous": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Skip to previous track",
+        "description": "Skips to the previous track in the playlist for the specified zone.",
+        "operationId": "previous_track",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skipped to previous track"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/previous/playlist": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Switch to previous playlist",
+        "description": "Switches the zone to the previous available unified playlist.",
+        "operationId": "previous_playlist",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Switched to previous playlist"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/repeat": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone repeat mode",
+        "description": "Returns the current playlist repeat mode for the specified zone.",
+        "operationId": "get_repeat",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current repeat mode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepeatMode"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set zone repeat mode",
+        "description": "Updates the playlist repeat mode (\"off\", \"all\", \"one\") for the specified zone.",
+        "operationId": "set_repeat",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepeatMode"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Repeat mode updated"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/repeat/toggle": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Toggle zone repeat mode",
+        "description": "Cycles the repeat mode to the next option (Off -> All -> One -> Off) for the specified zone.",
+        "operationId": "toggle_repeat",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repeat mode toggled"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/shuffle": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone shuffle status",
+        "description": "Returns whether playlist shuffle mode is enabled in the specified zone.",
+        "operationId": "get_shuffle",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shuffle status",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set zone shuffle status",
+        "description": "Enables or disables playlist shuffle mode in the specified zone.",
+        "operationId": "set_shuffle",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "boolean"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Shuffle status updated"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/shuffle/toggle": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Toggle zone shuffle status",
+        "description": "Toggles the playlist shuffle mode in the specified zone.",
+        "operationId": "toggle_shuffle",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shuffle status toggled"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/stop": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Stop zone playback",
+        "description": "Stops playback and clears the active stream in the specified zone.",
+        "operationId": "stop",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playback stopped"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get active track index",
+        "description": "Returns the index of the currently active track in the playlist for the specified zone.",
+        "operationId": "get_track",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current track index (0-based)",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track/album": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get active track album",
+        "description": "Returns the album title of the track currently playing in the specified zone.",
+        "operationId": "get_track_album",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Track album title",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track/artist": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get active track artist",
+        "description": "Returns the artist name of the track currently playing in the specified zone.",
+        "operationId": "get_track_artist",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Track artist name",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track/duration": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get active track duration",
+        "description": "Returns the total duration of the currently active track in milliseconds.",
+        "operationId": "get_track_duration",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Track duration in milliseconds",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track/metadata": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get track metadata",
+        "description": "Returns detailed metadata (title, artist, album, duration, etc.) for the currently playing track in the zone.",
+        "operationId": "get_track_metadata",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current track metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneTrackMetadata"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track/playing": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get track playing state",
+        "description": "Returns whether the specified zone is currently playing audio (true) or paused/stopped (false).",
+        "operationId": "get_track_playing",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "True if active track is playing",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track/position": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get active track playback position",
+        "description": "Returns the current playback position of the active track in milliseconds.",
+        "operationId": "get_track_position",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current playback position in milliseconds",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Seek track position",
+        "description": "Seeks to a specific timestamp or offset in milliseconds. Exactly one field must be provided.",
+        "operationId": "seek_position",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeekPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Seek command processed"
+          },
+          "400": {
+            "description": "Invalid payload (both or neither field provided)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track/progress": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get track progress percentage",
+        "description": "Returns the current playback progress as a fractional value between 0.0 and 1.0.",
+        "operationId": "get_track_progress",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Track progress fraction (0.0 to 1.0)",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "number",
+                  "format": "double"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Seek track progress percentage",
+        "description": "Seeks to a specific progress fraction (0.0 to 1.0) of the track.",
+        "operationId": "seek_progress",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Seek command processed"
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/track/title": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get active track title",
+        "description": "Returns the title of the track currently playing in the specified zone.",
+        "operationId": "get_track_title",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Track title",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/volume": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone volume level",
+        "description": "Returns the current group volume level (0-100) of the specified zone.",
+        "operationId": "get_volume",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current zone volume",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set zone volume level",
+        "description": "Updates the volume level of the specified zone. Supports absolute or relative values (e.g. \"+5\", \"-5\", or \"45\").",
+        "operationId": "set_volume",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeValue"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated zone volume",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid volume value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApplySpeakerRequest": {
+        "type": "object",
+        "description": "Request body for applying a speaker correction.",
+        "properties": {
+          "custom": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EqConfig",
+                "description": "Custom EQ config. Mutually exclusive with `speaker`."
+              }
+            ]
+          },
+          "speaker": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Speaker name (from spinorama). Mutually exclusive with `custom`."
+          }
+        }
+      },
+      "ClientInfo": {
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "mac",
+          "zone_index",
+          "icon",
+          "volume",
+          "max_volume",
+          "muted",
+          "connected",
+          "is_snapdog"
+        ],
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "is_snapdog": {
+            "type": "boolean"
+          },
+          "mac": {
+            "type": "string"
+          },
+          "max_volume": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "zone_index": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "EqBand": {
+        "type": "object",
+        "description": "Single EQ band configuration.",
+        "required": [
+          "freq",
+          "gain",
+          "q",
+          "type"
+        ],
+        "properties": {
+          "freq": {
+            "type": "number",
+            "format": "float",
+            "description": "Center frequency in Hz."
+          },
+          "gain": {
+            "type": "number",
+            "format": "float",
+            "description": "Gain in dB (positive = boost, negative = cut). Ignored for low/high pass."
+          },
+          "q": {
+            "type": "number",
+            "format": "float",
+            "description": "Q factor controlling bandwidth. Higher values = narrower band."
+          },
+          "type": {
+            "$ref": "#/components/schemas/FilterType",
+            "description": "Filter type (low shelf, high shelf, peaking, low pass, high pass)."
+          }
+        }
+      },
+      "EqConfig": {
+        "type": "object",
+        "description": "Full EQ configuration for a zone.",
+        "required": [
+          "enabled",
+          "bands"
+        ],
+        "properties": {
+          "bands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EqBand"
+            },
+            "description": "Ordered list of biquad filter bands applied in series."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the EQ is active. When `false`, audio passes through unmodified."
+          },
+          "preset": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Name of the preset this config was loaded from, if any."
+          }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "description": "Standard REST API error response body.",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "High-level machine-readable error classification."
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed human-readable explanation of the error."
+          }
+        }
+      },
+      "FilterType": {
+        "type": "string",
+        "description": "Filter type for an EQ band.",
+        "enum": [
+          "low_shelf",
+          "high_shelf",
+          "peaking",
+          "low_pass",
+          "high_pass"
+        ]
+      },
+      "MediaTrackInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "artist",
+          "album",
+          "duration",
+          "track"
+        ],
+        "properties": {
+          "album": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "cover_art": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "track": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "PlaybackControl": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Resume playback.",
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "play"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Pause playback.",
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "pause"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Stop playback and return to idle.",
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "stop"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Next track or station.",
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "next"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Previous track or station.",
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "previous"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Seek to absolute position or by relative offset.",
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "seek"
+                ]
+              },
+              "offset_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Relative offset in milliseconds (positive = forward)."
+              },
+              "position_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Absolute position in milliseconds."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Set shuffle mode.",
+            "required": [
+              "enabled",
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "shuffle"
+                ]
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether shuffle is enabled."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Set repeat mode.",
+            "required": [
+              "mode",
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "repeat"
+                ]
+              },
+              "mode": {
+                "$ref": "#/components/schemas/RepeatMode",
+                "description": "Repeat mode."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Switch to a specific playlist.",
+            "required": [
+              "index",
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "playlist"
+                ]
+              },
+              "index": {
+                "type": "integer",
+                "description": "Playlist index (0-based).",
+                "minimum": 0
+              },
+              "track": {
+                "type": "integer",
+                "description": "Track index within the playlist (0-based, default: 0).",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Switch to the next playlist.",
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "playlist_next"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Switch to the previous playlist.",
+            "required": [
+              "cmd"
+            ],
+            "properties": {
+              "cmd": {
+                "type": "string",
+                "enum": [
+                  "playlist_previous"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Playback control command sent from client to server."
+      },
+      "PlaylistDetails": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "tracks"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "tracks": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "PlaylistInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "song_count",
+          "duration"
+        ],
+        "properties": {
+          "cover_art": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "song_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "PlaylistPayload": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "track": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ProductInfo": {
+        "type": "object",
+        "description": "ETS product identity of the embedded `.knxprod`, shown next to the `WebUI` download so\nan integrator can confirm it matches this device's firmware.",
+        "required": [
+          "app_version",
+          "application_number",
+          "hardware_version"
+        ],
+        "properties": {
+          "app_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "ETS `ApplicationVersion`.",
+            "minimum": 0
+          },
+          "application_number": {
+            "type": "string",
+            "description": "`ApplicationNumber` / order number, formatted `0xFF01`."
+          },
+          "hardware_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Hardware revision.",
+            "minimum": 0
+          }
+        }
+      },
+      "RepeatMode": {
+        "type": "string",
+        "description": "Repeat mode for zone playback.",
+        "enum": [
+          "off",
+          "track",
+          "playlist"
+        ]
+      },
+      "SeekPayload": {
+        "type": "object",
+        "properties": {
+          "offset_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "position_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "SystemStatus": {
+        "type": "object",
+        "required": [
+          "version",
+          "zones",
+          "clients",
+          "radios"
+        ],
+        "properties": {
+          "clients": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "radios": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "version": {
+            "type": "string"
+          },
+          "zones": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "TrackMetadata": {
+        "type": "object",
+        "description": "Full zone state pushed from server to client via custom message.",
+        "required": [
+          "playback",
+          "source",
+          "shuffle",
+          "repeat",
+          "title",
+          "artist",
+          "album",
+          "duration_ms",
+          "position_ms",
+          "seekable",
+          "can_playlist_next",
+          "can_playlist_prev",
+          "can_next",
+          "can_prev",
+          "volume",
+          "muted"
+        ],
+        "properties": {
+          "album": {
+            "type": "string",
+            "description": "Album name."
+          },
+          "album_artist": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Album artist (may differ from track artist)."
+          },
+          "artist": {
+            "type": "string",
+            "description": "Track artist."
+          },
+          "bitrate_kbps": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Audio bitrate in kbps.",
+            "minimum": 0
+          },
+          "can_next": {
+            "type": "boolean",
+            "description": "Whether next track is available."
+          },
+          "can_playlist_next": {
+            "type": "boolean",
+            "description": "Whether there's a next playlist."
+          },
+          "can_playlist_prev": {
+            "type": "boolean",
+            "description": "Whether there's a previous playlist."
+          },
+          "can_prev": {
+            "type": "boolean",
+            "description": "Whether previous track is available."
+          },
+          "content_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MIME content type."
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute cover art URL."
+          },
+          "disc_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Disc number.",
+            "minimum": 0
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total track duration in milliseconds."
+          },
+          "genre": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Genre tag."
+          },
+          "muted": {
+            "type": "boolean",
+            "description": "Whether the zone is muted."
+          },
+          "playback": {
+            "type": "string",
+            "description": "Playback state: \"playing\", \"paused\", \"stopped\"."
+          },
+          "playlist": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Current playlist index (0-based).",
+            "minimum": 0
+          },
+          "playlist_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Name of the active playlist."
+          },
+          "playlist_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Total number of playlists available.",
+            "minimum": 0
+          },
+          "position_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Current playback position in milliseconds."
+          },
+          "repeat": {
+            "$ref": "#/components/schemas/RepeatMode",
+            "description": "Repeat mode."
+          },
+          "seekable": {
+            "type": "boolean",
+            "description": "Whether seeking is supported."
+          },
+          "shuffle": {
+            "type": "boolean",
+            "description": "Whether shuffle is enabled."
+          },
+          "source": {
+            "type": "string",
+            "description": "Active source type."
+          },
+          "title": {
+            "type": "string",
+            "description": "Track title."
+          },
+          "track_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Total tracks in playlist.",
+            "minimum": 0
+          },
+          "track_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Current track index in playlist (0-based).",
+            "minimum": 0
+          },
+          "track_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Track number within the album.",
+            "minimum": 0
+          },
+          "volume": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Zone volume (0–100)."
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Release year.",
+            "minimum": 0
+          }
+        }
+      },
+      "VersionInfo": {
+        "type": "object",
+        "required": [
+          "version",
+          "rust_version",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rust_version": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "VolumeValue": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "description": "Volume value: absolute (e.g. `75`) or relative (e.g. `\"+5\"`, `\"-3\"`)."
+      },
+      "ZoneInfo": {
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "icon",
+          "volume",
+          "muted",
+          "playback",
+          "source",
+          "shuffle",
+          "repeat",
+          "presence",
+          "presence_enabled",
+          "presence_timer_active"
+        ],
+        "properties": {
+          "icon": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "playback": {
+            "type": "string"
+          },
+          "presence": {
+            "type": "boolean"
+          },
+          "presence_enabled": {
+            "type": "boolean"
+          },
+          "presence_timer_active": {
+            "type": "boolean"
+          },
+          "repeat": {
+            "$ref": "#/components/schemas/RepeatMode"
+          },
+          "shuffle": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ZonePlaylistInfo": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "track_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "track_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "ZoneTrackMetadata": {
+        "type": "object",
+        "required": [
+          "title",
+          "artist",
+          "album",
+          "duration_ms",
+          "position_ms",
+          "seekable",
+          "source",
+          "can_playlist_next",
+          "can_playlist_prev",
+          "can_next",
+          "can_prev"
+        ],
+        "properties": {
+          "album": {
+            "type": "string"
+          },
+          "album_artist": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "artist": {
+            "type": "string"
+          },
+          "bitrate_kbps": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "can_next": {
+            "type": "boolean"
+          },
+          "can_playlist_next": {
+            "type": "boolean"
+          },
+          "can_playlist_prev": {
+            "type": "boolean"
+          },
+          "can_prev": {
+            "type": "boolean"
+          },
+          "content_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disc_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "genre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "playlist_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "playlist_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "playlist_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "playlist_track_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "playlist_track_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "position_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sample_rate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "seekable": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "track_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system",
+      "description": "System and platform administration endpoints"
+    },
+    {
+      "name": "zones",
+      "description": "Multi-zone control, playback, and presence management"
+    },
+    {
+      "name": "clients",
+      "description": "Individual speaker volume, mute, latency, and zone assignment"
+    },
+    {
+      "name": "equalizer",
+      "description": "Parametric EQ curves, bands, and presets for zones and clients"
+    },
+    {
+      "name": "speakers",
+      "description": "Speaker profiles database and correction applications"
+    },
+    {
+      "name": "knx",
+      "description": "KNX home automation integration status and control"
+    },
+    {
+      "name": "media",
+      "description": "Radio station lists, Subsonic playlists, track listings, and covers"
+    }
+  ]
+}
