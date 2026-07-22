@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/SnapDogRocks/snapdog/compare/v0.26.2...v0.27.0) (2026-07-22)
+
+
+### Features
+
+* **config:** add validation-only server mode ([#147](https://github.com/SnapDogRocks/snapdog/issues/147)) ([01f7069](https://github.com/SnapDogRocks/snapdog/commit/01f70690091e09ea7f8388f9f64ef50e8ec832c9))
+
+
+### Bug Fixes
+
+* **api:** align runtime contracts and guard docs ([#146](https://github.com/SnapDogRocks/snapdog/issues/146)) ([3d5061c](https://github.com/SnapDogRocks/snapdog/commit/3d5061c7ef8eac597a5e7631231c619b8aac70e2))
+
 ## [0.26.2](https://github.com/SnapDogRocks/snapdog/compare/v0.26.1...v0.26.2) (2026-07-20)
 
 
