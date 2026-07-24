@@ -22,7 +22,7 @@ clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
-base64 = "0.22"
+base64 = "0.23"
 libc = "0.2"
 cpal = "0.18"
 biquad = { workspace = true }
