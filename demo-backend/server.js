@@ -194,14 +194,14 @@ const plInfoList = PLAYLISTS.map((pl) => ({
 // ── Mock System State ─────────────────────────────────────────
 
 let systemStatus = {
-  version: 'v0.2.0-demo',
+  version: '0.2.0-demo',
   zones: 3,
   clients: 6,
   radios: PLAYLISTS[0].tracks.length, // 10 radios
 };
 
 let versionInfo = {
-  version: 'v0.2.0-demo',
+  version: '0.2.0-demo',
   rust_version: 'rustc 1.78.0 (mock)',
   name: 'SnapDog Demo Server',
 };
