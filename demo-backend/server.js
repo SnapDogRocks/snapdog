@@ -359,8 +359,12 @@ const mockEqConfig = (enabled = false, preset = null, bands = null) => {
   };
 };
 
-// Zones state
-const zones = {
+// Zones state. Object.create(null): req.params.id is an untrusted string used
+// directly as a lookup key below (e.g. zones[req.params.id]) — a plain {}
+// literal would let "__proto__" resolve to Object.prototype itself (still
+// truthy, so it'd sail past the `if (!z) return 404` guards) and pollute it
+// process-wide. A null-prototype object has no such accessor to hijack.
+const zones = Object.assign(Object.create(null), {
   1: {
     index: 1,
     name: 'Living Room',
@@ -423,10 +427,10 @@ const zones = {
     playlist_id: 1, // Lofi Chill
     position_ms: 12000,
   }
-};
+});
 
-// Clients state
-const clients = {
+// Clients state. Object.create(null) — see the zones declaration above for why.
+const clients = Object.assign(Object.create(null), {
   1: {
     index: 1,
     name: 'Media Console',
@@ -517,7 +521,7 @@ const clients = {
     speaker: 'Custom Flat EQ',
     eq: mockEqConfig(false, 'spinorama:Custom Flat EQ'),
   }
-};
+});
 
 let knxProgrammingMode = false;
 
