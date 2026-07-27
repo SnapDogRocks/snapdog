@@ -39,3 +39,11 @@ webui/out/
 webui/coverage/
 webui/.env*
 webui/*.log
+
+# Dockerfile.demo builds the demo-backend mock server (Render's snapdog-demo
+# service) — it was never allowlisted here, which broke every demo deploy since
+# the deny-by-default default was introduced.
+!demo-backend/
+!demo-backend/**
+demo-backend/node_modules/
+demo-backend/*.log
