@@ -359,8 +359,12 @@ const mockEqConfig = (enabled = false, preset = null, bands = null) => {
   };
 };
 
-// Zones state
-const zones = {
+// Zones state. Object.create(null): req.params.id is an untrusted string used
+// directly as a lookup key below (e.g. zones[req.params.id]) — a plain {}
+// literal would let "__proto__" resolve to Object.prototype itself (still
+// truthy, so it'd sail past the `if (!z) return 404` guards) and pollute it
+// process-wide. A null-prototype object has no such accessor to hijack.
+const zones = Object.assign(Object.create(null), {
   1: {
     index: 1,
     name: 'Living Room',
@@ -423,10 +427,10 @@ const zones = {
     playlist_id: 1, // Lofi Chill
     position_ms: 12000,
   }
-};
+});
 
-// Clients state
-const clients = {
+// Clients state. Object.create(null) — see the zones declaration above for why.
+const clients = Object.assign(Object.create(null), {
   1: {
     index: 1,
     name: 'Media Console',
@@ -517,7 +521,7 @@ const clients = {
     speaker: 'Custom Flat EQ',
     eq: mockEqConfig(false, 'spinorama:Custom Flat EQ'),
   }
-};
+});
 
 let knxProgrammingMode = false;
 
@@ -748,6 +752,24 @@ setInterval(() => {
   });
 }, 1000);
 
+// ── Presence Simulation Loop (KNX-driven in the real server; here just a
+// believable, occasional toggle so the demo shows zone_presence_changed at
+// all) ──────────────────────────────────────────────────────────
+setInterval(() => {
+  const candidates = Object.values(zones).filter((z) => z.presence_enabled);
+  if (candidates.length === 0) return;
+  const zone = candidates[Math.floor(Math.random() * candidates.length)];
+  zone.presence = !zone.presence;
+  zone.presence_timer_active = !zone.presence && zone.playback === 'playing';
+  broadcast({
+    type: 'zone_presence_changed',
+    zone: zone.index,
+    presence: zone.presence,
+    enabled: zone.presence_enabled,
+    timer_active: zone.presence_timer_active,
+  });
+}, 30000);
+
 // ── Express REST API Routes ──────────────────────────────────
 
 // Health Checks
@@ -767,6 +789,27 @@ app.get('/api/v1/knx/programming-mode', (req, res) => res.json(knxProgrammingMod
 app.put('/api/v1/knx/programming-mode', (req, res) => {
   knxProgrammingMode = !!req.body;
   res.json(knxProgrammingMode);
+});
+
+// Mirrors the real server's embedded .knxprod identity (knx/group_objects.rs) so
+// the number shown here matches what a real device would report.
+app.get('/api/v1/knx/product-info', (req, res) => res.json({
+  app_version: 11,
+  application_number: '0xFF01',
+  hardware_version: 1,
+}));
+
+// The demo has no real ETS product database to embed (that's a signed release
+// artifact, not something to fake) — serve a placeholder with the same
+// filename/content-type so the download button still works end to end.
+app.get('/api/v1/knx/knxprod', (req, res) => {
+  const placeholder = Buffer.from(
+    'This is a placeholder .knxprod for the SnapDog demo site.\n' +
+    'Download the real product database from your own SnapDog device instead.\n'
+  );
+  res.set('Content-Type', 'application/octet-stream');
+  res.set('Content-Disposition', 'attachment; filename="snapdog.knxprod"');
+  res.send(placeholder);
 });
 
 // Media / Playlists
@@ -1181,7 +1224,32 @@ app.post('/api/v1/zones/:id/play/track', (req, res) => {
 app.post('/api/v1/zones/:id/play/url', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
-  
+
+  const url = req.body;
+  // The real server only finds out a stream is bad once the decoder chokes on
+  // it; the demo has no decoder, so use "doesn't even look like a URL" as its
+  // stand-in trigger — lets the playback_error / error-toast UX be
+  // demonstrated deliberately instead of only ever succeeding.
+  if (!url || !/^https?:\/\//i.test(url)) {
+    z.playback = 'stopped';
+    z.source = 'idle';
+    z.track_index = null;
+    z.playlist_id = null;
+    z.airplay_meta = null;
+    z.position_ms = 0;
+
+    res.sendStatus(204);
+    broadcast(buildWsZoneChanged(z.index));
+    broadcast({
+      type: 'playback_error',
+      zone: z.index,
+      message: 'Failed to open stream',
+      details: `"${url ?? ''}" is not a valid http(s) URL`,
+      recoverable: false,
+    });
+    return;
+  }
+
   z.source = 'url';
   z.playlist_id = null;
   z.track_index = null;
@@ -1189,13 +1257,13 @@ app.post('/api/v1/zones/:id/play/url', (req, res) => {
   z.playback = 'playing';
   z.airplay_meta = {
     title: 'Custom URL Stream',
-    artist: req.body,
+    artist: url,
     album: 'Web Stream',
     cover_url: COVERS.midnight,
     duration_ms: 0,
     seekable: false,
   };
-  
+
   res.sendStatus(204);
   broadcast(buildWsZoneChanged(z.index));
 });
