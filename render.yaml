@@ -4,6 +4,11 @@ services:
     env: docker
     plan: free # Deploys on Render's Free Hobby plan
     dockerfilePath: Dockerfile.demo
+    buildFilter:
+      paths:
+        - webui/**
+        - demo-backend/**
+        - Dockerfile.demo
     envVars:
       - key: PORT
         value: 5555
