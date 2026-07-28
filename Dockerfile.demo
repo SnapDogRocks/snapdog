@@ -20,6 +20,14 @@ COPY --from=frontend-builder /app/webui/out ./public
 # Copy mock server code
 COPY demo-backend/ ./
 
+# Mirror the real server's version instead of drifting from it: the workspace
+# Cargo.toml is the same source env!("CARGO_PKG_VERSION") reads at Rust compile
+# time. Bake just the version string in, not the whole file.
+COPY Cargo.toml /tmp/workspace-cargo.toml
+RUN awk '/^\[workspace.package\]/{f=1; next} /^\[/{f=0} f && /^version/{print}' /tmp/workspace-cargo.toml \
+      | sed -E 's/version = "(.*)"/\1/' > VERSION \
+    && rm /tmp/workspace-cargo.toml
+
 EXPOSE 5555
 ENV PORT=5555
 ENV NODE_ENV=production

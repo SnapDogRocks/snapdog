@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
@@ -193,15 +194,28 @@ const plInfoList = PLAYLISTS.map((pl) => ({
 
 // ── Mock System State ─────────────────────────────────────────
 
+// Dockerfile.demo bakes /app/VERSION from the workspace Cargo.toml at build
+// time — the same source env!("CARGO_PKG_VERSION") reads for the real server —
+// so the demo never drifts from the version actually shipped. Falls back to a
+// clearly-marked placeholder when run outside that Docker build (e.g. `node
+// server.js` directly for local dev).
+const SNAPDOG_VERSION = (() => {
+  try {
+    return fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim();
+  } catch {
+    return '0.0.0-dev';
+  }
+})();
+
 let systemStatus = {
-  version: 'v0.2.0-demo',
+  version: `${SNAPDOG_VERSION}-demo`,
   zones: 3,
   clients: 6,
   radios: PLAYLISTS[0].tracks.length, // 10 radios
 };
 
 let versionInfo = {
-  version: 'v0.2.0-demo',
+  version: `${SNAPDOG_VERSION}-demo`,
   rust_version: 'rustc 1.78.0 (mock)',
   name: 'SnapDog Demo Server',
 };

@@ -9,6 +9,7 @@ services:
         - webui/**
         - demo-backend/**
         - Dockerfile.demo
+        - Cargo.toml
     envVars:
       - key: PORT
         value: 5555
