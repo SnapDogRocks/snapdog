@@ -216,7 +216,7 @@ dependencies = [
  "libc",
  "log",
  "pkg-config",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "widestring",
  "winapi",
 ]
@@ -694,7 +694,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serde_urlencoded",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "time",
  "tokio",
  "tokio-stream",
@@ -2619,7 +2619,7 @@ dependencies = [
  "jni-sys 0.4.1",
  "log",
  "simd_cesu8",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "walkdir",
  "windows-link 0.2.1",
 ]
@@ -2725,7 +2725,7 @@ checksum = "afe739012118747c76d898ee6a46a8fbf9dd35573ce328b47468d5a8287cc0dd"
 dependencies = [
  "knx-rs-core",
  "socket2 0.6.4",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
 ]
@@ -2744,7 +2744,7 @@ dependencies = [
  "rsa",
  "sha1 0.10.6",
  "tempfile",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "ureq 2.12.1",
  "zip",
 ]
@@ -2806,7 +2806,7 @@ dependencies = [
  "multimap",
  "rand 0.9.4",
  "socket2 0.6.4",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
 ]
 
@@ -2826,7 +2826,7 @@ dependencies = [
  "librespot-core",
  "log",
  "tempfile",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
 ]
 
@@ -2844,7 +2844,7 @@ dependencies = [
  "protobuf",
  "rand 0.9.4",
  "serde_json",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
  "uuid",
@@ -2896,7 +2896,7 @@ dependencies = [
  "sha1 0.10.6",
  "shannon",
  "sysinfo",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "time",
  "tokio",
  "tokio-stream",
@@ -2931,7 +2931,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "sha1 0.10.6",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
 ]
 
@@ -2949,7 +2949,7 @@ dependencies = [
  "protobuf",
  "serde",
  "serde_json",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "uuid",
 ]
 
@@ -2963,7 +2963,7 @@ dependencies = [
  "oauth2",
  "open",
  "reqwest 0.12.28",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "url",
 ]
 
@@ -2984,7 +2984,7 @@ dependencies = [
  "rand_distr",
  "shell-words",
  "symphonia 0.5.5",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "zerocopy",
 ]
@@ -3673,7 +3673,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15ae32c275dabb0cd2c863460bf349e9abc3568ba2abf0f9eb7b7d2edeeed07e"
 dependencies = [
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4148,7 +4148,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2 0.6.4",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
  "web-time",
@@ -4171,7 +4171,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tinyvec",
  "tracing",
  "web-time",
@@ -4551,7 +4551,7 @@ dependencies = [
  "futures-util",
  "log",
  "native-tls",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-native-tls",
  "tokio-stream",
@@ -5021,7 +5021,7 @@ dependencies = [
  "sha2 0.10.9",
  "subtle",
  "symphonia 0.6.0",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
  "uuid",
@@ -5149,7 +5149,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -5842,7 +5842,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -5869,11 +5869,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.19"
+version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09a43598840e33d5b0331f38c5e30d13bb11c11210a4b58f0d9b18a5a5eefcd9"
+checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
 dependencies = [
- "thiserror-impl 2.0.19",
+ "thiserror-impl 2.0.20",
 ]
 
 [[package]]
@@ -5889,9 +5889,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.19"
+version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43cbfe0cf76104d42a574802844187e84a305e531ed54455f11fbde0f10541cd"
+checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6358,7 +6358,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "sha1 0.10.6",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "utf-8",
 ]
 
@@ -6376,7 +6376,7 @@ dependencies = [
  "native-tls",
  "rand 0.9.4",
  "sha1 0.10.6",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
  "utf-8",
 ]
 
@@ -6393,7 +6393,7 @@ dependencies = [
  "log",
  "rand 0.9.4",
  "sha1 0.10.6",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -6409,7 +6409,7 @@ dependencies = [
  "log",
  "rand 0.10.2",
  "sha1 0.11.0",
- "thiserror 2.0.19",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
