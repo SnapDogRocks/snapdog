@@ -46,7 +46,7 @@ tracing-appender = "0.2"
 symphonia = { version = "0.6", features = ["aac", "mp3", "flac", "alac", "isomp4", "pcm"] }
 
 # Audio resampling
-rubato = "4.0"
+rubato = "5.0"
 biquad = "0.6"
 
 # MQTT

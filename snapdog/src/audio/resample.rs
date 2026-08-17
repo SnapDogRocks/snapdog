@@ -131,14 +131,15 @@ pub enum F32Resampling {
     /// Source and target rates match — no processing needed.
     Passthrough,
     /// Active resampling via rubato.
-    Active(F32Resampler),
+    Active(Box<F32Resampler>),
 }
 
 impl F32Resampling {
     /// Create a new resampler, or passthrough if rates match.
+    #[must_use]
     pub fn new(source_rate: u32, target_rate: u32, channels: u16) -> Self {
         F32Resampler::new(source_rate, target_rate, channels)
-            .map_or(Self::Passthrough, Self::Active)
+            .map_or(Self::Passthrough, |r| Self::Active(Box::new(r)))
     }
 
     /// Returns resampled F32 data, or `None` when buffering (not enough input yet).
