@@ -3124,6 +3124,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdns-sd"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba97b4c886eea3c2823388120d92063c011ac866919ffc4200a0e4b1642a54a5"
+dependencies = [
+ "fastrand",
+ "flume 0.12.0",
+ "if-addrs 0.15.0",
+ "log",
+ "mio",
+ "socket-pktinfo",
+ "socket2 0.6.4",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5006,7 +5021,7 @@ dependencies = [
  "hmac 0.12.1",
  "httparse",
  "md-5 0.10.6",
- "mdns-sd",
+ "mdns-sd 0.20.3",
  "num-bigint",
  "plist",
  "rand 0.8.6",
@@ -5199,7 +5214,7 @@ dependencies = [
  "librespot-playback",
  "mac_address",
  "md5",
- "mdns-sd",
+ "mdns-sd 0.21.0",
  "mockall",
  "reqwest 0.13.4",
  "rubato 5.0.0",
@@ -5246,7 +5261,7 @@ dependencies = [
  "clap",
  "cpal",
  "libc",
- "mdns-sd",
+ "mdns-sd 0.21.0",
  "midir",
  "sd-notify",
  "serde_json",
