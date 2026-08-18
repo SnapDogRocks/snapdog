@@ -21,7 +21,7 @@ authors = ["Fabian Schmieder"]
 tokio = { version = "1", features = ["full"] }
 
 # mDNS discovery
-mdns-sd = "0.20"
+mdns-sd = "0.21"
 
 # Web framework
 axum = { version = "0.8", features = ["ws"] }
@@ -46,7 +46,7 @@ tracing-appender = "0.2"
 symphonia = { version = "0.6", features = ["aac", "mp3", "flac", "alac", "isomp4", "pcm"] }
 
 # Audio resampling
-rubato = "4.0"
+rubato = "5.0"
 biquad = "0.6"
 
 # MQTT
