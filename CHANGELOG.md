@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.27.1](https://github.com/SnapDogRocks/snapdog/compare/v0.27.0...v0.27.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **demo-backend:** add missing KNX endpoints and simulate presence/playback-error ([#159](https://github.com/SnapDogRocks/snapdog/issues/159)) ([40c9c01](https://github.com/SnapDogRocks/snapdog/commit/40c9c01fd38cfbedf7dd7e23409c7ac401fd6418))
+* **demo-backend:** fix broken demo deploys and version drift ([#164](https://github.com/SnapDogRocks/snapdog/issues/164)) ([094a282](https://github.com/SnapDogRocks/snapdog/commit/094a282c704710be891e8dfecc259624de1e1430))
+* **demo-backend:** use emoji icons instead of slug strings ([#170](https://github.com/SnapDogRocks/snapdog/issues/170)) ([9995adf](https://github.com/SnapDogRocks/snapdog/commit/9995adfc793a7e71c4d896aeff9b19f94c9872c3))
+* **render:** scope demo-backend auto-deploy to relevant paths ([#161](https://github.com/SnapDogRocks/snapdog/issues/161)) ([89fd6ce](https://github.com/SnapDogRocks/snapdog/commit/89fd6ce15078c916de9f13a47a1b35051ff39070))
+
 ## [0.27.0](https://github.com/SnapDogRocks/snapdog/compare/v0.26.2...v0.27.0) (2026-07-22)
 
 
