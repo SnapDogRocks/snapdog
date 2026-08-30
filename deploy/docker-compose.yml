@@ -1,0 +1,72 @@
+name: snapdog
+
+services:
+  server:
+    image: ${SNAPDOG_IMAGE:?set SNAPDOG_IMAGE in .env}
+    container_name: snapdog
+    restart: unless-stopped
+    env_file:
+      - ${COMPOSE_ENV_FILE:-./.env}
+    environment:
+      SNAPDOG_UPDATER_URL: http://updater:8080
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 15s
+    volumes:
+      - snapdog-data:/var/lib/snapdog
+      - ./snapdog.toml:/etc/snapdog/snapdog.toml:ro
+    ports:
+      - "5555:5555"
+      - "1704:1704"
+      - "3671:3671/udp"
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, --max-time, "4", http://127.0.0.1:5555/health/ready]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  updater:
+    image: ${UPDATER_IMAGE:?set UPDATER_IMAGE in .env}
+    container_name: snapdog-updater
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    env_file:
+      - ${COMPOSE_ENV_FILE:-./.env}
+    environment:
+      COMPOSE_FILE: /stack/docker-compose.yml
+      COMPOSE_PROJECT: snapdog
+      COMPOSE_SERVICE: server
+      COMPOSE_ENV_FILE: /stack/.env
+      HOST_STACK_DIR: ${HOST_STACK_DIR:-${PWD}}
+      TARGET_CONTAINER: snapdog
+      IMAGE_REPOSITORY: ghcr.io/snapdogrocks/snapdog
+      UPDATER_IMAGE_REPOSITORY: ghcr.io/snapdogrocks/snapdog-updater
+      SNAPDOG_ENV_FILE: /stack/.env
+      READINESS_URL: http://server:5555/health/ready
+      READINESS_TIMEOUT_SECONDS: "120"
+      POLL_INTERVAL_SECONDS: "900"
+      UPDATE_TIMEOUT_SECONDS: "900"
+      UPDATER_CONFIG_FILE: /state/config.json
+      PROGRESS_FILE: /state/updater-progress.json
+      SWAP_RESULT_FILE: /state/updater-swap.json
+      HOME: /tmp
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker-compose.yml:/stack/docker-compose.yml:ro
+      - ./.env:/stack/.env
+      - ./data/updater:/state
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_add: [DAC_OVERRIDE]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  snapdog-data:
