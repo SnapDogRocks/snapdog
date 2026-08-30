@@ -7,6 +7,7 @@ import type {
   TrackInfo,
   SystemStatus,
   VersionInfo,
+  UpdateStatus,
   HealthResponse,
   VolumeValue,
   EqBand,
@@ -213,6 +214,11 @@ export const media = {
 export const system = {
   status: () => get<SystemStatus>("/api/v1/system/status"),
   version: () => get<VersionInfo>("/api/v1/system/version"),
+  updateStatus: () => get<UpdateStatus>("/api/v1/system/updates"),
+  checkUpdates: () => postJson<UpdateStatus>("/api/v1/system/updates/check"),
+  applyUpdate: () => postJson<UpdateStatus>("/api/v1/system/updates/apply"),
+  configureUpdates: (config: { mode: "manual" | "automatic"; maintenanceTime: string; timezone: string }) =>
+    postJson<UpdateStatus>("/api/v1/system/updates/config", config),
 };
 
 // ── Health ────────────────────────────────────────────────────
