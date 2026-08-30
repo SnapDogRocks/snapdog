@@ -9,6 +9,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, Download04Icon } from "@hugeicons/core-free-icons";
 import { useTranslations } from "next-intl";
 
+const ignoreUnavailableOptionalEndpoint = () => undefined;
+
 export function AboutButton() {
   const [open, setOpen] = useState(false);
   const t = useTranslations("about");
@@ -42,13 +44,22 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
   const t = useTranslations("about");
 
   useEffect(() => {
-    api.system.version().then((v) => { setVersion(v.version); setServerName(v.name); }).catch(() => {});
-    api.knx.getProgrammingMode().then((mode) => {
-      setProgMode(mode);
-      setKnxAvailable(true);
-    }).catch(() => {});
-    api.knx.getProductInfo().then(setKnxProduct).catch(() => {});
-    api.system.updateStatus().then(setUpdate).catch(() => {});
+    api.system
+      .version()
+      .then((v) => {
+        setVersion(v.version);
+        setServerName(v.name);
+      })
+      .catch(ignoreUnavailableOptionalEndpoint);
+    api.knx
+      .getProgrammingMode()
+      .then((mode) => {
+        setProgMode(mode);
+        setKnxAvailable(true);
+      })
+      .catch(ignoreUnavailableOptionalEndpoint);
+    api.knx.getProductInfo().then(setKnxProduct).catch(ignoreUnavailableOptionalEndpoint);
+    api.system.updateStatus().then(setUpdate).catch(ignoreUnavailableOptionalEndpoint);
     if (typeof window !== "undefined") {
       setTimeout(() => {
         setHostname(window.location.hostname);
@@ -59,14 +70,29 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!updateBusy) return;
     const timer = window.setInterval(() => {
-      api.system.updateStatus().then((value) => {
-        setUpdate(value);
-        if (!["checking", "preparing", "updating", "verifying", "deploying", "waiting-for-health", "rolling-back"].includes(value.state)) {
-          setUpdateBusy(false);
-        }
-      }).catch(() => {});
+      api.system
+        .updateStatus()
+        .then((value) => {
+          setUpdate(value);
+          if (
+            ![
+              "checking",
+              "preparing",
+              "updating",
+              "verifying",
+              "deploying",
+              "waiting-for-health",
+              "rolling-back",
+            ].includes(value.state)
+          ) {
+            setUpdateBusy(false);
+          }
+        })
+        .catch(ignoreUnavailableOptionalEndpoint);
     }, 2000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [updateBusy]);
 
   // Motion values for swipe/drag close physics (strictly numeric for interpolation safety)
@@ -231,7 +257,9 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
               onClick={() => {
                 setUpdateBusy(true);
                 const operation = update.updateAvailable ? api.system.applyUpdate() : api.system.checkUpdates();
-                operation.then(setUpdate).catch(() => setUpdateBusy(false));
+                operation.then(setUpdate).catch(() => {
+                  setUpdateBusy(false);
+                });
               }}
               className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
             >
