@@ -75,6 +75,7 @@ jobs:
               - '.dockerignore'
               - 'Dockerfile'
               - 'Dockerfile.client'
+              - 'deploy/**'
             integration:
               - '.config/nextest.toml'
               - 'snapdog/src/mqtt/**'
@@ -205,6 +206,9 @@ jobs:
           set -euo pipefail
           docker buildx build --check --file Dockerfile .
           docker buildx build --check --file Dockerfile.client .
+          docker buildx build --check --file deploy/updater/Dockerfile deploy/updater
+      - name: Test updater control plane
+        run: node --test deploy/updater/control.test.mjs
 
   integration-tests:
     name: Integration Tests
