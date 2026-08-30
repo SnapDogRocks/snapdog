@@ -155,9 +155,11 @@ use the same product version.
 
 ### Binary
 
-Download from [Releases](https://github.com/SnapDogRocks/snapdog/releases/latest), then:
+Download from [Releases](https://github.com/SnapDogRocks/snapdog/releases/latest),
+verify the measured digest, then run it:
 
 ```bash
+sha256sum --check SHA256SUMS --ignore-missing
 snapdog --config snapdog.toml
 ```
 
@@ -171,11 +173,22 @@ sc start SnapDog
 ### Debian/Ubuntu (APT)
 
 ```bash
-echo "deb [trusted=yes] https://snapdogrocks.github.io/snapdog/debian stable main" \
+curl -fsSL https://snapdogrocks.github.io/snapdog/debian/snapdog-archive-keyring.asc \
+  | gpg --show-keys --with-colons \
+  | awk -F: '$1 == "fpr" { print $10; exit }'
+# Expected: E4AAC210C8C21377554DBDE40623E5F3B4379FC7
+
+curl -fsSL https://snapdogrocks.github.io/snapdog/debian/snapdog-archive-keyring.asc \
+  | sudo tee /usr/share/keyrings/snapdog-archive-keyring.asc >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/snapdog-archive-keyring.asc] https://snapdogrocks.github.io/snapdog/debian stable main" \
   | sudo tee /etc/apt/sources.list.d/snapdog.list
 sudo apt update
 sudo apt install snapdog snapdog-client
 ```
+
+APT metadata is signed both inline (`InRelease`) and detached (`Release.gpg`). Do
+not use `trusted=yes`; the repository signing-key fingerprint is
+`E4AA C210 C8C2 1377 554D  BDE4 0623 E5F3 B437 9FC7`.
 
 ### Homebrew (macOS)
 
@@ -184,6 +197,15 @@ brew tap snapdogrocks/tap
 brew install snapdog
 brew install snapdog-client
 ```
+
+### Arch Linux (AUR)
+
+```bash
+yay -S snapdog          # or: yay -S snapdog-client
+```
+
+The AUR recipes install the same measured Linux binaries used by the release
+tarballs, Debian packages and container images; they do not rebuild from source.
 
 ### macOS App
 
