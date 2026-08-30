@@ -30,7 +30,7 @@ EXPOSE 8080
 # image pin. Docker-socket access is root-equivalent regardless of the numeric
 # container user, so state the privilege explicitly instead of implying a false
 # user boundary. The API is unexported, token-authenticated, and fail-closed.
-# kics-scan ignore-line
+# nosemgrep
 USER root
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/v1/status',{headers:{authorization:'Bearer '+process.env.UPDATER_TOKEN}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
