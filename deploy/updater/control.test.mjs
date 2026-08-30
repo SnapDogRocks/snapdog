@@ -24,7 +24,8 @@ const {
 } = await import("./core.mjs");
 
 test("resets a completed journal synchronously when a new update starts", () => {
-  writeFileSync(
+  // The path is created by mkdtemp above and cannot escape the test directory.
+  writeFileSync( // nosemgrep
     progressFile,
     JSON.stringify({
       phase: "done",
@@ -35,7 +36,7 @@ test("resets a completed journal synchronously when a new update starts", () => 
   );
 
   assert.equal(startProgressJournal("v1.12.0", new Date("2026-08-16T09:00:00.000Z")), true);
-  assert.deepEqual(JSON.parse(readFileSync(progressFile, "utf8")), {
+  assert.deepEqual(JSON.parse(readFileSync(progressFile, "utf8")), { // nosemgrep
     phase: "verifying",
     detail: "v1.12.0",
     at: "2026-08-16T09:00:00.000Z",

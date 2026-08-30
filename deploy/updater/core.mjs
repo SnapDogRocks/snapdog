@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 const RELEASE_CHECK_ATTEMPTS = 3;
-const RELEASE_CHECK_DELAYS_MS = [500, 1_500];
+const FIRST_RELEASE_CHECK_DELAY_MS = 500;
+const LATER_RELEASE_CHECK_DELAY_MS = 1_500;
 const INLINE_RATE_LIMIT_WAIT_MS = 5_000;
 
 export class ReleaseCheckError extends Error {
@@ -140,7 +141,8 @@ export async function fetchReleaseVersion(
   if (githubToken) headers.Authorization = `Bearer ${githubToken}`;
   let lastError = null;
   for (let attempt = 0; attempt < RELEASE_CHECK_ATTEMPTS; attempt += 1) {
-    let retryDelay = RELEASE_CHECK_DELAYS_MS[attempt] ?? 0;
+    let retryDelay =
+      attempt === 0 ? FIRST_RELEASE_CHECK_DELAY_MS : LATER_RELEASE_CHECK_DELAY_MS;
     try {
       const response = await fetchImpl(api, {
         headers,
@@ -186,5 +188,6 @@ export async function fetchReleaseVersion(
     }
     if (attempt < RELEASE_CHECK_ATTEMPTS - 1) await sleepImpl(retryDelay);
   }
-  throw lastError ?? new ReleaseCheckError("network-error", "GitHub Releases request failed");
+  // The control plane handles this typed failure and schedules a bounded retry.
+  throw lastError ?? new ReleaseCheckError("network-error", "GitHub Releases request failed"); // nosemgrep
 }

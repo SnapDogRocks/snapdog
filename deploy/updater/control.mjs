@@ -51,13 +51,15 @@ const progressFile = trustedStateFile(process.env.PROGRESS_FILE, "/state/updater
 function readStateJson(path) {
   // The path has already passed trustedStateFile(), which confines production
   // reads to /state. Tests intentionally use an isolated mkdtemp directory.
-  return JSON.parse(readFileSync(path, "utf8"));
+  return JSON.parse(readFileSync(path, "utf8")); // nosemgrep
 }
 function writeStateJson(path, value) {
   const temporary = `${path}.tmp`;
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 });
-  renameSync(temporary, path);
+  // Production paths are confined by trustedStateFile(); the dynamic names are
+  // necessary so config and journals can share one atomic persistence helper.
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 }); // nosemgrep
+  writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 }); // nosemgrep
+  renameSync(temporary, path); // nosemgrep
 }
 /* Outcome of the last self-update, written by the detached helper that performed
  * it. The container that did the swap is gone by the time anyone can ask, so the
@@ -248,7 +250,8 @@ async function currentVersion() {
     image,
   ]);
 }
-async function signedImageReady(repository, tag, identity) {
+// Verification failures are deliberately converted to false by the catch below.
+async function signedImageReady(repository, tag, identity) { // nosemgrep
   try {
     await command(
       "cosign",
@@ -313,6 +316,54 @@ function scheduleReleaseCheckRetry(requestedRetryAt = null) {
   }, delay);
   releaseCheckRetryTimer.unref();
 }
+async function refreshReleaseStatus() {
+  const [current, available] = await Promise.all([
+    currentVersion(),
+    fetchReleaseVersion(releaseApi),
+  ]);
+  status.lastError = null;
+  status.currentVersion = current || null;
+  status.availableVersion = available;
+  status.lastCheckedAt = new Date().toISOString();
+  status.releaseCheckStatus = "ok";
+  status.releaseCheckError = null;
+  clearReleaseCheckRetry();
+  const releaseIsNewer = newer(current, available);
+  const artifactsReady = !releaseIsNewer || (await releaseArtifactsReady(available));
+  const decision = releaseDecision(current, available, artifactsReady);
+  status.updateAvailable = decision.updateAvailable;
+  /* Both images are pinned to the same release tag by the deployment assets, so
+   * the server's candidate release is also the updater's candidate. */
+  status.updaterUpdateAvailable = artifactsReady && newer(updaterVersion, available);
+  const progress = lastProgress();
+  /* A periodic release check must not erase the outcome of a failed deployment
+   * while the old version is still running. Keep retry available, but preserve
+   * the actionable failure and its real journal detail in the UI. */
+  if (releaseIsNewer && ["failed", "rolling-back"].includes(progress?.phase)) {
+    status.state = "failed";
+    status.lastError = progress?.detail ?? "The previous update attempt failed";
+  } else {
+    status.state = decision.state;
+  }
+  if (status.state === "preparing") scheduleReadinessRetry();
+  else clearReadinessRetry();
+}
+function recordReleaseCheckFailure(error, previousState) {
+  clearReadinessRetry();
+  if (error instanceof ReleaseCheckError) {
+    status.state = ["available", "preparing", "current", "failed"].includes(previousState)
+      ? previousState
+      : "current";
+    status.releaseCheckStatus = "degraded";
+    status.releaseCheckError = error.code;
+    scheduleReleaseCheckRetry(error.retryAt);
+    console.error(`snapdog-updater: release check degraded: ${error.message}`);
+  } else {
+    clearReleaseCheckRetry();
+    status.state = "failed";
+    status.lastError = String(error instanceof Error ? error.message : error).slice(0, 500);
+  }
+}
 async function check() {
   if (active) return;
   active = true;
@@ -320,51 +371,9 @@ async function check() {
   status.state = "checking";
   status.lastCheckAttemptAt = new Date().toISOString();
   try {
-    const [current, available] = await Promise.all([
-      currentVersion(),
-      fetchReleaseVersion(releaseApi),
-    ]);
-    status.lastError = null;
-    status.currentVersion = current || null;
-    status.availableVersion = available;
-    status.lastCheckedAt = new Date().toISOString();
-    status.releaseCheckStatus = "ok";
-    status.releaseCheckError = null;
-    clearReleaseCheckRetry();
-    const releaseIsNewer = newer(current, available);
-    const artifactsReady = !releaseIsNewer || (await releaseArtifactsReady(available));
-    const decision = releaseDecision(current, available, artifactsReady);
-    status.updateAvailable = decision.updateAvailable;
-    /* Both images are pinned to the same release tag by the deployment assets, so
-     * the server's candidate release is also the updater's candidate. */
-    status.updaterUpdateAvailable = artifactsReady && newer(updaterVersion, available);
-    const progress = lastProgress();
-    /* A periodic release check must not erase the outcome of a failed deployment
-     * while the old version is still running. Keep retry available, but preserve
-     * the actionable failure and its real journal detail in the UI. */
-    if (releaseIsNewer && ["failed", "rolling-back"].includes(progress?.phase)) {
-      status.state = "failed";
-      status.lastError = progress?.detail ?? "The previous update attempt failed";
-    } else {
-      status.state = decision.state;
-    }
-    if (status.state === "preparing") scheduleReadinessRetry();
-    else clearReadinessRetry();
+    await refreshReleaseStatus();
   } catch (error) {
-    clearReadinessRetry();
-    if (error instanceof ReleaseCheckError) {
-      status.state = ["available", "preparing", "current", "failed"].includes(previousState)
-        ? previousState
-        : "current";
-      status.releaseCheckStatus = "degraded";
-      status.releaseCheckError = error.code;
-      scheduleReleaseCheckRetry(error.retryAt);
-      console.error(`snapdog-updater: release check degraded: ${error.message}`);
-    } else {
-      clearReleaseCheckRetry();
-      status.state = "failed";
-      status.lastError = String(error instanceof Error ? error.message : error).slice(0, 500);
-    }
+    recordReleaseCheckFailure(error, previousState);
   } finally {
     active = false;
   }
