@@ -121,7 +121,9 @@ cosign verify ghcr.io/snapdogrocks/snapdog:v0.25.1 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-For reproducible deployments, pin a version or digest instead of `latest`. On Linux,
+For unattended, signature-verified updates with health-gated rollback, use the
+[production Compose updater](docs/docker-updates.md). For reproducible deployments,
+pin a version or digest instead of `latest`. On Linux,
 mDNS discovery and KNX/IP routing use multicast and generally require host networking
 or a multicast-capable macvlan/ipvlan network; published ports alone cover unicast
 traffic.
