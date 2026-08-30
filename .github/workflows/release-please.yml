@@ -29,13 +29,13 @@ jobs:
       # no-op until the two RELEASE_PLEASE_APP_* secrets exist: without them the
       # token step fails softly and release-please falls back to GITHUB_TOKEN
       # (i.e. the old close+reopen workaround still applies).
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
         continue-on-error: true
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@0dfd8538845b8e92600d271a895a5372865d4062 # v5.0.0
         id: rp
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
@@ -53,7 +53,7 @@ jobs:
       # step below doesn't depend on the runner image's preinstalled cargo.
       - name: Set up Rust for the Cargo.lock sync
         if: ${{ steps.rp.outputs.pr }}
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
       - name: Sync Cargo.lock into the release PR
         if: ${{ steps.rp.outputs.pr }}
         env:

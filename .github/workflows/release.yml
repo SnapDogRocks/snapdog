@@ -48,8 +48,8 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -60,7 +60,7 @@ jobs:
       - name: Build WebUI (static export)
         working-directory: webui
         run: npm ci && npm run build
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: webui-out
           path: webui/out
@@ -71,9 +71,9 @@ jobs:
     needs: [meta, webui]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Install build dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends \
@@ -81,7 +81,7 @@ jobs:
       # snapdog (an xtask dependency) embeds the WebUI via rust-embed; reuse the export so
       # its build.rs does not invoke npm here.
       - name: Fetch pre-built WebUI
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: webui-out
           path: webui/out
@@ -102,7 +102,7 @@ jobs:
           fi
           cargo run -p xtask -- knxprod
           rm -f "$RUNNER_TEMP/ets-key.pem"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: knxprod
           path: knx/snapdog.knxprod
@@ -139,14 +139,14 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-2025
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
       # In the bookworm container Rust 1.97 is preinstalled; only the mac/windows runners
       # need rustup plus the cross target installed.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
         if: matrix.container == ''
         with:
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: ${{ matrix.target }}
       - name: Install Linux build dependencies
@@ -157,7 +157,7 @@ jobs:
       # Reuse the WebUI built once in the `webui` job. With webui/out present,
       # snapdog's build.rs early-returns instead of invoking npm — no Node on this runner.
       - name: Fetch pre-built WebUI
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: webui-out
           path: webui/out
@@ -167,7 +167,7 @@ jobs:
       # Reuse the (signed-if-key) .knxprod built once in the `knxprod` job; snapdog embeds
       # it via include_bytes!, so the download must land before the build.
       - name: Fetch pre-built .knxprod
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: knxprod
           path: knx
@@ -175,7 +175,7 @@ jobs:
         run: cargo build --release --timings --target ${{ matrix.target }} -p snapdog -p snapdog-client
       - name: Upload Cargo timings
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: cargo-timings-${{ matrix.target }}
           path: target/cargo-timings/cargo-timing.html
@@ -201,7 +201,7 @@ jobs:
             sha256sum "${archive}.tar.gz" > "${archive}.tar.gz.sha256"
           fi
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: snapdog-${{ matrix.target }}
           path: |
@@ -215,8 +215,8 @@ jobs:
     needs: [meta, build]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: nick-fields/retry@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.1
         with:
           timeout_minutes: 5
           max_attempts: 3
@@ -396,7 +396,7 @@ jobs:
           LENGTH=$(stat -f%z "$DMG")
 
           printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>SnapDog Server</title>\n    <item>\n      <title>Version %s</title>\n%s      <sparkle:version>%s</sparkle:version>\n      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>\n      <enclosure url="https://github.com/SnapDogRocks/snapdog/releases/download/%s/%s"\n        sparkle:edSignature="%s"\n        length="%s"\n        type="application/octet-stream"/>\n    </item>\n  </channel>\n</rss>\n' "$VERSION" "$CHANNEL_LINE" "$VERSION" "$TAG" "$DMG" "$SIGNATURE" "$LENGTH" > appcast.xml
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: snapdog-macos-app
           path: |
@@ -417,8 +417,8 @@ jobs:
           - { pkg: snapdog-client, arch: amd64, target: x86_64-unknown-linux-gnu }
           - { pkg: snapdog-client, arch: arm64, target: aarch64-unknown-linux-gnu }
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
         with:
           targets: ${{ matrix.target }}
       - name: Install cargo-deb
@@ -428,7 +428,7 @@ jobs:
       # rebuild, and no native arm64 runner: cargo-deb sets Architecture from --target, so
       # both arches package on amd64.
       - name: Fetch pre-built binaries
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: snapdog-${{ matrix.target }}
           path: dist
@@ -443,7 +443,7 @@ jobs:
       # cargo-deb writes to target/debian/ regardless of --target (arch is in the filename).
       - name: Package .deb
         run: cargo deb -p ${{ matrix.pkg }} --target ${{ matrix.target }} --no-build --no-strip
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: deb-${{ matrix.pkg }}-${{ matrix.arch }}
           path: target/debian/*.deb
@@ -457,7 +457,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           path: artifacts
       - name: Collect assets
@@ -478,8 +478,8 @@ jobs:
     if: ${{ needs.macos-app.result == 'success' && needs.upload-release-artifacts.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: snapdog-macos-app
           path: artifacts
@@ -509,7 +509,7 @@ jobs:
     needs: [meta, upload-release-artifacts]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           path: artifacts
           merge-multiple: true
@@ -600,13 +600,13 @@ jobs:
           - pkg: snapdog-client
             pkgbuild: aur/snapdog-client/PKGBUILD
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
       - name: Update PKGBUILD version
         run: |
           VERSION=${{ needs.meta.outputs.version }}
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" ${{ matrix.pkgbuild }}
           sed -i "s/^pkgrel=.*/pkgrel=1/" ${{ matrix.pkgbuild }}
-      - uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+      - uses: KSXGitHub/github-actions-deploy-aur@084b0d9b15415bf9cdb65d44dad1efe37a354050 # v4.2.0
         with:
           pkgname: ${{ matrix.pkg }}
           pkgbuild: ${{ matrix.pkgbuild }}
@@ -623,11 +623,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
         with:
           ref: gh-pages
           path: gh-pages
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           pattern: deb-*
           path: debs
@@ -712,7 +712,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Fetch pre-built Linux binaries
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           pattern: snapdog-*-unknown-linux-gnu
           path: dl
@@ -795,7 +795,7 @@ jobs:
     needs: [meta, upload-release-artifacts]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
         with:
           repository: SnapDogRocks/snapdog-os
           token: ${{ secrets.SNAPDOG_OS_PAT }}
@@ -823,7 +823,7 @@ jobs:
           printf '# Remote SnapDog release artifact.\nsha256  %s  %s\n' "$HASH" "$FILE" \
             > buildroot/package/snapdog-client/snapdog-client.hash
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.0.0
         with:
           token: ${{ secrets.SNAPDOG_OS_PAT }}
           # `fix(deps)` (NOT `chore(deps)`): release-please only cuts a release for
