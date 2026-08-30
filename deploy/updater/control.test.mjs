@@ -25,7 +25,8 @@ const {
 
 test("resets a completed journal synchronously when a new update starts", () => {
   // The path is created by mkdtemp above and cannot escape the test directory.
-  writeFileSync( // nosemgrep
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  writeFileSync(
     progressFile,
     JSON.stringify({
       phase: "done",
@@ -36,7 +37,8 @@ test("resets a completed journal synchronously when a new update starts", () => 
   );
 
   assert.equal(startProgressJournal("v1.12.0", new Date("2026-08-16T09:00:00.000Z")), true);
-  assert.deepEqual(JSON.parse(readFileSync(progressFile, "utf8")), { // nosemgrep
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  assert.deepEqual(JSON.parse(readFileSync(progressFile, "utf8")), {
     phase: "verifying",
     detail: "v1.12.0",
     at: "2026-08-16T09:00:00.000Z",

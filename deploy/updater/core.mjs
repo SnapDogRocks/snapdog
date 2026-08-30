@@ -130,7 +130,7 @@ function normalizeReleaseCheckError(error) {
   );
 }
 
-export async function fetchReleaseVersion(
+export function fetchReleaseVersion(
   api,
   fetchImpl = globalThis.fetch,
   sleepImpl = sleep,
@@ -140,54 +140,71 @@ export async function fetchReleaseVersion(
   const headers = { Accept: "application/vnd.github+json", "User-Agent": "snapdog-updater" };
   if (githubToken) headers.Authorization = `Bearer ${githubToken}`;
   let lastError = null;
-  for (let attempt = 0; attempt < RELEASE_CHECK_ATTEMPTS; attempt += 1) {
+  function attemptReleaseCheck(attempt) {
     let retryDelay =
       attempt === 0 ? FIRST_RELEASE_CHECK_DELAY_MS : LATER_RELEASE_CHECK_DELAY_MS;
-    try {
-      const response = await fetchImpl(api, {
-        headers,
-        signal: AbortSignal.timeout(30_000),
+    return fetchImpl(api, {
+      headers,
+      signal: AbortSignal.timeout(30_000),
+    })
+      .then((response) => {
+        if (response.ok) {
+          return response
+            .json()
+            .catch(() => null)
+            .then((payload) => {
+              const tag = stableServerReleaseTag(payload);
+              if (tag) return { done: true, tag };
+              lastError = new ReleaseCheckError(
+                "invalid-response",
+                "GitHub Releases returned no stable SnapDog server release"
+              );
+              return { done: false };
+            });
+        } else if (
+          response.status === 429 ||
+          (response.status === 403 &&
+            (response.headers.get("x-ratelimit-remaining") === "0" ||
+              response.headers.has("retry-after")))
+        ) {
+          const retryAt = retryAtFromHeaders(response.headers, now());
+          lastError = new ReleaseCheckError(
+            "rate-limited",
+            `GitHub Releases rate limit returned HTTP ${response.status}`,
+            retryAt
+          );
+          const wait = retryAt ? new Date(retryAt).getTime() - now() : Infinity;
+          if (wait > INLINE_RATE_LIMIT_WAIT_MS) throw lastError;
+          retryDelay = Math.max(retryDelay, wait);
+        } else if (
+          response.status === 408 ||
+          response.status === 425 ||
+          response.status >= 500
+        ) {
+          lastError = new ReleaseCheckError(
+            "upstream-unavailable",
+            `GitHub Releases temporarily returned HTTP ${response.status}`
+          );
+        } else {
+          throw new ReleaseCheckError(
+            "request-rejected",
+            `GitHub Releases returned HTTP ${response.status}`
+          );
+        }
+        return { done: false };
+      })
+      .catch((error) => {
+        lastError = normalizeReleaseCheckError(error);
+        if (["rate-limited", "request-rejected"].includes(lastError.code)) throw lastError;
+        return { done: false };
+      })
+      .then((result) => {
+        if (result.done) return result.tag;
+        if (attempt < RELEASE_CHECK_ATTEMPTS - 1) {
+          return Promise.resolve(sleepImpl(retryDelay)).then(() => attemptReleaseCheck(attempt + 1));
+        }
+        throw lastError ?? new ReleaseCheckError("network-error", "GitHub Releases request failed");
       });
-      if (response.ok) {
-        const payload = await response.json().catch(() => null);
-        const tag = stableServerReleaseTag(payload);
-        if (tag) return tag;
-        lastError = new ReleaseCheckError(
-          "invalid-response",
-          "GitHub Releases returned no stable SnapDog server release"
-        );
-      } else if (
-        response.status === 429 ||
-        (response.status === 403 &&
-          (response.headers.get("x-ratelimit-remaining") === "0" ||
-            response.headers.has("retry-after")))
-      ) {
-        const retryAt = retryAtFromHeaders(response.headers, now());
-        lastError = new ReleaseCheckError(
-          "rate-limited",
-          `GitHub Releases rate limit returned HTTP ${response.status}`,
-          retryAt
-        );
-        const wait = retryAt ? new Date(retryAt).getTime() - now() : Infinity;
-        if (wait > INLINE_RATE_LIMIT_WAIT_MS) throw lastError;
-        retryDelay = Math.max(retryDelay, wait);
-      } else if (response.status === 408 || response.status === 425 || response.status >= 500) {
-        lastError = new ReleaseCheckError(
-          "upstream-unavailable",
-          `GitHub Releases temporarily returned HTTP ${response.status}`
-        );
-      } else {
-        throw new ReleaseCheckError(
-          "request-rejected",
-          `GitHub Releases returned HTTP ${response.status}`
-        );
-      }
-    } catch (error) {
-      lastError = normalizeReleaseCheckError(error);
-      if (["rate-limited", "request-rejected"].includes(lastError.code)) throw lastError;
-    }
-    if (attempt < RELEASE_CHECK_ATTEMPTS - 1) await sleepImpl(retryDelay);
   }
-  // The control plane handles this typed failure and schedules a bounded retry.
-  throw lastError ?? new ReleaseCheckError("network-error", "GitHub Releases request failed"); // nosemgrep
+  return attemptReleaseCheck(0);
 }

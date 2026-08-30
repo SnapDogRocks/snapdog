@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# kics-scan disable=67fd0c4a-68cf-46d7-8c41-bc9fba7e40ae
+# hadolint global ignore=DL3002
 # docker:29-cli multi-arch manifest, pinned for reproducible updater builds.
 FROM docker:29-cli@sha256:27a51d5ab1cd38d9eeaba7b415b8c07bc10c31e1cf1ec8d78f6413fcfab3f44f
 
@@ -30,7 +30,7 @@ EXPOSE 8080
 # image pin. Docker-socket access is root-equivalent regardless of the numeric
 # container user, so state the privilege explicitly instead of implying a false
 # user boundary. The API is unexported, token-authenticated, and fail-closed.
-# hadolint ignore=DL3002
+# kics-scan ignore-line
 USER root
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/v1/status',{headers:{authorization:'Bearer '+process.env.UPDATER_TOKEN}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

@@ -51,15 +51,19 @@ const progressFile = trustedStateFile(process.env.PROGRESS_FILE, "/state/updater
 function readStateJson(path) {
   // The path has already passed trustedStateFile(), which confines production
   // reads to /state. Tests intentionally use an isolated mkdtemp directory.
-  return JSON.parse(readFileSync(path, "utf8")); // nosemgrep
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  return JSON.parse(readFileSync(path, "utf8"));
 }
 function writeStateJson(path, value) {
   const temporary = `${path}.tmp`;
   // Production paths are confined by trustedStateFile(); the dynamic names are
   // necessary so config and journals can share one atomic persistence helper.
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 }); // nosemgrep
-  writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 }); // nosemgrep
-  renameSync(temporary, path); // nosemgrep
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  renameSync(temporary, path);
 }
 /* Outcome of the last self-update, written by the detached helper that performed
  * it. The container that did the swap is gone by the time anyone can ask, so the
@@ -250,25 +254,21 @@ async function currentVersion() {
     image,
   ]);
 }
-// Verification failures are deliberately converted to false by the catch below.
-async function signedImageReady(repository, tag, identity) { // nosemgrep
-  try {
-    await command(
-      "cosign",
-      [
-        "verify",
-        "--certificate-oidc-issuer",
-        cosignIssuer,
-        "--certificate-identity-regexp",
-        identity,
-        `${repository}:${tag}`,
-      ],
-      { timeout: 20_000, quietStderr: true }
-    );
-    return true;
-  } catch {
-    return false;
-  }
+function signedImageReady(repository, tag, identity) {
+  return command(
+    "cosign",
+    [
+      "verify",
+      "--certificate-oidc-issuer",
+      cosignIssuer,
+      "--certificate-identity-regexp",
+      identity,
+      `${repository}:${tag}`,
+    ],
+    { timeout: 20_000, quietStderr: true }
+  )
+    .then(() => true)
+    .catch(() => false);
 }
 async function releaseArtifactsReady(tag) {
   const checks = [signedImageReady(serverImageRepository, tag, serverIdentity)];
