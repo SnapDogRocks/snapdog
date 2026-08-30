@@ -447,7 +447,7 @@ pub async fn play_audio(
 #[allow(clippy::too_many_lines)]
 // Audio output setup with callback — splitting would obscure control flow
 // `slice::as_chunks` requires a newer Rust release than the workspace MSRV (1.85).
-#[allow(clippy::chunks_exact_to_as_chunks)]
+#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
 fn run_cpal(
     stream: Arc<Mutex<Stream>>,
     time_provider: Arc<Mutex<TimeProvider>>,

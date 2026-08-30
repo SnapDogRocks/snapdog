@@ -66,7 +66,7 @@ impl SpotifyReceiver {
 }
 
 // The trait contract is async even though task spawning and cancellation complete immediately.
-#[allow(clippy::unused_async_trait_impl)]
+#[allow(unknown_lints, clippy::unused_async_trait_impl)]
 impl ReceiverProvider for SpotifyReceiver {
     fn name(&self) -> &'static str {
         "Spotify Connect"

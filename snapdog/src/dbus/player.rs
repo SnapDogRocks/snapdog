@@ -111,6 +111,7 @@ impl PlayerInterface {
 }
 
 #[allow(
+    unknown_lints,
     clippy::unused_self,
     clippy::missing_const_for_fn,
     clippy::used_underscore_binding,
