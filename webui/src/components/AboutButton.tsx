@@ -3,10 +3,13 @@
 import { useState, useEffect } from "react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { api, type KnxProductInfo } from "@/lib/api";
+import type { UpdateStatus } from "@/lib/types";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, Download04Icon } from "@hugeicons/core-free-icons";
 import { useTranslations } from "next-intl";
+
+const ignoreUnavailableOptionalEndpoint = () => undefined;
 
 export function AboutButton() {
   const [open, setOpen] = useState(false);
@@ -35,22 +38,62 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
   const [knxAvailable, setKnxAvailable] = useState(false);
   const [progMode, setProgMode] = useState(false);
   const [knxProduct, setKnxProduct] = useState<KnxProductInfo | null>(null);
+  const [update, setUpdate] = useState<UpdateStatus>();
+  const [updateBusy, setUpdateBusy] = useState(false);
   const trapRef = useFocusTrap<HTMLDivElement>();
   const t = useTranslations("about");
 
   useEffect(() => {
-    api.system.version().then((v) => { setVersion(v.version); setServerName(v.name); }).catch(() => {});
-    api.knx.getProgrammingMode().then((mode) => {
-      setProgMode(mode);
-      setKnxAvailable(true);
-    }).catch(() => {});
-    api.knx.getProductInfo().then(setKnxProduct).catch(() => {});
+    api.system
+      .version()
+      .then((v) => {
+        setVersion(v.version);
+        setServerName(v.name);
+      })
+      .catch(ignoreUnavailableOptionalEndpoint);
+    api.knx
+      .getProgrammingMode()
+      .then((mode) => {
+        setProgMode(mode);
+        setKnxAvailable(true);
+      })
+      .catch(ignoreUnavailableOptionalEndpoint);
+    api.knx.getProductInfo().then(setKnxProduct).catch(ignoreUnavailableOptionalEndpoint);
+    api.system.updateStatus().then(setUpdate).catch(ignoreUnavailableOptionalEndpoint);
     if (typeof window !== "undefined") {
       setTimeout(() => {
         setHostname(window.location.hostname);
       }, 0);
     }
   }, []);
+
+  useEffect(() => {
+    if (!updateBusy) return;
+    const timer = window.setInterval(() => {
+      api.system
+        .updateStatus()
+        .then((value) => {
+          setUpdate(value);
+          if (
+            ![
+              "checking",
+              "preparing",
+              "updating",
+              "verifying",
+              "deploying",
+              "waiting-for-health",
+              "rolling-back",
+            ].includes(value.state)
+          ) {
+            setUpdateBusy(false);
+          }
+        })
+        .catch(ignoreUnavailableOptionalEndpoint);
+    }, 2000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [updateBusy]);
 
   // Motion values for swipe/drag close physics (strictly numeric for interpolation safety)
   const y = useMotionValue(0);
@@ -198,6 +241,32 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             </span>
           </a>
         </div>
+
+        {update && (
+          <div className="w-full flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 text-left">
+            <div className="flex min-w-0 flex-col">
+              <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">Container update</span>
+              <span className="text-xs font-semibold truncate">
+                {update.progress?.phase ?? update.state}
+                {update.availableVersion ? ` · ${update.availableVersion}` : ""}
+              </span>
+              {update.lastError && <span className="text-[10px] text-destructive truncate">{update.lastError}</span>}
+            </div>
+            <button
+              disabled={updateBusy}
+              onClick={() => {
+                setUpdateBusy(true);
+                const operation = update.updateAvailable ? api.system.applyUpdate() : api.system.checkUpdates();
+                operation.then(setUpdate).catch(() => {
+                  setUpdateBusy(false);
+                });
+              }}
+              className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+            >
+              {updateBusy ? "…" : update.updateAvailable ? "Update" : "Check"}
+            </button>
+          </div>
+        )}
 
         {/* KNX Programming Mode — only visible when KNX is configured */}
         {knxAvailable && (

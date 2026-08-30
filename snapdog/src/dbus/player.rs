@@ -111,10 +111,12 @@ impl PlayerInterface {
 }
 
 #[allow(
+    unknown_lints,
     clippy::unused_self,
     clippy::missing_const_for_fn,
     clippy::used_underscore_binding,
-    clippy::unused_async
+    clippy::unused_async,
+    clippy::unused_async_trait_impl
 )]
 #[zbus::interface(name = "org.mpris.MediaPlayer2.Player")]
 impl PlayerInterface {

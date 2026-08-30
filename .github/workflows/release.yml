@@ -1,14 +1,16 @@
 name: Release
 
 on:
-  # Single trigger: release-please publishes the GitHub Release (with its App token,
-  # whose events DO trigger workflows). Do NOT add a `push: tags` trigger or a
-  # release-please explicit dispatch alongside this — each duplicates the whole build
-  # and the duplicates race on the release-asset / Homebrew-tap / R2-appcast uploads.
-  # `workflow_dispatch` stays as a manual re-run fallback (`--ref vX.Y.Z`).
-  release:
-    types: [published]
+  # release-please creates the tag plus a draft and dispatches this workflow exactly
+  # once. Never add a tag or release event here: either would duplicate the build.
   workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,12 +24,16 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       revision: ${{ steps.meta.outputs.revision }}
       created: ${{ steps.meta.outputs.created }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Parse version
         id: meta
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           if [[ ! "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Release workflow must run from a SemVer tag (vX.Y.Z), got: $GITHUB_REF"
             exit 1
@@ -36,11 +42,22 @@ jobs:
           VERSION=${TAG#v}
           REVISION=$(git rev-parse HEAD)
           CREATED=$(git show -s --format=%cI HEAD)
+          release=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")
+          if [ "$(jq -r .draft <<<"$release")" != true ]; then
+            echo "::error::${TAG} must have an unpublished draft release"
+            exit 1
+          fi
+          if [ "$(jq '.assets | length' <<<"$release")" -ne 0 ]; then
+            echo "::error::${TAG} draft already has assets; refusing a destructive retry"
+            exit 1
+          fi
+          PRERELEASE=$(jq -r .prerelease <<<"$release")
           {
             echo "tag=${TAG}"
             echo "version=${VERSION}"
             echo "revision=${REVISION}"
             echo "created=${CREATED}"
+            echo "prerelease=${PRERELEASE}"
           } >> "$GITHUB_OUTPUT"
 
   webui:
@@ -48,8 +65,8 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -60,7 +77,7 @@ jobs:
       - name: Build WebUI (static export)
         working-directory: webui
         run: npm ci && npm run build
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: webui-out
           path: webui/out
@@ -71,9 +88,11 @@ jobs:
     needs: [meta, webui]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Install build dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends \
@@ -81,28 +100,23 @@ jobs:
       # snapdog (an xtask dependency) embeds the WebUI via rust-embed; reuse the export so
       # its build.rs does not invoke npm here.
       - name: Fetch pre-built WebUI
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: webui-out
           path: webui/out
-      # Regenerate the ETS product database and RSA-sign it WHEN the ETS key secret is
-      # present, so released binaries embed a directly ETS-importable .knxprod. Without the
-      # secret it is produced unsigned — no break.
+      # A release must never silently downgrade to an unsigned ETS database.
       - name: Generate & sign .knxprod
         env:
           ETS_SIGNING_KEY: ${{ secrets.ETS_SIGNING_KEY }}
         run: |
-          if [ -n "$ETS_SIGNING_KEY" ]; then
-            umask 077
-            printf '%s' "$ETS_SIGNING_KEY" > "$RUNNER_TEMP/ets-key.pem"
-            export SNAPDOG_ETS_KEY="$RUNNER_TEMP/ets-key.pem"
-            echo "::notice::ETS_SIGNING_KEY present — producing a SIGNED .knxprod"
-          else
-            echo "::warning::ETS_SIGNING_KEY not set — producing an UNSIGNED .knxprod"
-          fi
+          set -euo pipefail
+          test -n "$ETS_SIGNING_KEY" || { echo "::error::ETS_SIGNING_KEY is required for releases"; exit 1; }
+          umask 077
+          printf '%s' "$ETS_SIGNING_KEY" > "$RUNNER_TEMP/ets-key.pem"
+          export SNAPDOG_ETS_KEY="$RUNNER_TEMP/ets-key.pem"
           cargo run -p xtask -- knxprod
           rm -f "$RUNNER_TEMP/ets-key.pem"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: knxprod
           path: knx/snapdog.knxprod
@@ -139,14 +153,15 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-2025
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
       # In the bookworm container Rust 1.97 is preinstalled; only the mac/windows runners
       # need rustup plus the cross target installed.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
         if: matrix.container == ''
         with:
+          toolchain: 1.97.0
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: ${{ matrix.target }}
       - name: Install Linux build dependencies
@@ -157,7 +172,7 @@ jobs:
       # Reuse the WebUI built once in the `webui` job. With webui/out present,
       # snapdog's build.rs early-returns instead of invoking npm — no Node on this runner.
       - name: Fetch pre-built WebUI
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: webui-out
           path: webui/out
@@ -167,7 +182,7 @@ jobs:
       # Reuse the (signed-if-key) .knxprod built once in the `knxprod` job; snapdog embeds
       # it via include_bytes!, so the download must land before the build.
       - name: Fetch pre-built .knxprod
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: knxprod
           path: knx
@@ -175,7 +190,7 @@ jobs:
         run: cargo build --release --timings --target ${{ matrix.target }} -p snapdog -p snapdog-client
       - name: Upload Cargo timings
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: cargo-timings-${{ matrix.target }}
           path: target/cargo-timings/cargo-timing.html
@@ -193,6 +208,11 @@ jobs:
           cp "target/${TARGET}/release/snapdog-client" "$archive/" 2>/dev/null || \
           cp "target/${TARGET}/release/snapdog-client.exe" "$archive/" 2>/dev/null || true
           cp LICENSE README.md "$archive/" 2>/dev/null || true
+          cp snapdog.example.toml "$archive/" 2>/dev/null || true
+          mkdir -p "$archive/packaging"
+          cp snapdog/systemd/snapdog.service snapdog/debian/snapdog.default \
+            snapdog-client/systemd/snapdog-client.service \
+            snapdog-client/debian/snapdog-client.default "$archive/packaging/"
           if [[ "$TARGET" == *windows* ]]; then
             7z a "${archive}.zip" "$archive"
             sha256sum "${archive}.zip" > "${archive}.zip.sha256"
@@ -201,7 +221,7 @@ jobs:
             sha256sum "${archive}.tar.gz" > "${archive}.tar.gz.sha256"
           fi
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: snapdog-${{ matrix.target }}
           path: |
@@ -215,8 +235,8 @@ jobs:
     needs: [meta, build]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: nick-fields/retry@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.1
         with:
           timeout_minutes: 5
           max_attempts: 3
@@ -358,7 +378,7 @@ jobs:
       - name: Generate Sparkle appcast
         env:
           SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          IS_PRERELEASE: ${{ needs.meta.outputs.prerelease }}
         run: |
           VERSION=${{ needs.meta.outputs.version }}
           TAG=${{ needs.meta.outputs.tag }}
@@ -396,7 +416,7 @@ jobs:
           LENGTH=$(stat -f%z "$DMG")
 
           printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>SnapDog Server</title>\n    <item>\n      <title>Version %s</title>\n%s      <sparkle:version>%s</sparkle:version>\n      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>\n      <enclosure url="https://github.com/SnapDogRocks/snapdog/releases/download/%s/%s"\n        sparkle:edSignature="%s"\n        length="%s"\n        type="application/octet-stream"/>\n    </item>\n  </channel>\n</rss>\n' "$VERSION" "$CHANNEL_LINE" "$VERSION" "$TAG" "$DMG" "$SIGNATURE" "$LENGTH" > appcast.xml
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: snapdog-macos-app
           path: |
@@ -417,18 +437,19 @@ jobs:
           - { pkg: snapdog-client, arch: amd64, target: x86_64-unknown-linux-gnu }
           - { pkg: snapdog-client, arch: arm64, target: aarch64-unknown-linux-gnu }
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
         with:
+          toolchain: 1.97.0
           targets: ${{ matrix.target }}
       - name: Install cargo-deb
-        run: cargo install cargo-deb
+        run: cargo install cargo-deb --version 3.7.0 --locked
       # Reuse the binary already compiled by the `build` job (bookworm glibc, so the .deb
       # runs on Debian 12+ and matching distros) — no second snapdog compile, no WebUI
       # rebuild, and no native arm64 runner: cargo-deb sets Architecture from --target, so
       # both arches package on amd64.
       - name: Fetch pre-built binaries
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: snapdog-${{ matrix.target }}
           path: dist
@@ -443,43 +464,218 @@ jobs:
       # cargo-deb writes to target/debian/ regardless of --target (arch is in the filename).
       - name: Package .deb
         run: cargo deb -p ${{ matrix.pkg }} --target ${{ matrix.target }} --no-build --no-strip
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: deb-${{ matrix.pkg }}-${{ matrix.arch }}
           path: target/debian/*.deb
           if-no-files-found: error
 
-  upload-release-artifacts:
-    name: Upload Release Artifacts
+  verify-release-assets:
+    name: Verify release assets and .deb installs
     runs-on: ubuntu-latest
     needs: [meta, build, build-deb, knxprod, macos-app]
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.macos-app.result == 'success' }}
-    permissions:
-      contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           path: artifacts
       - name: Collect assets
         run: |
+          set -euo pipefail
           mkdir release-assets
           find artifacts -type f \( -name "*.tar.gz" -o -name "*.tar.gz.sha256" -o -name "*.zip" -o -name "*.zip.sha256" -o -name "*.dmg" -o -name "*.dmg.sha256" -o -name "*.deb" -o -name "*.knxprod" \) -exec cp {} release-assets/ \;
-          cd release-assets && sha256sum ./* > SHA256SUMS
+          cd release-assets
+          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 4
+          test "$(find . -maxdepth 1 -name '*.zip' | wc -l)" -eq 1
+          test "$(find . -maxdepth 1 -name '*.dmg' | wc -l)" -eq 1
+          test "$(find . -maxdepth 1 -name '*.deb' | wc -l)" -eq 4
+          test "$(find . -maxdepth 1 -name '*.knxprod' | wc -l)" -eq 1
+          cp ../deploy/docker-compose.yml ./docker-compose.yml
+          cp ../deploy/snapdog.env.example ./snapdog.env.example
+          sed -i \
+            -e "s|SNAPDOG_IMAGE=.*|SNAPDOG_IMAGE=ghcr.io/snapdogrocks/snapdog:${{ needs.meta.outputs.tag }}|" \
+            -e "s|UPDATER_IMAGE=.*|UPDATER_IMAGE=ghcr.io/snapdogrocks/snapdog-updater:${{ needs.meta.outputs.tag }}|" \
+            snapdog.env.example
+          grep -Fx "SNAPDOG_IMAGE=ghcr.io/snapdogrocks/snapdog:${{ needs.meta.outputs.tag }}" snapdog.env.example
+          grep -Fx "UPDATER_IMAGE=ghcr.io/snapdogrocks/snapdog-updater:${{ needs.meta.outputs.tag }}" snapdog.env.example
+          for checksum in ./*.sha256; do sha256sum --check "$checksum"; done
+          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > ../SHA256SUMS
+          mv ../SHA256SUMS .
+          sha256sum --check SHA256SUMS
+      - name: Prove .deb files contain the already-built binaries
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for pair in amd64:x86_64-unknown-linux-gnu arm64:aarch64-unknown-linux-gnu; do
+            arch=${pair%%:*}; target=${pair#*:}
+            mkdir -p "compare/${arch}/archive"
+            tar xzf "release-assets/snapdog-${TAG}-${target}.tar.gz" -C "compare/${arch}/archive"
+            for pkg in snapdog snapdog-client; do
+              deb=$(find release-assets -name "${pkg}_*_${arch}.deb" -print -quit)
+              test -n "$deb"
+              mkdir -p "compare/${arch}/${pkg}"
+              dpkg-deb -x "$deb" "compare/${arch}/${pkg}"
+              built=$(find "compare/${arch}/archive" -type f -name "$pkg" -print -quit)
+              cmp "$built" "compare/${arch}/${pkg}/usr/bin/${pkg}"
+            done
+          done
+      - name: Smoke-test direct .deb installation
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/release-assets:/packages:ro" \
+            debian:12-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 sh -euxc '
+            printf "#!/bin/sh\nexit 101\n" >/usr/sbin/policy-rc.d
+            apt-get update
+            apt-get install -y /packages/*_amd64.deb
+            snapdog --version
+            snapdog-client --version
+          '
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: verified-release-assets
+          path: release-assets
+          if-no-files-found: error
+
+  smoke-homebrew:
+    name: Smoke-test Homebrew packages
+    needs: [meta, build]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: snapdog-${{ runner.arch == 'ARM64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
+          path: artifacts
+      - name: Install both formulas from the local, measured artifact
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive=$(find "$PWD/artifacts" -name '*.tar.gz' -print -quit)
+          sha=$(shasum -a 256 "$archive" | awk '{print $1}')
+          for pkg in snapdog snapdog-client; do
+            case "$pkg" in snapdog) formula=Snapdog;; snapdog-client) formula=SnapdogClient;; esac
+            cat > "${pkg}.rb" <<EOF
+          class ${formula} < Formula
+            version "${VERSION}"
+            url "file://${archive}"
+            sha256 "${sha}"
+            def install
+              bin.install "${pkg}"
+            end
+            test do
+              system bin/"${pkg}", "--version"
+            end
+          end
+          EOF
+            brew install --formula "$PWD/${pkg}.rb"
+            brew test "$pkg"
+            brew uninstall "$pkg"
+          done
+
+  smoke-aur:
+    name: Smoke-test AUR packages
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: snapdog-x86_64-unknown-linux-gnu
+          path: artifacts
+      - name: Build and install both PKGBUILDs from the local release artifact
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive=$(find artifacts -name '*.tar.gz' -print -quit)
+          sha=$(sha256sum "$archive" | awk '{print $1}')
+          mkdir aur-smoke
+          cp "$archive" aur-smoke/
+          for pkg in snapdog snapdog-client; do
+            mkdir "aur-smoke/$pkg"
+            cp "aur/$pkg/PKGBUILD" "aur-smoke/$pkg/"
+            cp "$archive" "aur-smoke/$pkg/snapdog-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+            sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "aur-smoke/$pkg/PKGBUILD"
+            sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${sha}')/" "aur-smoke/$pkg/PKGBUILD"
+            if [ "$pkg" = snapdog ]; then
+              aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog.example.toml | awk '{printf "\047%s\047 ", $1}')
+            else
+              aux=$(sha256sum snapdog-client/systemd/snapdog-client.service snapdog-client/debian/snapdog-client.default | awk '{printf "\047%s\047 ", $1}')
+            fi
+            PKGBUILD="aur-smoke/$pkg/PKGBUILD" AUX="$aux" python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          path = Path(os.environ["PKGBUILD"])
+          text = re.sub(r"sha256sums=\(.*?\)", f"sha256sums=({os.environ['AUX'].strip()})", path.read_text(), flags=re.S)
+          path.write_text(text)
+          PY
+          done
+          docker run --rm -v "$PWD/aur-smoke:/work" \
+            archlinux:base-devel@sha256:68bfc3b0d277b08a99101dc9b94aaa03e5ae70cf1b4fb965c03b2b87b915760d sh -euxc '
+            pacman -Syu --noconfirm alsa-lib avahi
+            useradd -m builder
+            chown -R builder:builder /work
+            for pkg in snapdog snapdog-client; do
+              su builder -c "cd /work/$pkg && makepkg --verifysource && makepkg --noconfirm"
+              pacman -U --noconfirm /work/$pkg/*.pkg.tar.zst
+              "$pkg" --version
+              pacman -R --noconfirm "$pkg"
+            done
+          '
+
+  upload-release-artifacts:
+    name: Upload verified assets to draft
+    runs-on: ubuntu-latest
+    needs: [meta, verify-release-assets, smoke-homebrew, smoke-aur, prepare-apt]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: verified-release-assets
+          path: release-assets
       - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ needs.meta.outputs.tag }}" release-assets/* \
-            --repo "${{ github.repository }}" --clobber
+          set -euo pipefail
+          gh release upload "${{ needs.meta.outputs.tag }}" ./release-assets/* \
+            --repo "${{ github.repository }}"
+      - name: Verify every remote asset from a clean directory
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir remote
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir remote
+          diff -u <(cd release-assets && sha256sum ./* | sort) <(cd remote && sha256sum ./* | sort)
+
+  publish-release:
+    name: Publish verified release
+    needs: [meta, upload-release-artifacts, docker, updater-image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish draft atomically after all gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .draft)" = true
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .draft)" = false
 
   update-appcast:
     name: Update Sparkle Appcast
-    needs: [meta, macos-app, upload-release-artifacts]
-    if: ${{ needs.macos-app.result == 'success' && needs.upload-release-artifacts.result == 'success' }}
+    needs: [meta, macos-app, publish-release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: snapdog-macos-app
           path: artifacts
@@ -487,18 +683,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          npm install -g wrangler
-          # Merge the freshly-built single-item appcast into the current one so the latest
-          # stable and beta builds coexist (channel gating, RFC MAC-0006 MAC-T23). Fail-safe:
-          # if there is no existing appcast (or it can't be fetched), publish the new one.
-          if wrangler r2 object get snapdog-updates/helper/appcast.xml \
-              --file existing-appcast.xml --remote 2>/dev/null && [ -s existing-appcast.xml ]; then
-            echo "Merging into the existing appcast."
-            python3 macos-helper/merge-appcast.py artifacts/appcast.xml existing-appcast.xml merged-appcast.xml
-          else
-            echo "No existing appcast on R2; publishing the new one."
-            cp artifacts/appcast.xml merged-appcast.xml
-          fi
+          npm install -g wrangler@4.127.1
+          # A missing/unreadable current appcast is an error: silently replacing it would
+          # discard the other update channel and make recovery harder.
+          wrangler r2 object get snapdog-updates/helper/appcast.xml \
+            --file existing-appcast.xml --remote
+          test -s existing-appcast.xml
+          python3 macos-helper/merge-appcast.py artifacts/appcast.xml existing-appcast.xml merged-appcast.xml
           wrangler r2 object put snapdog-updates/helper/appcast.xml \
             --file merged-appcast.xml \
             --content-type "application/xml" \
@@ -506,13 +697,13 @@ jobs:
 
   update-homebrew:
     name: Update Homebrew Tap
-    needs: [meta, upload-release-artifacts]
+    needs: [meta, publish-release, verify-release-assets]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
+          name: verified-release-assets
           path: artifacts
-          merge-multiple: true
       - name: Update tap formulas
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -535,6 +726,7 @@ jobs:
             desc "Multi-zone audio controller with AirPlay, Snapcast, MQTT, and KNX"
             homepage "https://github.com/SnapDogRocks/snapdog"
             license "GPL-3.0-only"
+            version "${VERSION}"
 
             on_macos do
               if Hardware::CPU.intel?
@@ -561,6 +753,7 @@ jobs:
             desc "SnapDog multiroom audio client"
             homepage "https://github.com/SnapDogRocks/snapdog"
             license "GPL-3.0-only"
+            version "${VERSION}"
 
             on_macos do
               if Hardware::CPU.intel?
@@ -590,7 +783,7 @@ jobs:
 
   publish-aur:
     name: AUR (${{ matrix.pkg }})
-    needs: [meta, upload-release-artifacts]
+    needs: [meta, publish-release, verify-release-assets]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -600,13 +793,35 @@ jobs:
           - pkg: snapdog-client
             pkgbuild: aur/snapdog-client/PKGBUILD
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: verified-release-assets
+          path: artifacts
       - name: Update PKGBUILD version
         run: |
+          set -euo pipefail
           VERSION=${{ needs.meta.outputs.version }}
+          TAG=${{ needs.meta.outputs.tag }}
+          X64_SHA=$(sha256sum "artifacts/snapdog-${TAG}-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
+          ARM_SHA=$(sha256sum "artifacts/snapdog-${TAG}-aarch64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" ${{ matrix.pkgbuild }}
           sed -i "s/^pkgrel=.*/pkgrel=1/" ${{ matrix.pkgbuild }}
-      - uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X64_SHA}')/" ${{ matrix.pkgbuild }}
+          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${ARM_SHA}')/" ${{ matrix.pkgbuild }}
+          if [ "${{ matrix.pkg }}" = snapdog ]; then
+            aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog.example.toml | awk '{printf "\047%s\047 ", $1}')
+          else
+            aux=$(sha256sum snapdog-client/systemd/snapdog-client.service snapdog-client/debian/snapdog-client.default | awk '{printf "\047%s\047 ", $1}')
+          fi
+          PKGBUILD="${{ matrix.pkgbuild }}" AUX="$aux" python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          path = Path(os.environ["PKGBUILD"])
+          text = re.sub(r"sha256sums=\(.*?\)", f"sha256sums=({os.environ['AUX'].strip()})", path.read_text(), flags=re.S)
+          path.write_text(text)
+          PY
+      - uses: KSXGitHub/github-actions-deploy-aur@084b0d9b15415bf9cdb65d44dad1efe37a354050 # v4.2.0
         with:
           pkgname: ${{ matrix.pkg }}
           pkgbuild: ${{ matrix.pkgbuild }}
@@ -616,24 +831,35 @@ jobs:
           commit_message: "Update to ${{ needs.meta.outputs.version }}"
           ssh_keyscan_types: rsa,ecdsa,ed25519
 
-  publish-apt:
-    name: Publish APT Repository
+  prepare-apt:
+    name: Build, sign, and smoke-test APT repository
     needs: [meta, build-deb]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
         with:
           ref: gh-pages
           path: gh-pages
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           pattern: deb-*
           path: debs
           merge-multiple: true
       - name: Update APT repository
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          APT_SIGNING_KEY_FINGERPRINT: ${{ secrets.APT_SIGNING_KEY_FINGERPRINT }}
         run: |
+          set -euo pipefail
+          test -n "$APT_SIGNING_KEY" || { echo "::error::APT_SIGNING_KEY is required"; exit 1; }
+          expected=$(tr -d '[:space:]' <<<"$APT_SIGNING_KEY_FINGERPRINT" | tr '[:lower:]' '[:upper:]')
+          [[ "$expected" =~ ^[0-9A-F]{40}$ ]] || { echo "::error::APT_SIGNING_KEY_FINGERPRINT must be a full 40-hex fingerprint"; exit 1; }
+          export GNUPGHOME="$RUNNER_TEMP/apt-gnupg"
+          install -d -m 700 "$GNUPGHOME"
+          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
+          actual=$(gpg --batch --with-colons --list-secret-keys "$expected" | awk -F: '$1 == "fpr" {print toupper($10); exit}')
+          test "$actual" = "$expected" || { echo "::error::imported APT key fingerprint does not match configured fingerprint"; exit 1; }
+
           mkdir -p gh-pages/debian/pool gh-pages/debian/dists/stable/main/binary-amd64 gh-pages/debian/dists/stable/main/binary-arm64
 
           # Copy new .deb files to pool
@@ -665,13 +891,64 @@ jobs:
               echo " $(sha256sum "dists/stable/$f" | cut -d' ' -f1) $(stat -c%s "dists/stable/$f") $f"
             done
           } > dists/stable/Release
-      - name: Push to gh-pages
+          gpg --batch --yes --local-user "$expected" --digest-algo SHA256 \
+            --clearsign --output dists/stable/InRelease dists/stable/Release
+          gpg --batch --yes --local-user "$expected" --digest-algo SHA256 \
+            --detach-sign --armor --output dists/stable/Release.gpg dists/stable/Release
+          gpg --batch --armor --export "$expected" > snapdog-archive-keyring.asc
+          gpg --batch --no-default-keyring --keyring ./verification-keyring.gpg \
+            --import snapdog-archive-keyring.asc
+          gpgv --keyring ./verification-keyring.gpg dists/stable/Release.gpg dists/stable/Release
+          gpgv --keyring ./verification-keyring.gpg dists/stable/InRelease
+      - name: Smoke-test signed APT install
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8000 --directory gh-pages >server.log 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            debian:12-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 sh -euxc '
+            printf "#!/bin/sh\nexit 101\n" >/usr/sbin/policy-rc.d
+            apt-get update && apt-get install -y ca-certificates curl gpg
+            curl -fsSL http://host.docker.internal:8000/debian/snapdog-archive-keyring.asc \
+              -o /usr/share/keyrings/snapdog-archive-keyring.asc
+            echo "deb [signed-by=/usr/share/keyrings/snapdog-archive-keyring.asc] http://host.docker.internal:8000/debian stable main" \
+              >/etc/apt/sources.list.d/snapdog.list
+            apt-get -o Acquire::AllowInsecureRepositories=false update
+            apt-get install -y snapdog snapdog-client
+            snapdog --version
+            snapdog-client --version
+          '
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: signed-apt-repository
+          path: gh-pages/debian
+          if-no-files-found: error
+
+  publish-apt:
+    name: Publish signed APT repository
+    needs: [meta, prepare-apt, publish-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          ref: gh-pages
+          path: gh-pages
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: signed-apt-repository
+          path: gh-pages/debian
+      - name: Push verified repository metadata
         working-directory: gh-pages
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || git commit -m "apt: update packages for ${{ needs.meta.outputs.tag }}"
+          git add -A debian
+          git diff --cached --quiet && { echo "::error::APT publication produced no change"; exit 1; }
+          git commit -m "apt: publish signed packages for ${{ needs.meta.outputs.tag }}"
           git push
 
   docker:
@@ -712,7 +989,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Fetch pre-built Linux binaries
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           pattern: snapdog-*-unknown-linux-gnu
           path: dl
@@ -790,12 +1067,63 @@ jobs:
           fi
           cosign sign --yes "${REPO}@${DIGEST}"
 
+  updater-image:
+    name: Docker snapdog-updater
+    needs: [meta]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.1
+      - name: Compute updater tags
+        id: tags
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          tags="ghcr.io/snapdogrocks/snapdog-updater:${TAG}"
+          if [[ "${TAG}" != *-* ]]; then tags="${tags}"$'\n'"ghcr.io/snapdogrocks/snapdog-updater:latest"; fi
+          { echo 'list<<EOF'; printf '%s\n' "$tags"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
+      - name: Build and push updater image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: deploy/updater
+          file: deploy/updater/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: UPDATER_VERSION=${{ needs.meta.outputs.tag }}
+          provenance: mode=max
+          sbom: true
+      - name: Sign updater image by digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          cosign sign --yes "ghcr.io/snapdogrocks/snapdog-updater@${DIGEST}"
+
   bump-snapdog-os:
     name: Bump version in snapdog-os
-    needs: [meta, upload-release-artifacts]
+    needs: [meta, publish-release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
         with:
           repository: SnapDogRocks/snapdog-os
           token: ${{ secrets.SNAPDOG_OS_PAT }}
@@ -823,7 +1151,7 @@ jobs:
           printf '# Remote SnapDog release artifact.\nsha256  %s  %s\n' "$HASH" "$FILE" \
             > buildroot/package/snapdog-client/snapdog-client.hash
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.0.0
         with:
           token: ${{ secrets.SNAPDOG_OS_PAT }}
           # `fix(deps)` (NOT `chore(deps)`): release-please only cuts a release for

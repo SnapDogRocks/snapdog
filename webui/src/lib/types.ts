@@ -118,6 +118,18 @@ export interface VersionInfo {
   name: string;
 }
 
+export interface UpdateStatus {
+  state: string;
+  currentVersion: string | null;
+  availableVersion: string | null;
+  updateAvailable: boolean;
+  lastError: string | null;
+  updateMode: "manual" | "automatic";
+  maintenanceTime: string;
+  timezone: string;
+  progress: { phase: string; detail: string | null } | null;
+}
+
 export interface HealthResponse {
   status: string;
   zones: number;
