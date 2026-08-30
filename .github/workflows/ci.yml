@@ -34,6 +34,7 @@ jobs:
       knx: ${{ steps.filter.outputs.knx }}
       deps: ${{ steps.filter.outputs.deps }}
       macos: ${{ steps.filter.outputs.macos }}
+      macos_client: ${{ steps.filter.outputs.macos_client }}
       docker: ${{ steps.filter.outputs.docker }}
       integration: ${{ steps.filter.outputs.integration }}
       windows: ${{ steps.filter.outputs.windows }}
@@ -71,6 +72,12 @@ jobs:
               - 'Cargo.lock'
             macos:
               - 'macos-helper/**'
+            macos_client:
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain*'
+              - 'snapdog-client/**'
+              - 'snapdog-common/**'
             docker:
               - '.dockerignore'
               - 'Dockerfile'
@@ -334,6 +341,26 @@ jobs:
         run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
       - run: cargo check --all-targets
 
+  macos-client-check:
+    name: macOS Client Check
+    needs: changes
+    if: needs.changes.outputs.macos_client == 'true' && github.event_name == 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Check macOS client and CoreMIDI integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=$(cargo check -p snapdog-client --locked --future-incompat-report 2>&1)
+          printf '%s\n' "$output"
+          if ! grep -Fq '0 dependencies had future-incompatible warnings' <<<"$output"; then
+            echo "::error::macOS client dependencies contain future-incompatible Rust code"
+            exit 1
+          fi
+
   # Single required status check. Passes iff every job above succeeded or was
   # skipped (path-filtered), fails if any failed or was cancelled. Branch
   # protection requires only "CI Success", so conditional jobs never wedge a PR.
@@ -352,6 +379,7 @@ jobs:
       - audit
       - knxprod
       - windows-check
+      - macos-client-check
     runs-on: ubuntu-latest
     steps:
       - name: Summarize job results
