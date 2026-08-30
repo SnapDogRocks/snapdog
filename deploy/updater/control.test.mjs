@@ -11,19 +11,17 @@ const testDirectory = mkdtempSync(join(tmpdir(), "snapdog-updater-control-"));
 const progressFile = join(testDirectory, "progress.json");
 process.env.PROGRESS_FILE = progressFile;
 after(() => rmSync(testDirectory, { recursive: true, force: true }));
+const { equalToken, publicStatus, startProgressJournal } = await import("./control.mjs");
 const {
-  equalToken,
   fetchReleaseVersion,
   newer,
   reached,
-  publicStatus,
   releaseDecision,
   retryAtFromHeaders,
-  startProgressJournal,
   stableServerReleaseTag,
   validateConfig,
   zonedClock,
-} = await import("./control.mjs");
+} = await import("./core.mjs");
 
 test("resets a completed journal synchronously when a new update starts", () => {
   writeFileSync(
@@ -173,7 +171,7 @@ test("rejects an implausibly empty release response after bounded retries", asyn
         attempts += 1;
         return Response.json([]);
       },
-      async () => {}
+      async () => undefined
     ),
     (error) => error?.code === "invalid-response"
   );
@@ -195,7 +193,7 @@ test("honors GitHub rate-limit reset metadata without busy retrying", async () =
         attempts += 1;
         return new Response(null, { status: 429, headers: { "retry-after": "120" } });
       },
-      async () => {},
+      async () => undefined,
       () => now
     ),
     (error) => error?.code === "rate-limited" && error?.retryAt === retryAt

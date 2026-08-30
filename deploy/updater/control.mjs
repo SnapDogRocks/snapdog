@@ -3,7 +3,16 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
+import {
+  ReleaseCheckError,
+  fetchReleaseVersion,
+  newer,
+  reached,
+  releaseDecision,
+  validateConfig,
+  zonedClock,
+} from "./core.mjs";
 
 const token = process.env.UPDATER_TOKEN ?? "";
 const intervalSeconds = Number(process.env.POLL_INTERVAL_SECONDS ?? 900);
@@ -29,15 +38,34 @@ const updaterIdentity =
 const updaterVersion = (process.env.UPDATER_VERSION ?? "").trim() || null;
 const updaterSelfUpdateCapable = true;
 const updaterSelfUpdateEnabled = (process.env.AUTO_UPDATE_UPDATER ?? "true") === "true";
-const swapResultFile = process.env.SWAP_RESULT_FILE ?? "/state/updater-swap.json";
-const progressFile = process.env.PROGRESS_FILE ?? "/state/updater-progress.json";
+const testMode = process.env.SNAPDOG_UPDATER_TEST === "true";
+function trustedStateFile(candidate, fallback) {
+  const path = resolve(candidate ?? fallback);
+  if (!testMode && !path.startsWith("/state/")) {
+    throw new Error(`updater state files must remain below /state: ${path}`);
+  }
+  return path;
+}
+const swapResultFile = trustedStateFile(process.env.SWAP_RESULT_FILE, "/state/updater-swap.json");
+const progressFile = trustedStateFile(process.env.PROGRESS_FILE, "/state/updater-progress.json");
+function readStateJson(path) {
+  // The path has already passed trustedStateFile(), which confines production
+  // reads to /state. Tests intentionally use an isolated mkdtemp directory.
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+function writeStateJson(path, value) {
+  const temporary = `${path}.tmp`;
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  renameSync(temporary, path);
+}
 /* Outcome of the last self-update, written by the detached helper that performed
  * it. The container that did the swap is gone by the time anyone can ask, so the
  * NEW updater reads the file and reports it — otherwise a failed or rolled-back
  * swap would be invisible outside the container logs. */
 function lastSwap() {
   try {
-    const value = JSON.parse(readFileSync(swapResultFile, "utf8"));
+    const value = readStateJson(swapResultFile);
     if (!value || typeof value.outcome !== "string") return null;
     if (!["succeeded", "failed", "rolled-back"].includes(value.outcome)) return null;
     return {
@@ -50,7 +78,7 @@ function lastSwap() {
   }
 }
 const target = process.env.TARGET_CONTAINER ?? "snapdog";
-const configFile = process.env.UPDATER_CONFIG_FILE ?? "/state/config.json";
+const configFile = trustedStateFile(process.env.UPDATER_CONFIG_FILE, "/state/config.json");
 const defaultConfig = {
   mode: (process.env.AUTO_APPLY ?? "true") === "true" ? "automatic" : "manual",
   maintenanceTime: process.env.MAINTENANCE_TIME ?? "02:00",
@@ -58,27 +86,7 @@ const defaultConfig = {
   lastAutomaticAttemptDate: null,
 };
 
-function validTimezone(value) {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: value }).format();
-    return true;
-  } catch {
-    return false;
-  }
-}
-function validateConfig(value) {
-  return (
-    value &&
-    ["manual", "automatic"].includes(value.mode) &&
-    /^([01]\d|2[0-3]):[0-5]\d$/.test(value.maintenanceTime) &&
-    typeof value.timezone === "string" &&
-    value.timezone.length <= 100 &&
-    validTimezone(value.timezone) &&
-    (value.lastAutomaticAttemptDate == null ||
-      /^\d{4}-\d{2}-\d{2}$/.test(value.lastAutomaticAttemptDate))
-  );
-}
-if (process.env.SNAPDOG_UPDATER_TEST !== "true") {
+if (!testMode) {
   if (token.length < 32) throw new Error("UPDATER_TOKEN must contain at least 32 characters");
   // snapdog.env.example ships UPDATER_TOKEN=replace-with-openssl-rand-hex-32, which
   // is exactly 32 characters and would otherwise pass the check above — leaving
@@ -99,7 +107,7 @@ if (process.env.SNAPDOG_UPDATER_TEST !== "true") {
 
 function loadConfig() {
   try {
-    const stored = JSON.parse(readFileSync(configFile, "utf8"));
+    const stored = readStateJson(configFile);
     if (validateConfig(stored)) return { ...defaultConfig, ...stored };
     console.error("snapdog-updater: ignoring invalid persisted configuration");
   } catch (error) {
@@ -110,10 +118,7 @@ function loadConfig() {
 }
 let config = loadConfig();
 function saveConfig() {
-  mkdirSync(dirname(configFile), { recursive: true, mode: 0o700 });
-  const temporary = `${configFile}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(config)}\n`, { mode: 0o600 });
-  renameSync(temporary, configFile);
+  writeStateJson(configFile, config);
 }
 
 const status = {
@@ -150,7 +155,7 @@ const PHASES = [
  * reconstruct what happened. */
 function lastProgress() {
   try {
-    const value = JSON.parse(readFileSync(progressFile, "utf8"));
+    const value = readStateJson(progressFile);
     if (!value || !PHASES.includes(value.phase)) return null;
     return {
       phase: value.phase,
@@ -172,20 +177,14 @@ function startProgressJournal(targetVersion, now = new Date()) {
   const at = now.toISOString();
   const temporary = `${progressFile}.tmp`;
   try {
-    mkdirSync(dirname(progressFile), { recursive: true, mode: 0o700 });
-    writeFileSync(
-      temporary,
-      `${JSON.stringify({
-        phase: "verifying",
-        detail: targetVersion || null,
-        at,
-        startedAt: at,
-        failedPhase: null,
-        rollbackAttempted: false,
-      })}\n`,
-      { mode: 0o600 }
-    );
-    renameSync(temporary, progressFile);
+    writeStateJson(progressFile, {
+      phase: "verifying",
+      detail: targetVersion || null,
+      at,
+      startedAt: at,
+      failedPhase: null,
+      rollbackAttempted: false,
+    });
     return true;
   } catch (error) {
     try {
@@ -212,79 +211,6 @@ function equalToken(candidate) {
   const a = Buffer.from(candidate ?? "");
   const b = Buffer.from(token);
   return a.length === b.length && timingSafeEqual(a, b);
-}
-function parts(value) {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value ?? "");
-  return match ? match.slice(1).map(Number) : null;
-}
-function newer(current, candidate) {
-  const a = parts(current);
-  const b = parts(candidate);
-  if (!b) return false;
-  if (!a) return true;
-  for (let i = 0; i < 3; i++) {
-    if (a[i] !== b[i]) return b[i] > a[i];
-  }
-  return false;
-}
-function reached(current, targetVersion) {
-  const currentParts = parts(current);
-  const targetParts = parts(targetVersion);
-  if (!currentParts || !targetParts) return false;
-  for (let i = 0; i < 3; i++) {
-    if (currentParts[i] !== targetParts[i]) return currentParts[i] > targetParts[i];
-  }
-  return true;
-}
-function releaseDecision(current, available, artifactsReady) {
-  const releaseIsNewer = newer(current, available);
-  return {
-    state:
-      releaseIsNewer && !artifactsReady ? "preparing" : releaseIsNewer ? "available" : "current",
-    updateAvailable: releaseIsNewer && artifactsReady,
-  };
-}
-function stableServerReleaseTag(payload) {
-  const releases = Array.isArray(payload) ? payload : [payload];
-  return (
-    releases
-      .filter(
-        (release) =>
-          release &&
-          release.draft === false &&
-          release.prerelease === false &&
-          /^v\d+\.\d+\.\d+$/.test(release.tag_name ?? "")
-      )
-      .map((release) => release.tag_name)
-      .sort((left, right) => {
-        const a = parts(left);
-        const b = parts(right);
-        for (let i = 0; i < 3; i++) {
-          if (a[i] !== b[i]) return b[i] - a[i];
-        }
-        return 0;
-      })[0] ?? null
-  );
-}
-function zonedClock(date, timezone) {
-  const values = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(date)
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, part.value])
-  );
-  return {
-    date: `${values.year}-${values.month}-${values.day}`,
-    time: `${values.hour}:${values.minute}`,
-  };
 }
 function command(commandName, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -321,99 +247,6 @@ async function currentVersion() {
     '{{ index .Config.Labels "org.opencontainers.image.version" }}',
     image,
   ]);
-}
-const RELEASE_CHECK_ATTEMPTS = 3;
-const RELEASE_CHECK_DELAYS_MS = [500, 1_500];
-const INLINE_RATE_LIMIT_WAIT_MS = 5_000;
-
-class ReleaseCheckError extends Error {
-  constructor(code, message, retryAt = null) {
-    super(message);
-    this.name = "ReleaseCheckError";
-    this.code = code;
-    this.retryAt = retryAt;
-  }
-}
-
-function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function retryAtFromHeaders(headers, now = Date.now()) {
-  const retryAfter = Number(headers.get("retry-after"));
-  if (Number.isFinite(retryAfter) && retryAfter >= 0)
-    return new Date(now + retryAfter * 1_000).toISOString();
-  const reset = Number(headers.get("x-ratelimit-reset"));
-  if (Number.isFinite(reset) && reset > 0) return new Date(reset * 1_000).toISOString();
-  return null;
-}
-
-function releaseCheckError(error) {
-  if (error instanceof ReleaseCheckError) return error;
-  const timeout = error?.name === "TimeoutError" || error?.name === "AbortError";
-  return new ReleaseCheckError(
-    timeout ? "upstream-timeout" : "network-error",
-    timeout ? "GitHub Releases request timed out" : "GitHub Releases request failed"
-  );
-}
-
-async function fetchReleaseVersion(
-  api = releaseApi,
-  fetchImpl = fetch,
-  sleepImpl = sleep,
-  now = () => Date.now()
-) {
-  const headers = { Accept: "application/vnd.github+json", "User-Agent": "snapdog-updater" };
-  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  let lastError = null;
-  for (let attempt = 0; attempt < RELEASE_CHECK_ATTEMPTS; attempt += 1) {
-    let retryDelay = RELEASE_CHECK_DELAYS_MS[attempt] ?? 0;
-    try {
-      const response = await fetchImpl(api, {
-        headers,
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (response.ok) {
-        const payload = await response.json().catch(() => null);
-        const tag = stableServerReleaseTag(payload);
-        if (tag) return tag;
-        lastError = new ReleaseCheckError(
-          "invalid-response",
-          "GitHub Releases returned no stable SnapDog server release"
-        );
-      } else if (
-        response.status === 429 ||
-        (response.status === 403 &&
-          (response.headers.get("x-ratelimit-remaining") === "0" ||
-            response.headers.has("retry-after")))
-      ) {
-        const retryAt = retryAtFromHeaders(response.headers, now());
-        lastError = new ReleaseCheckError(
-          "rate-limited",
-          `GitHub Releases rate limit returned HTTP ${response.status}`,
-          retryAt
-        );
-        const wait = retryAt ? new Date(retryAt).getTime() - now() : Infinity;
-        if (wait > INLINE_RATE_LIMIT_WAIT_MS) throw lastError;
-        retryDelay = Math.max(retryDelay, wait);
-      } else if (response.status === 408 || response.status === 425 || response.status >= 500) {
-        lastError = new ReleaseCheckError(
-          "upstream-unavailable",
-          `GitHub Releases temporarily returned HTTP ${response.status}`
-        );
-      } else {
-        throw new ReleaseCheckError(
-          "request-rejected",
-          `GitHub Releases returned HTTP ${response.status}`
-        );
-      }
-    } catch (error) {
-      lastError = releaseCheckError(error);
-      if (["rate-limited", "request-rejected"].includes(lastError.code)) throw lastError;
-    }
-    if (attempt < RELEASE_CHECK_ATTEMPTS - 1) await sleepImpl(retryDelay);
-  }
-  throw lastError ?? new ReleaseCheckError("network-error", "GitHub Releases request failed");
 }
 async function signedImageReady(repository, tag, identity) {
   try {
@@ -487,7 +320,10 @@ async function check() {
   status.state = "checking";
   status.lastCheckAttemptAt = new Date().toISOString();
   try {
-    const [current, available] = await Promise.all([currentVersion(), fetchReleaseVersion()]);
+    const [current, available] = await Promise.all([
+      currentVersion(),
+      fetchReleaseVersion(releaseApi),
+    ]);
     status.lastError = null;
     status.currentVersion = current || null;
     status.availableVersion = available;
@@ -644,7 +480,7 @@ function startServer() {
   );
 }
 
-if (process.env.SNAPDOG_UPDATER_TEST !== "true") {
+if (!testMode) {
   const server = startServer();
   const shutdown = () => {
     server.close(() => process.exit(0));
@@ -659,12 +495,9 @@ if (process.env.SNAPDOG_UPDATER_TEST !== "true") {
 
 export {
   equalToken,
-  fetchReleaseVersion,
   newer,
   reached,
-  retryAtFromHeaders,
   releaseDecision,
-  stableServerReleaseTag,
   validateConfig,
   zonedClock,
   publicStatus,
