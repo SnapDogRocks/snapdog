@@ -286,23 +286,12 @@ jobs:
           tool: cargo-audit
       - name: Run security audit
         # Transitive-dep advisories not fixable via `cargo update` — review periodically.
-        # RUSTSEC-2026-0066/0112/0113/0145: astral-tokio-tar (tar-extraction), dev-only
-        #   via the testcontainers dev-dependency — not in the shipped binary.
+        # RUSTSEC-2023-0071: rsa has no patched stable release (via librespot).
         # RUSTSEC-2026-0194/0195: quick-xml; fixed in >=0.41 but held <0.41 by
-        #   librespot-core 0.8 / plist / knx-rs-prod 0.2 — revisit when those bump.
+        #   librespot-core 0.8. Revisit when a new stable librespot release ships.
         run: |
           cargo audit \
             --ignore RUSTSEC-2023-0071 \
-            --ignore RUSTSEC-2026-0049 \
-            --ignore RUSTSEC-2026-0098 \
-            --ignore RUSTSEC-2026-0099 \
-            --ignore RUSTSEC-2026-0104 \
-            --ignore RUSTSEC-2025-0134 \
-            --ignore RUSTSEC-2026-0097 \
-            --ignore RUSTSEC-2026-0066 \
-            --ignore RUSTSEC-2026-0112 \
-            --ignore RUSTSEC-2026-0113 \
-            --ignore RUSTSEC-2026-0145 \
             --ignore RUSTSEC-2026-0194 \
             --ignore RUSTSEC-2026-0195
 
