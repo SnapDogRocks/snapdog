@@ -64,10 +64,10 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
     validate_raw_inputs(&raw)?;
 
     // ── KNX address validation ───────────────────────────────
-    if let Some(ref knx) = raw.knx {
-        if let Some(ref addr) = knx.individual_address {
-            validate_knx_ia(addr).context("Invalid KNX individual address")?;
-        }
+    if let Some(ref knx) = raw.knx
+        && let Some(ref addr) = knx.individual_address
+    {
+        validate_knx_ia(addr).context("Invalid KNX individual address")?;
     }
     for zone in &raw.zone {
         validate_zone_knx(&zone.knx).with_context(|| format!("Zone '{}' KNX error", zone.name))?;
@@ -329,10 +329,10 @@ fn validate_presence(zone: &ZoneConfig, num_radios: usize) -> Result<()> {
 
 /// Apply environment variable overrides to the resolved configuration.
 fn apply_env_overrides(config: &mut AppConfig) {
-    if let Ok(val) = std::env::var("SNAPDOG_HTTP_PORT") {
-        if let Ok(port) = val.parse() {
-            config.http.port = port;
-        }
+    if let Ok(val) = std::env::var("SNAPDOG_HTTP_PORT")
+        && let Ok(port) = val.parse()
+    {
+        config.http.port = port;
     }
     if let Ok(val) = std::env::var("SNAPDOG_HTTP_API_KEYS") {
         config.http.api_keys = val
@@ -342,15 +342,15 @@ fn apply_env_overrides(config: &mut AppConfig) {
             .map(SecretString::from)
             .collect();
     }
-    if let Some(ref mut subsonic) = config.subsonic {
-        if let Ok(val) = std::env::var("SNAPDOG_SUBSONIC_PASSWORD") {
-            subsonic.password = SecretString::from(val);
-        }
+    if let Some(ref mut subsonic) = config.subsonic
+        && let Ok(val) = std::env::var("SNAPDOG_SUBSONIC_PASSWORD")
+    {
+        subsonic.password = SecretString::from(val);
     }
-    if let Some(ref mut mqtt) = config.mqtt {
-        if let Ok(val) = std::env::var("SNAPDOG_MQTT_PASSWORD") {
-            mqtt.password = SecretString::from(val);
-        }
+    if let Some(ref mut mqtt) = config.mqtt
+        && let Ok(val) = std::env::var("SNAPDOG_MQTT_PASSWORD")
+    {
+        mqtt.password = SecretString::from(val);
     }
     if let Ok(val) = std::env::var("SNAPDOG_SNAPCAST_ENCRYPTION_PSK") {
         config.snapcast.encryption_psk = Some(SecretString::from(val));

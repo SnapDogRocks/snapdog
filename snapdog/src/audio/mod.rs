@@ -138,10 +138,10 @@ async fn read_response_bytes_limited(
 ) -> Result<bytes::Bytes> {
     use futures_util::StreamExt;
 
-    if let Some(len) = response.content_length() {
-        if len > limit {
-            anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
-        }
+    if let Some(len) = response.content_length()
+        && len > limit
+    {
+        anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
     }
     let mut stream = response.bytes_stream();
     let mut body = bytes::BytesMut::new();
@@ -427,10 +427,8 @@ async fn decode_http_stream_cached_impl(
             .shutdown()
             .await
             .context("Failed to close cached HTTP decode pipe")?;
-        if !write_failed {
-            if let Err(e) = cache_writer.complete() {
-                tracing::warn!(error = %e, "Failed to finalize cache entry");
-            }
+        if !write_failed && let Err(e) = cache_writer.complete() {
+            tracing::warn!(error = %e, "Failed to finalize cache entry");
         }
         // If write_failed, Drop will clean up the partial file
         Ok::<_, anyhow::Error>(())
@@ -736,20 +734,20 @@ fn decode_cached_file_impl(
         .context("Failed to create decoder")?;
 
     // Seek if requested
-    if let Some(ms) = seek_ms {
-        if ms > 0 {
-            use symphonia::core::formats::{SeekMode, SeekTo};
-            let seek_time = symphonia::core::units::Time::from_millis(ms);
-            match format.seek(
-                SeekMode::Coarse,
-                SeekTo::Time {
-                    time: seek_time,
-                    track_id: Some(track_id),
-                },
-            ) {
-                Ok(_) => tracing::debug!(ms, "Seeked in cached file"),
-                Err(e) => tracing::warn!(error = %e, ms, "Seek failed, decoding from start"),
-            }
+    if let Some(ms) = seek_ms
+        && ms > 0
+    {
+        use symphonia::core::formats::{SeekMode, SeekTo};
+        let seek_time = symphonia::core::units::Time::from_millis(ms);
+        match format.seek(
+            SeekMode::Coarse,
+            SeekTo::Time {
+                time: seek_time,
+                track_id: Some(track_id),
+            },
+        ) {
+            Ok(_) => tracing::debug!(ms, "Seeked in cached file"),
+            Err(e) => tracing::warn!(error = %e, ms, "Seek failed, decoding from start"),
         }
     }
 
@@ -844,15 +842,15 @@ fn run_decode_loop(
         }
         decoded_any_audio = true;
 
-        if let Some(tb) = time_base {
-            if let Some(time) = tb.calc_time(packet.pts) {
-                let seconds = time.as_secs();
-                if seconds != last_position_sec {
-                    last_position_sec = seconds;
-                    let (secs, nanos) = time.parts();
-                    let ms = secs * 1000 + i64::from(nanos / 1_000_000);
-                    let _ = tx.blocking_send(PcmMessage::Position(ms));
-                }
+        if let Some(tb) = time_base
+            && let Some(time) = tb.calc_time(packet.pts)
+        {
+            let seconds = time.as_secs();
+            if seconds != last_position_sec {
+                last_position_sec = seconds;
+                let (secs, nanos) = time.parts();
+                let ms = secs * 1000 + i64::from(nanos / 1_000_000);
+                let _ = tx.blocking_send(PcmMessage::Position(ms));
             }
         }
     }
@@ -1050,14 +1048,12 @@ fn resolve_hls_master(base: &url::Url, body: &str) -> Option<String> {
                 let attr = attr.trim();
                 attr.strip_prefix("BANDWIDTH=")
                     .or_else(|| attr.strip_prefix("#EXT-X-STREAM-INF:BANDWIDTH="))
-            }) {
-                if let Ok(bw) = bw_str.trim().parse::<u64>() {
-                    if bw > best_bandwidth {
-                        best_bandwidth = bw;
-                        next_is_url = true;
-                        continue;
-                    }
-                }
+            }) && let Ok(bw) = bw_str.trim().parse::<u64>()
+                && bw > best_bandwidth
+            {
+                best_bandwidth = bw;
+                next_is_url = true;
+                continue;
             }
             next_is_url = true;
         } else if next_is_url && !line.is_empty() && !line.starts_with('#') {

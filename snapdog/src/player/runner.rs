@@ -256,7 +256,7 @@ async fn run(
     self_tx: mpsc::Sender<ZoneCommand>,
     ctx: Arc<ZonePlayerContext>,
 ) -> Result<()> {
-    const TIMER_INACTIVE: std::time::Duration = std::time::Duration::from_secs(86400);
+    const TIMER_INACTIVE: std::time::Duration = std::time::Duration::from_hours(24);
 
     let config = &ctx.config;
     let store = &ctx.store;
@@ -601,8 +601,8 @@ async fn run(
                     }
                     ZoneCommand::SetTrack(track_idx) => {
                         if let ActiveSource::Radio { .. } = source {
-                            if track_idx < config.radios.len() {
-                                if let Some(radio) = config.radios.get(track_idx) {
+                            if track_idx < config.radios.len()
+                                && let Some(radio) = config.radios.get(track_idx) {
                                     reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
                                     start_radio_decode(radio, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                                     source = ActiveSource::Radio { index: track_idx };
@@ -617,14 +617,13 @@ async fn run(
                                     }).await;
                                     tracing::info!(zone = %zone_config.name, radio = %radio.name, "Radio set");
                                 }
-                            }
-                        } else if let ActiveSource::SubsonicPlaylist { ref playlist_id, track_count, .. } = source {
-                            if track_idx < track_count {
+                        } else if let ActiveSource::SubsonicPlaylist { ref playlist_id, track_count, .. } = source
+                            && track_idx < track_count {
                                 let pid = playlist_id.clone();
                                 reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
-                                if let Some(sub) = &subsonic {
-                                    if let Ok(playlist) = sub.get_playlist(&pid).await {
-                                        if let Some(track) = playlist.entry.get(track_idx) {
+                                if let Some(sub) = &subsonic
+                                    && let Ok(playlist) = sub.get_playlist(&pid).await
+                                        && let Some(track) = playlist.entry.get(track_idx) {
                                             start_subsonic_track_decode(sub, track, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                                             source = ActiveSource::SubsonicPlaylist { playlist_id: pid, track_index: track_idx, track_count };
                                             update_and_notify(store, zone_index, notify, |z| {
@@ -634,16 +633,12 @@ async fn run(
                                                 z.track = Some(subsonic_track_info(track));
                                             }).await;
                                         }
-                                    }
-                                }
                             }
-                        }
                     }
                     ZoneCommand::Play => {
                         if matches!(source, ActiveSource::AirPlay | ActiveSource::Spotify) {
-                            if let Some(ref rc) = remote_control {
-                                if let Err(e) = rc.send_command(crate::receiver::RemoteCommand::Play) { tracing::warn!(error = %e, "Remote play failed"); }
-                            }
+                            if let Some(ref rc) = remote_control
+                                && let Err(e) = rc.send_command(crate::receiver::RemoteCommand::Play) { tracing::warn!(error = %e, "Remote play failed"); }
                         } else if matches!(source, ActiveSource::SubsonicPlaylist { .. } | ActiveSource::SubsonicTrack { .. }) {
                             // Resume Subsonic from last position
                             if let Some(sub) = &subsonic {
@@ -727,9 +722,8 @@ async fn run(
                     }
                     ZoneCommand::Pause => {
                         if matches!(source, ActiveSource::AirPlay | ActiveSource::Spotify) {
-                            if let Some(ref rc) = remote_control {
-                                if let Err(e) = rc.send_command(crate::receiver::RemoteCommand::Pause) { tracing::warn!(error = %e, "Remote pause failed"); }
-                            }
+                            if let Some(ref rc) = remote_control
+                                && let Err(e) = rc.send_command(crate::receiver::RemoteCommand::Pause) { tracing::warn!(error = %e, "Remote pause failed"); }
                         } else {
                             reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
                             update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Paused; }).await;
@@ -819,8 +813,8 @@ async fn run(
                                 }
                             }
                             Some(crate::config::ResolvedPlaylist::Subsonic(sub_idx)) => {
-                                if let Some(sub) = &subsonic {
-                                    if let Some(pl) = subsonic_playlists.get(sub_idx) {
+                                if let Some(sub) = &subsonic
+                                    && let Some(pl) = subsonic_playlists.get(sub_idx) {
                                         let playlist_id = pl.id.clone();
                                         let playlist_name = pl.name.clone();
                                         match sub.get_playlist(&playlist_id).await {
@@ -867,7 +861,6 @@ async fn run(
                                             }
                                         }
                                     }
-                                }
                             }
                             _ => {}
                         }
@@ -1083,8 +1076,8 @@ async fn run(
                     Some(audio::PcmMessage::Audio(samples)) => {
                         let mut samples = resampler.process_or_passthrough(samples);
                         zone_eq.process(&mut samples);
-                        if let Some(ref mut fade) = zone_fade {
-                            if fade.process(&mut samples, config.audio.channels) {
+                        if let Some(ref mut fade) = zone_fade
+                            && fade.process(&mut samples, config.audio.channels) {
                                 if fade.fading_out {
                                     // Fade-out complete — don't send silence, wait for new stream
                                     zone_fade = None;
@@ -1093,7 +1086,6 @@ async fn run(
                                     zone_fade = None;
                                 }
                             }
-                        }
                         if let Err(e) = backend.send_audio(zone_index, &samples, config.audio.sample_rate, config.audio.channels).await {
                             tracing::error!(zone = zone_index, error = %e, "Audio send failed");
                         }

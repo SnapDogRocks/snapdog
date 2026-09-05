@@ -88,25 +88,25 @@ pub async fn start_subsonic_track_decode(
     }
 
     // Check cache for this track
-    if let Some(cache) = ctx.track_cache {
-        if let audio::cache::CacheEntry::Complete { path, content_type } = cache.get(&track.id) {
-            // Cache hit — decode directly from file (instant, seekable)
-            tracing::info!(track = %track.title, "Playing from cache");
-            let inv_cache = cache.clone();
-            let inv_tid = track.id.clone();
-            *ds.current_decode = Some(tokio::spawn(async move {
-                if let Err(e) = tokio::task::spawn_blocking(move || {
-                    audio::decode_cached_file(&path, &content_type, None, &tx)
-                })
-                .await
-                .unwrap_or_else(|e| Err(e.into()))
-                {
-                    tracing::error!(error = %e, "Cached decode failed");
-                    inv_cache.invalidate(&inv_tid);
-                }
-            }));
-            return;
-        }
+    if let Some(cache) = ctx.track_cache
+        && let audio::cache::CacheEntry::Complete { path, content_type } = cache.get(&track.id)
+    {
+        // Cache hit — decode directly from file (instant, seekable)
+        tracing::info!(track = %track.title, "Playing from cache");
+        let inv_cache = cache.clone();
+        let inv_tid = track.id.clone();
+        *ds.current_decode = Some(tokio::spawn(async move {
+            if let Err(e) = tokio::task::spawn_blocking(move || {
+                audio::decode_cached_file(&path, &content_type, None, &tx)
+            })
+            .await
+            .unwrap_or_else(|e| Err(e.into()))
+            {
+                tracing::error!(error = %e, "Cached decode failed");
+                inv_cache.invalidate(&inv_tid);
+            }
+        }));
+        return;
     }
 
     // Cache miss — stream and cache simultaneously
@@ -442,43 +442,42 @@ async fn advance_playlist_track(
         .is_some_and(|z| z.playback == crate::state::PlaybackState::Playing);
 
     stop_decode(ds.current_decode, ds.decode_rx).await;
-    if let Some(sub) = &ctx.subsonic {
-        if let Ok(playlist) = sub.get_playlist(playlist_id).await {
-            if let Some(track) = playlist.entry.get(track_index) {
-                // Only start decode if we were playing; otherwise just load metadata
-                if was_playing {
-                    start_subsonic_track_decode(sub, track, ds, ctx).await;
-                }
-                *ds.source = ActiveSource::SubsonicPlaylist {
-                    playlist_id: playlist_id.to_string(),
-                    track_index,
-                    track_count,
-                };
-                update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
-                    if was_playing {
-                        z.playback = crate::state::PlaybackState::Playing;
-                    }
-                    z.playlist_track_index = Some(track_index);
-                    z.track = Some(subsonic_track_info(track));
-                    z.track.as_mut().unwrap().position_ms = 0;
-                })
-                .await;
-                // Prefetch: always cache the current + next tracks
-                if let Some(cache) = ctx.track_cache {
-                    let lookahead = ctx
-                        .config
-                        .subsonic
-                        .as_ref()
-                        .map_or(0, |_| crate::config::CACHE_LOOKAHEAD);
-                    prefetch_next_tracks(sub, &playlist.entry, track_index, cache, lookahead);
-                }
-                tracing::info!(
-                    zone = ctx.zone_index,
-                    track = track_index,
-                    "Advanced to track"
-                );
-            }
+    if let Some(sub) = &ctx.subsonic
+        && let Ok(playlist) = sub.get_playlist(playlist_id).await
+        && let Some(track) = playlist.entry.get(track_index)
+    {
+        // Only start decode if we were playing; otherwise just load metadata
+        if was_playing {
+            start_subsonic_track_decode(sub, track, ds, ctx).await;
         }
+        *ds.source = ActiveSource::SubsonicPlaylist {
+            playlist_id: playlist_id.to_string(),
+            track_index,
+            track_count,
+        };
+        update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
+            if was_playing {
+                z.playback = crate::state::PlaybackState::Playing;
+            }
+            z.playlist_track_index = Some(track_index);
+            z.track = Some(subsonic_track_info(track));
+            z.track.as_mut().unwrap().position_ms = 0;
+        })
+        .await;
+        // Prefetch: always cache the current + next tracks
+        if let Some(cache) = ctx.track_cache {
+            let lookahead = ctx
+                .config
+                .subsonic
+                .as_ref()
+                .map_or(0, |_| crate::config::CACHE_LOOKAHEAD);
+            prefetch_next_tracks(sub, &playlist.entry, track_index, cache, lookahead);
+        }
+        tracing::info!(
+            zone = ctx.zone_index,
+            track = track_index,
+            "Advanced to track"
+        );
     }
 }
 

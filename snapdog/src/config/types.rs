@@ -1075,7 +1075,7 @@ pub enum ResolvedPlaylist {
 impl AppConfig {
     /// Whether the radio "playlist" occupies index 0.
     #[must_use]
-    pub fn has_radio_playlist(&self) -> bool {
+    pub const fn has_radio_playlist(&self) -> bool {
         !self.radios.is_empty()
     }
 

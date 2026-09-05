@@ -29,11 +29,11 @@ pub type SharedState = Arc<RwLock<Store>>;
 pub fn init(config: &AppConfig, persist_path: Option<&Path>) -> Result<SharedState> {
     let mut store = Store::from_config(config);
 
-    if let Some(path) = persist_path {
-        if path.exists() {
-            store.load(path)?;
-            tracing::info!(path = %path.display(), "Restored persisted state");
-        }
+    if let Some(path) = persist_path
+        && path.exists()
+    {
+        store.load(path)?;
+        tracing::info!(path = %path.display(), "Restored persisted state");
     }
 
     Ok(Arc::new(RwLock::new(store)))
@@ -401,10 +401,10 @@ pub fn spawn_auto_save(store: SharedState) {
             let dirty = store.read().await.dirty;
             if dirty {
                 let mut s = store.write().await;
-                if s.dirty {
-                    if let Err(e) = s.persist() {
-                        tracing::error!(error = %e, "Auto-save failed");
-                    }
+                if s.dirty
+                    && let Err(e) = s.persist()
+                {
+                    tracing::error!(error = %e, "Auto-save failed");
                 }
             }
         }

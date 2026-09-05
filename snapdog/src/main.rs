@@ -222,10 +222,10 @@ pub async fn run_app() -> Result<()> {
     }
 
     // --knx-prog-mode: set flag for BAU task to activate on start
-    if cli.knx_prog_mode {
-        if let Some(ref mut knx) = app_config.knx {
-            knx.start_prog_mode = true;
-        }
+    if cli.knx_prog_mode
+        && let Some(ref mut knx) = app_config.knx
+    {
+        knx.start_prog_mode = true;
     }
 
     // --knx-sync-system-clock: allow the KNX Time GO to set the OS clock
@@ -705,18 +705,19 @@ pub async fn run_app() -> Result<()> {
                 };
                 // Send to all snapdog clients in this zone
                 for client in s.clients.values() {
-                    if client.is_snapdog && client.zone_index == zone_index {
-                        if let Some(ref snap_id) = client.snapcast_id {
-                            let _ = meta_backend
-                                .execute(player::SnapcastCmd::Client {
-                                    client_id: snap_id.clone(),
-                                    action: player::ClientAction::SendCustom {
-                                        type_id: snapdog_common::MSG_TYPE_TRACK_METADATA,
-                                        payload: payload.clone(),
-                                    },
-                                })
-                                .await;
-                        }
+                    if client.is_snapdog
+                        && client.zone_index == zone_index
+                        && let Some(ref snap_id) = client.snapcast_id
+                    {
+                        let _ = meta_backend
+                            .execute(player::SnapcastCmd::Client {
+                                client_id: snap_id.clone(),
+                                action: player::ClientAction::SendCustom {
+                                    type_id: snapdog_common::MSG_TYPE_TRACK_METADATA,
+                                    payload: payload.clone(),
+                                },
+                            })
+                            .await;
                     }
                 }
                 // Send cover art (Type 15) if changed
@@ -737,18 +738,19 @@ pub async fn run_app() -> Result<()> {
                         .unwrap_or_default();
                     drop(cover_cache);
                     for client in s.clients.values() {
-                        if client.is_snapdog && client.zone_index == zone_index {
-                            if let Some(ref snap_id) = client.snapcast_id {
-                                let _ = meta_backend
-                                    .execute(player::SnapcastCmd::Client {
-                                        client_id: snap_id.clone(),
-                                        action: player::ClientAction::SendCustom {
-                                            type_id: snapdog_common::MSG_TYPE_COVER_ART,
-                                            payload: cover_payload.clone(),
-                                        },
-                                    })
-                                    .await;
-                            }
+                        if client.is_snapdog
+                            && client.zone_index == zone_index
+                            && let Some(ref snap_id) = client.snapcast_id
+                        {
+                            let _ = meta_backend
+                                .execute(player::SnapcastCmd::Client {
+                                    client_id: snap_id.clone(),
+                                    action: player::ClientAction::SendCustom {
+                                        type_id: snapdog_common::MSG_TYPE_COVER_ART,
+                                        payload: cover_payload.clone(),
+                                    },
+                                })
+                                .await;
                         }
                     }
                 }

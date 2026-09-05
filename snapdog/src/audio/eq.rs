@@ -109,12 +109,11 @@ impl EqStore {
     }
 
     fn save(&self) {
-        if let Some(ref path) = self.path {
-            if let Ok(json) = serde_json::to_string_pretty(&self.data) {
-                if let Err(e) = std::fs::write(path, json) {
-                    tracing::warn!(error = %e, "Failed to save eq.json");
-                }
-            }
+        if let Some(ref path) = self.path
+            && let Ok(json) = serde_json::to_string_pretty(&self.data)
+            && let Err(e) = std::fs::write(path, json)
+        {
+            tracing::warn!(error = %e, "Failed to save eq.json");
         }
     }
 }

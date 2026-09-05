@@ -213,13 +213,13 @@ impl TrackCache {
         content_type: &str,
         total_bytes: Option<u64>,
     ) -> Result<CacheWriter> {
-        if let Some(total_bytes) = total_bytes {
-            if total_bytes > self.max_bytes() {
-                bail!(
-                    "Cache entry Content-Length {total_bytes} exceeds configured maximum size of {} bytes",
-                    self.max_bytes()
-                );
-            }
+        if let Some(total_bytes) = total_bytes
+            && total_bytes > self.max_bytes()
+        {
+            bail!(
+                "Cache entry Content-Length {total_bytes} exceeds configured maximum size of {} bytes",
+                self.max_bytes()
+            );
         }
         let ext = ext_for_content_type(content_type);
         let filename_stem = filename_stem_for_track_id(track_id);

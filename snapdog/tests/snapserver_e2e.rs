@@ -117,12 +117,11 @@ async fn wait_for_stream_status(
 ) -> bool {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        if let Ok(status) = snap.server_get_status().await {
-            if let Some(s) = status.server.streams.iter().find(|s| s.id == stream_id) {
-                if s.status == want {
-                    return true;
-                }
-            }
+        if let Ok(status) = snap.server_get_status().await
+            && let Some(s) = status.server.streams.iter().find(|s| s.id == stream_id)
+            && s.status == want
+        {
+            return true;
         }
         if tokio::time::Instant::now() >= deadline {
             return false;

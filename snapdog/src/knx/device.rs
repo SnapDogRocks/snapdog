@@ -595,8 +595,8 @@ async fn bau_task_loop(
                     tunnel_active = false;
                     // Persist SYNCHRONOUSLY here: if we restart below, the re-exec
                     // abandons any spawned task, so the write must complete first.
-                    if let Some(path) = persist_path.as_ref() {
-                        if !bau.memory_area().is_empty() {
+                    if let Some(path) = persist_path.as_ref()
+                        && !bau.memory_area().is_empty() {
                             let state = bau.save();
                             if let Err(e) = persist_memory(path, &state) {
                                 tracing::warn!(error = %e, "Failed to persist ETS state before restart");
@@ -604,7 +604,6 @@ async fn bau_task_loop(
                                 tracing::info!(bytes = state.len(), "ETS programming persisted before restart");
                             }
                         }
-                    }
                     if restart_after_ets {
                         // Reboot into the new programming — the boot-time config
                         // path (KEA-0004) then applies the ETS parameters.
@@ -649,14 +648,12 @@ async fn bau_task_loop(
     }
 
     // Persist on shutdown if dirty
-    if memory_dirty {
-        if let Some(ref path) = persist_path {
-            let state = bau.save();
-            if let Err(e) = persist_memory(path, &state) {
-                tracing::warn!(error = %e, "Failed to persist ETS state on shutdown");
-            } else {
-                tracing::info!(path = %path.display(), "ETS state persisted on shutdown");
-            }
+    if memory_dirty && let Some(ref path) = persist_path {
+        let state = bau.save();
+        if let Err(e) = persist_memory(path, &state) {
+            tracing::warn!(error = %e, "Failed to persist ETS state on shutdown");
+        } else {
+            tracing::info!(path = %path.display(), "ETS state persisted on shutdown");
         }
     }
 
@@ -775,11 +772,11 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
             (&knx.presence_timer_status, ZGO_PRESENCE_TIMER_ACTIVE),
         ];
         for (ga_opt, go_idx) in zone_gas {
-            if let Some(ga_str) = ga_opt {
-                if let Ok(ga) = GroupAddress::from_str(ga_str) {
-                    let asap = group_objects::zone_asap(idx, *go_idx);
-                    ga_asap_pairs.push((ga.raw(), asap));
-                }
+            if let Some(ga_str) = ga_opt
+                && let Ok(ga) = GroupAddress::from_str(ga_str)
+            {
+                let asap = group_objects::zone_asap(idx, *go_idx);
+                ga_asap_pairs.push((ga.raw(), asap));
             }
         }
     }
@@ -801,11 +798,11 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
             (&knx.connected_status, CGO_CONNECTED),
         ];
         for (ga_opt, go_idx) in client_gas {
-            if let Some(ga_str) = ga_opt {
-                if let Ok(ga) = GroupAddress::from_str(ga_str) {
-                    let asap = group_objects::client_asap(idx, *go_idx);
-                    ga_asap_pairs.push((ga.raw(), asap));
-                }
+            if let Some(ga_str) = ga_opt
+                && let Ok(ga) = GroupAddress::from_str(ga_str)
+            {
+                let asap = group_objects::client_asap(idx, *go_idx);
+                ga_asap_pairs.push((ga.raw(), asap));
             }
         }
     }

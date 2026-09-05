@@ -200,10 +200,10 @@ async fn read_response_bytes_limited(
 ) -> Result<Vec<u8>> {
     use futures_util::StreamExt;
 
-    if let Some(len) = response.content_length() {
-        if len > limit {
-            anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
-        }
+    if let Some(len) = response.content_length()
+        && len > limit
+    {
+        anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
     }
     let mut stream = response.bytes_stream();
     let mut body = bytes::BytesMut::new();
