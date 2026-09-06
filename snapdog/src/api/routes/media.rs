@@ -78,10 +78,10 @@ async fn cached_playlists(state: &SharedState) -> Vec<PlaylistEntry> {
     // Check cache
     {
         let cache = state.playlist_cache.read().await;
-        if let Some((ts, ref entries)) = *cache {
-            if ts.elapsed() < PLAYLIST_CACHE_TTL {
-                return entries.clone();
-            }
+        if let Some((ts, ref entries)) = *cache
+            && ts.elapsed() < PLAYLIST_CACHE_TTL
+        {
+            return entries.clone();
         }
     }
     // Fetch and cache

@@ -3,6 +3,7 @@ name = "snapdog-client"
 description = "SnapDog multiroom audio client"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
@@ -11,6 +12,8 @@ path = "src/main.rs"
 
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# CPAL 0.18.2 still links alsa-sys 0.4 through alsa 0.11. ALSA 0.12
+# links a different alsa-sys version; Cargo forbids both in the same graph.
 alsa = "0.11"
 sd-notify = "0.5"
 [dependencies]

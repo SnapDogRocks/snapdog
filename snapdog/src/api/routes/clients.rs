@@ -418,19 +418,17 @@ async fn set_zone(
                 .get(&idx)
                 .map_or((false, None), |c| (c.is_snapdog, c.snapcast_id.clone()))
         };
-        if is_sd {
-            if let Some(snap_id) = snap_id {
-                let _ = state
-                    .snap_tx
-                    .send(SnapcastCmd::Client {
-                        client_id: snap_id,
-                        action: ClientAction::SendCustom {
-                            type_id: snapdog_common::MSG_TYPE_FADE_OUT,
-                            payload: fade_ms.to_le_bytes().to_vec(),
-                        },
-                    })
-                    .await;
-            }
+        if is_sd && let Some(snap_id) = snap_id {
+            let _ = state
+                .snap_tx
+                .send(SnapcastCmd::Client {
+                    client_id: snap_id,
+                    action: ClientAction::SendCustom {
+                        type_id: snapdog_common::MSG_TYPE_FADE_OUT,
+                        payload: fade_ms.to_le_bytes().to_vec(),
+                    },
+                })
+                .await;
         }
         is_sd
     } else {

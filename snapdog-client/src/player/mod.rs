@@ -446,8 +446,6 @@ pub async fn play_audio(
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_lines)]
 // Audio output setup with callback — splitting would obscure control flow
-// `slice::as_chunks` requires a newer Rust release than the workspace MSRV (1.85).
-#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
 fn run_cpal(
     stream: Arc<Mutex<Stream>>,
     time_provider: Arc<Mutex<TimeProvider>>,
@@ -568,7 +566,7 @@ fn run_cpal(
 
             match current_sample_size {
                 2 => {
-                    for (i, chunk) in pcm_buf.chunks_exact(2).enumerate() {
+                    for (i, chunk) in pcm_buf.as_chunks::<2>().0.iter().enumerate() {
                         if i < data.len() {
                             data[i] = f32::from(i16::from_le_bytes([chunk[0], chunk[1]]))
                                 / f32::from(i16::MAX);
@@ -576,7 +574,7 @@ fn run_cpal(
                     }
                 }
                 4 => {
-                    for (i, chunk) in pcm_buf.chunks_exact(4).enumerate() {
+                    for (i, chunk) in pcm_buf.as_chunks::<4>().0.iter().enumerate() {
                         if i < data.len() {
                             data[i] = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
                         }

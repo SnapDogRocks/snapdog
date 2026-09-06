@@ -186,20 +186,20 @@ pub async fn fetch_cover_with_favicon_fallback(
     cover_url: Option<&str>,
     stream_url: &str,
 ) -> Option<(Vec<u8>, String)> {
-    if let Some(url) = cover_url {
-        if let Some((bytes, _)) = fetch_cover(url).await {
-            let mime = detect_mime(&bytes);
-            if mime.contains("icon") {
-                if let Some(converted) = ico_to_png(&bytes) {
-                    return Some(converted);
-                }
-            }
-            if mime.starts_with("image/") {
-                tracing::debug!(url, %mime, "Found cover via config URL");
-                return Some((bytes, mime.to_string()));
-            }
-            tracing::debug!(url, %mime, "Config cover URL returned non-image content");
+    if let Some(url) = cover_url
+        && let Some((bytes, _)) = fetch_cover(url).await
+    {
+        let mime = detect_mime(&bytes);
+        if mime.contains("icon")
+            && let Some(converted) = ico_to_png(&bytes)
+        {
+            return Some(converted);
         }
+        if mime.starts_with("image/") {
+            tracing::debug!(url, %mime, "Found cover via config URL");
+            return Some((bytes, mime.to_string()));
+        }
+        tracing::debug!(url, %mime, "Config cover URL returned non-image content");
     }
     let base = url::Url::parse(stream_url).ok().and_then(|u| {
         let scheme = u.scheme();
@@ -342,11 +342,11 @@ async fn response_bytes_limited(
 ) -> Option<Vec<u8>> {
     use futures_util::StreamExt;
 
-    if let Some(len) = response.content_length() {
-        if len > limit {
-            tracing::debug!(url, label, len, limit, "Remote body too large");
-            return None;
-        }
+    if let Some(len) = response.content_length()
+        && len > limit
+    {
+        tracing::debug!(url, label, len, limit, "Remote body too large");
+        return None;
     }
     let mut stream = response.bytes_stream();
     let mut body = bytes::BytesMut::new();

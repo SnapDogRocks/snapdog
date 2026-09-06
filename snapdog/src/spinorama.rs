@@ -17,7 +17,7 @@ use crate::audio::eq::{EqBand, EqConfig, FilterType};
 const GITHUB_RAW_BASE: &str =
     "https://raw.githubusercontent.com/pierreaubert/spinorama/develop/datas/eq";
 const INDEX_URL: &str = "https://api.github.com/repos/pierreaubert/spinorama/contents/datas/eq";
-const INDEX_CACHE_DURATION: std::time::Duration = std::time::Duration::from_secs(86400);
+const INDEX_CACHE_DURATION: std::time::Duration = std::time::Duration::from_hours(24);
 
 /// Cached speaker profile database.
 #[derive(Clone)]
@@ -54,10 +54,10 @@ impl SpeakerDb {
     pub async fn list_speakers(&self) -> Result<Vec<String>> {
         {
             let inner = self.inner.read().await;
-            if let Some(fetched) = inner.index_fetched_at {
-                if fetched.elapsed() < INDEX_CACHE_DURATION {
-                    return Ok(inner.index.clone());
-                }
+            if let Some(fetched) = inner.index_fetched_at
+                && fetched.elapsed() < INDEX_CACHE_DURATION
+            {
+                return Ok(inner.index.clone());
             }
         }
         self.refresh_index().await

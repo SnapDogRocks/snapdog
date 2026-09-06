@@ -268,10 +268,10 @@ async fn handle_player_event(
             });
 
             // Cover art from AudioItem covers
-            if let Some(cover) = audio_item.covers.first() {
-                if let Some((bytes, _)) = crate::state::cover::fetch_cover(&cover.url).await {
-                    let _ = event_tx.try_send(ReceiverEvent::CoverArt { bytes });
-                }
+            if let Some(cover) = audio_item.covers.first()
+                && let Some((bytes, _)) = crate::state::cover::fetch_cover(&cover.url).await
+            {
+                let _ = event_tx.try_send(ReceiverEvent::CoverArt { bytes });
             }
         }
 

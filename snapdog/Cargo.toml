@@ -46,7 +46,7 @@ rust-embed = "8"
 mac_address = "1"
 crc32fast = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
-shairplay = "0.7"
+shairplay = "0.9.1"
 mdns-sd = "0.21"
 gethostname = "1"
 zbus = { version = "5", optional = true }
@@ -83,8 +83,7 @@ tokio = { workspace = true, features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }       # in-process Router::oneshot (IT-0003 tier-1)
 assert-json-diff = "2"                                  # REST/MQTT JSON body asserts
 tokio-tungstenite = "0.30"                              # WS client for the WS lifecycle tests (IT-T21)
-testcontainers = "0.27"
-testcontainers-modules = { version = "0.15", features = ["mosquitto"] }
+testcontainers = "0.28"
 snapdog-testkit = { path = "../snapdog-testkit" }       # reusable testkit (IT-T94)
 
 [package.metadata.deb]

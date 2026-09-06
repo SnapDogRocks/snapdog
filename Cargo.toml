@@ -11,7 +11,7 @@ members = [
 [workspace.package]
 version = "0.27.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.94"
 license = "GPL-3.0-only"
 repository = "https://github.com/SnapDogRocks/snapdog"
 authors = ["Fabian Schmieder"]
@@ -55,9 +55,9 @@ biquad = "0.6"
 rumqttc = { version = "0.25", default-features = false, features = ["use-native-tls"] }
 
 # KNX
-knx-rs-core = { version = "0.8", package = "knx-rs-core" }
-knx-rs-ip = { version = "0.8", package = "knx-rs-ip" }
-knx-rs-device = { version = "0.8", package = "knx-rs-device" }
+knx-rs-core = { version = "0.9.1", package = "knx-rs-core" }
+knx-rs-ip = { version = "0.9.1", package = "knx-rs-ip" }
+knx-rs-device = { version = "0.9.1", package = "knx-rs-device" }
 
 # HTTP client (Subsonic API, radio streams)
 reqwest = { version = "0.13", features = ["json", "stream"] }

@@ -15,7 +15,7 @@ use crate::config::AppConfig;
 use crate::player::ZoneCommand;
 
 /// Validate that a zone index is within bounds.
-fn require_zone(zone: usize, config: &AppConfig) -> Result<(), ApiError> {
+const fn require_zone(zone: usize, config: &AppConfig) -> Result<(), ApiError> {
     if zone == 0 || zone > config.zones.len() {
         Err(ApiError::NotFound("zone"))
     } else {

@@ -337,11 +337,11 @@ mod process_impl {
         for group in &status.server.groups {
             for snap_client in &group.clients {
                 let mac = snap_client.host.mac.to_lowercase();
-                if let Some(client) = s.clients.values_mut().find(|c| c.mac.to_lowercase() == mac) {
-                    if !client.connected || snap_client.connected {
-                        client.snapcast_id = Some(snap_client.id.clone());
-                        client.connected = snap_client.connected;
-                    }
+                if let Some(client) = s.clients.values_mut().find(|c| c.mac.to_lowercase() == mac)
+                    && (!client.connected || snap_client.connected)
+                {
+                    client.snapcast_id = Some(snap_client.id.clone());
+                    client.connected = snap_client.connected;
                 }
             }
         }
@@ -693,13 +693,12 @@ mod process_impl {
                         .iter()
                         .filter(|g| g.stream_id == zone_cfg.stream_name)
                         .max_by_key(|g| g.clients.len());
-                    if let Some(group) = group {
-                        if let Some(zone) = s.zones.get_mut(&zone_cfg.index) {
-                            if zone.snapcast_group_id.as_deref() != Some(&group.id) {
-                                tracing::debug!(zone = zone_cfg.index, new = %group.id, "Zone group ID updated");
-                                zone.snapcast_group_id = Some(group.id.clone());
-                            }
-                        }
+                    if let Some(group) = group
+                        && let Some(zone) = s.zones.get_mut(&zone_cfg.index)
+                        && zone.snapcast_group_id.as_deref() != Some(&group.id)
+                    {
+                        tracing::debug!(zone = zone_cfg.index, new = %group.id, "Zone group ID updated");
+                        zone.snapcast_group_id = Some(group.id.clone());
                     }
                 }
             }

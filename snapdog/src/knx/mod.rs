@@ -625,101 +625,101 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
         return;
     }
 
-    if let Some(&(zone_idx, action)) = zone_ga_map.get(&ga_str) {
-        if let Some(tx) = zone_commands.get(&zone_idx) {
-            let cmd = match action {
-                "play" => Some(ZoneCommand::Play),
-                "pause" => Some(ZoneCommand::Pause),
-                "stop" => Some(ZoneCommand::Stop),
-                "next" => Some(ZoneCommand::Next),
-                "previous" => Some(ZoneCommand::Previous),
-                "mute_toggle" => Some(ZoneCommand::ToggleMute),
-                "shuffle_toggle" => Some(ZoneCommand::ToggleShuffle),
-                "repeat_toggle" | "track_repeat_toggle" => Some(ZoneCommand::CycleRepeat),
-                "mute" => Some(ZoneCommand::SetMute(decode_bool(data))),
-                "shuffle" => Some(ZoneCommand::SetShuffle(decode_bool(data))),
-                "repeat" => {
-                    let on = decode_bool(data);
-                    Some(ZoneCommand::SetRepeat(if on {
-                        snapdog_common::RepeatMode::Playlist
-                    } else {
-                        snapdog_common::RepeatMode::Off
-                    }))
-                }
-                "track_repeat" => {
-                    let on = decode_bool(data);
-                    Some(ZoneCommand::SetRepeat(if on {
-                        snapdog_common::RepeatMode::Track
-                    } else {
-                        snapdog_common::RepeatMode::Off
-                    }))
-                }
-                "volume" => decode_percent(data).map(|v| ZoneCommand::SetVolume(i32::from(v))),
-                "volume_dim" => decode_dim(data).map(ZoneCommand::AdjustVolume),
-                "playlist" => decode_u8(data).map(|v| ZoneCommand::SetPlaylist(v as usize, 0)),
-                "playlist_next" => Some(ZoneCommand::NextPlaylist),
-                "playlist_previous" => Some(ZoneCommand::PreviousPlaylist),
-                "presence" => Some(ZoneCommand::SetPresence(decode_bool(data))),
-                "presence_enable" => Some(ZoneCommand::SetPresenceEnabled(decode_bool(data))),
-                _ => None,
-            };
-            if let Some(cmd) = cmd {
-                tracing::debug!(zone = zone_idx, ga = %ga_str, "KNX → zone command");
-                let _ = tx.send(cmd).await;
+    if let Some(&(zone_idx, action)) = zone_ga_map.get(&ga_str)
+        && let Some(tx) = zone_commands.get(&zone_idx)
+    {
+        let cmd = match action {
+            "play" => Some(ZoneCommand::Play),
+            "pause" => Some(ZoneCommand::Pause),
+            "stop" => Some(ZoneCommand::Stop),
+            "next" => Some(ZoneCommand::Next),
+            "previous" => Some(ZoneCommand::Previous),
+            "mute_toggle" => Some(ZoneCommand::ToggleMute),
+            "shuffle_toggle" => Some(ZoneCommand::ToggleShuffle),
+            "repeat_toggle" | "track_repeat_toggle" => Some(ZoneCommand::CycleRepeat),
+            "mute" => Some(ZoneCommand::SetMute(decode_bool(data))),
+            "shuffle" => Some(ZoneCommand::SetShuffle(decode_bool(data))),
+            "repeat" => {
+                let on = decode_bool(data);
+                Some(ZoneCommand::SetRepeat(if on {
+                    snapdog_common::RepeatMode::Playlist
+                } else {
+                    snapdog_common::RepeatMode::Off
+                }))
             }
+            "track_repeat" => {
+                let on = decode_bool(data);
+                Some(ZoneCommand::SetRepeat(if on {
+                    snapdog_common::RepeatMode::Track
+                } else {
+                    snapdog_common::RepeatMode::Off
+                }))
+            }
+            "volume" => decode_percent(data).map(|v| ZoneCommand::SetVolume(i32::from(v))),
+            "volume_dim" => decode_dim(data).map(ZoneCommand::AdjustVolume),
+            "playlist" => decode_u8(data).map(|v| ZoneCommand::SetPlaylist(v as usize, 0)),
+            "playlist_next" => Some(ZoneCommand::NextPlaylist),
+            "playlist_previous" => Some(ZoneCommand::PreviousPlaylist),
+            "presence" => Some(ZoneCommand::SetPresence(decode_bool(data))),
+            "presence_enable" => Some(ZoneCommand::SetPresenceEnabled(decode_bool(data))),
+            _ => None,
+        };
+        if let Some(cmd) = cmd {
+            tracing::debug!(zone = zone_idx, ga = %ga_str, "KNX → zone command");
+            let _ = tx.send(cmd).await;
         }
     }
 
     if let Some(&(client_idx, action)) = client_ga_map.get(&ga_str) {
         let s = store.read().await;
-        if let Some(client) = s.clients.get(&client_idx) {
-            if let Some(ref snap_id) = client.snapcast_id {
-                let cmd = match action {
-                    "mute_toggle" => Some(ClientAction::Mute(!client.muted)),
-                    "mute" => Some(ClientAction::Mute(decode_bool(data))),
-                    "volume" => decode_percent(data).map(|v| ClientAction::Volume(i32::from(v))),
-                    "volume_dim" => decode_dim(data).map(ClientAction::AdjustVolume),
-                    "latency" => decode_u8(data).map(|v| ClientAction::Latency(i32::from(v))),
-                    "zone" => {
-                        if let Some(target_zone) = decode_u8(data) {
-                            let target_zone = usize::from(target_zone);
-                            if target_zone == 0
-                                || !zone_commands.contains_key(&target_zone)
-                                || !s.zones.contains_key(&target_zone)
-                            {
-                                tracing::warn!(
-                                    client = client_idx,
-                                    zone = target_zone,
-                                    ga = %ga_str,
-                                    "Ignoring KNX client zone change to unknown zone"
-                                );
-                                return;
-                            }
-                            drop(s);
-                            let mut store = store.write().await;
-                            if let Some(c) = store.clients.get_mut(&client_idx) {
-                                c.zone_index = target_zone;
-                                store.dirty = true;
-                            }
-                            drop(store);
-                            let _ = snap_tx.send(SnapcastCmd::ReconcileZones).await;
-                            tracing::debug!(client = client_idx, zone = target_zone, ga = %ga_str, "KNX → client zone change");
+        if let Some(client) = s.clients.get(&client_idx)
+            && let Some(ref snap_id) = client.snapcast_id
+        {
+            let cmd = match action {
+                "mute_toggle" => Some(ClientAction::Mute(!client.muted)),
+                "mute" => Some(ClientAction::Mute(decode_bool(data))),
+                "volume" => decode_percent(data).map(|v| ClientAction::Volume(i32::from(v))),
+                "volume_dim" => decode_dim(data).map(ClientAction::AdjustVolume),
+                "latency" => decode_u8(data).map(|v| ClientAction::Latency(i32::from(v))),
+                "zone" => {
+                    if let Some(target_zone) = decode_u8(data) {
+                        let target_zone = usize::from(target_zone);
+                        if target_zone == 0
+                            || !zone_commands.contains_key(&target_zone)
+                            || !s.zones.contains_key(&target_zone)
+                        {
+                            tracing::warn!(
+                                client = client_idx,
+                                zone = target_zone,
+                                ga = %ga_str,
+                                "Ignoring KNX client zone change to unknown zone"
+                            );
+                            return;
                         }
-                        return;
+                        drop(s);
+                        let mut store = store.write().await;
+                        if let Some(c) = store.clients.get_mut(&client_idx) {
+                            c.zone_index = target_zone;
+                            store.dirty = true;
+                        }
+                        drop(store);
+                        let _ = snap_tx.send(SnapcastCmd::ReconcileZones).await;
+                        tracing::debug!(client = client_idx, zone = target_zone, ga = %ga_str, "KNX → client zone change");
                     }
-                    _ => None,
-                };
-                if let Some(action) = cmd {
-                    let snap_id = snap_id.clone();
-                    drop(s);
-                    tracing::debug!(client = client_idx, ga = %ga_str, "KNX → client command");
-                    let _ = snap_tx
-                        .send(SnapcastCmd::Client {
-                            client_id: snap_id,
-                            action,
-                        })
-                        .await;
+                    return;
                 }
+                _ => None,
+            };
+            if let Some(action) = cmd {
+                let snap_id = snap_id.clone();
+                drop(s);
+                tracing::debug!(client = client_idx, ga = %ga_str, "KNX → client command");
+                let _ = snap_tx
+                    .send(SnapcastCmd::Client {
+                        client_id: snap_id,
+                        action,
+                    })
+                    .await;
             }
         }
     }

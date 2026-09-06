@@ -205,18 +205,19 @@ async fn handle_event(
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .get_client(client_index);
-                    if eq_config.enabled && !eq_config.bands.is_empty() {
-                        if let Ok(payload) = serde_json::to_vec(&eq_config) {
-                            let _ = backend
-                                .execute(SnapcastCmd::Client {
-                                    client_id: id.clone(),
-                                    action: ClientAction::SendCustom {
-                                        type_id: TYPE_EQ_CONFIG,
-                                        payload,
-                                    },
-                                })
-                                .await;
-                        }
+                    if eq_config.enabled
+                        && !eq_config.bands.is_empty()
+                        && let Ok(payload) = serde_json::to_vec(&eq_config)
+                    {
+                        let _ = backend
+                            .execute(SnapcastCmd::Client {
+                                client_id: id.clone(),
+                                action: ClientAction::SendCustom {
+                                    type_id: TYPE_EQ_CONFIG,
+                                    payload,
+                                },
+                            })
+                            .await;
                     }
 
                     // Push persisted speaker correction config
@@ -224,18 +225,19 @@ async fn handle_event(
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .get_speaker_correction(client_index);
-                    if speaker_config.enabled && !speaker_config.bands.is_empty() {
-                        if let Ok(payload) = serde_json::to_vec(&speaker_config) {
-                            let _ = backend
-                                .execute(SnapcastCmd::Client {
-                                    client_id: id,
-                                    action: ClientAction::SendCustom {
-                                        type_id: snapdog_common::MSG_TYPE_SPEAKER_EQ,
-                                        payload,
-                                    },
-                                })
-                                .await;
-                        }
+                    if speaker_config.enabled
+                        && !speaker_config.bands.is_empty()
+                        && let Ok(payload) = serde_json::to_vec(&speaker_config)
+                    {
+                        let _ = backend
+                            .execute(SnapcastCmd::Client {
+                                client_id: id,
+                                action: ClientAction::SendCustom {
+                                    type_id: snapdog_common::MSG_TYPE_SPEAKER_EQ,
+                                    payload,
+                                },
+                            })
+                            .await;
                     }
                 }
             }
@@ -301,55 +303,48 @@ async fn handle_event(
             type_id,
             payload,
         } => {
-            if type_id == snapdog_common::MSG_TYPE_PLAYBACK_CONTROL {
-                if let Ok(ctrl) =
+            if type_id == snapdog_common::MSG_TYPE_PLAYBACK_CONTROL
+                && let Ok(ctrl) =
                     serde_json::from_slice::<snapdog_common::PlaybackControl>(&payload)
-                {
-                    // Find the zone this client belongs to
-                    let zone_index = {
-                        let s = store.read().await;
-                        s.clients
-                            .iter()
-                            .find(|(_, c)| c.snapcast_id.as_deref() == Some(&client_id))
-                            .map(|(_, c)| c.zone_index)
-                    };
-                    if let Some(idx) = zone_index {
-                        use snapdog_common::PlaybackControl as PC;
-                        let cmd = match ctrl {
-                            PC::Play => Some(crate::player::ZoneCommand::Play),
-                            PC::Pause => Some(crate::player::ZoneCommand::Pause),
-                            PC::Stop => Some(crate::player::ZoneCommand::Stop),
-                            PC::Next => Some(crate::player::ZoneCommand::Next),
-                            PC::Previous => Some(crate::player::ZoneCommand::Previous),
-                            PC::Seek {
-                                position_ms,
-                                offset_ms,
-                            } => match (position_ms, offset_ms) {
-                                (Some(pos), _) => Some(crate::player::ZoneCommand::Seek(pos)),
-                                (_, Some(off)) => {
-                                    Some(crate::player::ZoneCommand::SeekRelative(off))
-                                }
-                                _ => None,
-                            },
-                            PC::Shuffle { enabled } => {
-                                Some(crate::player::ZoneCommand::SetShuffle(enabled))
-                            }
-                            PC::Repeat { mode } => {
-                                Some(crate::player::ZoneCommand::SetRepeat(mode))
-                            }
-                            PC::Playlist { index, track } => {
-                                Some(crate::player::ZoneCommand::SetPlaylist(index, track))
-                            }
-                            PC::PlaylistNext => Some(crate::player::ZoneCommand::NextPlaylist),
-                            PC::PlaylistPrevious => {
-                                Some(crate::player::ZoneCommand::PreviousPlaylist)
-                            }
-                        };
-                        if let Some(cmd) = cmd {
-                            if let Some(tx) = zone_commands.get(&idx) {
-                                let _ = tx.send(cmd).await;
-                            }
+            {
+                // Find the zone this client belongs to
+                let zone_index = {
+                    let s = store.read().await;
+                    s.clients
+                        .iter()
+                        .find(|(_, c)| c.snapcast_id.as_deref() == Some(&client_id))
+                        .map(|(_, c)| c.zone_index)
+                };
+                if let Some(idx) = zone_index {
+                    use snapdog_common::PlaybackControl as PC;
+                    let cmd = match ctrl {
+                        PC::Play => Some(crate::player::ZoneCommand::Play),
+                        PC::Pause => Some(crate::player::ZoneCommand::Pause),
+                        PC::Stop => Some(crate::player::ZoneCommand::Stop),
+                        PC::Next => Some(crate::player::ZoneCommand::Next),
+                        PC::Previous => Some(crate::player::ZoneCommand::Previous),
+                        PC::Seek {
+                            position_ms,
+                            offset_ms,
+                        } => match (position_ms, offset_ms) {
+                            (Some(pos), _) => Some(crate::player::ZoneCommand::Seek(pos)),
+                            (_, Some(off)) => Some(crate::player::ZoneCommand::SeekRelative(off)),
+                            _ => None,
+                        },
+                        PC::Shuffle { enabled } => {
+                            Some(crate::player::ZoneCommand::SetShuffle(enabled))
                         }
+                        PC::Repeat { mode } => Some(crate::player::ZoneCommand::SetRepeat(mode)),
+                        PC::Playlist { index, track } => {
+                            Some(crate::player::ZoneCommand::SetPlaylist(index, track))
+                        }
+                        PC::PlaylistNext => Some(crate::player::ZoneCommand::NextPlaylist),
+                        PC::PlaylistPrevious => Some(crate::player::ZoneCommand::PreviousPlaylist),
+                    };
+                    if let Some(cmd) = cmd
+                        && let Some(tx) = zone_commands.get(&idx)
+                    {
+                        let _ = tx.send(cmd).await;
                     }
                 }
             }
@@ -445,38 +440,35 @@ async fn setup_zone_group(
     let clients_match = sorted_want.len() == sorted_have.len()
         && sorted_want.iter().zip(&sorted_have).all(|(a, b)| a == b);
 
-    if !clients_match {
-        if let Err(e) = backend
+    if !clients_match
+        && let Err(e) = backend
             .execute(SnapcastCmd::Group {
                 group_id: gid.clone(),
                 action: GroupAction::Clients(snap_client_ids.clone()),
             })
             .await
-        {
-            tracing::warn!(error = %e, "Failed to set group clients");
-        }
+    {
+        tracing::warn!(error = %e, "Failed to set group clients");
     }
-    if current_stream != zone_config.stream_name {
-        if let Err(e) = backend
+    if current_stream != zone_config.stream_name
+        && let Err(e) = backend
             .execute(SnapcastCmd::Group {
                 group_id: gid.clone(),
                 action: GroupAction::Stream(zone_config.stream_name.clone()),
             })
             .await
-        {
-            tracing::warn!(error = %e, "Failed to set group stream");
-        }
+    {
+        tracing::warn!(error = %e, "Failed to set group stream");
     }
-    if current_name != zone_config.name {
-        if let Err(e) = backend
+    if current_name != zone_config.name
+        && let Err(e) = backend
             .execute(SnapcastCmd::Group {
                 group_id: gid.clone(),
                 action: GroupAction::Name(zone_config.name.clone()),
             })
             .await
-        {
-            tracing::warn!(error = %e, "Failed to set group name");
-        }
+    {
+        tracing::warn!(error = %e, "Failed to set group name");
     }
 
     // Store group ID
@@ -594,26 +586,25 @@ async fn sync_group_ids(
                     .map_or(0, std::vec::Vec::len)
             });
 
-        if let Some(group) = best_group {
-            if let Some(gid) = group.get("id").and_then(|id| id.as_str()) {
-                if let Some(zone) = s.zones.get_mut(&zone_cfg.index) {
-                    if zone.snapcast_group_id.as_deref() != Some(gid) {
-                        tracing::debug!(zone = zone_cfg.index, new = %gid, "Zone group ID updated");
-                        zone.snapcast_group_id = Some(gid.to_string());
-                    }
-                    let group_muted = group
-                        .get("muted")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(false);
-                    if zone.muted != group_muted {
-                        tracing::debug!(
-                            zone = zone_cfg.index,
-                            muted = group_muted,
-                            "Zone mute synced from Snapcast group"
-                        );
-                        zone.muted = group_muted;
-                    }
-                }
+        if let Some(group) = best_group
+            && let Some(gid) = group.get("id").and_then(|id| id.as_str())
+            && let Some(zone) = s.zones.get_mut(&zone_cfg.index)
+        {
+            if zone.snapcast_group_id.as_deref() != Some(gid) {
+                tracing::debug!(zone = zone_cfg.index, new = %gid, "Zone group ID updated");
+                zone.snapcast_group_id = Some(gid.to_string());
+            }
+            let group_muted = group
+                .get("muted")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            if zone.muted != group_muted {
+                tracing::debug!(
+                    zone = zone_cfg.index,
+                    muted = group_muted,
+                    "Zone mute synced from Snapcast group"
+                );
+                zone.muted = group_muted;
             }
         }
     }
@@ -658,11 +649,11 @@ async fn sync_group_ids(
                 .unwrap_or("");
             if group_stream == zone_cfg.stream_name {
                 // Stream already correct — adopt this group
-                if let Some(gid) = group.get("id").and_then(|id| id.as_str()) {
-                    if let Some(zone) = s.zones.get_mut(&zone_cfg.index) {
-                        tracing::debug!(zone = zone_cfg.index, group = %gid, "Adopted group for zone");
-                        zone.snapcast_group_id = Some(gid.to_string());
-                    }
+                if let Some(gid) = group.get("id").and_then(|id| id.as_str())
+                    && let Some(zone) = s.zones.get_mut(&zone_cfg.index)
+                {
+                    tracing::debug!(zone = zone_cfg.index, group = %gid, "Adopted group for zone");
+                    zone.snapcast_group_id = Some(gid.to_string());
                 }
             } else if let Some(gid) = group.get("id").and_then(|id| id.as_str()) {
                 // Wrong stream — fix it

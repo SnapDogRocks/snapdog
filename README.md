@@ -215,8 +215,11 @@ Download `SnapDog-Server-*.dmg` from [Releases](https://github.com/SnapDogRocks/
 
 ### From Source
 
+Requires Rust 1.94 or newer. Use the committed lockfile; see
+[dependency maintenance](docs/dependencies.md) for upstream compatibility holds.
+
 ```bash
-cargo build --release
+cargo build --release --locked
 ./target/release/snapdog --config snapdog.toml
 ```
 

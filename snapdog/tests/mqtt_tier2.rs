@@ -15,8 +15,7 @@ use std::time::Duration;
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use snapdog::mqtt::MqttBridge;
 use snapdog::{config, state};
-use testcontainers::runners::AsyncRunner;
-use testcontainers_modules::mosquitto::Mosquitto;
+use testcontainers::{GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 
 /// AppConfig (via TOML → load_raw) with `[mqtt]` pointed at `host:port`.
 fn config_for_broker(host: &str, port: u16) -> config::AppConfig {
@@ -71,7 +70,14 @@ async fn collect_until(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn mqtt_tier2_online_state_roundtrip_and_lwt() {
-    let container = match Mosquitto::default().start().await {
+    // Keep the same broker and readiness condition as the former Mosquitto module.
+    // GenericImage lets this test track current testcontainers independently.
+    let broker = GenericImage::new("eclipse-mosquitto", "2.0.18")
+        .with_wait_for(WaitFor::message_on_stderr(
+            "mosquitto version 2.0.18 running",
+        ))
+        .with_cmd(["mosquitto", "-c", "/mosquitto-no-auth.conf"]);
+    let container = match broker.start().await {
         Ok(c) => c,
         Err(e) => {
             eprintln!("SKIP IT-T32: Docker/mosquitto unavailable: {e}");
