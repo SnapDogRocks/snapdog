@@ -2548,9 +2548,9 @@ dependencies = [
 
 [[package]]
 name = "ipnet"
-version = "2.12.1"
+version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78"
+checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "is-docker"
@@ -5066,9 +5066,9 @@ dependencies = [
 
 [[package]]
 name = "shairplay"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "894cfd67aa31a0828414ecec580eca8136bfc6cdf94ef3843a7d1c4da0dccaf3"
+checksum = "1f698cdbad7694323e43c0cd6647175540eed2b876fd92863a1b3bd91daefbb8"
 dependencies = [
  "aes 0.9.3",
  "astro-dnssd",

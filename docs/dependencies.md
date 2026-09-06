@@ -7,7 +7,7 @@ incompatible upgrades. The workspace lockfile is then refreshed for all target
 platforms. "Latest" for a transitive dependency means the latest release allowed
 by its upstream parent's constraints, not an arbitrary forced major version.
 
-This update moves the KNX crates to 0.9.1, shairplay to 0.9.0 and testcontainers to
+This update moves the KNX crates to 0.9.1, shairplay to 0.9.1 and testcontainers to
 0.28.0, and refreshes the other compatible locked dependencies. The Mosquitto
 integration test uses testcontainers' `GenericImage` with the same image, command
 and readiness condition as before: testcontainers-modules 0.15 still requires
@@ -18,6 +18,8 @@ Raising the declared MSRV also enables Clippy suggestions that were previously
 inapplicable: let-chains, const functions and duration constructors. The source
 changes accompanying the manifest update are mechanical adaptations to those
 rules; the audio protocol and service behavior are unchanged.
+
+A follow-up registry check also picked up shairplay 0.9.1 and ipnet 2.12.2.
 
 ## Explicit upstream holds
 
@@ -76,7 +78,7 @@ With Colima, explicitly select its Docker socket for the MQTT test if
 export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
 ```
 
-### Validation recorded for this update
+### Initial validation (shairplay 0.9.0)
 
 - macOS ARM64: 353 workspace tests, 8 test-harness zone-player tests and 7 AirPlay
   receiver tests with `ap2` enabled passed. The separate MQTT test passed against
@@ -93,3 +95,13 @@ export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}
 
 Windows, physical audio hardware and live Spotify/AirPlay sessions were not
 tested locally. Keep the repository's platform checks before merging.
+
+### Follow-up validation (shairplay 0.9.1, ipnet 2.12.2)
+
+The 353 workspace tests and 7 AirPlay receiver tests passed again, as did
+workspace Clippy with warnings denied and a Rust 1.94.0 workspace/all-targets
+check with `snapdog/ap2`. Auditing still requires the same three exceptions.
+The registry recheck found no further direct stable upgrades except ALSA;
+a full lockfile-update dry run offered only the incompatible vergen 9.1.0 /
+vergen-lib 9.1.0 combination. Linux and Windows checks were not rerun for these
+two patch updates.
