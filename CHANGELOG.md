@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.3](https://github.com/SnapDogRocks/snapdog/compare/v0.27.2...v0.27.3) (2026-09-06)
+
+
+### Bug Fixes
+
+* **release:** resolve drafts safely and publish by release ID ([#235](https://github.com/SnapDogRocks/snapdog/issues/235)) ([418ab59](https://github.com/SnapDogRocks/snapdog/commit/418ab59874e66a8ae6f0af7d5588e65576484328))
+
 ## [0.27.2](https://github.com/SnapDogRocks/snapdog/compare/v0.27.1...v0.27.2) (2026-09-06)
 
 
