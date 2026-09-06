@@ -15,7 +15,8 @@ def validate(release, tag, draft, release_id=None, empty=False):
     if not isinstance(release, dict):
         raise ValueError("Invalid release response")
     actual_id = release.get("id")
-    if type(actual_id) is not int or actual_id <= 0:
+    # bool is an int subclass in Python, but cannot represent a release ID.
+    if not isinstance(actual_id, int) or isinstance(actual_id, bool) or actual_id <= 0:
         raise ValueError("Invalid release ID")
     if release_id is not None and actual_id != release_id:
         raise ValueError("Release ID changed")
@@ -24,7 +25,7 @@ def validate(release, tag, draft, release_id=None, empty=False):
     assets = release.get("assets")
     if not isinstance(assets, list) or (len(assets) == 0) != empty:
         raise ValueError("Expected an empty draft" if empty else "Expected release assets")
-    if type(release.get("prerelease")) is not bool:
+    if not isinstance(release.get("prerelease"), bool):
         raise ValueError("Invalid prerelease state")
     return release
 
