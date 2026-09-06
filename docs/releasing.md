@@ -19,6 +19,12 @@ Debian packages, AUR packages, Homebrew formulae and container images.
    repository, both Homebrew formulae and both AUR packages. The `.deb` payloads
    are byte-compared with the original build output. The notarized DMG, archives,
    package files and KNX database are collected and hashed.
+   Homebrew uses a run-specific local tap with measured archive checksums and
+   verifies the installed version of both packages; loose `.rb` files are not
+   supported. The tap is removed after testing, without changing the public tap.
+   Asset collection downloads only `snapdog-*`, `deb-*` and `knxprod` artifacts.
+   The signed APT repository (including historical `.deb` files), build records
+   and caches must not enter the release asset set.
 5. Only after every verification succeeds are assets uploaded to the draft.
    Uploads never use `--clobber`. A clean download is compared byte-for-byte with
    the verified asset set.
