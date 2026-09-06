@@ -6,7 +6,7 @@ pkgdesc="Multi-room audio system with AirPlay, Snapcast, MQTT, and KNX integrati
 arch=('x86_64' 'aarch64')
 url="https://github.com/SnapDogRocks/snapdog"
 license=('GPL-3.0-only')
-depends=('alsa-lib' 'avahi')
+depends=('alsa-lib' 'avahi' 'openssl')
 backup=('etc/snapdog/snapdog.toml' 'etc/default/snapdog')
 source=(
   "snapdog.service::https://raw.githubusercontent.com/SnapDogRocks/snapdog/v${pkgver}/snapdog/systemd/snapdog.service"
