@@ -722,88 +722,253 @@ jobs:
   update-homebrew:
     name: Update Homebrew Tap
     needs: [meta, publish-release, verify-release-assets]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    # The tap credentials live in the protected environment, not as a repository
+    # secret every workflow can read.
+    environment: release
+    env:
+      TAP_REPO: SnapDogRocks/homebrew-tap
+      VERSION: ${{ needs.meta.outputs.version }}
+      TAG: ${{ needs.meta.outputs.tag }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           name: verified-release-assets
           path: artifacts
-      - name: Update tap formulas
-        env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Split the tap coordinates
+        id: tap
         run: |
-          VERSION=${{ needs.meta.outputs.version }}
-          TAG=${{ needs.meta.outputs.tag }}
+          set -euo pipefail
+          echo "owner=${TAP_REPO%%/*}" >> "$GITHUB_OUTPUT"
+          echo "repo=${TAP_REPO##*/}" >> "$GITHUB_OUTPUT"
 
-          # Calculate checksums for macOS binaries
-          SNAPDOG_X64_SHA=$(sha256sum artifacts/snapdog-${TAG}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
-          SNAPDOG_ARM_SHA=$(sha256sum artifacts/snapdog-${TAG}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
-          CLIENT_X64_SHA=$(sha256sum artifacts/snapdog-${TAG}-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
-          CLIENT_ARM_SHA=$(sha256sum artifacts/snapdog-${TAG}-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+      # An installation token lives one hour. Opening the pull request fits
+      # inside that; waiting for the tap's qualification afterwards may not, so
+      # the merge mints a second one rather than stretching this one.
+      - name: Mint a tap token for the pull request
+        id: token-open
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HOMEBREW_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          owner: ${{ steps.tap.outputs.owner }}
+          repositories: ${{ steps.tap.outputs.repo }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-statuses: read
 
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/SnapDogRocks/homebrew-tap.git"
-          cd homebrew-tap
-          mkdir -p Formula
+      - name: Verify the token and measure the identity the tap will see
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.token-open.outputs.token }}
+          APP_SLUG: ${{ steps.token-open.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          mapfile -t reach < <(gh api /installation/repositories \
+            --jq '.repositories[].full_name' | sort)
+          printf 'the token reaches: %s\n' "${reach[*]:-nothing}"
+          if [[ ${#reach[@]} -ne 1 || "${reach[0]}" != "$TAP_REPO" ]]; then
+            echo "::error::TAP001 the tap token reaches ${#reach[@]} repositories, expected only ${TAP_REPO}"
+            exit 1
+          fi
+          # The bot's own public user record. An installation token has no
+          # personal user behind it, so /user would answer about nobody.
+          login="${APP_SLUG}[bot]"
+          id=$(gh api "/users/${login}" --jq .id)
+          if [[ -z "$id" || "$id" == null ]]; then
+            echo "::error::TAP002 no public user record for ${login}"
+            exit 1
+          fi
+          echo "login=$login" >> "$GITHUB_OUTPUT"
+          echo "email=${id}+${login}@users.noreply.github.com" >> "$GITHUB_OUTPUT"
 
-          cat > Formula/snapdog.rb << EOF
-          class Snapdog < Formula
-            desc "Multi-zone audio controller with AirPlay, Snapcast, MQTT, and KNX"
+      - name: Open a formula update pull request
+        id: update
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token-open.outputs.token }}
+          TAP_TOKEN: ${{ steps.token-open.outputs.token }}
+          BOT_LOGIN: ${{ steps.bot.outputs.login }}
+          BOT_EMAIL: ${{ steps.bot.outputs.email }}
+        run: |
+          set -euo pipefail
+          # Both formulas install from the same macOS archive per architecture;
+          # the release builds one darwin tarball that carries both binaries.
+          x64=$(sha256sum "artifacts/snapdog-${TAG}-x86_64-apple-darwin.tar.gz" | cut -d' ' -f1)
+          arm=$(sha256sum "artifacts/snapdog-${TAG}-aarch64-apple-darwin.tar.gz" | cut -d' ' -f1)
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" \
+            "$RUNNER_TEMP/tap"
+          cd "$RUNNER_TEMP/tap"
+
+          # Never walk a release backwards. The formulas carry no explicit
+          # `version` line, because `brew audit --strict` rejects one that
+          # repeats what Homebrew scans from the URL, so the published version is
+          # read from that URL exactly as Homebrew reads it.
+          if [[ -f Formula/snapdog.rb ]]; then
+            current=$(sed -nE 's#.*/releases/download/v([^/]+)/.*#\1#p' Formula/snapdog.rb | sort -u)
+            if [[ $(printf '%s\n' "$current" | grep -c .) -ne 1 ]]; then
+              echo "::error::TAP003 could not read one version from the published formula"
+              exit 1
+            fi
+            newest=$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -1)
+            if [[ "$current" == "$VERSION" || "$newest" == "$current" ]]; then
+              echo "the tap already carries ${current}; leaving it alone"
+              echo 'pr=' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          install -d Formula
+          write_formula() {
+            local file=$1 klass=$2 binary=$3 description=$4
+            cat > "Formula/${file}" <<EOF
+          class ${klass} < Formula
+            desc "${description}"
             homepage "https://github.com/SnapDogRocks/snapdog"
             license "GPL-3.0-only"
-            version "${VERSION}"
 
             on_macos do
               if Hardware::CPU.intel?
                 url "https://github.com/SnapDogRocks/snapdog/releases/download/${TAG}/snapdog-${TAG}-x86_64-apple-darwin.tar.gz"
-                sha256 "${SNAPDOG_X64_SHA}"
+                sha256 "${x64}"
               else
                 url "https://github.com/SnapDogRocks/snapdog/releases/download/${TAG}/snapdog-${TAG}-aarch64-apple-darwin.tar.gz"
-                sha256 "${SNAPDOG_ARM_SHA}"
+                sha256 "${arm}"
               end
             end
 
             def install
-              bin.install "snapdog"
+              bin.install "${binary}"
             end
 
             test do
-              assert_match version.to_s, shell_output("#{bin}/snapdog --version")
+              assert_match version.to_s, shell_output("#{bin}/${binary} --version")
             end
           end
           EOF
+          }
+          write_formula snapdog.rb Snapdog snapdog \
+            "Multi-zone audio controller with AirPlay, Snapcast, MQTT, and KNX"
+          write_formula snapdog-client.rb SnapdogClient snapdog-client \
+            "SnapDog multiroom audio client"
 
-          cat > Formula/snapdog-client.rb << EOF
-          class SnapdogClient < Formula
-            desc "SnapDog multiroom audio client"
-            homepage "https://github.com/SnapDogRocks/snapdog"
-            license "GPL-3.0-only"
-            version "${VERSION}"
+          if git diff --quiet -- Formula; then
+            echo "the formulas are already current at ${VERSION}"
+            echo 'pr=' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-            on_macos do
-              if Hardware::CPU.intel?
-                url "https://github.com/SnapDogRocks/snapdog/releases/download/${TAG}/snapdog-${TAG}-x86_64-apple-darwin.tar.gz"
-                sha256 "${CLIENT_X64_SHA}"
-              else
-                url "https://github.com/SnapDogRocks/snapdog/releases/download/${TAG}/snapdog-${TAG}-aarch64-apple-darwin.tar.gz"
-                sha256 "${CLIENT_ARM_SHA}"
-              end
-            end
-
-            def install
-              bin.install "snapdog-client"
-            end
-
-            test do
-              assert_match version.to_s, shell_output("#{bin}/snapdog-client --version")
-            end
-          end
-          EOF
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          branch="release/snapdog-${VERSION}-${GITHUB_RUN_ID}"
+          # Recorded before the push, so the cleanup step below can remove the
+          # branch even when this step dies part way through.
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          git switch -c "$branch"
+          git config user.name "$BOT_LOGIN"
+          git config user.email "$BOT_EMAIL"
           git add Formula/snapdog.rb Formula/snapdog-client.rb
-          git commit -m "Update snapdog to ${VERSION}"
-          git push
+          git commit -m "snapdog ${VERSION}"
+          git push -u origin "$branch"
+          pr=$(gh pr create --repo "$TAP_REPO" --base main --head "$branch" \
+            --title "snapdog ${VERSION}" \
+            --body "Automated update from the verified ${TAG} release assets. The formulas are merged only after every tap qualification lane passes.")
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          # Recorded so the merge step can prove nothing was pushed onto the
+          # branch while the qualification ran.
+          echo "head=$(gh pr view "$pr" --repo "$TAP_REPO" --json headRefOid --jq .headRefOid)" \
+            >> "$GITHUB_OUTPUT"
+
+      # A branch pushed without a pull request is unreachable and, because the
+      # branch name carries the run id, blocks a re-run of this very job.
+      - name: Remove an orphaned branch from the tap
+        if: failure() && steps.update.outputs.branch != '' && steps.update.outputs.pr == ''
+        env:
+          GH_TOKEN: ${{ steps.token-open.outputs.token }}
+          BRANCH: ${{ steps.update.outputs.branch }}
+        run: gh api -X DELETE "repos/${TAP_REPO}/git/refs/heads/${BRANCH}"
+
+      - name: Require tap qualification
+        if: steps.update.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.token-open.outputs.token }}
+          PR: ${{ steps.update.outputs.pr }}
+        run: |
+          set -euo pipefail
+          # `gh pr checks --watch` errors out when no check has been registered
+          # yet, which races the tap workflow starting.
+          for attempt in {1..18}; do
+            gh pr checks "$PR" --repo "$TAP_REPO" >/dev/null 2>&1 && break
+            if [[ "$attempt" == 18 ]]; then
+              echo "::error::TAP004 the tap reported no checks for $PR"
+              exit 1
+            fi
+            sleep 10
+          done
+          # Bounded well inside the token's hour, so a stalled tap lane fails
+          # here with a clear message instead of on an expired credential.
+          timeout 45m gh pr checks "$PR" --repo "$TAP_REPO" \
+            --watch --fail-fast --interval 20
+
+      # The wait above may have consumed most of the first token's life, so the
+      # merge uses a fresh one. Minted unconditionally: with an `if:` here the
+      # read-back below would need a fallback expression, and a credential whose
+      # origin only a reader can resolve is not a demonstrated origin.
+      - name: Mint a tap token for the merge
+        id: token-merge
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HOMEBREW_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          owner: ${{ steps.tap.outputs.owner }}
+          repositories: ${{ steps.tap.outputs.repo }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-statuses: read
+
+      - name: Recheck the head and the guard, then merge
+        if: steps.update.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.token-merge.outputs.token }}
+          PR: ${{ steps.update.outputs.pr }}
+          EXPECTED_HEAD: ${{ steps.update.outputs.head }}
+        run: |
+          set -euo pipefail
+          head=$(gh pr view "$PR" --repo "$TAP_REPO" --json headRefOid --jq .headRefOid)
+          if [[ "$head" != "$EXPECTED_HEAD" ]]; then
+            echo "::error::TAP005 the pull request head moved from ${EXPECTED_HEAD} to ${head} during qualification"
+            exit 1
+          fi
+          # The qualification proved the checks on this head. Merging is only
+          # safe while the tap still enforces them. GitHub guards a branch either
+          # through a ruleset or through classic branch protection, and the rules
+          # endpoint reports only the first; the branch endpoint answers for both
+          # and returns 200 whether or not the branch is guarded.
+          branch=$(gh api "repos/${TAP_REPO}/branches/main")
+          if [[ "$(printf '%s' "$branch" | jq -r '.protected')" != "true" ]]; then
+            echo "::error::TAP006 main of ${TAP_REPO} is not protected; refusing to merge into an unguarded branch"
+            exit 1
+          fi
+          gh pr merge "$PR" --repo "$TAP_REPO" --squash --delete-branch
+
+      - name: Verify the formulas now on protected main
+        if: steps.update.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.token-merge.outputs.token }}
+        run: |
+          set -euo pipefail
+          for formula in snapdog snapdog-client; do
+            published=$(gh api "repos/${TAP_REPO}/contents/Formula/${formula}.rb?ref=main" \
+              --jq .content | base64 --decode)
+            if ! printf '%s' "$published" | grep -Fq "releases/download/${TAG}/"; then
+              echo "::error::TAP007 ${formula}.rb on main does not point at ${TAG}"
+              exit 1
+            fi
+          done
+          printf 'the tap now serves snapdog %s\n' "$VERSION"
 
   publish-aur:
     name: AUR (${{ matrix.pkg }})
