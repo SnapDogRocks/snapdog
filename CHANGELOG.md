@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.4](https://github.com/SnapDogRocks/snapdog/compare/v0.27.3...v0.27.4) (2026-09-06)
+
+
+### Bug Fixes
+
+* **release:** repair package smoke tests and runtime dependencies ([#237](https://github.com/SnapDogRocks/snapdog/issues/237)) ([0ca3fb6](https://github.com/SnapDogRocks/snapdog/commit/0ca3fb669742f82db64ca58e8a432aa40c818753))
+
 ## [0.27.3](https://github.com/SnapDogRocks/snapdog/compare/v0.27.2...v0.27.3) (2026-09-06)
 
 
