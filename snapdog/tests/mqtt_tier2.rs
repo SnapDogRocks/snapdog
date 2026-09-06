@@ -115,38 +115,23 @@ async fn mqtt_tier2_online_state_roundtrip_and_lwt() {
         .await
         .expect("subscribe");
 
-    // rumqttc's EventLoop is not Send, so we can't spawn run() — instead drive the
-    // bridge's loop (CONNECT registers the LWT + flushes the queued publishes) and
-    // the subscriber's loop together in one select.
+    // Keep both event-loop futures alive until collection finishes. Recreating a
+    // select around poll_once cancels an in-flight CONNECT whenever the subscriber
+    // wins; dropping that socket can fire the LWT before "online" is flushed.
+    // A biased select does not fix cancellation of a pending branch.
     let cmds: HashMap<usize, snapdog::player::ZoneCommandSender> = HashMap::new();
     let (snap_tx, _snap_rx) = tokio::sync::mpsc::channel(16);
 
     // (1) retained "online" + (2) QoS1 retained zone-state round-trip.
-    let mut seen: HashMap<String, String> = HashMap::new();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
-    while !(seen.get("snapdog/status").map(String::as_str) == Some("online")
-        && seen.contains_key("snapdog/zones/1/state"))
-    {
-        // `biased`: always poll the bridge first. Under a slow/loaded runner an
-        // unbiased select lets the busy subscriber branch keep winning, starving
-        // the bridge's CONNECT + retained-publish flush — the connection then drops
-        // mid-setup and the broker fires the LWT, so the subscriber sees a retained
-        // "offline" and never the "online"/zone-state. Prioritising the bridge lets
-        // its setup complete before we lean on the subscriber loop.
-        tokio::select! {
-            biased;
-            () = bridge.poll_once(&cmds, &store, &snap_tx) => {}
-            r = tokio::time::timeout_at(deadline, sub_loop.poll()) => {
-                match r {
-                    Ok(Ok(Event::Incoming(Packet::Publish(p)))) => {
-                        seen.insert(p.topic.clone(), String::from_utf8_lossy(&p.payload).to_string());
-                    }
-                    Ok(_) => {}
-                    Err(_) => break, // deadline
-                }
-            }
+    let seen = tokio::select! {
+        result = bridge.run(cmds, store, snap_tx) => {
+            panic!("bridge event loop stopped unexpectedly: {result:?}");
         }
-    }
+        seen = collect_until(&mut sub_loop, 25, |m| {
+            m.get("snapdog/status").map(String::as_str) == Some("online")
+                && m.contains_key("snapdog/zones/1/state")
+        }) => seen,
+    };
     assert_eq!(
         seen.get("snapdog/status").map(String::as_str),
         Some("online"),

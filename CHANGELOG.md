@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.2](https://github.com/SnapDogRocks/snapdog/compare/v0.27.1...v0.27.2) (2026-09-06)
+
+
+### Bug Fixes
+
+* **deps:** upgrade Rust dependencies to latest compatible stable ([#233](https://github.com/SnapDogRocks/snapdog/issues/233)) ([9c64035](https://github.com/SnapDogRocks/snapdog/commit/9c6403541a51f1c2dfae1b0618eea1e7d1b3cddf))
+
 ## [0.27.1](https://github.com/SnapDogRocks/snapdog/compare/v0.27.0...v0.27.1) (2026-08-17)
 
 
