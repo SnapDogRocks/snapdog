@@ -19,7 +19,12 @@ jobs:
   meta:
     name: Release metadata
     runs-on: ubuntu-latest
+    # Drafts are visible only to callers with push access. Keep this permission
+    # job-local; the resolver itself performs read-only API requests.
+    permissions:
+      contents: write
     outputs:
+      release_id: ${{ steps.meta.outputs.release_id }}
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
       revision: ${{ steps.meta.outputs.revision }}
@@ -42,17 +47,10 @@ jobs:
           VERSION=${TAG#v}
           REVISION=$(git rev-parse HEAD)
           CREATED=$(git show -s --format=%cI HEAD)
-          release=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")
-          if [ "$(jq -r .draft <<<"$release")" != true ]; then
-            echo "::error::${TAG} must have an unpublished draft release"
-            exit 1
-          fi
-          if [ "$(jq '.assets | length' <<<"$release")" -ne 0 ]; then
-            echo "::error::${TAG} draft already has assets; refusing a destructive retry"
-            exit 1
-          fi
+          release=$(python3 .github/scripts/release_state.py resolve "$GITHUB_REPOSITORY" "$TAG")
           PRERELEASE=$(jq -r .prerelease <<<"$release")
           {
+            echo "release_id=$(jq -r .id <<<"$release")"
             echo "tag=${TAG}"
             echo "version=${VERSION}"
             echo "revision=${REVISION}"
@@ -659,15 +657,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Publish draft atomically after all gates
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.meta.outputs.tag }}
+          RELEASE_ID: ${{ needs.meta.outputs.release_id }}
         run: |
           set -euo pipefail
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .draft)" = true
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .draft)" = false
+          python3 .github/scripts/release_state.py verify "$GITHUB_REPOSITORY" "$TAG" "$RELEASE_ID" draft > /dev/null
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false > /dev/null
+          python3 .github/scripts/release_state.py verify "$GITHUB_REPOSITORY" "$TAG" "$RELEASE_ID" published > /dev/null
 
   update-appcast:
     name: Update Sparkle Appcast

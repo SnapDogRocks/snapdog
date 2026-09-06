@@ -105,6 +105,7 @@ jobs:
               - 'snapdog/src/snapcast/**'
             workflows:
               - '.github/workflows/**'
+              - '.github/scripts/**'
 
   workflow-lint:
     name: Workflow Lint
@@ -116,6 +117,8 @@ jobs:
       - name: Validate GitHub Actions workflows
         # release.yml has a deliberate compact A && B || C shell expression.
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -ignore SC2015
+      - name: Test fail-closed release state checks
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
 
   i18n:
     name: macOS i18n completeness
