@@ -649,7 +649,7 @@ jobs:
   upload-release-artifacts:
     name: Upload verified assets to draft
     runs-on: ubuntu-latest
-    needs: [meta, verify-release-assets, smoke-homebrew, smoke-aur, prepare-apt]
+    needs: [meta, verify-release-assets, smoke-homebrew, smoke-aur, smoke-apt]
     permissions:
       contents: write
     steps:
@@ -1020,48 +1020,44 @@ jobs:
           commit_message: "Update to ${{ needs.meta.outputs.version }}"
           ssh_keyscan_types: rsa,ecdsa,ed25519
 
-  prepare-apt:
-    name: Build, sign, and smoke-test APT repository
+  smoke-apt:
+    name: Smoke-test the Debian packages
     needs: [meta, build-deb]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
-        with:
-          ref: gh-pages
-          path: gh-pages
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
         with:
           pattern: deb-*
           path: debs
           merge-multiple: true
-      - name: Update APT repository
-        env:
-          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
-          APT_SIGNING_KEY_FINGERPRINT: ${{ secrets.APT_SIGNING_KEY_FINGERPRINT }}
+
+      # A throwaway key, generated here and gone with the runner. The archive
+      # signs the published repository with the domain key; this job only has to
+      # prove that the packages install through a signed repository at all, and
+      # for that a key nobody keeps is enough. The archive signing key is
+      # therefore no longer a secret of this repository.
+      - name: Build and sign a throwaway repository
         run: |
           set -euo pipefail
-          test -n "$APT_SIGNING_KEY" || { echo "::error::APT_SIGNING_KEY is required"; exit 1; }
-          expected=$(tr -d '[:space:]' <<<"$APT_SIGNING_KEY_FINGERPRINT" | tr '[:lower:]' '[:upper:]')
-          [[ "$expected" =~ ^[0-9A-F]{40}$ ]] || { echo "::error::APT_SIGNING_KEY_FINGERPRINT must be a full 40-hex fingerprint"; exit 1; }
           export GNUPGHOME="$RUNNER_TEMP/apt-gnupg"
           install -d -m 700 "$GNUPGHOME"
-          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
-          actual=$(gpg --batch --with-colons --list-secret-keys "$expected" | awk -F: '$1 == "fpr" {print toupper($10); exit}')
-          test "$actual" = "$expected" || { echo "::error::imported APT key fingerprint does not match configured fingerprint"; exit 1; }
+          gpg --batch --quick-generate-key --passphrase '' \
+            'SnapDog release smoke test <noreply@snapdog.invalid>' rsa3072 sign never
+          fpr=$(gpg --batch --with-colons --list-secret-keys \
+            | awk -F: '$1 == "fpr" {print $10; exit}')
 
-          mkdir -p gh-pages/debian/pool gh-pages/debian/dists/stable/main/binary-amd64 gh-pages/debian/dists/stable/main/binary-arm64
+          repo="$RUNNER_TEMP/repo"
+          install -d "$repo/pool" \
+            "$repo/dists/stable/main/binary-amd64" "$repo/dists/stable/main/binary-arm64"
+          find debs -name '*.deb' -exec cp {} "$repo/pool/" \;
+          test "$(find "$repo/pool" -name '*.deb' | wc -l)" -eq 4 \
+            || { echo "::error::expected four .deb files for two packages on two architectures"; exit 1; }
 
-          # Copy new .deb files to pool
-          find debs -name "*.deb" -exec cp {} gh-pages/debian/pool/ \;
-
-          # Generate Packages index for each arch
-          cd gh-pages/debian
+          cd "$repo"
           for arch in amd64 arm64; do
             dpkg-scanpackages --arch "$arch" pool > "dists/stable/main/binary-${arch}/Packages"
             gzip -kf "dists/stable/main/binary-${arch}/Packages"
           done
-
-          # Generate Release file with Date and hashes
           {
             echo "Origin: SnapDog"
             echo "Label: SnapDog"
@@ -1070,75 +1066,170 @@ jobs:
             echo "Date: $(date -Ru)"
             echo "Architectures: amd64 arm64"
             echo "Components: main"
-            echo "Description: SnapDog multi-room audio system"
-            echo "MD5Sum:"
-            for f in main/binary-amd64/Packages main/binary-amd64/Packages.gz main/binary-arm64/Packages main/binary-arm64/Packages.gz; do
-              echo " $(md5sum "dists/stable/$f" | cut -d' ' -f1) $(stat -c%s "dists/stable/$f") $f"
-            done
             echo "SHA256:"
-            for f in main/binary-amd64/Packages main/binary-amd64/Packages.gz main/binary-arm64/Packages main/binary-arm64/Packages.gz; do
+            for f in main/binary-amd64/Packages main/binary-amd64/Packages.gz \
+                     main/binary-arm64/Packages main/binary-arm64/Packages.gz; do
               echo " $(sha256sum "dists/stable/$f" | cut -d' ' -f1) $(stat -c%s "dists/stable/$f") $f"
             done
           } > dists/stable/Release
-          gpg --batch --yes --local-user "$expected" --digest-algo SHA256 \
+          gpg --batch --yes --local-user "$fpr" --digest-algo SHA256 \
             --clearsign --output dists/stable/InRelease dists/stable/Release
-          gpg --batch --yes --local-user "$expected" --digest-algo SHA256 \
-            --detach-sign --armor --output dists/stable/Release.gpg dists/stable/Release
-          gpg --batch --armor --export "$expected" > snapdog-archive-keyring.asc
-          gpg --batch --no-default-keyring --keyring ./verification-keyring.gpg \
-            --import snapdog-archive-keyring.asc
-          gpgv --keyring ./verification-keyring.gpg dists/stable/Release.gpg dists/stable/Release
-          gpgv --keyring ./verification-keyring.gpg dists/stable/InRelease
-      - name: Smoke-test signed APT install
+          gpg --batch --armor --export "$fpr" > snapdog-smoke-keyring.asc
+
+      - name: Install both packages from that repository
         run: |
           set -euo pipefail
-          python3 -m http.server 8000 --directory gh-pages >server.log 2>&1 &
+          python3 -m http.server 8000 --directory "$RUNNER_TEMP/repo" >"$RUNNER_TEMP/server.log" 2>&1 &
           server=$!
           trap 'kill "$server"' EXIT
           docker run --rm --add-host=host.docker.internal:host-gateway \
             debian:12-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 sh -euxc '
             printf "#!/bin/sh\nexit 101\n" >/usr/sbin/policy-rc.d
             apt-get update && apt-get install -y ca-certificates curl gpg
-            curl -fsSL http://host.docker.internal:8000/debian/snapdog-archive-keyring.asc \
-              -o /usr/share/keyrings/snapdog-archive-keyring.asc
-            echo "deb [signed-by=/usr/share/keyrings/snapdog-archive-keyring.asc] http://host.docker.internal:8000/debian stable main" \
+            curl -fsSL http://host.docker.internal:8000/snapdog-smoke-keyring.asc \
+              -o /usr/share/keyrings/snapdog-smoke-keyring.asc
+            echo "deb [signed-by=/usr/share/keyrings/snapdog-smoke-keyring.asc] http://host.docker.internal:8000 stable main" \
               >/etc/apt/sources.list.d/snapdog.list
             apt-get -o Acquire::AllowInsecureRepositories=false update
             apt-get install -y snapdog snapdog-client
             snapdog --version
             snapdog-client --version
           '
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
-        with:
-          name: signed-apt-repository
-          path: gh-pages/debian
-          if-no-files-found: error
 
-  publish-apt:
-    name: Publish signed APT repository
-    needs: [meta, prepare-apt, publish-release]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  archive-dispatch:
+    name: Hand the release to the APT archive
+    needs: [meta, publish-release, smoke-apt]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    env:
+      ARCHIVE_REPO: metaneutrons/apt-archive
+      # Two different names for the same archive, and the dispatch takes the
+      # first: `domain` is a choice input listing the manifest directories under
+      # domains/, while the host only appears inside that manifest and in the
+      # public URL. Passing the host is rejected with HTTP 422 before any run
+      # starts.
+      ARCHIVE_DOMAIN: snapdog.cc
+      ARCHIVE_HOST: deb.snapdog.cc
+      ARCHIVE_PROJECT: snapdog
+      VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - name: Mint a token for the archive alone
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          ref: gh-pages
-          path: gh-pages
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
-        with:
-          name: signed-apt-repository
-          path: gh-pages/debian
-      - name: Push verified repository metadata
-        working-directory: gh-pages
+          client-id: ${{ vars.ARCHIVE_DISPATCH_CLIENT_ID }}
+          private-key: ${{ secrets.ARCHIVE_DISPATCH_PRIVATE_KEY }}
+          owner: metaneutrons
+          repositories: apt-archive
+          permission-actions: write
+          permission-contents: read
+
+      - name: Verify the token reaches the archive and nothing else
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A debian
-          git diff --cached --quiet && { echo "::error::APT publication produced no change"; exit 1; }
-          git commit -m "apt: publish signed packages for ${{ needs.meta.outputs.tag }}"
-          git push
+          mapfile -t reach < <(gh api /installation/repositories \
+            --jq '.repositories[].full_name' | sort)
+          printf 'the token reaches: %s\n' "${reach[*]:-nothing}"
+          if [[ ${#reach[@]} -ne 1 || "${reach[0]}" != "$ARCHIVE_REPO" ]]; then
+            echo "::error::APT9001 the dispatch token reaches ${#reach[@]} repositories, expected only ${ARCHIVE_REPO}"
+            exit 1
+          fi
+
+      - name: Knock, and observe the run it starts
+        id: knock
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          branch=$(gh api "repos/${ARCHIVE_REPO}" --jq .default_branch)
+          before=$(gh run list --repo "$ARCHIVE_REPO" --workflow=publish.yml \
+            --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+          gh workflow run publish.yml --repo "$ARCHIVE_REPO" --ref "$branch" \
+            -f domain="$ARCHIVE_DOMAIN" -f project="$ARCHIVE_PROJECT"
+          # Never correlate by simply taking the newest run: another domain may
+          # publish at the same moment. Wait for an id that did not exist before
+          # the knock and hold on to exactly that one.
+          run_id=0
+          for _ in {1..24}; do
+            sleep 5
+            candidate=$(gh run list --repo "$ARCHIVE_REPO" --workflow=publish.yml \
+              --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+            if [[ "$candidate" != "$before" ]]; then run_id="$candidate"; break; fi
+          done
+          if [[ "$run_id" == 0 ]]; then
+            echo "::error::APT9002 the dispatch produced no run within 120s"
+            exit 1
+          fi
+          printf 'archive run %s\n' "$run_id"
+          gh run watch "$run_id" --repo "$ARCHIVE_REPO" --exit-status --interval 20
+
+      # A green archive run is not proof that the archive serves this version.
+      # Take the route a client with Acquire-By-Hash takes: InRelease is the
+      # commit point and is served uncached, the Packages index behind it is
+      # content addressed and therefore cannot go stale. Polling
+      # binary-<arch>/Packages.gz instead reads a mutable path that a CDN caches.
+      - name: Verify what the archive serves, along the client's path
+        run: |
+          set -euo pipefail
+          base="https://${ARCHIVE_HOST}"
+          curl --fail --silent --show-error --location \
+            "${base}/dists/rolling/InRelease" -o "$RUNNER_TEMP/InRelease"
+          for arch in amd64 arm64; do
+            want="main/binary-${arch}/Packages.gz"
+            digest=$(ARCH_PATH="$want" python3 - "$RUNNER_TEMP/InRelease" <<'PY'
+          import re, sys, os
+          want = os.environ["ARCH_PATH"]
+          # The block ends at the first unindented line. A terminator of
+          # ^[A-Za-z-]+: misses SHA512: and SHA256:, because the class has no
+          # digits, and every later section is then read as part of this one.
+          field = re.compile(r"^[A-Za-z][A-Za-z0-9-]*:")
+          inside = False
+          for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+              if field.match(line):
+                  inside = line.startswith("SHA512:")
+                  continue
+              if not inside or not line.startswith(" "):
+                  continue
+              parts = line.split()
+              if len(parts) == 3 and parts[2] == want:
+                  print(parts[0])
+                  break
+          PY
+          )
+            if [[ -z "$digest" ]]; then
+              echo "::error::APT9003 InRelease carries no SHA512 entry for ${want}"
+              exit 1
+            fi
+            # apt asks for SHA512 first. Asking for it too turns a silent
+            # fallback to a weaker digest into a failed release job. Two by-hash
+            # directories exist and they are not interchangeable: dists/<suite>/by-hash
+            # carries the archive state, the package indices live under the
+            # component and architecture.
+            curl --fail --silent --show-error --location \
+              "${base}/dists/rolling/main/binary-${arch}/by-hash/SHA512/${digest}" \
+              -o "$RUNNER_TEMP/Packages.gz"
+            measured=$(sha512sum "$RUNNER_TEMP/Packages.gz" | cut -d' ' -f1)
+            if [[ "$measured" != "$digest" ]]; then
+              echo "::error::APT9004 by-hash object for ${want} does not match its own name"
+              exit 1
+            fi
+            # Content addressing says what the object should be, not what the
+            # archive put there, hence the comparison above before this one.
+            # Both packages of this release have to be in the index; checking one
+            # would pass while the other silently never arrived.
+            for package in snapdog snapdog-client; do
+              if ! gzip -dc "$RUNNER_TEMP/Packages.gz" | awk -v p="$package" -v v="${VERSION}-1" '
+                   /^Package: /{pkg=$2; ver=""} /^Version: /{ver=$2}
+                   pkg==p && ver==v {found=1} END{exit !found}'; then
+                echo "::error::APT9005 the ${arch} index does not carry ${package} ${VERSION}-1"
+                exit 1
+              fi
+              printf 'the %s index carries %s %s-1\n' "$arch" "$package" "$VERSION"
+            done
+          done
 
   docker:
     name: Docker ${{ matrix.image }}
