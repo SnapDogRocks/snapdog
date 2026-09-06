@@ -16,6 +16,9 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    # The app credentials live in the protected environment, not as repository
+    # secrets reachable by every workflow in the repository.
+    environment: release
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
@@ -28,7 +31,9 @@ jobs:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
         with:
-          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          # The client id is public information, so it is a variable. A secret
+          # cannot be shown in an error message and makes every check blind.
+          client-id: ${{ vars.RELEASE_PLEASE_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
       - uses: googleapis/release-please-action@0dfd8538845b8e92600d271a895a5372865d4062 # v5.0.0
         id: rp
