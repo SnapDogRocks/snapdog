@@ -1,0 +1,37 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Origin: SnapDog
+Label: SnapDog
+Suite: stable
+Codename: stable
+Date: Sun, 06 Sep 2026 12:40:02 +0000
+Architectures: amd64 arm64
+Components: main
+Description: SnapDog multi-room audio system
+MD5Sum:
+ bf2048792ec9f780615652ded772f944 989 main/binary-amd64/Packages
+ b9480da4a445ba6fd857d81638f2a258 576 main/binary-amd64/Packages.gz
+ 9b33b1608a20a468b5991c1029a804cf 988 main/binary-arm64/Packages
+ f1dec1c5ad02a0c4ec8d1c1f9e03c570 574 main/binary-arm64/Packages.gz
+SHA256:
+ b8d16f2366be87a4904bc3b076a1ae06d7fa24ab4348825d60694263abefc048 989 main/binary-amd64/Packages
+ 12354117c94ad624db0ccca9698bb8800b9b9503f3a478ad0abe36928ee223bf 576 main/binary-amd64/Packages.gz
+ f1a0c0e66c04ba8eb1422592a73c033c0b7236df349ecdf67dbf5b504b18a38d 988 main/binary-arm64/Packages
+ 33a3f2b389c6b61c724cc632ea0afecd6a5db1ddf59341c700cb2465ad90255a 574 main/binary-arm64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCAAdFiEE5KrCEMjCE3dVTb3kBiPl87Q3n8cFAmqdXyIACgkQBiPl87Q3
+n8fW2BAAm4lCr1d/cOABWW5mAB3qK93jZf6Q6k9VP6Dp03fZ2YjI81l9GAfA3kra
+pUymM53jk/iqo97XtPYROZ2hmLmtbJaJxaWHJR4mDui+boetZpJLVy4QH05bE6Va
+6Jc3dDfdH6LHCrikErO68+9LLGXlxt5ykaTqD0U87l4Uaul9F3C2Ktd+Sp2M+Br+
+VmaLIcmn5XgMLagOjoWVCr6GmfwVejnLGaHHXsLqpvRm5Cu+TV6duURjolLONFjC
+li9qp/lPIrrdg8yqO16ydTHlApBAwns4TfbyUKxGO6uBUgnDCayEXrDTEAIHKT4j
+vKfIAAtxHZFrjDBmVHdn5l0vaSSRIxXw+/OiZvQs7dbtRSD+Dpismt7qfswFZD1H
+Crqj74yoC5uUOj+n4FO9geW+3c9XfMpLifIkImMnvOg6KPpMV9qOo13CMgJIqD33
+nG/j6bXiSgON1HJith86yvD49AsRS6eYWowloIXAG6A6JzqIYdn2bYcg7pY4BTQl
+NLdumIXWZPUuiLhBoKv/H/rt6DUfCDpBGFk/LiYwH6pv4hkKfYmBPFp8gNSPFP2f
+/eo/MUE+TzuNIZHr4PalMm1ab4hDNHR1FVH1ZBf9HTdPfUjz2fXnrZc5fuZpHX3J
+1WLjCThRLhIWP5/mV/jdrHxRTnhiEWOIPAGrB6rj2N2g515Upys=
+=zAAl
+-----END PGP SIGNATURE-----
