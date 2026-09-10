@@ -533,7 +533,7 @@ function BandRow({
             min={Math.log10(FREQ_MIN_HZ)}
             max={Math.log10(FREQ_MAX_HZ)}
             step={0.01}
-            onValueChange={([v]) => onChange({ freq: Math.round(Math.pow(10, v)) })}
+            onValueChange={([v]) => { if (v !== undefined) onChange({ freq: Math.round(Math.pow(10, v)) }); }}
             className="flex-1"
             aria-label={t("frequency")}
           />
@@ -546,7 +546,7 @@ function BandRow({
             min={GAIN_MIN_DB}
             max={GAIN_MAX_DB}
             step={GAIN_STEP_DB}
-            onValueChange={([v]) => onChange({ gain: v })}
+            onValueChange={([v]) => { if (v !== undefined) onChange({ gain: v }); }}
             className="flex-1"
             aria-label={t("gain")}
           />
@@ -559,7 +559,7 @@ function BandRow({
             min={Q_MIN}
             max={Q_MAX}
             step={Q_STEP}
-            onValueChange={([v]) => onChange({ q: Math.round(v * 10) / 10 })}
+            onValueChange={([v]) => { if (v !== undefined) onChange({ q: Math.round(v * 10) / 10 }); }}
             className="flex-1"
             aria-label={t("qFactor")}
           />

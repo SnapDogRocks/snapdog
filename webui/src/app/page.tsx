@@ -35,9 +35,9 @@ function ErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }
 }
 
 class ZoneErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
+  override state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  render() {
+  override render() {
     if (this.state.error) {
       return <ErrorFallback error={this.state.error} onRetry={() => this.setState({ error: null })} />;
     }

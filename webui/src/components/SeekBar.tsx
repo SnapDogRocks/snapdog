@@ -123,17 +123,19 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
 
   const handleSeek = useCallback(
     (value: number[]) => {
-      if (!canSeek) return;
-      dispatch({ type: "drag", position: value[0] });
+      const position = value[0];
+      if (!canSeek || position === undefined) return;
+      dispatch({ type: "drag", position });
     },
     [canSeek],
   );
 
   const handleSeekCommit = useCallback(
     (value: number[]) => {
-      if (!canSeek) return;
-      dispatch({ type: "commit", target: value[0] });
-      api.zones.seekPosition(zone.index, value[0]).catch(logApiError);
+      const target = value[0];
+      if (!canSeek || target === undefined) return;
+      dispatch({ type: "commit", target });
+      api.zones.seekPosition(zone.index, target).catch(logApiError);
     },
     [zone.index, canSeek],
   );

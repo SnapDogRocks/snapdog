@@ -73,7 +73,7 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) { check401(res); throw new ApiError(res.status, `POST ${path}: ${res.status}`); }
   const text = await res.text();
@@ -85,7 +85,7 @@ async function postVoid(path: string, body?: unknown): Promise<void> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) { check401(res); throw new ApiError(res.status, `POST ${path}: ${res.status}`); }
 }

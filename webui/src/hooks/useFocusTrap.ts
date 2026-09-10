@@ -21,9 +21,9 @@ export function useFocusTrap<T extends HTMLElement>() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
       const nodes = focusable();
-      if (nodes.length === 0) return;
       const first = nodes[0];
       const last = nodes[nodes.length - 1];
+      if (!first || !last) return;
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
@@ -34,8 +34,7 @@ export function useFocusTrap<T extends HTMLElement>() {
     };
 
     // Focus first focusable element on mount
-    const nodes = focusable();
-    if (nodes.length > 0) nodes[0].focus();
+    focusable()[0]?.focus();
 
     el.addEventListener("keydown", handleKeyDown);
     return () => el.removeEventListener("keydown", handleKeyDown);

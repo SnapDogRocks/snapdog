@@ -5,7 +5,7 @@ import type {
   ClientInfo,
   EqBand,
 } from "@/lib/types";
-import { api, type EqConfig } from "@/lib/api";
+import { api } from "@/lib/api";
 
 const DEFAULT_TRACK: TrackMetadata = {
   title: "",
@@ -118,16 +118,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         Promise.allSettled(zoneList.map((z) => api.eq.get(z.index))),
       ]);
 
-      for (let i = 0; i < zoneList.length; i++) {
-        const zoneId = zoneList[i].index;
-        const zone = zones.get(zoneId);
-        if (zone) {
-          if (metaResults[i].status === "fulfilled") {
-            zone.track = (metaResults[i] as PromiseFulfilledResult<TrackMetadata>).value;
-          }
-          if (eqResults[i].status === "fulfilled") {
-            zone.eqEnabled = (eqResults[i] as PromiseFulfilledResult<EqConfig>).value.enabled;
-          }
+      for (const [i, z] of zoneList.entries()) {
+        const zone = zones.get(z.index);
+        if (!zone) continue;
+        const metaResult = metaResults[i];
+        const eqResult = eqResults[i];
+        if (metaResult?.status === "fulfilled") {
+          zone.track = metaResult.value;
+        }
+        if (eqResult?.status === "fulfilled") {
+          zone.eqEnabled = eqResult.value.enabled;
         }
       }
 

@@ -58,6 +58,7 @@ export function VolumeSlider({
 
   const handleChange = useCallback(
     (value: number[]) => {
+      if (value[0] === undefined) return;
       const v = clampVolume(value[0], effectiveMax);
       setOptimistic(v);
       if (muted) onUnmute();
@@ -69,6 +70,7 @@ export function VolumeSlider({
 
   const handleCommit = useCallback(
     (value: number[]) => {
+      if (value[0] === undefined) return;
       const v = clampVolume(value[0], effectiveMax);
       clearTimeout(timerRef.current);
       commit(v);

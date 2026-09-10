@@ -23,12 +23,14 @@ export function ZoneSwitcher({ zones, selectedIndex, onSelect, children }: ZoneS
   const currentIdx = zones.findIndex((z) => z.index === selectedIndex);
   const safeIdx = currentIdx >= 0 ? currentIdx : 0;
   const zone = zones[safeIdx];
+  if (!zone) return null;
 
   function go(delta: number) {
     const next = safeIdx + delta;
-    if (next < 0 || next >= zones.length) return;
+    const nextZone = zones[next];
+    if (!nextZone) return;
     setDirection(delta);
-    onSelect(zones[next].index);
+    onSelect(nextZone.index);
   }
 
   function handleDragEnd(_: unknown, info: PanInfo) {
