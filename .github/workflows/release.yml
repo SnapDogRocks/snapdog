@@ -950,13 +950,17 @@ jobs:
           set -euo pipefail
           archive=$(find artifacts -name '*.tar.gz' -print -quit)
           sha=$(sha256sum "$archive" | awk '{print $1}')
+          # _tag is the full tag suffix (may carry a prerelease identifier);
+          # pkgver is Arch's own package version and may not contain a hyphen.
+          CORE="${VERSION%%-*}"
           mkdir aur-smoke
           cp "$archive" aur-smoke/
           for pkg in snapdog snapdog-client; do
             mkdir "aur-smoke/$pkg"
             cp "aur/$pkg/PKGBUILD" "aur-smoke/$pkg/"
             cp "$archive" "aur-smoke/$pkg/snapdog-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-            sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "aur-smoke/$pkg/PKGBUILD"
+            sed -i "s/^_tag=.*/_tag=${VERSION}/" "aur-smoke/$pkg/PKGBUILD"
+            sed -i "s/^pkgver=.*/pkgver=${CORE}/" "aur-smoke/$pkg/PKGBUILD"
             sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${sha}')/" "aur-smoke/$pkg/PKGBUILD"
             if [ "$pkg" = snapdog ]; then
               aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog.example.toml | awk '{printf "\047%s\047 ", $1}')
