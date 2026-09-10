@@ -180,13 +180,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
-      - name: Install lefthook
-        # Pinned to the version used locally; go install needs no extra
-        # runner setup (ubuntu-latest ships Go), matching the actionlint
-        # install pattern used by workflow-lint above.
-        run: go install github.com/evilmartians/lefthook/v2@v2.1.12
       - name: Validate lefthook config
-        run: lefthook validate
+        # `go run` downloads and executes in one step, unlike `go install` (which
+        # would need `$(go env GOPATH)/bin` added to PATH in a step of its own
+        # before a bare `lefthook` call resolves) — same pattern as the
+        # actionlint step in workflow-lint above, pinned the same way.
+        run: go run github.com/evilmartians/lefthook/v2@v2.1.12 validate
 
   rust-core:
     name: Rust Core
