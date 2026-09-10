@@ -15,14 +15,14 @@ export function ConnectButton() {
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { setOpen(true); }}
         className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/55 transition-colors cursor-pointer"
         aria-label={t("title")}
       >
         <ShareIcon size={16} />
       </button>
       <AnimatePresence>
-        {open && <ConnectOverlay onClose={() => setOpen(false)} />}
+        {open && <ConnectOverlay onClose={() => { setOpen(false); }} />}
       </AnimatePresence>
     </>
   );
@@ -46,6 +46,9 @@ function ConnectOverlay({ onClose }: { onClose: () => void }) {
   const shareUrl = apiKey ? `${baseUrl}/?auth=${apiKey}` : baseUrl;
 
   const handleShare = useCallback(async () => {
+    // navigator.share is feature-detected at runtime (older browsers lack the
+    // Web Share API); the dom lib types model it as always present.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (navigator.share) {
       try {
         await navigator.share({ title: "SnapDog", url: shareUrl });
@@ -55,7 +58,7 @@ function ConnectOverlay({ onClose }: { onClose: () => void }) {
     } else {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => { setCopied(false); }, 2000);
     }
   }, [shareUrl]);
 
@@ -153,7 +156,7 @@ function ConnectOverlay({ onClose }: { onClose: () => void }) {
 
         {/* Share button */}
         <motion.button
-          onClick={handleShare}
+          onClick={() => { void handleShare(); }}
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
           className="w-full py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 active:scale-[0.98] transition-all duration-150 shadow-md shadow-primary/10 text-sm cursor-pointer flex items-center justify-center gap-2"

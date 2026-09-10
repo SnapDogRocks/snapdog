@@ -39,7 +39,7 @@ export function TransportControls({ zone }: TransportControlsProps) {
 
   const onPointerDown = useCallback(() => {
     didLongPress.current = false;
-    hintTimer.current = setTimeout(() => setPressing(true), LONG_PRESS_HINT_MS);
+    hintTimer.current = setTimeout(() => { setPressing(true); }, LONG_PRESS_HINT_MS);
     longPressTimer.current = setTimeout(() => {
       didLongPress.current = true;
       setPressing(false);
@@ -76,7 +76,7 @@ export function TransportControls({ zone }: TransportControlsProps) {
   return (
     <div className="flex items-center justify-center gap-2">
       <motion.div whileTap={tap}>
-        <Button variant="ghost" size="icon" disabled={isIdle || !canPrev} onClick={() => cmd("previous")} className="size-10 rounded-full" aria-label={t("previous")}>
+        <Button variant="ghost" size="icon" disabled={isIdle || !canPrev} onClick={() => { cmd("previous"); }} className="size-10 rounded-full" aria-label={t("previous")}>
           <HugeiconsIcon icon={PreviousIcon} size={20} />
         </Button>
       </motion.div>
@@ -88,7 +88,7 @@ export function TransportControls({ zone }: TransportControlsProps) {
           onPointerDown={onPointerDown}
           onPointerUp={clearTimer}
           onPointerLeave={clearTimer}
-          onContextMenu={(e) => e.preventDefault()}
+          onContextMenu={(e) => { e.preventDefault(); }}
           onClick={onClickPlayPause}
           className={`size-12 rounded-full transition-transform ${pressing ? "scale-90" : ""} ${isPlaying ? "shadow-[0_0_16px_rgba(225,136,46,0.4)]" : ""}`}
           aria-label={isPlaying ? t("pause") : t("play")}
@@ -97,7 +97,7 @@ export function TransportControls({ zone }: TransportControlsProps) {
         </Button>
       </motion.div>
       <motion.div whileTap={tap}>
-        <Button variant="ghost" size="icon" disabled={isIdle || !canNext} onClick={() => cmd("next")} className="size-10 rounded-full" aria-label={t("next")}>
+        <Button variant="ghost" size="icon" disabled={isIdle || !canNext} onClick={() => { cmd("next"); }} className="size-10 rounded-full" aria-label={t("next")}>
           <HugeiconsIcon icon={NextIcon} size={20} />
         </Button>
       </motion.div>

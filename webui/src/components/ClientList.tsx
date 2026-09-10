@@ -89,16 +89,16 @@ function ClientCard({ client }: { client: ClientInfo }) {
             <VolumeSlider
               volume={client.volume}
               muted={client.muted}
-              onVolumeChange={(v) => api.clients.setVolume(client.index, v).catch(logApiError)}
-              onMuteToggle={() => api.clients.toggleMute(client.index).catch(logApiError)}
-              onUnmute={() => api.clients.setMute(client.index, false).catch(logApiError)}
+              onVolumeChange={(v) => { api.clients.setVolume(client.index, v).catch(logApiError); }}
+              onMuteToggle={() => { api.clients.toggleMute(client.index).catch(logApiError); }}
+              onUnmute={() => { api.clients.setMute(client.index, false).catch(logApiError); }}
               max={client.max_volume}
               compact
             />
           </div>
           {client.is_snapdog && (
             <button
-              onClick={() => setShowEq(true)}
+              onClick={() => { setShowEq(true); }}
               className={`text-[10px] transition-colors px-1 ${eqEnabled ? "text-orange-500 font-bold" : "text-muted-foreground hover:text-foreground"}`}
               aria-label={`EQ ${client.name}`}
             >

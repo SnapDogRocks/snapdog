@@ -45,7 +45,7 @@ function check401(res: Response) {
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
   if (!res.ok) { check401(res); throw new ApiError(res.status, `GET ${path}: ${res.status}`); }
-  return res.json();
+  return (await res.json()) as T;
 }
 
 async function putJson<T>(path: string, body: unknown): Promise<T> {
@@ -57,7 +57,7 @@ async function putJson<T>(path: string, body: unknown): Promise<T> {
   if (!res.ok) { check401(res); throw new ApiError(res.status, `PUT ${path}: ${res.status}`); }
   const text = await res.text();
   if (!text) throw new ApiError(res.status, `PUT ${path}: expected JSON response but got empty body`);
-  return JSON.parse(text);
+  return JSON.parse(text) as T;
 }
 
 async function putVoid(path: string, body: unknown): Promise<void> {
@@ -78,7 +78,7 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
   if (!res.ok) { check401(res); throw new ApiError(res.status, `POST ${path}: ${res.status}`); }
   const text = await res.text();
   if (!text) throw new ApiError(res.status, `POST ${path}: expected JSON response but got empty body`);
-  return JSON.parse(text);
+  return JSON.parse(text) as T;
 }
 
 async function postVoid(path: string, body?: unknown): Promise<void> {

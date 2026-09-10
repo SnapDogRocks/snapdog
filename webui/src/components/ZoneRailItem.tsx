@@ -19,7 +19,8 @@ export function ZoneRailItem({ zone, selected, onSelect }: ZoneRailItemProps) {
   const { dragOver, dragHandlers } = useClientDrop(zone.index);
   const t = useTranslations();
   const isPlaying = zone.playback === "playing";
-  const hasCover = zone.track?.cover_url && zone.source !== "idle" && !imgError;
+  const coverUrl = zone.source !== "idle" ? zone.track?.cover_url : undefined;
+  const hasCover = !!coverUrl && !imgError;
   return (
     <button
       onClick={onSelect}
@@ -35,12 +36,12 @@ export function ZoneRailItem({ zone, selected, onSelect }: ZoneRailItemProps) {
     >
       {/* Cover thumbnail or zone icon */}
       <div className="relative size-10 rounded-md bg-muted flex items-center justify-center overflow-hidden shrink-0">
-        {hasCover ? (
+        {hasCover && coverUrl ? (
           <img
-            src={zone.track!.cover_url!}
+            src={coverUrl}
             alt=""
             className="size-full object-cover"
-            onError={() => setImgError(true)}
+            onError={() => { setImgError(true); }}
           />
         ) : (
           <span className="text-lg">{zone.icon || "🔊"}</span>

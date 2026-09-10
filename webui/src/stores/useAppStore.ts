@@ -109,7 +109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const zones = new Map<number, ZoneState>();
       for (const z of zoneList) {
-        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled ?? true, presenceTimerActive: z.presence_timer_active ?? false, buffered_ms: null, error: null });
+        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled, presenceTimerActive: z.presence_timer_active, buffered_ms: null, error: null });
       }
 
       // Fetch track metadata and EQ state for each zone in parallel
@@ -237,7 +237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isConnected: v, serverGoingAway: goingAway ?? false });
     // On reconnect, re-fetch all state
     if (v && !was) {
-      get().loadAll();
+      void get().loadAll();
     }
   },
 }));

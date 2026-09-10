@@ -106,7 +106,7 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
     const interval = setInterval(() => {
       dispatch({ type: "tick", delta: INTERPOLATION_INTERVAL_MS, duration });
     }, INTERPOLATION_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => { clearInterval(interval); };
   }, [isPlaying, state.type, isIdle, duration]);
 
   // Seek timeout safety net
@@ -117,8 +117,8 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
       dispatch({ type: "timeout" });
       return;
     }
-    const timer = setTimeout(() => dispatch({ type: "timeout" }), remaining);
-    return () => clearTimeout(timer);
+    const timer = setTimeout(() => { dispatch({ type: "timeout" }); }, remaining);
+    return () => { clearTimeout(timer); };
   }, [state]);
 
   const handleSeek = useCallback(

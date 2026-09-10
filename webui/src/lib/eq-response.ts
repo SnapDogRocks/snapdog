@@ -15,56 +15,59 @@ function bandToCoeffs(band: EqBand, sampleRate: number) {
   const alpha = sinW0 / (2 * q);
   const A = Math.pow(10, gain / 40); // sqrt of linear gain
 
-  let b0: number, b1: number, b2: number, a0: number, a1: number, a2: number;
-
+  // Each branch returns directly (rather than assigning shared `let`s and
+  // falling through to one final division) so TS can prove every path is
+  // covered — filterType's union has exactly these five members — without
+  // resorting to non-null assertions on possibly-unassigned coefficients.
   switch (filterType) {
-    case "peaking":
-      b0 = 1 + alpha * A;
-      b1 = -2 * cosW0;
-      b2 = 1 - alpha * A;
-      a0 = 1 + alpha / A;
-      a1 = -2 * cosW0;
-      a2 = 1 - alpha / A;
-      break;
+    case "peaking": {
+      const b0 = 1 + alpha * A;
+      const b1 = -2 * cosW0;
+      const b2 = 1 - alpha * A;
+      const a0 = 1 + alpha / A;
+      const a1 = -2 * cosW0;
+      const a2 = 1 - alpha / A;
+      return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+    }
     case "low_shelf": {
       const sq = 2 * Math.sqrt(A) * alpha;
-      b0 = A * (A + 1 - (A - 1) * cosW0 + sq);
-      b1 = 2 * A * (A - 1 - (A + 1) * cosW0);
-      b2 = A * (A + 1 - (A - 1) * cosW0 - sq);
-      a0 = A + 1 + (A - 1) * cosW0 + sq;
-      a1 = -2 * (A - 1 + (A + 1) * cosW0);
-      a2 = A + 1 + (A - 1) * cosW0 - sq;
-      break;
+      const b0 = A * (A + 1 - (A - 1) * cosW0 + sq);
+      const b1 = 2 * A * (A - 1 - (A + 1) * cosW0);
+      const b2 = A * (A + 1 - (A - 1) * cosW0 - sq);
+      const a0 = A + 1 + (A - 1) * cosW0 + sq;
+      const a1 = -2 * (A - 1 + (A + 1) * cosW0);
+      const a2 = A + 1 + (A - 1) * cosW0 - sq;
+      return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
     }
     case "high_shelf": {
       const sq = 2 * Math.sqrt(A) * alpha;
-      b0 = A * (A + 1 + (A - 1) * cosW0 + sq);
-      b1 = -2 * A * (A - 1 + (A + 1) * cosW0);
-      b2 = A * (A + 1 + (A - 1) * cosW0 - sq);
-      a0 = A + 1 - (A - 1) * cosW0 + sq;
-      a1 = 2 * (A - 1 - (A + 1) * cosW0);
-      a2 = A + 1 - (A - 1) * cosW0 - sq;
-      break;
+      const b0 = A * (A + 1 + (A - 1) * cosW0 + sq);
+      const b1 = -2 * A * (A - 1 + (A + 1) * cosW0);
+      const b2 = A * (A + 1 + (A - 1) * cosW0 - sq);
+      const a0 = A + 1 - (A - 1) * cosW0 + sq;
+      const a1 = 2 * (A - 1 - (A + 1) * cosW0);
+      const a2 = A + 1 - (A - 1) * cosW0 - sq;
+      return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
     }
-    case "low_pass":
-      b0 = (1 - cosW0) / 2;
-      b1 = 1 - cosW0;
-      b2 = (1 - cosW0) / 2;
-      a0 = 1 + alpha;
-      a1 = -2 * cosW0;
-      a2 = 1 - alpha;
-      break;
-    case "high_pass":
-      b0 = (1 + cosW0) / 2;
-      b1 = -(1 + cosW0);
-      b2 = (1 + cosW0) / 2;
-      a0 = 1 + alpha;
-      a1 = -2 * cosW0;
-      a2 = 1 - alpha;
-      break;
+    case "low_pass": {
+      const b0 = (1 - cosW0) / 2;
+      const b1 = 1 - cosW0;
+      const b2 = (1 - cosW0) / 2;
+      const a0 = 1 + alpha;
+      const a1 = -2 * cosW0;
+      const a2 = 1 - alpha;
+      return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+    }
+    case "high_pass": {
+      const b0 = (1 + cosW0) / 2;
+      const b1 = -(1 + cosW0);
+      const b2 = (1 + cosW0) / 2;
+      const a0 = 1 + alpha;
+      const a1 = -2 * cosW0;
+      const a2 = 1 - alpha;
+      return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+    }
   }
-
-  return { b0: b0! / a0!, b1: b1! / a0!, b2: b2! / a0!, a1: a1! / a0!, a2: a2! / a0! };
 }
 
 /** Compute magnitude in dB at a given frequency for one biquad. */

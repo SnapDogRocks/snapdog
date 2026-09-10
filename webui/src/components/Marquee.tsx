@@ -18,7 +18,7 @@ export function Marquee({ children, className = "" }: { children: ReactNode; cla
     const obs = new ResizeObserver(check);
     if (outerRef.current) obs.observe(outerRef.current);
     if (innerRef.current) obs.observe(innerRef.current);
-    return () => obs.disconnect();
+    return () => { obs.disconnect(); };
   }, [children]);
 
   return (

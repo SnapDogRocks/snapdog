@@ -22,7 +22,7 @@ export function ProgrammingMode() {
   useEffect(() => {
     api.knx.getProgrammingMode()
       .then(setActive)
-      .catch(() => setAvailable(false));
+      .catch(() => { setAvailable(false); });
   }, []);
 
   const toggle = useCallback(() => {
@@ -40,7 +40,7 @@ export function ProgrammingMode() {
     setConfirming(null);
   }, [confirming]);
 
-  const cancel = useCallback(() => setConfirming(null), []);
+  const cancel = useCallback(() => { setConfirming(null); }, []);
   const trapRef = useFocusTrap<HTMLDivElement>();
 
   if (!available) return null;
@@ -76,7 +76,7 @@ export function ProgrammingMode() {
           onClick={cancel}
           onKeyDown={(e) => { if (e.key === "Escape") cancel(); }}
         >
-          <div ref={trapRef} className="bg-card border border-border rounded-lg shadow-lg p-6 max-w-sm mx-4 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div ref={trapRef} className="bg-card border border-border rounded-lg shadow-lg p-6 max-w-sm mx-4 space-y-4" onClick={(e) => { e.stopPropagation(); }}>
             <div className="flex items-start gap-3">
               {confirming === "on" && (
                 <span className="text-amber-500 text-lg shrink-0" aria-hidden="true">⚠</span>
@@ -97,7 +97,7 @@ export function ProgrammingMode() {
               <Button
                 variant={confirming === "on" ? "destructive" : "default"}
                 size="sm"
-                onClick={confirm}
+                onClick={() => { void confirm(); }}
               >
                 {t(confirming === "on" ? "enable" : "disable")}
               </Button>

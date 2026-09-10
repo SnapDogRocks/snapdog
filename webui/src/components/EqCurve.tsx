@@ -55,7 +55,8 @@ export function InteractiveEQCurve({
   const yToDb = (y: number) => -(y - pad.top - plotH / 2) / (plotH / 2) * dbRange;
 
   const svgPoint = (e: React.PointerEvent) => {
-    const svg = svgRef.current!;
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
     const scaleX = width / rect.width;
     const scaleY = height / rect.height;
@@ -85,7 +86,8 @@ export function InteractiveEQCurve({
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
-    const svg = svgRef.current!;
+    const svg = svgRef.current;
+    if (!svg) return;
     const rect = svg.getBoundingClientRect();
     const scaleX = width / rect.width;
     const scaleY = height / rect.height;

@@ -37,7 +37,7 @@ export function useFocusTrap<T extends HTMLElement>() {
     focusable()[0]?.focus();
 
     el.addEventListener("keydown", handleKeyDown);
-    return () => el.removeEventListener("keydown", handleKeyDown);
+    return () => { el.removeEventListener("keydown", handleKeyDown); };
   }, []);
 
   return ref;

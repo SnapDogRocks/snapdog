@@ -32,7 +32,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
     api.media.playlists()
       .then(setPlaylists)
       .catch(logApiError)
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); });
   }, []);
 
   const filteredPlaylists = useMemo(() => {
@@ -86,7 +86,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                 <Input
                   placeholder={t("search")}
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => { setSearch(e.target.value); }}
                   className="h-8 pl-8 text-xs bg-muted/30 border-none rounded-lg focus-visible:ring-1 focus-visible:ring-primary/30"
                 />
               </div>
@@ -97,7 +97,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               {visiblePlaylists.map((pl) => (
                 <div key={pl.id} className="group relative space-y-1.5">
                   <button
-                    onClick={() => selectPlaylist(pl.id)}
+                    onClick={() => { void selectPlaylist(pl.id); }}
                     className="w-full aspect-square rounded-xl bg-primary/5 flex items-center justify-center overflow-hidden border border-border/50 group-hover:border-primary/40 transition-all shadow-sm relative"
                   >
                     {pl.cover_art ? (
@@ -144,7 +144,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowAll(true)}
+                onClick={() => { setShowAll(true); }}
                 className="w-full text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary h-8"
               >
                 {t("showMore")} ({playlists.length - INITIAL_VISIBLE_COUNT}+)
@@ -154,7 +154,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowAll(false)}
+                onClick={() => { setShowAll(false); }}
                 className="w-full text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary h-8"
               >
                 {t("showLess")}
@@ -177,7 +177,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
           >
             {/* Detail Header */}
             <div className="flex items-center gap-3 border-b border-border/50 pb-4 px-1">
-              <Button variant="ghost" size="icon" onClick={() => setSelectedId(null)} className="rounded-full size-10 -ml-1 shrink-0">
+              <Button variant="ghost" size="icon" onClick={() => { setSelectedId(null); }} className="rounded-full size-10 -ml-1 shrink-0">
                 <HugeiconsIcon icon={ArrowLeft01Icon} size={20} />
               </Button>
               <div className="size-12 rounded-lg overflow-hidden bg-primary/10 shadow-sm shrink-0">
@@ -203,7 +203,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               </div>
               <Button
                 size="sm"
-                onClick={() => playTrack(selectedId, 0)}
+                onClick={() => { playTrack(selectedId, 0); }}
                 className="rounded-full h-8 px-4 gap-1.5"
               >
                 <HugeiconsIcon icon={PlayIcon} size={14} fill="currentColor" />
@@ -223,16 +223,16 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               }
             }}>
               {tracks.map((t, i) => {
-                const isCurrent = zone.track?.playlist_index === selectedId && zone.track?.playlist_track_index === i;
+                const isCurrent = zone.track?.playlist_index === selectedId && zone.track.playlist_track_index === i;
                 return (
                 <button
                   key={t.id}
-                  onClick={() => playTrack(selectedId, i)}
+                  onClick={() => { playTrack(selectedId, i); }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-all group ${isCurrent ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted"}`}
                 >
                   <div className="size-9 rounded-lg bg-primary/5 flex items-center justify-center shrink-0 overflow-hidden relative border border-border/50">
                     <img
-                      src={t.cover_art || '/assets/radio-cover.svg'}
+                      src={t.cover_art ?? '/assets/radio-cover.svg'}
                       alt=""
                       loading="lazy"
                       className="size-full object-cover"

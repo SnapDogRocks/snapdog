@@ -48,7 +48,7 @@ export function VolumeSlider({
   const displayVolume = clampVolume(localVolume, effectiveMax);
 
   // Clean up debounce timer on unmount
-  useEffect(() => () => clearTimeout(timerRef.current), []);
+  useEffect(() => () => { clearTimeout(timerRef.current); }, []);
 
   const volumeIcon = muted
     ? VolumeMute02Icon
@@ -63,7 +63,7 @@ export function VolumeSlider({
       setOptimistic(v);
       if (muted) onUnmute();
       clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => onVolumeChange(v), VOLUME_DEBOUNCE_MS);
+      timerRef.current = setTimeout(() => { onVolumeChange(v); }, VOLUME_DEBOUNCE_MS);
     },
     [effectiveMax, muted, onVolumeChange, onUnmute, setOptimistic],
   );
@@ -98,7 +98,7 @@ export function VolumeSlider({
         variant="ghost"
         size="icon"
         onClick={onMuteToggle}
-        onDragStart={(e) => e.preventDefault()}
+        onDragStart={(e) => { e.preventDefault(); }}
         className={`${btnSize} shrink-0 rounded-full`}
         aria-label={muted ? t("unmute") : t("mute")}
       >
@@ -111,7 +111,7 @@ export function VolumeSlider({
           step={1}
           onValueChange={handleChange}
           onValueCommit={handleCommit}
-          onDragStart={(e: React.DragEvent) => e.preventDefault()}
+          onDragStart={(e: React.DragEvent) => { e.preventDefault(); }}
           className="flex-1 min-w-0"
           aria-label={t("label")}
         />

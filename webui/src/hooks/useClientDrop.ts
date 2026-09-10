@@ -18,7 +18,7 @@ export function useClientDrop(zoneIndex: number) {
     }
   }, []);
 
-  const onDragLeave = useCallback(() => setDragOver(false), []);
+  const onDragLeave = useCallback(() => { setDragOver(false); }, []);
 
   const onDrop = useCallback(
     (e: DragEvent) => {
