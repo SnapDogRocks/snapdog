@@ -115,10 +115,58 @@ strip = true
 codegen-units = 16
 
 [workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
 # Pedantic — strict but reasonable
 pedantic = { level = "warn", priority = -1 }
 # Nursery — useful experimental lints
 nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# Centralized pedantic/nursery exceptions, formerly duplicated as
+# `#![allow(clippy::...)]` blocks in snapdog/src/lib.rs, snapdog/src/main.rs,
+# snapdog-common/src/lib.rs, snapdog-client/src/main.rs and xtask/src/main.rs.
+# Every member crate inherits these via `[lints] workspace = true`.
+
+# `cargo_common_metadata` (part of the `cargo` group above) expects readme,
+# keywords, categories and repository metadata a crates.io listing would show.
+# None of this workspace's crates are published (confirmed: crates.io returns
+# 404 for snapdog, snapdog-client, snapdog-common and snapdog-testkit), so that
+# metadata would exist only to silence the lint.
+cargo_common_metadata = "allow"
+# `multiple_crate_versions` (also part of `cargo`) flags any duplicate transitive
+# version anywhere in the resolved graph. With audio codec, KNX, MQTT and TLS
+# stacks all pulling their own dependency trees, duplicates (e.g. two `syn`
+# versions) are structurally unavoidable without vendoring or waiting on every
+# upstream crate to synchronize. `cargo-deny`'s `[bans] multiple-versions =
+# "warn"` (deny.toml) is the appropriate, non-fatal check for this already.
+multiple_crate_versions = "allow"
+
+# Audio, protocol and KNX-XML-generation code performs intentional numeric
+# narrowing (sample counts, buffer/memory sizes, protocol field widths); the
+# values are bounds-checked structurally, not by the lint.
+cast_possible_truncation = "allow"
+# The same casts also lose sign, e.g. a validated non-negative i32 volume or
+# duration converted to u32/u16.
+cast_sign_loss = "allow"
+# Casts to floating point are intentional in audio gain/volume math and timing
+# calculations.
+cast_precision_loss = "allow"
+# Float comparisons are acceptable for gain/volume values, which are read back
+# exactly as set rather than accumulated through arithmetic.
+float_cmp = "allow"
+# Expected with `tokio::spawn`: futures capturing non-`Send` handles are scoped
+# to a single task and never crossed between threads.
+future_not_send = "allow"
+# Reflects protocol/session state (KNX, Snapcast, playback) where each flag is
+# an independent wire-level toggle, not a type-design smell.
+struct_excessive_bools = "allow"
+# Fixed at public API boundaries; internal helpers taking a `HashMap`
+# parameter are not part of any external contract.
+implicit_hasher = "allow"
+# Protocol/event-loop `match` arms and ETS-XML generation intentionally share
+# setup code where splitting it out would obscure the control flow; long
+# functions are unavoidable in protocol handlers and XML generation.
+branches_sharing_code = "allow"
 
 [workspace.lints.rust]
-unsafe_code = "deny"
+unsafe_code = "forbid"
