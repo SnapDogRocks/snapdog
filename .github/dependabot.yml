@@ -10,11 +10,6 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
-    # semver-major-days is not permitted for github-actions. If it stands
-    # here, Dependabot rejects the ENTIRE file and not a single update runs
-    # any more, not even a security update.
-    cooldown:
-      default-days: 3
     groups:
       actions-dependencies:
         update-types:
@@ -31,9 +26,6 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
-    cooldown:
-      default-days: 3
-      semver-major-days: 7
     groups:
       prod-dependencies:
         dependency-type: production
@@ -57,9 +49,6 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
-    cooldown:
-      default-days: 3
-      semver-major-days: 7
     groups:
       prod-dependencies:
         dependency-type: production
@@ -72,12 +61,12 @@ updates:
           - minor
           - patch
     ignore:
-      # typescript is pinned to ~6.0 in webui/package.json because
-      # typescript-eslint's peer bound is <6.1.0 (parallel workstream).
-      # Without this, Dependabot reliably proposes a version that breaks
-      # type-aware linting.
+      # typescript-eslint's peer bound is `typescript: >=4.8.4 <6.1.0`; a
+      # bump to 6.1+ would make lint's type-aware rules unable to install
+      # at all. Raise together with typescript-eslint once it widens the
+      # range (see references/typescript.md in the repo-standard skill).
       - dependency-name: typescript
-        versions: ['>=6.1']
+        versions: [">=6.1"]
 
   - package-ecosystem: npm
     directory: /demo-backend
@@ -90,9 +79,6 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
-    cooldown:
-      default-days: 3
-      semver-major-days: 7
     groups:
       prod-dependencies:
         dependency-type: production
