@@ -8,8 +8,8 @@ knxprod:
 
 ## First-time setup: configure git hooks
 setup:
-	git config core.hooksPath .githooks
-	@echo "✅ Git hooks configured"
+	lefthook install
+	@echo "✅ Git hooks configured (lefthook)"
 
 ## Run all checks (same as CI)
 check: fmt clippy test webui-check
