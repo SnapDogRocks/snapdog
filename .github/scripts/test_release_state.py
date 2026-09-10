@@ -82,9 +82,9 @@ class ReleaseStateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 release_state.resolve(REPOSITORY, TAG)
 
-    def verify(self, release, draft):
+    def verify(self, release, draft, expect_prerelease=None):
         with patch.object(release_state.subprocess, "check_output", return_value=json.dumps(release)) as request:
-            result = release_state.verify(REPOSITORY, TAG, DRAFT["id"], draft)
+            result = release_state.verify(REPOSITORY, TAG, DRAFT["id"], draft, expect_prerelease)
         request.assert_called_once_with(
             ["gh", "api", f"repos/{REPOSITORY}/releases/{DRAFT['id']}"], text=True
         )
@@ -116,6 +116,25 @@ class ReleaseStateTests(unittest.TestCase):
         with patch.object(release_state.subprocess, "check_output", side_effect=subprocess.CalledProcessError(1, "gh")):
             with self.assertRaises(subprocess.CalledProcessError):
                 release_state.verify(REPOSITORY, TAG, DRAFT["id"], True)
+
+    def test_verify_expect_prerelease_matches(self):
+        for prerelease in (True, False):
+            release = dict(self.release, draft=False, assets=[{"id": 1}], prerelease=prerelease)
+            result = self.verify(release, False, "true" if prerelease else "false")
+            self.assertEqual(result["prerelease"], prerelease)
+
+    def test_verify_expect_prerelease_mismatch(self):
+        release = dict(self.release, draft=False, assets=[{"id": 1}], prerelease=False)
+        with self.assertRaisesRegex(ValueError, "Expected prerelease=true"):
+            self.verify(release, False, "true")
+
+    def test_verify_without_expect_prerelease_does_not_check_it(self):
+        # Existing call sites (publish-release's draft-state checks) never pass
+        # this flag; the field must stay unchecked, whatever its value, so they
+        # keep working unchanged.
+        for prerelease in (True, False):
+            release = dict(self.release, draft=False, assets=[{"id": 1}], prerelease=prerelease)
+            self.verify(release, False, None)
 
 
 if __name__ == "__main__":

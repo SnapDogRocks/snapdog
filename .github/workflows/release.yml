@@ -58,6 +58,160 @@ jobs:
             echo "prerelease=${PRERELEASE}"
           } >> "$GITHUB_OUTPUT"
 
+  preflight:
+    name: Preflight package channels
+    needs: [meta]
+    # A prerelease/test tag never reaches a real channel (see every channel
+    # job's own `if:`), so there is nothing here to check either — this job
+    # only verifies capability, never publishes, and runs macOS-first because
+    # the Apple checks need a real keychain.
+    if: needs.meta.outputs.prerelease == 'false'
+    runs-on: macos-latest
+    environment: release
+    steps:
+      - name: Homebrew — App token issuance and reach
+        id: homebrew
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HOMEBREW_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          owner: SnapDogRocks
+          repositories: homebrew-tap
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-statuses: read
+      - name: Homebrew — confirm the token reaches only the tap
+        env:
+          GH_TOKEN: ${{ steps.homebrew.outputs.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t reach < <(gh api /installation/repositories --jq '.repositories[].full_name' | sort)
+          if [[ ${#reach[@]} -ne 1 || "${reach[0]}" != "SnapDogRocks/homebrew-tap" ]]; then
+            echo "::error::PF001 the Homebrew App token reaches ${#reach[@]} repositories, expected only SnapDogRocks/homebrew-tap"
+            exit 1
+          fi
+
+      - name: Archive dispatch — App token issuance and reach
+        id: archive
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.ARCHIVE_DISPATCH_CLIENT_ID }}
+          private-key: ${{ secrets.ARCHIVE_DISPATCH_PRIVATE_KEY }}
+          owner: metaneutrons
+          repositories: apt-archive
+          permission-actions: write
+          permission-contents: read
+      - name: Archive dispatch — confirm the token reaches only the archive
+        env:
+          GH_TOKEN: ${{ steps.archive.outputs.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t reach < <(gh api /installation/repositories --jq '.repositories[].full_name' | sort)
+          if [[ ${#reach[@]} -ne 1 || "${reach[0]}" != "metaneutrons/apt-archive" ]]; then
+            echo "::error::PF002 the archive-dispatch token reaches ${#reach[@]} repositories, expected only metaneutrons/apt-archive"
+            exit 1
+          fi
+
+      - name: AUR — key is accepted by aur.archlinux.org
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$AUR_SSH_PRIVATE_KEY" || { echo "::error::PF003 AUR_SSH_PRIVATE_KEY is empty"; exit 1; }
+          umask 077
+          key="$RUNNER_TEMP/aur-preflight-key"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$key"
+          # -F /dev/null: without it, IdentitiesOnly=yes still lets a key from the
+          # user's own ~/.ssh/config through and the check would prove nothing
+          # about this specific key. Do not judge by exit code: the AUR's forced
+          # command greets with a non-zero exit even on success; the accepted or
+          # rejected string is the only thing that carries evidence.
+          out=$(ssh -F /dev/null -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=no -i "$key" \
+            aur@aur.archlinux.org help 2>&1) || true
+          rm -f "$key"
+          if printf '%s' "$out" | grep -qi 'Permission denied'; then
+            echo "::error::PF004 aur.archlinux.org rejected AUR_SSH_PRIVATE_KEY: $out"
+            exit 1
+          fi
+
+      - name: Apple — certificate and password import into a throwaway keychain
+        env:
+          CERT_P12: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$CERT_P12" || { echo "::error::PF005 APPLE_CERT_P12_BASE64 is empty"; exit 1; }
+          KEYCHAIN="$RUNNER_TEMP/preflight.keychain"
+          KEYCHAIN_PASSWORD="preflight"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          trap 'security delete-keychain "$KEYCHAIN" || true' EXIT
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          if ! security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign; then
+            rm -f "$RUNNER_TEMP/cert.p12"
+            echo "::error::PF006 APPLE_CERT_P12_BASE64/APPLE_CERT_PASSWORD did not import"
+            exit 1
+          fi
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Apple — team ID shape and notary key material
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          [[ "$TEAM_ID" =~ ^[A-Za-z0-9]{10}$ ]] \
+            || { echo "::error::PF007 APPLE_TEAM_ID is not a 10-character alphanumeric ID"; exit 1; }
+          test -n "$KEY_ID" || { echo "::error::PF008 APPLE_NOTARY_KEY_ID is empty"; exit 1; }
+          test -n "$ISSUER_ID" || { echo "::error::PF009 APPLE_NOTARY_ISSUER_ID is empty"; exit 1; }
+          echo "$KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          if ! openssl pkey -noout -in "$RUNNER_TEMP/notary.p8"; then
+            rm -f "$RUNNER_TEMP/notary.p8"
+            echo "::error::PF010 APPLE_NOTARY_KEY_P8_BASE64 does not decode to a valid private key"
+            exit 1
+          fi
+          rm -f "$RUNNER_TEMP/notary.p8"
+
+      - name: Sparkle — signing key present and plausibly shaped
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # sign_update itself is only built later, inside the full Xcode build
+          # (macos-app), so this can only check presence and rough shape, not that
+          # the key actually signs — matched against what generate_keys exports.
+          len=${#SPARKLE_KEY}
+          if [[ "$len" -lt 40 || "$len" -gt 100 ]]; then
+            echo "::error::PF011 SPARKLE_ED_PRIVATE_KEY has an implausible length (${len} chars)"
+            exit 1
+          fi
+
+      - name: Cloudflare — token is live, without touching R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The dedicated, read-only, non-mutating verification endpoint for
+          # exactly this purpose — no R2 object is read or written.
+          ok=$(curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify | jq -r .success)
+          if [[ "$ok" != "true" ]]; then
+            echo "::error::PF012 CLOUDFLARE_API_TOKEN did not verify"
+            exit 1
+          fi
+
+      - name: snapdog-os PAT — reaches the target repository
+        env:
+          GH_TOKEN: ${{ secrets.SNAPDOG_OS_PAT }}
+        run: |
+          set -euo pipefail
+          branch=$(gh api repos/SnapDogRocks/snapdog-os --jq .default_branch)
+          test -n "$branch" || { echo "::error::PF013 SNAPDOG_OS_PAT cannot read SnapDogRocks/snapdog-os"; exit 1; }
+
   webui:
     name: Build WebUI
     needs: meta
@@ -90,6 +244,13 @@ jobs:
     runs-on: ubuntu-latest
     # Holds ETS_SIGNING_KEY, which lives in the protected environment.
     environment: release
+    # id-token: for cosign's keyless OIDC signing; attestations: for
+    # actions/attest-build-provenance. Both default to none under this
+    # workflow's own contents:read-only top-level block.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-28
@@ -119,10 +280,33 @@ jobs:
           export SNAPDOG_ETS_KEY="$RUNNER_TEMP/ets-key.pem"
           cargo run -p xtask -- knxprod
           rm -f "$RUNNER_TEMP/ets-key.pem"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.1
+      - name: Generate SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: knx/snapdog.knxprod
+          format: spdx-json
+          output-file: knx/snapdog.knxprod.spdx.json
+      # This is a second, independent signature on top of the domain-specific
+      # ETS signature above: the ETS one proves the product database to an ETS
+      # importer, this one proves release provenance the same way every other
+      # payload gets it.
+      - name: Sign the payload (cosign, keyless)
+        run: cosign sign-blob --yes --bundle knx/snapdog.knxprod.sigstore.json knx/snapdog.knxprod
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            knx/snapdog.knxprod
+            knx/snapdog.knxprod.spdx.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: knxprod
-          path: knx/snapdog.knxprod
+          path: |
+            knx/snapdog.knxprod
+            knx/snapdog.knxprod.spdx.json
+            knx/snapdog.knxprod.sigstore.json
           if-no-files-found: error
 
   build:
@@ -130,6 +314,13 @@ jobs:
     needs: [meta, webui, knxprod]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
+    # id-token: for cosign's keyless OIDC signing; attestations: for
+    # actions/attest-build-provenance. Both default to none under this
+    # workflow's own contents:read-only top-level block.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     # Release artifacts favor build throughput over Thin-LTO's small runtime gain.
     # Keep the profile default for local/non-CI release builds.
     env:
@@ -219,10 +410,29 @@ jobs:
           if [[ "$TARGET" == *windows* ]]; then
             7z a "${archive}.zip" "$archive"
             sha256sum "${archive}.zip" > "${archive}.zip.sha256"
+            echo "PAYLOAD=${archive}.zip" >> "$GITHUB_ENV"
           else
             tar czf "${archive}.tar.gz" "$archive"
             sha256sum "${archive}.tar.gz" > "${archive}.tar.gz.sha256"
+            echo "PAYLOAD=${archive}.tar.gz" >> "$GITHUB_ENV"
           fi
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.1
+      - name: Generate SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: ${{ env.PAYLOAD }}
+          format: spdx-json
+          output-file: ${{ env.PAYLOAD }}.spdx.json
+      - name: Sign the payload (cosign, keyless)
+        shell: bash
+        run: cosign sign-blob --yes --bundle "${PAYLOAD}.sigstore.json" "$PAYLOAD"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ env.PAYLOAD }}
+            ${{ env.PAYLOAD }}.spdx.json
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
@@ -230,8 +440,12 @@ jobs:
           path: |
             snapdog-*.tar.gz
             snapdog-*.tar.gz.sha256
+            snapdog-*.tar.gz.spdx.json
+            snapdog-*.tar.gz.sigstore.json
             snapdog-*.zip
             snapdog-*.zip.sha256
+            snapdog-*.zip.spdx.json
+            snapdog-*.zip.sigstore.json
 
   macos-app:
     name: macOS App (.dmg)
@@ -239,6 +453,13 @@ jobs:
     runs-on: macos-latest
     # Holds the Apple signing and notarisation values and the Sparkle key, which lives in the protected environment.
     environment: release
+    # id-token: for cosign's keyless OIDC signing; attestations: for
+    # actions/attest-build-provenance. Both default to none under this
+    # workflow's own contents:read-only top-level block.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
       - uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.1
@@ -377,6 +598,26 @@ jobs:
           xcrun stapler staple "$DMG"
           rm AuthKey.p8
           shasum -a 256 "$DMG" > "${DMG}.sha256"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.1
+      - name: Export the DMG filename for the following steps
+        run: |
+          set -euo pipefail
+          echo "DMG=SnapDog-Server-${{ needs.meta.outputs.version }}.dmg" >> "$GITHUB_ENV"
+      - name: Generate SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: ${{ env.DMG }}
+          format: spdx-json
+          output-file: ${{ env.DMG }}.spdx.json
+      - name: Sign the payload (cosign, keyless)
+        run: cosign sign-blob --yes --bundle "${DMG}.sigstore.json" "$DMG"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ env.DMG }}
+            ${{ env.DMG }}.spdx.json
       - name: Cleanup keychain
         if: always()
         run: security delete-keychain build.keychain || true
@@ -427,12 +668,21 @@ jobs:
           path: |
             SnapDog-Server-*.dmg
             SnapDog-Server-*.dmg.sha256
+            SnapDog-Server-*.dmg.spdx.json
+            SnapDog-Server-*.dmg.sigstore.json
             appcast.xml
 
   build-deb:
     name: Debian ${{ matrix.pkg }} (${{ matrix.arch }})
     needs: [meta, build]
     runs-on: ubuntu-latest
+    # id-token: for cosign's keyless OIDC signing; attestations: for
+    # actions/attest-build-provenance. Both default to none under this
+    # workflow's own contents:read-only top-level block.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -468,11 +718,35 @@ jobs:
       # and host strip/objcopy on this amd64 runner can't process the aarch64 ELF.
       # cargo-deb writes to target/debian/ regardless of --target (arch is in the filename).
       - name: Package .deb
-        run: cargo deb -p ${{ matrix.pkg }} --target ${{ matrix.target }} --no-build --no-strip
+        run: |
+          set -euo pipefail
+          cargo deb -p ${{ matrix.pkg }} --target ${{ matrix.target }} --no-build --no-strip
+          deb=$(find target/debian -maxdepth 1 -name '*.deb' -print -quit)
+          test -n "$deb" || { echo "::error::cargo deb produced no .deb file"; exit 1; }
+          echo "PAYLOAD=${deb}" >> "$GITHUB_ENV"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.1
+      - name: Generate SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: ${{ env.PAYLOAD }}
+          format: spdx-json
+          output-file: ${{ env.PAYLOAD }}.spdx.json
+      - name: Sign the payload (cosign, keyless)
+        run: cosign sign-blob --yes --bundle "${PAYLOAD}.sigstore.json" "$PAYLOAD"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ env.PAYLOAD }}
+            ${{ env.PAYLOAD }}.spdx.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
           name: deb-${{ matrix.pkg }}-${{ matrix.arch }}
-          path: target/debian/*.deb
+          path: |
+            target/debian/*.deb
+            target/debian/*.deb.spdx.json
+            target/debian/*.deb.sigstore.json
           if-no-files-found: error
 
   verify-release-assets:
@@ -499,13 +773,31 @@ jobs:
         run: |
           set -euo pipefail
           mkdir release-assets
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.tar.gz.sha256" -o -name "*.zip" -o -name "*.zip.sha256" -o -name "*.dmg" -o -name "*.dmg.sha256" -o -name "*.deb" -o -name "*.knxprod" \) -exec cp {} release-assets/ \;
+          find artifacts -type f \( \
+            -name "*.tar.gz" -o -name "*.tar.gz.sha256" -o -name "*.tar.gz.spdx.json" -o -name "*.tar.gz.sigstore.json" \
+            -o -name "*.zip" -o -name "*.zip.sha256" -o -name "*.zip.spdx.json" -o -name "*.zip.sigstore.json" \
+            -o -name "*.dmg" -o -name "*.dmg.sha256" -o -name "*.dmg.spdx.json" -o -name "*.dmg.sigstore.json" \
+            -o -name "*.deb" -o -name "*.deb.spdx.json" -o -name "*.deb.sigstore.json" \
+            -o -name "*.knxprod" -o -name "*.knxprod.spdx.json" -o -name "*.knxprod.sigstore.json" \
+            \) -exec cp {} release-assets/ \;
           cd release-assets
+          # 11 payloads this release ships (4 tar.gz + 1 zip + 1 dmg + 4 deb + 1
+          # knxprod); every one of them gets exactly one SBOM and one signature
+          # bundle, so the expected counts below are derived from that single
+          # payload count rather than hand-copied a second time.
+          payload_count=$(( $(find . -maxdepth 1 -name '*.tar.gz' | wc -l) \
+            + $(find . -maxdepth 1 -name '*.zip' | wc -l) \
+            + $(find . -maxdepth 1 -name '*.dmg' | wc -l) \
+            + $(find . -maxdepth 1 -name '*.deb' | wc -l) \
+            + $(find . -maxdepth 1 -name '*.knxprod' | wc -l) ))
           test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 4
           test "$(find . -maxdepth 1 -name '*.zip' | wc -l)" -eq 1
           test "$(find . -maxdepth 1 -name '*.dmg' | wc -l)" -eq 1
           test "$(find . -maxdepth 1 -name '*.deb' | wc -l)" -eq 4
           test "$(find . -maxdepth 1 -name '*.knxprod' | wc -l)" -eq 1
+          test "$payload_count" -eq 11
+          test "$(find . -maxdepth 1 -name '*.spdx.json' | wc -l)" -eq "$payload_count"
+          test "$(find . -maxdepth 1 -name '*.sigstore.json' | wc -l)" -eq "$payload_count"
           cp ../deploy/docker-compose.yml ./docker-compose.yml
           cp ../deploy/snapdog.env.example ./snapdog.env.example
           sed -i \
@@ -518,6 +810,32 @@ jobs:
           find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > ../SHA256SUMS
           mv ../SHA256SUMS .
           sha256sum --check SHA256SUMS
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.1
+      - name: Verify every payload's signature and provenance attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          checked=0
+          for payload in *.tar.gz *.zip *.dmg *.deb *.knxprod; do
+            [ -e "$payload" ] || continue
+            cosign verify-blob \
+              --bundle "${payload}.sigstore.json" \
+              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$payload"
+            gh attestation verify "$payload" --owner "${GITHUB_REPOSITORY%%/*}"
+            gh attestation verify "${payload}.spdx.json" --owner "${GITHUB_REPOSITORY%%/*}"
+            checked=$((checked + 1))
+          done
+          # A glob that silently matched nothing would let this loop report
+          # nothing failed and nothing checked; the payload-count test above
+          # already proves the files exist, this proves the loop actually
+          # walked all of them rather than looping zero times.
+          test "$checked" -eq 11
       - name: Prove .deb files contain the already-built binaries
         env:
           TAG: ${{ needs.meta.outputs.tag }}
@@ -682,14 +1000,24 @@ jobs:
           diff -u <(cd release-assets && sha256sum ./* | sort) <(cd remote && sha256sum ./* | sort)
 
   publish-release:
-    name: Publish verified release
+    name: Publish verified release (staged)
     needs: [meta, upload-release-artifacts, docker, updater-image]
+    # docker/updater-image are gated off entirely for a prerelease/test tag (see
+    # their own `if:`); a job with no `if: always()`/`!cancelled()` skips by
+    # default when a `needs` entry is skipped, so this has to say explicitly
+    # that their skip is fine and only their *failure* should block this stage.
+    if: >-
+      !cancelled()
+      && needs.meta.result == 'success'
+      && needs.upload-release-artifacts.result == 'success'
+      && (needs.docker.result == 'success' || needs.docker.result == 'skipped')
+      && (needs.updater-image.result == 'success' || needs.updater-image.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Publish draft atomically after all gates
+      - name: Publish the draft, staged as a visible prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.meta.outputs.tag }}
@@ -697,12 +1025,22 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/release_state.py verify "$GITHUB_REPOSITORY" "$TAG" "$RELEASE_ID" draft > /dev/null
-          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false > /dev/null
-          python3 .github/scripts/release_state.py verify "$GITHUB_REPOSITORY" "$TAG" "$RELEASE_ID" published > /dev/null
+          # Stage 7: become visible, but stay `prerelease` regardless of the tag's
+          # own SemVer shape. The APT archive reads only stable (non-prerelease,
+          # non-draft) releases, so this is what keeps it — and anything else that
+          # honours the same convention — from acting on the release before
+          # `promote` confirms every configured channel actually succeeded. A
+          # genuine test tag never reaches `promote` (see its `if:`) and its
+          # release stays staged forever, which is correct: it was never meant to
+          # become the "latest" release or reach a real package channel.
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F draft=false -F prerelease=true > /dev/null
+          python3 .github/scripts/release_state.py verify "$GITHUB_REPOSITORY" "$TAG" "$RELEASE_ID" published --expect-prerelease true > /dev/null
 
   update-appcast:
     name: Update Sparkle Appcast
-    needs: [meta, macos-app, publish-release]
+    needs: [meta, macos-app, publish-release, preflight]
+    if: needs.meta.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     # Holds CLOUDFLARE_API_TOKEN, which lives in the protected environment.
     environment: release
@@ -730,7 +1068,8 @@ jobs:
 
   update-homebrew:
     name: Update Homebrew Tap
-    needs: [meta, publish-release, verify-release-assets]
+    needs: [meta, publish-release, verify-release-assets, preflight]
+    if: needs.meta.outputs.prerelease == 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     # The tap credentials live in the protected environment, not as a repository
@@ -981,7 +1320,8 @@ jobs:
 
   publish-aur:
     name: AUR (${{ matrix.pkg }})
-    needs: [meta, publish-release, verify-release-assets]
+    needs: [meta, publish-release, verify-release-assets, preflight]
+    if: needs.meta.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -1030,6 +1370,51 @@ jobs:
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "Update to ${{ needs.meta.outputs.version }}"
           ssh_keyscan_types: rsa,ecdsa,ed25519
+
+  promote:
+    name: Promote the staged release to latest
+    # Every real, live-user-facing channel this release ships through. Docker
+    # and updater-image are not listed directly: they already had to succeed
+    # (or be skipped for a prerelease/test tag) before publish-release ran, and
+    # everything here already depends on publish-release, so their outcome is
+    # covered transitively.
+    needs: [meta, update-homebrew, publish-aur, update-appcast]
+    if: needs.meta.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flip the staged release to latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          RELEASE_ID: ${{ needs.meta.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/release_state.py verify "$GITHUB_REPOSITORY" "$TAG" "$RELEASE_ID" \
+            published --expect-prerelease true > /dev/null
+          # make_latest is a string enum ("true"/"false"/"legacy"), not a real
+          # JSON boolean like draft/prerelease — `-f` sends it as a literal
+          # string; `-F` would send a JSON `true` and silently do the wrong thing.
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F prerelease=false -f make_latest=true > /dev/null
+          python3 .github/scripts/release_state.py verify "$GITHUB_REPOSITORY" "$TAG" "$RELEASE_ID" \
+            published --expect-prerelease false > /dev/null
+      - name: Confirm the /releases/latest endpoint agrees
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.meta.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          # make_latest has no field of its own on the release object itself; the
+          # only way to observe it took effect is the separate aggregate endpoint
+          # that reports whichever release currently holds that status.
+          latest_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .id)
+          if [[ "$latest_id" != "$RELEASE_ID" ]]; then
+            echo "::error::PROMOTE001 /releases/latest reports ${latest_id}, expected ${RELEASE_ID}"
+            exit 1
+          fi
 
   smoke-apt:
     name: Smoke-test the Debian packages
@@ -1109,7 +1494,14 @@ jobs:
 
   archive-dispatch:
     name: Hand the release to the APT archive
-    needs: [meta, publish-release, smoke-apt]
+    # Deliberately after `promote`, not `publish-release`: the archive only reads
+    # stable (non-prerelease) releases, so dispatching any earlier asks for a
+    # release that cannot exist yet (AR170) and can never succeed. This job's
+    # own `if:` is redundant with `promote` skipping for a prerelease/test tag —
+    # kept explicit anyway per the same defensive style used throughout this
+    # file, rather than relying only on skip-propagation from `needs`.
+    needs: [meta, promote, smoke-apt]
+    if: needs.meta.outputs.prerelease == 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: release
@@ -1250,6 +1642,9 @@ jobs:
     # setup) runs under arm64 emulation — hence setup-qemu-action below. The container then
     # ships the exact same binary as the tarball.
     needs: [meta, build]
+    # A prerelease/test tag never pushes a real image. `publish-release` tolerates
+    # this job being skipped (see its own `if:`).
+    if: needs.meta.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1361,6 +1756,9 @@ jobs:
   updater-image:
     name: Docker snapdog-updater
     needs: [meta]
+    # A prerelease/test tag never pushes a real image. `publish-release` tolerates
+    # this job being skipped (see its own `if:`).
+    if: needs.meta.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1411,7 +1809,10 @@ jobs:
 
   bump-snapdog-os:
     name: Bump version in snapdog-os
-    needs: [meta, publish-release]
+    # After promote, not publish-release: a prerelease/test tag should not open
+    # a real cross-repo PR against snapdog-os telling it a new version shipped.
+    needs: [meta, promote]
+    if: needs.meta.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     # Holds SNAPDOG_OS_PAT, which lives in the protected environment.
     environment: release

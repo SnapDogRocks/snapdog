@@ -45,9 +45,18 @@ def resolve(repository, tag):
     return validate(matches[0], tag, draft=True, empty=True)
 
 
-def verify(repository, tag, release_id, draft):
+def verify(repository, tag, release_id, draft, expect_prerelease=None):
     release = api(f"repos/{repository}/releases/{release_id}")
-    return validate(release, tag, draft=draft, release_id=release_id)
+    validate(release, tag, draft=draft, release_id=release_id)
+    # Optional: the staged-prerelease mechanism (release.md stage 7/9) flips the
+    # live `prerelease` field independently of `draft`, so a caller that just
+    # mutated it needs to confirm the flip actually took before treating it as
+    # a fact the next job can rely on.
+    if expect_prerelease is not None:
+        actual = release.get("prerelease")
+        if actual is not (expect_prerelease == "true"):
+            raise ValueError(f"Expected prerelease={expect_prerelease}, got {actual!r}")
+    return release
 
 
 def main():
@@ -60,12 +69,19 @@ def main():
         if command == "verify":
             sub.add_argument("release_id", type=int)
             sub.add_argument("state", choices=("draft", "published"))
+            sub.add_argument("--expect-prerelease", choices=("true", "false"), default=None)
     args = parser.parse_args()
     try:
         if args.command == "resolve":
             release = resolve(args.repository, args.tag)
         else:
-            release = verify(args.repository, args.tag, args.release_id, args.state == "draft")
+            release = verify(
+                args.repository,
+                args.tag,
+                args.release_id,
+                args.state == "draft",
+                args.expect_prerelease,
+            )
         print(json.dumps(release))
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"Release state check failed: {error}", file=sys.stderr)
