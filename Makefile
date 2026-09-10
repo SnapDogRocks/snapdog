@@ -24,11 +24,11 @@ test:
 	cargo test
 
 webui-check:
-	cd webui && npm ci && npm run i18n:check && npm run lint && npm run typecheck && npm run build
+	cd webui && pnpm install --frozen-lockfile && pnpm run i18n:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build
 
 ## Build WebUI (Next.js static export)
 build-webui:
-	cd webui && npm ci && npm run build
+	cd webui && pnpm install --frozen-lockfile && pnpm run build
 
 ## Build everything: WebUI, Rust binary, and KNX product database
 build-all: build-webui knxprod
