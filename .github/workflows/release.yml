@@ -365,7 +365,8 @@ jobs:
         if: matrix.container != ''
         run: |
           apt-get update && apt-get install -y --no-install-recommends \
-            cmake pkg-config libasound2-dev libavahi-compat-libdnssd-dev
+            cmake pkg-config libasound2-dev libavahi-compat-libdnssd-dev \
+            gettext-base # envsubst, which sigstore/cosign-installer's script needs and this minimal image lacks
       # Reuse the WebUI built once in the `webui` job. With webui/out present,
       # snapdog's build.rs early-returns instead of invoking npm — no Node on this runner.
       - name: Fetch pre-built WebUI
