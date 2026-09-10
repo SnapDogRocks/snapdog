@@ -15,7 +15,7 @@ use crate::api::error::{ApiError, ErrorBody};
 use crate::config::ResolvedPlaylist;
 use crate::subsonic::{PlaylistEntry, SubsonicClient};
 
-const PLAYLIST_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+const PLAYLIST_CACHE_TTL: std::time::Duration = std::time::Duration::from_mins(1);
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct PlaylistInfo {

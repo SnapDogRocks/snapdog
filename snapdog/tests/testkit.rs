@@ -65,7 +65,7 @@ fn ephemeral_names_unique_and_seed_reproducible() {
 async fn virtual_time_advances_a_300s_timer_instantly() {
     let wall = Instant::now();
     let handle = tokio::spawn(async {
-        tokio::time::sleep(Duration::from_secs(300)).await;
+        tokio::time::sleep(Duration::from_mins(5)).await;
         "fired"
     });
 
