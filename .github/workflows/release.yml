@@ -286,7 +286,10 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          path: knx/snapdog.knxprod
+          # `path` scans a directory; .knxprod is a single file, so it needs
+          # the action's separate `file` input (found live: `path` here made
+          # syft run `scan dir:knx/snapdog.knxprod` and fail outright).
+          file: knx/snapdog.knxprod
           format: spdx-json
           output-file: knx/snapdog.knxprod.spdx.json
       # This is a second, independent signature on top of the domain-specific
@@ -422,7 +425,10 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          path: ${{ env.PAYLOAD }}
+          # `path` scans a directory; PAYLOAD is a single file, so it needs
+          # the action's separate `file` input (see the knxprod job's SBOM
+          # step for what happens with `path` on a single file).
+          file: ${{ env.PAYLOAD }}
           format: spdx-json
           output-file: ${{ env.PAYLOAD }}.spdx.json
       - name: Sign the payload (cosign, keyless)
@@ -608,7 +614,10 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          path: ${{ env.DMG }}
+          # `path` scans a directory; the DMG is a single file, so it needs
+          # the action's separate `file` input (see the knxprod job's SBOM
+          # step for what happens with `path` on a single file).
+          file: ${{ env.DMG }}
           format: spdx-json
           output-file: ${{ env.DMG }}.spdx.json
       - name: Sign the payload (cosign, keyless)
@@ -730,7 +739,10 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          path: ${{ env.PAYLOAD }}
+          # `path` scans a directory; PAYLOAD is a single file, so it needs
+          # the action's separate `file` input (see the knxprod job's SBOM
+          # step for what happens with `path` on a single file).
+          file: ${{ env.PAYLOAD }}
           format: spdx-json
           output-file: ${{ env.PAYLOAD }}.spdx.json
       - name: Sign the payload (cosign, keyless)
