@@ -1,14 +1,14 @@
 # Note: webui/ has its own .gitignore for Node/Next.js artifacts
 
 # Rust
-/target/
+target/
 .cargo/
 
 # Coverage output (cargo-llvm-cov, IT-T92)
-/lcov.info
+lcov.info
 
 # Local Xcode/Swift build output
-/build_local/
+build_local/
 
 # Editor / OS
 *.swp
@@ -40,4 +40,4 @@ devcontainer/music/album_covers/
 devcontainer/navidrome/navidrome.db
 
 # Demo Backend
-/demo-backend/node_modules/
+demo-backend/node_modules/
