@@ -2,6 +2,7 @@
   "name": "webui",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@12.3.4",
   "engines": {
     "node": ">=24.0.0",
@@ -14,6 +15,7 @@
     "start": "next start",
     "lint": "eslint --max-warnings=0",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
     "i18n:check": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
@@ -41,11 +43,13 @@
     "@types/node": "^26.4.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.3.4",
     "tailwindcss": "^4",
     "typescript": "~6.0",
-    "typescript-eslint": "^8.70.0"
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.0"
   },
   "overrides": {
     "postcss": "^8.5.10",
