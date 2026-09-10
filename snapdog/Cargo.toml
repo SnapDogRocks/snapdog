@@ -2,7 +2,6 @@
 name = "snapdog"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
@@ -70,6 +69,13 @@ ap2 = ["shairplay/ap2"]
 dbus = ["dep:zbus"]
 spotify = ["dep:librespot-core", "dep:librespot-playback", "dep:librespot-connect", "dep:librespot-discovery", "dep:librespot-metadata"]
 api-docs = ["dep:utoipa-scalar"]
+# Everything a released `snapdog` binary carries. Builds on the default engine
+# (`snapcast-embedded`) — `snapcast-process` is a *different*, mutually-exclusive
+# base engine (see the `compile_error!` guard in src/main.rs) exercised by its own
+# CI rows/matrix, not folded into `full`. Kept honest by
+# tests/feature_consistency.rs: every non-test-only feature except the alternate
+# engine has to be listed here.
+full = ["snapcast-embedded", "ap2", "dbus", "spotify", "api-docs"]
 # Test-only: enables the ZonePlayerContext::test_pcm_rx injection seam used by
 # the integration harness to drive the real decode→send_audio path (IT-T55).
 test-harness = []

@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-// Pedantic lints allowed crate-wide: audio code uses intentional numeric casts,
-// and the main event loop is necessarily long.
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_precision_loss)]
-
 mod cli;
 #[cfg(feature = "dbus")]
 mod dbus;
@@ -399,6 +393,13 @@ fn list_devices(player: &str) {
 fn daemonize(daemon: &snapcast_client::config::DaemonSettings) -> anyhow::Result<()> {
     if let Some(priority) = daemon.priority {
         let priority = priority.clamp(-20, 19);
+        // SAFETY: `setpriority(PRIO_PROCESS, 0, priority)` targets the calling
+        // process itself (pid 0 means "self" for PRIO_PROCESS) and `priority` is
+        // clamped to POSIX's documented [-20, 19] range immediately above, so this
+        // is a well-formed call with no unchecked pointers or aliasing involved.
+        // A negative return (insufficient privilege to raise priority) is a
+        // process-level failure, not a memory-safety one, and is intentionally
+        // left unchecked here — daemonizing still proceeds at the current priority.
         unsafe {
             libc::setpriority(libc::PRIO_PROCESS, 0, priority);
         }
@@ -409,6 +410,14 @@ fn daemonize(daemon: &snapcast_client::config::DaemonSettings) -> anyhow::Result
         tracing::info!(user, "Would drop privileges to user (not yet implemented)");
     }
 
+    // SAFETY: `fork()` takes no arguments and is sound to call here — this
+    // function only runs early during startup, before any additional threads
+    // (the tokio runtime and its worker threads) have been spawned, so the
+    // single-threaded fork/exec safety precondition holds. The parent branch
+    // (`pid > 0`) exits immediately without touching any resources shared with
+    // the child, and the child calls `setsid()` next to detach from the
+    // controlling terminal, which is likewise argument-free and always sound to
+    // call in the child of a fresh `fork()`.
     unsafe {
         let pid = libc::fork();
         if pid < 0 {
