@@ -733,6 +733,19 @@ jobs:
           cargo deb -p ${{ matrix.pkg }} --target ${{ matrix.target }} --no-build --no-strip
           deb=$(find target/debian -maxdepth 1 -name '*.deb' -print -quit)
           test -n "$deb" || { echo "::error::cargo deb produced no .deb file"; exit 1; }
+          # cargo-deb encodes a hyphenated (prerelease-style) version with Debian's
+          # `~` separator in the filename (the internal control file's Version:
+          # field is untouched by this). GitHub silently renames any release asset
+          # whose name contains `~` to `.` on upload — rename here, before anything
+          # signs, attests or uploads this file, so every later step already
+          # agrees with the name GitHub will actually serve; otherwise the
+          # signature/attestation bind to a filename the release never actually
+          # has, and the plain upload/download round-trip check fails outright.
+          sanitized=${deb//\~/.}
+          if [[ "$sanitized" != "$deb" ]]; then
+            mv "$deb" "$sanitized"
+            deb="$sanitized"
+          fi
           echo "PAYLOAD=${deb}" >> "$GITHUB_ENV"
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
