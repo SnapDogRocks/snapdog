@@ -180,12 +180,8 @@ jobs:
           toolchain: "1.97.0"
       - uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
-          tool: cargo-audit
-      - name: Run security audit
-        # Same ignore list as ci.yml's dep-triggered audit. This scheduled run
+          tool: cargo-deny
+      - name: Run cargo-deny (advisories, licences, bans, sources)
+        # Same deny.toml as ci.yml's dep-triggered check. This scheduled run
         # catches newly-published advisories against the unchanged Cargo.lock.
-        run: |
-          cargo audit \
-            --ignore RUSTSEC-2023-0071 \
-            --ignore RUSTSEC-2026-0194 \
-            --ignore RUSTSEC-2026-0195
+        run: cargo deny check
