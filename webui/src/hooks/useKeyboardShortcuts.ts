@@ -20,7 +20,7 @@ export function useKeyboardShortcuts() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't intercept when typing in inputs
-      const tag = (e.target as HTMLElement)?.tagName;
+      const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
       const zone = zones.get(selectedZone);
@@ -54,6 +54,6 @@ export function useKeyboardShortcuts() {
     };
 
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    return () => { window.removeEventListener("keydown", handler); };
   }, [zones, selectedZone]);
 }

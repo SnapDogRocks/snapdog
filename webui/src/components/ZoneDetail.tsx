@@ -115,7 +115,7 @@ function PlaybackErrorBanner({ zone }: { zone: ZoneState }) {
       <Button
         variant="ghost"
         size="icon"
-        onClick={() => useAppStore.getState().setZoneError(zone.index, null)}
+        onClick={() => { useAppStore.getState().setZoneError(zone.index, null); }}
         className="-mr-1 -mt-1 size-7 shrink-0 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
         aria-label="Dismiss error"
       >
@@ -168,7 +168,7 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowEq(true)}
+                  onClick={() => { setShowEq(true); }}
                   className={`absolute right-0 text-xs px-2.5 h-8 rounded-full bg-secondary/50 border border-border/20 ${zone.eqEnabled ? "text-orange-500 font-bold border-orange-500/30" : ""}`}
                   aria-label={t("eq.title", { zone: zone.name })}
                 >
@@ -179,9 +179,9 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
               <VolumeSlider
                 volume={zone.volume}
                 muted={zone.muted}
-                onVolumeChange={(v) => api.zones.setVolume(zone.index, v).catch(logApiError)}
-                onMuteToggle={() => api.zones.toggleMute(zone.index).catch(logApiError)}
-                onUnmute={() => api.zones.setMute(zone.index, false).catch(logApiError)}
+                onVolumeChange={(v) => { api.zones.setVolume(zone.index, v).catch(logApiError); }}
+                onMuteToggle={() => { api.zones.toggleMute(zone.index).catch(logApiError); }}
+                onUnmute={() => { api.zones.setMute(zone.index, false).catch(logApiError); }}
               />
             </div>
           </div>

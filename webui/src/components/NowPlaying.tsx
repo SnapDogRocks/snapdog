@@ -6,7 +6,7 @@ import type { ZoneState } from "@/stores/useAppStore";
 export function NowPlaying({ zone }: { zone: ZoneState }) {
   const track = zone.track;
   const isIdle = zone.source === "idle" || !track;
-  const coverUrl = track?.cover_url || null;
+  const coverUrl = track?.cover_url ?? null;
   const [coverError, setCoverError] = useState(false);
   const [lastCover, setLastCover] = useState(coverUrl);
 
@@ -45,7 +45,7 @@ export function NowPlaying({ zone }: { zone: ZoneState }) {
             alt={`${track.title} cover`}
             loading="lazy"
             className="w-full h-full object-cover animate-fade-in"
-            onError={() => setCoverError(true)}
+            onError={() => { setCoverError(true); }}
           />
         )}
       </div>

@@ -21,12 +21,17 @@ FROM ${NODE_IMAGE} AS webui-builder
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /build/webui
 
-COPY webui/package.json webui/package-lock.json ./
-RUN --mount=type=cache,id=snapdog-npm,target=/root/.npm,sharing=locked \
-    npm ci --no-audit --no-fund
+# Pinned to the same version as webui/package.json's "packageManager" field.
+# Installed via plain npm (already in this base image), not corepack — see
+# webui/CLAUDE.md / the repo-standard skill's TypeScript reference.
+RUN npm install -g pnpm@12.3.4
+
+COPY webui/package.json webui/pnpm-lock.yaml webui/pnpm-workspace.yaml ./
+RUN --mount=type=cache,id=snapdog-pnpm-store,target=/root/.cache/pnpm-store,sharing=locked \
+    pnpm install --frozen-lockfile --store-dir=/root/.cache/pnpm-store
 
 COPY webui/ ./
-RUN npm run build && test -f out/index.html
+RUN pnpm run build && test -f out/index.html
 
 # ── Rust build stage (compile path only) ─────────────────────
 FROM ${RUST_IMAGE} AS compile

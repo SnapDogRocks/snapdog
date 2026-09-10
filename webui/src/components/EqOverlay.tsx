@@ -55,6 +55,12 @@ function limitEqBands(bands: EqBand[]): EqBand[] {
   return bands.slice(0, MAX_EQ_BANDS);
 }
 
+/** EqOverlay always receives exactly one of `zoneId`/`clientId`; this makes that invariant explicit. */
+function requireZoneId(zoneId: number | undefined): number {
+  if (zoneId === undefined) throw new Error("EqOverlay: zoneId is required when clientId is not set");
+  return zoneId;
+}
+
 export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) {
   const t = useTranslations("eq");
   const trapRef = useFocusTrap<HTMLDivElement>();
@@ -70,12 +76,12 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
 
   const eqApi = useMemo(() => clientId
     ? { get: () => api.clientEq.get(clientId), set: (c: EqConfig) => api.clientEq.set(clientId, c), applyPreset: (n: string) => api.clientEq.applyPreset(clientId, n) }
-    : { get: () => api.eq.get(zoneId!), set: (c: EqConfig) => api.eq.set(zoneId!, c), applyPreset: (n: string) => api.eq.applyPreset(zoneId!, n) },
+    : { get: () => api.eq.get(requireZoneId(zoneId)), set: (c: EqConfig) => api.eq.set(requireZoneId(zoneId), c), applyPreset: (n: string) => api.eq.applyPreset(requireZoneId(zoneId), n) },
     [zoneId, clientId]);
 
   // Load current EQ
   useEffect(() => {
-    eqApi.get().then((c) => { setConfig(c); setLoading(false); }).catch(() => setLoading(false));
+    eqApi.get().then((c) => { setConfig(c); setLoading(false); }).catch(() => { setLoading(false); });
   }, [eqApi]);
 
   // Push to server
@@ -154,7 +160,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
   if (loading) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label={t("title", { zone: label })} onKeyDown={(e) => { if (e.key === "Escape") handleClose(); }} onDragStart={(e) => e.preventDefault()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label={t("title", { zone: label })} onKeyDown={(e) => { if (e.key === "Escape") handleClose(); }} onDragStart={(e) => { e.preventDefault(); }}>
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={handleClose} role="presentation" />
       <div className="relative z-10 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-xl space-y-5" ref={trapRef}>
         {/* Header */}
@@ -163,15 +169,15 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
             <h2 className="text-lg font-semibold">{t("title", { zone: label })}</h2>
             {tab === "eq" && (
               <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("toggle")}>
-                <button role="radio" aria-checked={!config.enabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${!config.enabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => toggleEnabled(false)}>Off</button>
-                <button role="radio" aria-checked={config.enabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${config.enabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => toggleEnabled(true)}>On</button>
+                <button role="radio" aria-checked={!config.enabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${!config.enabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { toggleEnabled(false); }}>Off</button>
+                <button role="radio" aria-checked={config.enabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${config.enabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { toggleEnabled(true); }}>On</button>
               </div>
             )}
             {tab === "speaker" && (
               <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("toggle")}>
-                <button role="radio" aria-checked={speakerMode === "off"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "off" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setSpeakerMode("off")}>Off</button>
-                <button role="radio" aria-checked={speakerMode === "spinorama"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "spinorama" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setSpeakerMode("spinorama")}>Spinorama</button>
-                <button role="radio" aria-checked={speakerMode === "custom"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "custom" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setSpeakerMode("custom")}>Custom</button>
+                <button role="radio" aria-checked={speakerMode === "off"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "off" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("off"); }}>Off</button>
+                <button role="radio" aria-checked={speakerMode === "spinorama"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "spinorama" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("spinorama"); }}>Spinorama</button>
+                <button role="radio" aria-checked={speakerMode === "custom"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "custom" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("custom"); }}>Custom</button>
               </div>
             )}
           </div>
@@ -182,7 +188,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
               </Button>
             )}
             {tab === "speaker" && (
-              <Button variant="ghost" size="sm" onClick={() => setSpeakerAbBypass(!speakerAbBypass)} disabled={speakerMode === "off"} className={speakerAbBypass ? "text-orange-500 font-semibold" : "text-muted-foreground"} aria-pressed={speakerAbBypass}>
+              <Button variant="ghost" size="sm" onClick={() => { setSpeakerAbBypass(!speakerAbBypass); }} disabled={speakerMode === "off"} className={speakerAbBypass ? "text-orange-500 font-semibold" : "text-muted-foreground"} aria-pressed={speakerAbBypass}>
                 A/B
               </Button>
             )}
@@ -193,13 +199,13 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
         {/* Segmented control tabs — only for client overlays */}
         {showTabs && (
           <div className="inline-flex rounded-lg bg-muted p-0.5 w-full" role="tablist">
-            <button role="tab" aria-selected={tab === "eq"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "eq" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setTab("eq")}>EQ</button>
-            <button role="tab" aria-selected={tab === "speaker"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "speaker" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => setTab("speaker")}>Speaker</button>
+            <button role="tab" aria-selected={tab === "eq"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "eq" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setTab("eq"); }}>EQ</button>
+            <button role="tab" aria-selected={tab === "speaker"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "speaker" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setTab("speaker"); }}>Speaker</button>
           </div>
         )}
 
         {/* Tab content — crossfade, both mounted to avoid flash */}
-        <div className={`${tab === "eq" ? '' : 'hidden'}`}>
+        <div className={tab === "eq" ? '' : 'hidden'}>
           <>
             {config.enabled ? (
               <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
@@ -208,8 +214,8 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
                   response={response}
                   selectedBand={selectedBand}
                   onSelectBand={setSelectedBand}
-                  onBandChange={(idx, patch) => updateBand(idx, patch)}
-	                  onRemoveBand={(idx) => removeBand(idx)}
+                  onBandChange={(idx, patch) => { updateBand(idx, patch); }}
+	                  onRemoveBand={(idx) => { removeBand(idx); }}
 	                  onAddBand={(freq, gain) => {
 	                    if (config.bands.length >= MAX_EQ_BANDS) return;
 	                    const bands = [...config.bands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
@@ -221,7 +227,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
                   {PRESETS.map((p) => (
                     <button
                       key={p}
-                      onClick={() => applyPreset(p)}
+                      onClick={() => { applyPreset(p); }}
                       role="radio"
                       aria-checked={config.preset === p}
                       className={`shrink-0 px-3 py-1 text-xs rounded-full transition-colors ${
@@ -230,7 +236,7 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
                           : 'bg-muted hover:bg-muted/80 text-foreground'
                       }`}
                     >
-                      {PRESET_LABELS[p] || p}
+                      {PRESET_LABELS[p] ?? p}
                     </button>
                   ))}
                 </div>
@@ -240,8 +246,8 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
                       key={idx}
                       band={band}
                       index={idx}
-                      onChange={(patch) => updateBand(idx, patch)}
-                      onRemove={() => removeBand(idx)}
+                      onChange={(patch) => { updateBand(idx, patch); }}
+                      onRemove={() => { removeBand(idx); }}
                     />
                   ))}
                 </div>
@@ -257,8 +263,8 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
           </>
         </div>
         {showTabs && (
-          <div className={`${tab === "speaker" ? '' : 'hidden'}`}>
-            <SpeakerTab clientId={clientId!} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} />
+          <div className={tab === "speaker" ? '' : 'hidden'}>
+            <SpeakerTab clientId={clientId} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} />
           </div>
         )}
       </div>
@@ -304,7 +310,7 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
       setVisibleCount(MAX_SPEAKER_RESULTS);
       if (config.enabled || name != null) setMode(name ? "spinorama" : "custom");
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(() => { setLoading(false); });
   }, [clientId, setMode]);
 
   const filtered = useMemo(() => {
@@ -349,7 +355,7 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
         setCurrentConfig(config);
         setAppliedName(null);
       }).catch(logApiError);
-    } else if (on && appliedName) {
+    } else if (appliedName) {
       api.speakers.apply(clientId, appliedName).then((config) => {
         setCurrentConfig(config);
       }).catch(logApiError);
@@ -484,7 +490,7 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
           visibleSpeakers.map((name) => (
             <button
               key={name}
-              onClick={() => applySpeaker(name)}
+              onClick={() => { applySpeaker(name); }}
               className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${name === appliedName ? 'bg-primary/10 font-medium' : ''}`}
             >
               {name}
@@ -517,7 +523,7 @@ function BandRow({
       <span className="w-5 text-muted-foreground text-xs">{index + 1}</span>
       <select
         value={band.type}
-        onChange={(e) => onChange({ type: e.target.value as EqBand["type"] })}
+        onChange={(e) => { onChange({ type: e.target.value as EqBand["type"] }); }}
         className="bg-muted border border-border rounded px-1.5 py-1 text-xs w-20"
         aria-label={t("filterType", { n: index + 1 })}
       >
@@ -533,7 +539,7 @@ function BandRow({
             min={Math.log10(FREQ_MIN_HZ)}
             max={Math.log10(FREQ_MAX_HZ)}
             step={0.01}
-            onValueChange={([v]) => onChange({ freq: Math.round(Math.pow(10, v)) })}
+            onValueChange={([v]) => { if (v !== undefined) onChange({ freq: Math.round(Math.pow(10, v)) }); }}
             className="flex-1"
             aria-label={t("frequency")}
           />
@@ -546,7 +552,7 @@ function BandRow({
             min={GAIN_MIN_DB}
             max={GAIN_MAX_DB}
             step={GAIN_STEP_DB}
-            onValueChange={([v]) => onChange({ gain: v })}
+            onValueChange={([v]) => { if (v !== undefined) onChange({ gain: v }); }}
             className="flex-1"
             aria-label={t("gain")}
           />
@@ -559,7 +565,7 @@ function BandRow({
             min={Q_MIN}
             max={Q_MAX}
             step={Q_STEP}
-            onValueChange={([v]) => onChange({ q: Math.round(v * 10) / 10 })}
+            onValueChange={([v]) => { if (v !== undefined) onChange({ q: Math.round(v * 10) / 10 }); }}
             className="flex-1"
             aria-label={t("qFactor")}
           />

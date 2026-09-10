@@ -36,7 +36,7 @@ export function useOptimisticValue(
   }, [serverValue, tolerance]);
 
   // Cleanup timeout on unmount
-  useEffect(() => () => clearTimeout(timeoutRef.current), []);
+  useEffect(() => () => { clearTimeout(timeoutRef.current); }, []);
 
   /** Call during drag/interaction — updates local immediately, no server call. */
   const setOptimistic = useCallback((value: number) => {

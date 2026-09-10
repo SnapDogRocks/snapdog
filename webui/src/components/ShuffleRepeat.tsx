@@ -19,10 +19,10 @@ export function ShuffleRepeat({ zone }: ShuffleRepeatProps) {
 
   return (
     <div className="flex items-center justify-center gap-1">
-      <Button variant="ghost" size="icon" disabled={!enabled} onClick={() => api.zones.toggleShuffle(zone.index).catch(logApiError)} className={`size-8 rounded-full ${zone.shuffle ? "text-primary" : "text-muted-foreground"}`} aria-label={zone.shuffle ? t("on") : t("off")} aria-pressed={zone.shuffle}>
+      <Button variant="ghost" size="icon" disabled={!enabled} onClick={() => { api.zones.toggleShuffle(zone.index).catch(logApiError); }} className={`size-8 rounded-full ${zone.shuffle ? "text-primary" : "text-muted-foreground"}`} aria-label={zone.shuffle ? t("on") : t("off")} aria-pressed={zone.shuffle}>
         <HugeiconsIcon icon={ShuffleIcon} size={16} />
       </Button>
-      <Button variant="ghost" size="icon" disabled={!enabled} onClick={() => api.zones.toggleRepeat(zone.index).catch(logApiError)} className={`size-8 rounded-full ${isRepeatPlaylist ? "text-primary" : isRepeatTrack ? "text-primary" : "text-muted-foreground"}`} aria-label={isRepeatAny ? t("repeatOn") : t("repeatOff")} aria-pressed={isRepeatAny}>
+      <Button variant="ghost" size="icon" disabled={!enabled} onClick={() => { api.zones.toggleRepeat(zone.index).catch(logApiError); }} className={`size-8 rounded-full ${isRepeatPlaylist ? "text-primary" : isRepeatTrack ? "text-primary" : "text-muted-foreground"}`} aria-label={isRepeatAny ? t("repeatOn") : t("repeatOff")} aria-pressed={isRepeatAny}>
         <HugeiconsIcon icon={isRepeatTrack ? RepeatOneIcon : RepeatIcon} size={16} />
       </Button>
     </div>

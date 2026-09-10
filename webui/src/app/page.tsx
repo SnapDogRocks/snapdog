@@ -35,11 +35,11 @@ function ErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }
 }
 
 class ZoneErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
+  override state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  render() {
+  override render() {
     if (this.state.error) {
-      return <ErrorFallback error={this.state.error} onRetry={() => this.setState({ error: null })} />;
+      return <ErrorFallback error={this.state.error} onRetry={() => { this.setState({ error: null }); }} />;
     }
     return this.props.children;
   }
@@ -55,13 +55,13 @@ function EmptyState() {
   useEffect(() => {
     api.knx.getProgrammingMode()
       .then(setProgMode)
-      .catch(() => setKnxAvailable(false));
+      .catch(() => { setKnxAvailable(false); });
   }, []);
 
   const toggleProg = () => {
     const next = !progMode;
     api.knx.setProgrammingMode(next)
-      .then(() => setProgMode(next))
+      .then(() => { setProgMode(next); })
       .catch(logApiError);
   };
 
@@ -265,7 +265,7 @@ export default function Home() {
   useKeyboardShortcuts();
 
   useEffect(() => { setConnected(wsConnected, serverGoingAway); }, [wsConnected, serverGoingAway, setConnected]);
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { void loadAll(); }, [loadAll]);
 
   // Set document title from server name
   const [serverName, setServerName] = useState("SnapDog");
@@ -273,7 +273,7 @@ export default function Home() {
     api.system.version().then((v) => {
       setServerName(v.name);
       document.title = v.name === "SnapDog" ? "SnapDog" : `SnapDog — ${v.name}`;
-    }).catch(() => {});
+    }).catch(() => { /* best-effort title update; keep the default on failure */ });
   }, []);
 
   // Handle ?auth= URL parameter (from shared links)
@@ -287,18 +287,15 @@ export default function Home() {
       const clean = params.toString();
       const url = clean ? `${window.location.pathname}?${clean}` : window.location.pathname;
       window.history.replaceState({}, "", url);
-      loadAll();
+      void loadAll();
     }
   }, [loadAll]);
 
   const zoneList = Array.from(zoneMap.values());
   const currentZone = zoneMap.get(selectedZone) ?? zoneList[0];
 
-  // The sidebar is hidden at xl to show the elegant horizontal zone carousel
-  const allZonesFitInGrid = true;
-
   if (needsAuth) {
-    return <ApiKeyPrompt onAuthenticated={() => loadAll()} />;
+    return <ApiKeyPrompt onAuthenticated={() => { void loadAll(); }} />;
   }
 
   if (!isLoading && zoneList.length === 0) {
@@ -343,11 +340,9 @@ export default function Home() {
       </a>
       <ConnectionStatus retryIn={retryIn} />
       {/* ── Sidebar / Rail ──────────────────────────────────
-           Visible at md+. Hides at xl only when all zones fit
-           simultaneously in the wide grid (≤ 2 zones). When there
-           are 3+ zones, the grid overflows so we keep the sidebar
-           as the primary navigation at all viewport sizes. */}
-      <aside className={`hidden md:flex flex-col border-r border-border bg-card md:w-56 shrink-0${allZonesFitInGrid ? ' xl:hidden' : ''}`} aria-label={t("zone.navigation")}>
+           Visible at md–xl. Hidden at xl+, where the horizontal
+           zone carousel below is the primary navigation instead. */}
+      <aside className="hidden md:flex flex-col border-r border-border bg-card md:w-56 shrink-0 xl:hidden" aria-label={t("zone.navigation")}>
         <div className="px-4 py-4 border-b border-border flex items-center gap-2">
           <div className="flex items-center gap-2">
             <img src="/assets/snapdog-icon.svg" alt="" className="size-8 opacity-70" />
@@ -368,7 +363,7 @@ export default function Home() {
               key={z.index}
               zone={z}
               selected={z.index === selectedZone}
-              onSelect={() => selectZone(z.index)}
+              onSelect={() => { selectZone(z.index); }}
             />
           ))}
         </nav>
@@ -387,10 +382,9 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Wide header (xl+) */}
-        {/* Wide header: only shown at xl when the sidebar is hidden (≤ 2 zones).
-            When sidebar is visible (3+ zones) it already contains the logo/controls. */}
-        <header className={`hidden items-center gap-2 px-6 py-3 border-b border-border${allZonesFitInGrid ? ' xl:flex' : ''}`}>
+        {/* Wide header: shown at xl+, since the sidebar (which otherwise
+            carries the logo/controls) is hidden there. */}
+        <header className="hidden items-center gap-2 px-6 py-3 border-b border-border xl:flex">
           <div className="flex items-center gap-2">
             <img src="/assets/snapdog-icon.svg" alt="" className="size-8 opacity-70" />
             
@@ -403,7 +397,7 @@ export default function Home() {
         {/* Zone tabs (mobile + compact + normal without sidebar visible) */}
         <div className="flex lg:hidden overflow-x-auto border-b border-border px-2 gap-1 scrollbar-none" role="tablist" aria-label={t("zone.zones")}>
           {zoneList.map((z) => (
-            <MobileZoneTab key={z.index} zone={z} selected={z.index === selectedZone} onSelect={() => selectZone(z.index)} />
+            <MobileZoneTab key={z.index} zone={z} selected={z.index === selectedZone} onSelect={() => { selectZone(z.index); }} />
           ))}
         </div>
 
@@ -446,7 +440,7 @@ export default function Home() {
           {/* Left Navigation Arrow */}
           {activeDot > 0 && (
             <button
-              onClick={() => scrollCarousel("left")}
+              onClick={() => { scrollCarousel("left"); }}
               className="absolute left-6 top-1/2 -translate-y-1/2 size-12 rounded-full bg-black/60 hover:bg-black/80 border border-white/10 flex items-center justify-center text-white transition-all shadow-xl z-20 group hover:scale-105"
               aria-label="Previous Zone"
             >
@@ -457,7 +451,7 @@ export default function Home() {
           {/* Right Navigation Arrow */}
           {activeDot < zoneList.length - 1 && (
             <button
-              onClick={() => scrollCarousel("right")}
+              onClick={() => { scrollCarousel("right"); }}
               className="absolute right-6 top-1/2 -translate-y-1/2 size-12 rounded-full bg-black/60 hover:bg-black/80 border border-white/10 flex items-center justify-center text-white transition-all shadow-xl z-20 group hover:scale-105"
               aria-label="Next Zone"
             >

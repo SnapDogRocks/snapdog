@@ -15,7 +15,7 @@ export function useWebSocket(onNotification: (n: WsNotification) => void, onReco
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onNotifRef = useRef(onNotification);
   const onReconnectRef = useRef(onReconnect);
-  const connectRef = useRef<() => void>(() => {});
+  const connectRef = useRef<() => void>(() => { /* replaced by the effect below before first use */ });
   const wasConnectedRef = useRef(false);
 
   useEffect(() => {
@@ -43,7 +43,9 @@ export function useWebSocket(onNotification: (n: WsNotification) => void, onReco
 
     ws.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data) as WsNotification;
+        // WebSocket.onmessage's MessageEvent types `data` as `any`; this
+        // server only ever sends text frames, so it's a string at runtime.
+        const data = JSON.parse(e.data as string) as WsNotification;
         onNotifRef.current(data);
       } catch {
         /* ignore malformed messages */
@@ -56,13 +58,16 @@ export function useWebSocket(onNotification: (n: WsNotification) => void, onReco
         setServerGoingAway(true);
       }
       wsRef.current = null;
-      const delay = BACKOFF_STEPS[Math.min(attemptRef.current, BACKOFF_STEPS.length - 1)];
+      // BACKOFF_STEPS is a fixed non-empty literal; the clamped index is always in range.
+      // The fallback can't actually trigger, it only satisfies noUncheckedIndexedAccess.
+      const MAX_BACKOFF_MS = BACKOFF_STEPS[BACKOFF_STEPS.length - 1] ?? 15_000;
+      const delay = BACKOFF_STEPS[Math.min(attemptRef.current, BACKOFF_STEPS.length - 1)] ?? MAX_BACKOFF_MS;
       attemptRef.current++;
       setRetryIn(Math.ceil(delay / 1000));
-      timerRef.current = setTimeout(() => connectRef.current(), delay);
+      timerRef.current = setTimeout(() => { connectRef.current(); }, delay);
     };
 
-    ws.onerror = () => ws.close();
+    ws.onerror = () => { ws.close(); };
   }, []);
 
   useEffect(() => {

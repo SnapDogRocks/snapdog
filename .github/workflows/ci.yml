@@ -238,26 +238,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: webui/package.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
-      - name: i18n completeness
-        working-directory: webui
-        run: npm run i18n:check
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: webui
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+      - name: i18n completeness
+        working-directory: webui
+        run: pnpm run i18n:check
       - name: Lint
         working-directory: webui
-        run: npm run lint
+        run: pnpm run lint
       - name: Typecheck
         working-directory: webui
-        run: npm run typecheck
+        run: pnpm run typecheck
+      - name: Test
+        working-directory: webui
+        run: pnpm run test
       - name: Build
         working-directory: webui
-        run: npm run build
+        run: pnpm run build
 
   docker-contract:
     name: Docker Contract
