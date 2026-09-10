@@ -145,6 +145,48 @@ jobs:
             echo "Format: <type>(<scope>): <description>  — types: feat, fix, refactor, docs, test, ci, chore, perf, style, build, revert (optionally '!' for breaking)."
             exit 1
           fi
+      # The squash-merge title above is the one that lands on main, but a
+      # commit on the feature branch can still carry an AI attribution
+      # trailer even though its message is discarded by the squash. Check
+      # every commit in the PR for it, not just the title.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Reject AI attribution trailers in the PR's commits
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          # grep processes the message one line at a time already, so '.*'
+          # is correct here — '[^\n]*' would mean "not a backslash or an n"
+          # in grep -E, unlike in an RE2 whole-message ruleset pattern.
+          messages=$(git log "origin/${BASE_REF}..HEAD" --format='%B')
+          emails=$(git log "origin/${BASE_REF}..HEAD" --format='%ae%n%ce')
+          if printf '%s\n' "$messages" | grep -Eiq 'co-authored-by:.*claude|co-authored-by:.*anthropic'; then
+            echo "::error::A commit in this PR carries a Co-authored-by trailer naming Claude/Anthropic."
+            exit 1
+          fi
+          if printf '%s\n' "$messages" | grep -Eiq 'generated with.*claude code'; then
+            echo "::error::A commit in this PR carries a 'Generated with Claude Code' line."
+            exit 1
+          fi
+          if printf '%s\n' "$emails" | grep -Eiq 'noreply@anthropic\.com'; then
+            echo "::error::A commit in this PR has an author or committer address at Anthropic's noreply domain."
+            exit 1
+          fi
+
+  lefthook-validate:
+    name: lefthook validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - name: Install lefthook
+        # Pinned to the version used locally; go install needs no extra
+        # runner setup (ubuntu-latest ships Go), matching the actionlint
+        # install pattern used by workflow-lint above.
+        run: go install github.com/evilmartians/lefthook/v2@v2.1.12
+      - name: Validate lefthook config
+        run: lefthook validate
 
   rust-core:
     name: Rust Core
@@ -381,6 +423,7 @@ jobs:
       - changes
       - workflow-lint
       - commit-convention
+      - lefthook-validate
       - i18n
       - rust-core
       - webui
