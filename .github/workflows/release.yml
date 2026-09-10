@@ -1369,27 +1369,23 @@ jobs:
           PY
 
       # channels.md: ".SRCINFO" is generated through makepkg in a digest-pinned
-      # container, never maintained by hand; the PKGBUILD is also built and the
-      # result checked before publication, not merely templated and trusted.
-      - name: Generate .SRCINFO and build-check the package in a container
+      # container, never maintained by hand. The PKGBUILD build-check itself
+      # (channels.md's other requirement here) already happened in smoke-aur,
+      # earlier in this same run, against this exact release's artifacts —
+      # doing it again here would only duplicate that.
+      - name: Generate .SRCINFO in a container
         run: |
           set -euo pipefail
           dir=$(dirname "${{ matrix.pkgbuild }}")
           docker run --rm -v "$PWD/$dir:/pkg" -w /pkg \
             archlinux:base-devel@sha256:61f7de2dd88cc4ba1fe36c24cfe1a503c3936984492d6405eeab013ce6ac68c5 \
             bash -euc '
-              pacman -Sy --noconfirm --needed base-devel
               useradd -m builder
-              # makepkg --syncdeps shells out to sudo pacman for missing deps.
-              echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
               chown -R builder:builder /pkg
               su builder -c "makepkg --printsrcinfo" > .SRCINFO
               chown builder:builder .SRCINFO
-              su builder -c "makepkg --syncdeps --noconfirm --clean"
             '
           test -s "$dir/.SRCINFO" || { echo "::error::AUR001 makepkg produced an empty .SRCINFO for ${{ matrix.pkg }}"; exit 1; }
-          compgen -G "$dir"/*.pkg.tar.zst > /dev/null \
-            || { echo "::error::AUR002 makepkg did not produce a package archive for ${{ matrix.pkg }}"; exit 1; }
 
       - name: Configure SSH for the AUR git remote
         env:
