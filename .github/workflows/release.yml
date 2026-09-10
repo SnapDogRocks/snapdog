@@ -1343,9 +1343,15 @@ jobs:
           set -euo pipefail
           VERSION=${{ needs.meta.outputs.version }}
           TAG=${{ needs.meta.outputs.tag }}
+          # pkgver is Arch's own package version and may not carry a hyphen or a
+          # prerelease suffix; _tag keeps the full published tag (release core,
+          # optionally with a suffix such as "-test1") that the source URLs and
+          # the package() extraction directory are actually built from.
+          CORE="${VERSION%%-*}"
           X64_SHA=$(sha256sum "artifacts/snapdog-${TAG}-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
           ARM_SHA=$(sha256sum "artifacts/snapdog-${TAG}-aarch64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
-          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" ${{ matrix.pkgbuild }}
+          sed -i "s/^_tag=.*/_tag=${VERSION}/" ${{ matrix.pkgbuild }}
+          sed -i "s/^pkgver=.*/pkgver=${CORE}/" ${{ matrix.pkgbuild }}
           sed -i "s/^pkgrel=.*/pkgrel=1/" ${{ matrix.pkgbuild }}
           sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X64_SHA}')/" ${{ matrix.pkgbuild }}
           sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${ARM_SHA}')/" ${{ matrix.pkgbuild }}
@@ -1361,15 +1367,111 @@ jobs:
           text = re.sub(r"sha256sums=\(.*?\)", f"sha256sums=({os.environ['AUX'].strip()})", path.read_text(), flags=re.S)
           path.write_text(text)
           PY
-      - uses: KSXGitHub/github-actions-deploy-aur@084b0d9b15415bf9cdb65d44dad1efe37a354050 # v4.2.0
-        with:
-          pkgname: ${{ matrix.pkg }}
-          pkgbuild: ${{ matrix.pkgbuild }}
-          commit_username: metaneutrons
-          commit_email: aur@metaneutrons.github.io
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to ${{ needs.meta.outputs.version }}"
-          ssh_keyscan_types: rsa,ecdsa,ed25519
+
+      # channels.md: ".SRCINFO" is generated through makepkg in a digest-pinned
+      # container, never maintained by hand; the PKGBUILD is also built and the
+      # result checked before publication, not merely templated and trusted.
+      - name: Generate .SRCINFO and build-check the package in a container
+        run: |
+          set -euo pipefail
+          dir=$(dirname "${{ matrix.pkgbuild }}")
+          docker run --rm -v "$PWD/$dir:/pkg" -w /pkg \
+            archlinux:base-devel@sha256:61f7de2dd88cc4ba1fe36c24cfe1a503c3936984492d6405eeab013ce6ac68c5 \
+            bash -euc '
+              pacman -Sy --noconfirm --needed base-devel
+              useradd -m builder
+              # makepkg --syncdeps shells out to sudo pacman for missing deps.
+              echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
+              chown -R builder:builder /pkg
+              su builder -c "makepkg --printsrcinfo" > .SRCINFO
+              chown builder:builder .SRCINFO
+              su builder -c "makepkg --syncdeps --noconfirm --clean"
+            '
+          test -s "$dir/.SRCINFO" || { echo "::error::AUR001 makepkg produced an empty .SRCINFO for ${{ matrix.pkg }}"; exit 1; }
+          compgen -G "$dir"/*.pkg.tar.zst > /dev/null \
+            || { echo "::error::AUR002 makepkg did not produce a package archive for ${{ matrix.pkg }}"; exit 1; }
+
+      - name: Configure SSH for the AUR git remote
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_SSH_KNOWN_HOSTS: ${{ vars.AUR_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/aur-ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/aur-ssh/key"
+          chmod 600 "$RUNNER_TEMP/aur-ssh/key"
+          printf '%s\n' "$AUR_SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/aur-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/aur-ssh/known_hosts"
+          {
+            echo "Host aur.archlinux.org"
+            echo "  User aur"
+            echo "  IdentityFile $RUNNER_TEMP/aur-ssh/key"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking yes"
+            echo "  UserKnownHostsFile $RUNNER_TEMP/aur-ssh/known_hosts"
+          } >> "$RUNNER_TEMP/aur-ssh/config"
+          chmod 600 "$RUNNER_TEMP/aur-ssh/config"
+          echo "GIT_SSH_COMMAND=ssh -F $RUNNER_TEMP/aur-ssh/config" >> "$GITHUB_ENV"
+
+      - name: Publish to AUR
+        env:
+          PKG: ${{ matrix.pkg }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          dir=$(dirname "${{ matrix.pkgbuild }}")
+          clone="$RUNNER_TEMP/aur-${PKG}"
+          git clone "ssh://aur@aur.archlinux.org/${PKG}.git" "$clone"
+          cp "$dir/PKGBUILD" "$dir/.SRCINFO" "$clone/"
+          cd "$clone"
+          git config user.name metaneutrons
+          git config user.email aur@metaneutrons.github.io
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "AUR package ${PKG} unchanged, nothing to commit"
+          else
+            git commit -m "Update to ${VERSION}"
+            git push origin HEAD:master
+          fi
+
+      # The push (or no-op) above is trusted only once read back independently:
+      # a fresh, empty clone of the public AUR repository, compared byte for
+      # byte against the files just qualified above (channels.md).
+      - name: Read the published AUR files back and compare byte for byte
+        env:
+          PKG: ${{ matrix.pkg }}
+        run: |
+          set -euo pipefail
+          dir=$(dirname "${{ matrix.pkgbuild }}")
+          verify="$RUNNER_TEMP/aur-verify-${PKG}"
+          rm -rf "$verify"
+          git clone "ssh://aur@aur.archlinux.org/${PKG}.git" "$verify"
+          cmp "$dir/PKGBUILD" "$verify/PKGBUILD" \
+            || { echo "::error::AUR003 published PKGBUILD for ${PKG} differs from the qualified file"; exit 1; }
+          cmp "$dir/.SRCINFO" "$verify/.SRCINFO" \
+            || { echo "::error::AUR004 published .SRCINFO for ${PKG} differs from the qualified file"; exit 1; }
+
+      # The RPC index lags behind the git push; channels.md measured five
+      # minutes too short and twenty minutes sufficient — poll for 20 with a
+      # hard abort, never a warning, since an invisible package is a real
+      # finding and only a slow one.
+      - name: Verify the version is visible through the AUR RPC
+        env:
+          PKG: ${{ matrix.pkg }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          expected="${VERSION%%-*}-1"
+          for _ in $(seq 1 40); do
+            actual=$(curl -fsS "https://aur.archlinux.org/rpc/v5/info/${PKG}" | jq -r '.results[0].Version // empty')
+            if [[ "$actual" == "$expected" ]]; then
+              echo "AUR RPC reports ${PKG} at ${actual}"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::AUR005 AUR RPC never reported ${PKG} at ${expected} (last seen: ${actual:-<empty>}) after 20 minutes"
+          exit 1
 
   promote:
     name: Promote the staged release to latest
