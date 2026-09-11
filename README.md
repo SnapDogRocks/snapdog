@@ -174,23 +174,47 @@ sc start SnapDog
 
 ### Debian/Ubuntu (APT)
 
-```bash
-curl -fsSL https://snapdogrocks.github.io/snapdog/debian/snapdog-archive-keyring.asc \
-  | gpg --show-keys --with-colons \
-  | awk -F: '$1 == "fpr" { print $10; exit }'
-# Expected: E4AAC210C8C21377554DBDE40623E5F3B4379FC7
+Packages come from `deb.snapdog.cc`. Check the key before you trust it:
 
-curl -fsSL https://snapdogrocks.github.io/snapdog/debian/snapdog-archive-keyring.asc \
-  | sudo tee /usr/share/keyrings/snapdog-archive-keyring.asc >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/snapdog-archive-keyring.asc] https://snapdogrocks.github.io/snapdog/debian stable main" \
+```bash
+curl -fsSL https://deb.snapdog.cc/snapdog-archive-keyring.pgp -o /tmp/snapdog-archive-keyring.pgp
+gpg --show-keys --with-colons /tmp/snapdog-archive-keyring.pgp \
+  | awk -F: '$1 == "fpr" { print $10; exit }'
+# Expected: 1B7B79417383648BBFBE282E01AB8296EF0FCD76
+```
+
+That is the certifying primary key. It signs nothing itself; the packages for
+this domain are signed by its subkey
+`CFE7BACA652DD0D72EB7156FC7252FAD41F8F7DA`. Only install once the primary
+fingerprint above matches:
+
+```bash
+sudo install -m 0644 /tmp/snapdog-archive-keyring.pgp \
+  /usr/share/keyrings/snapdog-archive-keyring.pgp
+echo "deb [signed-by=/usr/share/keyrings/snapdog-archive-keyring.pgp] https://deb.snapdog.cc rolling main" \
   | sudo tee /etc/apt/sources.list.d/snapdog.list
 sudo apt update
 sudo apt install snapdog snapdog-client
 ```
 
-APT metadata is signed both inline (`InRelease`) and detached (`Release.gpg`). Do
-not use `trusted=yes`; the repository signing-key fingerprint is
-`E4AA C210 C8C2 1377 554D  BDE4 0623 E5F3 B437 9FC7`.
+Do not add `trusted=yes`. It disables exactly the check the fingerprint above is
+for.
+
+#### Moving from the old repository
+
+Until September 2026 the packages were served from a branch of this repository
+at `https://snapdogrocks.github.io/snapdog/debian`, signed with the key
+`E4AAC210C8C21377554DBDE40623E5F3B4379FC7`. That location is frozen at 0.27.4
+and receives nothing further. It is not redirected, because GitHub Pages cannot
+redirect and `apt` would ignore an HTML one.
+
+```bash
+sudo rm -f /etc/apt/sources.list.d/snapdog.list \
+           /usr/share/keyrings/snapdog-archive-keyring.asc
+```
+
+Then follow the steps above. The package names do not change, so an installed
+system upgrades in place.
 
 ### Homebrew (macOS)
 
