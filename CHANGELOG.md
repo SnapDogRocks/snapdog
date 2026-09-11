@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.5](https://github.com/SnapDogRocks/snapdog/compare/v0.27.4...v0.27.5) (2026-09-11)
+
+
+### Bug Fixes
+
+* **release:** sanitize .deb filenames before signing/upload ([#256](https://github.com/SnapDogRocks/snapdog/issues/256)) ([39ae083](https://github.com/SnapDogRocks/snapdog/commit/39ae083d40bc03d02215faf5b4548af2ea06a33b))
+
 ## [0.27.4](https://github.com/SnapDogRocks/snapdog/compare/v0.27.3...v0.27.4) (2026-09-06)
 
 
