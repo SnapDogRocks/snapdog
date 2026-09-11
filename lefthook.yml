@@ -1,0 +1,57 @@
+# lefthook for the snapdog workspace: Rust (workspace crates, xtask) plus
+# webui/ (Next.js/TypeScript). One config for both language surfaces; the
+# check scripts live under scripts/hooks/ and are manager-independent.
+#
+# Installation:
+#   brew install lefthook   (or: mise use -g lefthook)
+#   lefthook install
+
+commit-msg:
+  commands:
+    conventional-commits:
+      # {1} is the path to the commit message.
+      run: sh scripts/hooks/check-commit-message.sh {1}
+
+pre-commit:
+  parallel: true
+  commands:
+    staged-guards:
+      run: sh scripts/hooks/check-staged.sh
+    secrets:
+      run: gitleaks git --pre-commit --redact --staged --verbose
+    # Formatting only: clippy compiles and blows the pre-commit budget.
+    format:
+      glob: "*.rs"
+      run: cargo fmt --all -- --check
+    # webui/: fail early if a translation catalog is incomplete (missing,
+    # extra or untranslated keys). Package-manager independent: it picks
+    # npm or pnpm by whichever lockfile is present at run time, so this
+    # config does not need to change when webui/ switches manager.
+    webui-i18n:
+      glob: "webui/messages/**"
+      run: |
+        cd webui
+        if [ -f pnpm-lock.yaml ]; then pnpm run i18n:check; else npm run i18n:check; fi
+    # macOS companion app: fail early if the String Catalog isn't fully
+    # translated (all REQUIRED_LOCALES).
+    macos-i18n:
+      glob: "**/Localizable.xcstrings"
+      run: python3 macos-helper/check-i18n.py
+
+pre-push:
+  parallel: false
+  commands:
+    secrets:
+      run: sh scripts/hooks/check-push-secrets.sh
+    # --all-features deliberately omitted: it forces a complete rebuild.
+    # The full matrix runs in CI.
+    clippy:
+      run: cargo clippy --workspace --all-targets -- -D warnings
+    tests:
+      run: cargo nextest run --workspace
+    # webui/: same npm/pnpm auto-detection as the i18n check above.
+    webui-lint:
+      glob: "webui/**"
+      run: |
+        cd webui
+        if [ -f pnpm-lock.yaml ]; then pnpm run lint; else npm run lint; fi

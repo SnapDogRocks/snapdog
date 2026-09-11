@@ -25,7 +25,7 @@ export function ThemeToggle() {
       }
     }, 0);
 
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); };
   }, []);
 
   // Update root classes and localStorage when the theme changes

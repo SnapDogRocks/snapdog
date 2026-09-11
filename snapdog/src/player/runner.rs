@@ -39,9 +39,9 @@ pub(super) const PCM_DECODE_CHANNEL_SIZE: usize = 64;
 /// Delay before restarting a crashed zone player.
 const ZONE_RESTART_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 /// Cap on the exponential restart backoff for a repeatedly-crashing zone player.
-const ZONE_RESTART_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
+const ZONE_RESTART_MAX_DELAY: std::time::Duration = std::time::Duration::from_mins(1);
 /// A zone run lasting at least this long is "stable" — it resets the crash counter.
-const ZONE_STABLE_RUN: std::time::Duration = std::time::Duration::from_secs(60);
+const ZONE_STABLE_RUN: std::time::Duration = std::time::Duration::from_mins(1);
 /// Consecutive crashes (without a stable run) before giving up on a zone player.
 const ZONE_MAX_CONSECUTIVE_CRASHES: u32 = 8;
 

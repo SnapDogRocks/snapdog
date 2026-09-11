@@ -101,7 +101,7 @@ export function LocalePicker() {
           {locales.map((l) => (
             <button
               key={l}
-              onClick={() => select(l)}
+              onClick={() => { select(l); }}
               role="menuitem"
               tabIndex={-1}
               className={`w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center justify-between ${

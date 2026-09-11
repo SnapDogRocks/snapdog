@@ -20,7 +20,7 @@ fn build_webui() {
     // Re-run if webui sources change
     println!("cargo::rerun-if-changed=../webui/src");
     println!("cargo::rerun-if-changed=../webui/package.json");
-    println!("cargo::rerun-if-changed=../webui/package-lock.json");
+    println!("cargo::rerun-if-changed=../webui/pnpm-lock.yaml");
     println!("cargo::rerun-if-changed=../webui/next.config.ts");
     println!("cargo::rerun-if-changed=../webui/tsconfig.json");
     println!("cargo::rerun-if-changed=../webui/messages");
@@ -35,19 +35,22 @@ fn build_webui() {
         return;
     }
 
-    let status = Command::new("npm")
-        .arg("ci")
+    let status = Command::new("pnpm")
+        .args(["install", "--frozen-lockfile"])
         .current_dir(&webui_dir)
         .status()
-        .expect("failed to run `npm ci` — is npm installed?");
-    assert!(status.success(), "`npm ci` failed with {status}");
+        .expect("failed to run `pnpm install` — is pnpm installed? (npm i -g pnpm, matching webui/package.json's packageManager field)");
+    assert!(
+        status.success(),
+        "`pnpm install --frozen-lockfile` failed with {status}"
+    );
 
-    let status = Command::new("npm")
+    let status = Command::new("pnpm")
         .args(["run", "build"])
         .current_dir(&webui_dir)
         .status()
-        .expect("failed to run `npm run build` — is npm installed?");
-    assert!(status.success(), "`npm run build` failed with {status}");
+        .expect("failed to run `pnpm run build` — is pnpm installed?");
+    assert!(status.success(), "`pnpm run build` failed with {status}");
 }
 
 #[cfg(target_os = "windows")]

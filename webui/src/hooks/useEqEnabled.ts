@@ -8,7 +8,7 @@ export function useEqEnabled(target: { zoneId?: number; clientId?: number }): [b
     const id = target.clientId ?? target.zoneId;
     if (!id) return;
     const fetcher = target.clientId ? api.clientEq.get : api.eq.get;
-    fetcher(id).then((c) => setEnabled(c.enabled)).catch(logApiError);
+    fetcher(id).then((c) => { setEnabled(c.enabled); }).catch(logApiError);
   }, [target.zoneId, target.clientId]);
   return [enabled, setEnabled];
 }

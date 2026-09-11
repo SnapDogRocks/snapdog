@@ -55,7 +55,7 @@ export function ApiKeyPrompt({ onAuthenticated }: ApiKeyPromptProps) {
             placeholder={t("placeholder")}
             value={key}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setKey(e.target.value); setError(false); }}
-            onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && submit()}
+            onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter") void submit(); }}
             autoFocus
             aria-label={t("placeholder")}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -64,7 +64,7 @@ export function ApiKeyPrompt({ onAuthenticated }: ApiKeyPromptProps) {
             <p className="text-sm text-destructive" role="alert">{t("invalid")}</p>
           )}
         </div>
-        <Button onClick={submit} disabled={checking || !key.trim()} className="w-full">
+        <Button onClick={() => { void submit(); }} disabled={checking || !key.trim()} className="w-full">
           {checking ? t("checking") : t("submit")}
         </Button>
       </div>

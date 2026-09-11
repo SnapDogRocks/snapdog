@@ -16,7 +16,7 @@ use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
 use crate::state;
 
 /// MQTT keep-alive interval.
-const MQTT_KEEP_ALIVE: std::time::Duration = std::time::Duration::from_secs(60);
+const MQTT_KEEP_ALIVE: std::time::Duration = std::time::Duration::from_mins(1);
 /// Delay before MQTT reconnection attempt.
 const MQTT_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 /// Event loop channel capacity for MQTT messages.

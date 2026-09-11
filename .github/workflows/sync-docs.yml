@@ -22,6 +22,9 @@ jobs:
   # error into a visible warning, so a missing secret no longer reddens main.
   gate:
     runs-on: ubuntu-latest
+    # SNAPDOG_WEB_SYNC_TOKEN is a cross-repo write credential; keep it behind a
+    # protected, branch-restricted environment rather than a bare repo secret.
+    environment: docs-sync
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
     steps:
@@ -40,6 +43,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.enabled == 'true'
     runs-on: ubuntu-latest
+    environment: docs-sync
     steps:
       - name: Checkout SnapDog Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0

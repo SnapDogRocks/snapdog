@@ -19,7 +19,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
-    messageImports[locale]().then((m) => setMessages(m.default));
+    messageImports[locale]()
+      .then((m) => { setMessages(m.default); })
+      .catch((err: unknown) => { console.error(`Failed to load "${locale}" messages`, err); });
     document.documentElement.lang = locale;
   }, [locale]);
 
@@ -44,7 +46,9 @@ interface I18nContextValue {
 
 const I18nContext = createContext<I18nContextValue>({
   locale: "en",
-  setLocale: () => {},
+  // Default no-op: real consumers always read this through the provider
+  // below, which supplies the actual setter.
+  setLocale: () => { /* no-op default, see I18nProvider */ },
 });
 
 export const useI18n = () => useContext(I18nContext);

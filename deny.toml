@@ -1,0 +1,85 @@
+# cargo-deny. Checks advisories, licences, duplicates and registries.
+# Replaces the former root `audit.toml` (`cargo-audit` command-line
+# `--ignore` flags in ci.yml/nightly.yml) — see rust.md under "Further tools".
+# Every entry under `ignore` needs a reason, the affected crate and the
+# condition under which it is removed again.
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+ignore = [
+    # rsa: Marvin Attack timing sidechannel — no patch available.
+    # Pulled by: shairplay, librespot-core (via rsa → num-bigint-dig).
+    { id = "RUSTSEC-2023-0071", reason = "no patched stable release available; pulled in through shairplay and librespot-core; remove once rsa ships a fix" },
+
+    # rustls-webpki: CRL distribution point matching, URI name constraints,
+    # wildcard name constraints.
+    # Pulled by: rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102.
+    # Fix requires rumqttc to upgrade to rustls 0.23+.
+    { id = "RUSTSEC-2026-0049", reason = "pulled in through rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102; remove once rumqttc depends on rustls 0.23+" },
+    { id = "RUSTSEC-2026-0098", reason = "pulled in through rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102; remove once rumqttc depends on rustls 0.23+" },
+    { id = "RUSTSEC-2026-0099", reason = "pulled in through rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102; remove once rumqttc depends on rustls 0.23+" },
+    { id = "RUSTSEC-2026-0104", reason = "pulled in through rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102; remove once rumqttc depends on rustls 0.23+" },
+
+    # rustls-pemfile: unmaintained.
+    # Pulled by: rumqttc 0.25.
+    { id = "RUSTSEC-2025-0134", reason = "unmaintained; pulled in through rumqttc 0.25; remove once rumqttc drops it or it regains a maintainer" },
+
+    # rand 0.8: unsound with custom logger + thread_rng reseeding.
+    # Pulled by: shairplay, librespot (via rsa -> num-bigint-dig).
+    # Fix requires upstream to bump to rand 0.9.3+.
+    { id = "RUSTSEC-2026-0097", reason = "unsound with a custom logger + thread_rng reseeding; pulled in through shairplay and librespot (via rsa -> num-bigint-dig); remove once that chain depends on rand 0.9.3+" },
+
+    # quick-xml: fixed in >=0.41 but held <0.41 by librespot-core 0.8.
+    # Revisit when a new stable librespot release ships.
+    { id = "RUSTSEC-2026-0194", reason = "fixed in quick-xml >=0.41 but held <0.41 by librespot-core 0.8; remove once a new stable librespot release ships" },
+    { id = "RUSTSEC-2026-0195", reason = "fixed in quick-xml >=0.41 but held <0.41 by librespot-core 0.8; remove once a new stable librespot release ships" },
+]
+
+[licenses]
+# This project's own licence (GPL-3.0-only, per the workspace and every member
+# crate's `Cargo.toml`) has to be in this list too, otherwise the check fails
+# on the project's own crates.
+allow = [
+    "GPL-3.0-only",
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    # symphonia's format/metadata/utils sub-crates (riff, metadata, utils-xiph).
+    "MPL-2.0",
+    # webpki-roots / webpki-root-certs (reqwest's TLS root store via
+    # rustls-platform-verifier).
+    "CDLA-Permissive-2.0",
+    # libbz2-rs-sys (bzip2 decompression, via the `zip` dev-dependency of xtask).
+    "bzip2-1.0.6",
+    # ppmd-rust (`CC0-1.0 OR MIT-0`, via the `zip` dev-dependency of xtask) —
+    # satisfied via the CC0-1.0 arm of that OR expression.
+    "CC0-1.0",
+    # shairplay (AirPlay 1/2 receiver). LGPL is compatible with this workspace's
+    # own GPL-3.0-only.
+    "LGPL-3.0-or-later",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "warn"
+# cargo-deny's `wildcards` check treats a `path` dependency with no `version`
+# field the same as a registry dependency pinned to "*" — but unversioned path
+# deps between workspace members (e.g. xtask -> snapdog, snapdog -> snapdog-common)
+# are normal, idiomatic Cargo and not a supply-chain risk; there is no external
+# (registry) dependency in this workspace pinned to "*". Matches cargo-deny's own
+# default.
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

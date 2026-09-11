@@ -3,11 +3,6 @@
 
 //! Shared types and constants for `SnapDog` server and client.
 
-// Pedantic lints allowed crate-wide: arithmetic casts are intentional in audio math,
-// float comparisons are acceptable for gain/volume values, and must_use on every
-// public helper adds noise without safety benefit.
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::float_cmp)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 

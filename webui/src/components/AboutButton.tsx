@@ -18,14 +18,14 @@ export function AboutButton() {
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { setOpen(true); }}
         className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/55 transition-colors cursor-pointer"
         aria-label={t("title")}
       >
         <InfoIcon size={16} />
       </button>
       <AnimatePresence>
-        {open && <AboutOverlay onClose={() => setOpen(false)} />}
+        {open && <AboutOverlay onClose={() => { setOpen(false); }} />}
       </AnimatePresence>
     </>
   );
@@ -183,7 +183,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
 
           {/* Retro digital soundwave visualizer */}
           <div className="flex items-center justify-center gap-0.5 h-4 mt-2">
-            {[...Array(9)].map((_, i) => (
+            {Array.from({ length: 9 }, (_, i) => (
               <motion.div
                 key={i}
                 animate={{
@@ -278,7 +278,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             <button
               onClick={() => {
                 const next = !progMode;
-                api.knx.setProgrammingMode(next).then(() => setProgMode(next)).catch(() => {});
+                api.knx.setProgrammingMode(next).then(() => { setProgMode(next); }).catch(() => { /* leave progMode as-is on failure */ });
               }}
               className={`relative w-11 h-6 rounded-full transition-colors ${progMode ? "bg-red-500" : "bg-muted"}`}
               role="switch"
@@ -292,7 +292,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
 
         {/* KNX ETS product database (.knxprod) download — for importing SnapDog into ETS */}
         <button
-          onClick={() => { api.knx.downloadKnxprod().catch(() => {}); }}
+          onClick={() => { api.knx.downloadKnxprod().catch(() => { /* download failed silently; nothing to recover here */ }); }}
           className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer text-left"
         >
           <div className="flex flex-col min-w-0">

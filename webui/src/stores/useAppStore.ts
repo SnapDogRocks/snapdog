@@ -5,7 +5,7 @@ import type {
   ClientInfo,
   EqBand,
 } from "@/lib/types";
-import { api, type EqConfig } from "@/lib/api";
+import { api } from "@/lib/api";
 
 const DEFAULT_TRACK: TrackMetadata = {
   title: "",
@@ -109,7 +109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const zones = new Map<number, ZoneState>();
       for (const z of zoneList) {
-        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled ?? true, presenceTimerActive: z.presence_timer_active ?? false, buffered_ms: null, error: null });
+        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled, presenceTimerActive: z.presence_timer_active, buffered_ms: null, error: null });
       }
 
       // Fetch track metadata and EQ state for each zone in parallel
@@ -118,16 +118,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         Promise.allSettled(zoneList.map((z) => api.eq.get(z.index))),
       ]);
 
-      for (let i = 0; i < zoneList.length; i++) {
-        const zoneId = zoneList[i].index;
-        const zone = zones.get(zoneId);
-        if (zone) {
-          if (metaResults[i].status === "fulfilled") {
-            zone.track = (metaResults[i] as PromiseFulfilledResult<TrackMetadata>).value;
-          }
-          if (eqResults[i].status === "fulfilled") {
-            zone.eqEnabled = (eqResults[i] as PromiseFulfilledResult<EqConfig>).value.enabled;
-          }
+      for (const [i, z] of zoneList.entries()) {
+        const zone = zones.get(z.index);
+        if (!zone) continue;
+        const metaResult = metaResults[i];
+        const eqResult = eqResults[i];
+        if (metaResult?.status === "fulfilled") {
+          zone.track = metaResult.value;
+        }
+        if (eqResult?.status === "fulfilled") {
+          zone.eqEnabled = eqResult.value.enabled;
         }
       }
 
@@ -237,7 +237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isConnected: v, serverGoingAway: goingAway ?? false });
     // On reconnect, re-fetch all state
     if (v && !was) {
-      get().loadAll();
+      void get().loadAll();
     }
   },
 }));
