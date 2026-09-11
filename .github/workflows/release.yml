@@ -86,7 +86,17 @@ jobs:
           GH_TOKEN: ${{ steps.homebrew.outputs.token }}
         run: |
           set -euo pipefail
-          mapfile -t reach < <(gh api /installation/repositories --jq '.repositories[].full_name' | sort)
+          # `mapfile` is a bash 4 builtin and this job runs on macOS, whose only
+          # bash is 3.2 — it died here with exit 127 on the first real release
+          # (v0.27.5), skipping PF002-PF013 with it. `reach=()` is load-bearing:
+          # under `set -u` an undeclared array makes ${#reach[@]} abort before
+          # the PF001 diagnostic can print. `|| [ -n "$repo" ]` keeps a final
+          # line that carries no trailing newline, which plain `read` drops.
+          reach=()
+          while IFS= read -r repo || [ -n "$repo" ]; do
+            [ -n "$repo" ] || continue
+            reach+=("$repo")
+          done < <(gh api /installation/repositories --jq '.repositories[].full_name' | sort)
           if [[ ${#reach[@]} -ne 1 || "${reach[0]}" != "SnapDogRocks/homebrew-tap" ]]; then
             echo "::error::PF001 the Homebrew App token reaches ${#reach[@]} repositories, expected only SnapDogRocks/homebrew-tap"
             exit 1
@@ -107,7 +117,12 @@ jobs:
           GH_TOKEN: ${{ steps.archive.outputs.token }}
         run: |
           set -euo pipefail
-          mapfile -t reach < <(gh api /installation/repositories --jq '.repositories[].full_name' | sort)
+          # bash 3.2 on macOS, as in the PF001 step above.
+          reach=()
+          while IFS= read -r repo || [ -n "$repo" ]; do
+            [ -n "$repo" ] || continue
+            reach+=("$repo")
+          done < <(gh api /installation/repositories --jq '.repositories[].full_name' | sort)
           if [[ ${#reach[@]} -ne 1 || "${reach[0]}" != "metaneutrons/apt-archive" ]]; then
             echo "::error::PF002 the archive-dispatch token reaches ${#reach[@]} repositories, expected only metaneutrons/apt-archive"
             exit 1
@@ -1019,14 +1034,29 @@ jobs:
           set -euo pipefail
           gh release upload "${{ needs.meta.outputs.tag }}" ./release-assets/* \
             --repo "${{ github.repository }}"
-      - name: Verify every remote asset from a clean directory
+      # Retry the download but NOT the comparison below. A single HTTP 500 from
+      # the assets API failed the whole v0.27.5 release here, after every asset
+      # had already uploaded correctly. Each attempt starts from a clean `remote`
+      # so a partial download cannot be mistaken for a mismatch on the next one.
+      - name: Download the published assets into a clean directory
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.1
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: |
+            set -euo pipefail
+            rm -rf remote
+            mkdir remote
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir remote
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.meta.outputs.tag }}
+      # Deliberately not retried: this is the assertion, and a mismatch is a real
+      # finding that must fail the first time rather than be attempted three times.
+      - name: Verify every remote asset from a clean directory
         run: |
           set -euo pipefail
-          mkdir remote
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir remote
           diff -u <(cd release-assets && sha256sum ./* | sort) <(cd remote && sha256sum ./* | sort)
 
   publish-release:
