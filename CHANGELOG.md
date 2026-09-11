@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.6](https://github.com/SnapDogRocks/snapdog/compare/v0.27.5...v0.27.6) (2026-09-11)
+
+
+### Bug Fixes
+
+* **release:** make preflight run on macOS bash 3.2, retry the asset read-back ([#259](https://github.com/SnapDogRocks/snapdog/issues/259)) ([b564606](https://github.com/SnapDogRocks/snapdog/commit/b56460632f2d24109e9d0ee1bdd08c69467dbc14))
+
 ## [0.27.5](https://github.com/SnapDogRocks/snapdog/compare/v0.27.4...v0.27.5) (2026-09-11)
 
 
