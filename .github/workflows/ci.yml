@@ -70,6 +70,10 @@ jobs:
             deps:
               - '**/Cargo.toml'
               - 'Cargo.lock'
+              # The exception list itself: editing deny.toml has to run the check
+              # that validates it, otherwise a stale or unjustified entry lands
+              # unseen and waits for the nightly run.
+              - 'deny.toml'
             macos:
               - 'macos-helper/**'
             macos_client:

@@ -97,7 +97,10 @@ Three exceptions remain and all three still match: `RUSTSEC-2023-0071`
 through librespot-core 0.8.0).
 
 Both cargo-deny steps now run with `--deny advisory-not-detected`, so this rots
-loudly instead of silently: an entry that stops matching fails the run. Note that
+loudly instead of silently: an entry that stops matching fails the run. `deny.toml`
+is also part of ci.yml's `deps` path filter now, because the audit job was gated
+on `**/Cargo.toml` and `Cargo.lock` alone: editing the exception list did not run
+the check that validates it. Note that
 upstream can trigger it without a commit here, by withdrawing an advisory or
 narrowing its affected range. The fix is then to delete the entry, which needs no
 source change. The nightly run catches it on an unchanged lockfile.
