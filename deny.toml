@@ -14,24 +14,6 @@ ignore = [
     # Pulled by: shairplay, librespot-core (via rsa → num-bigint-dig).
     { id = "RUSTSEC-2023-0071", reason = "no patched stable release available; pulled in through shairplay and librespot-core; remove once rsa ships a fix" },
 
-    # rustls-webpki: CRL distribution point matching, URI name constraints,
-    # wildcard name constraints.
-    # Pulled by: rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102.
-    # Fix requires rumqttc to upgrade to rustls 0.23+.
-    { id = "RUSTSEC-2026-0049", reason = "pulled in through rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102; remove once rumqttc depends on rustls 0.23+" },
-    { id = "RUSTSEC-2026-0098", reason = "pulled in through rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102; remove once rumqttc depends on rustls 0.23+" },
-    { id = "RUSTSEC-2026-0099", reason = "pulled in through rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102; remove once rumqttc depends on rustls 0.23+" },
-    { id = "RUSTSEC-2026-0104", reason = "pulled in through rumqttc 0.25 -> rustls 0.22 -> rustls-webpki 0.102; remove once rumqttc depends on rustls 0.23+" },
-
-    # rustls-pemfile: unmaintained.
-    # Pulled by: rumqttc 0.25.
-    { id = "RUSTSEC-2025-0134", reason = "unmaintained; pulled in through rumqttc 0.25; remove once rumqttc drops it or it regains a maintainer" },
-
-    # rand 0.8: unsound with custom logger + thread_rng reseeding.
-    # Pulled by: shairplay, librespot (via rsa -> num-bigint-dig).
-    # Fix requires upstream to bump to rand 0.9.3+.
-    { id = "RUSTSEC-2026-0097", reason = "unsound with a custom logger + thread_rng reseeding; pulled in through shairplay and librespot (via rsa -> num-bigint-dig); remove once that chain depends on rand 0.9.3+" },
-
     # quick-xml: fixed in >=0.41 but held <0.41 by librespot-core 0.8.
     # Revisit when a new stable librespot release ships.
     { id = "RUSTSEC-2026-0194", reason = "fixed in quick-xml >=0.41 but held <0.41 by librespot-core 0.8; remove once a new stable librespot release ships" },
