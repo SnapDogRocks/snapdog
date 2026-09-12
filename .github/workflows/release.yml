@@ -208,7 +208,10 @@ jobs:
       - name: Cloudflare — the appcast object is actually readable from R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          # Not a secret: the account ID appears in every R2 endpoint URL, and
+          # the sibling apt-archive repository likewise carries it in a checked-in
+          # manifest (domains/<d>/manifest.toml, read by its publish.yml).
+          CLOUDFLARE_ACCOUNT_ID: "9122b44fa4c05b23985d6a0b779caa01"
         run: |
           set -euo pipefail
           # Liveness alone is not capability. /user/tokens/verify answers only
@@ -224,8 +227,6 @@ jobs:
             echo "::error::PF012 CLOUDFLARE_API_TOKEN is not active"
             exit 1
           fi
-          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" \
-            || { echo "::error::PF012b CLOUDFLARE_ACCOUNT_ID variable is not set"; exit 1; }
           npm install -g wrangler@4.127.1
           if ! wrangler r2 object get snapdog-updates/helper/appcast.xml \
             --file "$RUNNER_TEMP/preflight-appcast.xml" --remote; then
@@ -1134,10 +1135,8 @@ jobs:
           # account-level permission, so wrangler cannot enumerate accounts and
           # fails before it reaches R2 at all. Naming the account is Cloudflare's
           # own remedy and keeps the token's least-privilege scope intact.
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: "9122b44fa4c05b23985d6a0b779caa01"
         run: |
-          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" \
-            || { echo "::error::AC001 CLOUDFLARE_ACCOUNT_ID variable is not set"; exit 1; }
           npm install -g wrangler@4.127.1
           # A missing/unreadable current appcast is an error: silently replacing it would
           # discard the other update channel and make recovery harder.
