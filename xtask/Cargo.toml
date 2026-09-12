@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 snapdog = { path = "../snapdog", default-features = false }
-knx-rs-prod = { version = "0.9.1", features = ["fetch"] }
+knx-rs-prod = { version = "0.9.2", features = ["fetch"] }
 utoipa = { workspace = true }
 
 [dev-dependencies]

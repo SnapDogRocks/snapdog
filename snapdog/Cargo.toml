@@ -45,7 +45,7 @@ rust-embed = "8"
 mac_address = "1"
 crc32fast = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
-shairplay = "0.9.1"
+shairplay = "0.10.0"
 mdns-sd = "0.21"
 gethostname = "1"
 zbus = { version = "5", optional = true }
