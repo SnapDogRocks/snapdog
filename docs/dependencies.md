@@ -21,6 +21,56 @@ rules; the audio protocol and service behavior are unchanged.
 
 A follow-up registry check also picked up shairplay 0.9.1 and ipnet 2.12.2.
 
+## Stable update (2026-09-12)
+
+The KNX crates move to 0.9.2 and shairplay to 0.10.0; reqwest 0.13.5, toml 1.1.6,
+uuid 1.26.1 and the remaining compatible transitive crates are refreshed. Both
+holds below still apply: vergen stays pinned at 9.0.6 and alsa at 0.11.0.
+
+knx-rs 0.9.2 derives the group-value wire form from the DPT wire size instead of
+inferring it from the encoded bytes. Under 0.9.1 any one-byte payload of 0x3F or
+less was packed into the six-bit APCI data field, so a DPT 5.001 volume below
+25 % or a DPT 5.010 count below 64 left the bus as a short telegram that a
+one-byte group object cannot read. Client mode publishes every status through
+`group_write_value` (`snapdog/src/knx/client.rs`), so it inherits the fix with no
+source change.
+
+The same release deprecates `GroupOps::group_write` and `GroupOps::group_respond`,
+whose successors are `group_write_raw` and `group_respond_raw` with an explicit
+`GroupValuePayload`, or the DPT-aware `group_write_value` and
+`group_respond_value`. Neither deprecated method has a call site in this
+workspace, which the Clippy run with warnings denied confirms.
+
+Device mode is not covered by that fix. It encodes through knx-rs-device, whose
+`application_layer::encode::encode_group_value` still applies the old length
+inference, so one-byte status objects below 64 remain affected until that crate
+adopts the same `DptWireSize` rule.
+
+shairplay 0.10.0 adds an opt-in `pipewire-auth-setup-compat` feature and bounds
+RTSP request ingestion before body dispatch. The public API is unchanged and the
+new feature stays off. Its plist dependency moves to 1.10.1, which drops the
+duplicate quick-xml 0.41 copy from the graph; librespot-core still holds
+quick-xml 0.38.4, so the two ignored advisories for it remain.
+
+### Validation (knx-rs 0.9.2, shairplay 0.10.0)
+
+- macOS ARM64, Rust 1.97.0 from `rust-toolchain.toml`: 354 workspace tests passed
+  under nextest, including the KNX golden wire contract and the xtask knxprod
+  artifact-freshness test.
+- Clippy with warnings denied passed for the workspace and for the process-mode
+  Snapcast build. Formatting is clean.
+- `cargo deny check` passed for advisories, bans, licences and sources with the
+  existing exception list. The three rustls-webpki ignores no longer match any
+  crate in the graph; that predates this update, because the lockfile already
+  resolved rustls-webpki 0.103.15 on main.
+- `cargo run -p xtask -- knx/snapdog.xml` regenerated the product database.
+  knx-rs-prod 0.9.2 indents the `ChannelIndependentBlock` children consistently,
+  so the committed `knx/snapdog.xml` changes by whitespace only (verified by
+  comparing both files with all spaces and tabs stripped) and `knx/snapdog.knxprod`
+  grows by the same 36 bytes. The ETS application version is unchanged.
+- Linux, Windows and the tier-2 service tests were not run locally; CI covers
+  them.
+
 ## Explicit upstream holds
 
 | Crate | Held version | Reason and removal condition |
@@ -57,14 +107,14 @@ cargo update
 cargo update -p vergen --precise 9.0.6
 cargo fmt --all -- --check
 SKIP_WEBUI_BUILD=1 cargo check --workspace --all-targets --locked
-SKIP_WEBUI_BUILD=1 cargo +1.94.0 check --workspace --all-targets --locked
 SKIP_WEBUI_BUILD=1 cargo clippy --workspace --all-targets --locked -- -D warnings
 SKIP_WEBUI_BUILD=1 cargo clippy -p snapdog --no-default-features --features snapcast-process --all-targets --locked -- -D warnings
-SKIP_WEBUI_BUILD=1 cargo test --workspace --locked
+SKIP_WEBUI_BUILD=1 cargo nextest run --workspace --locked
+SKIP_WEBUI_BUILD=1 cargo nextest run -p snapdog --no-default-features --features snapcast-process --locked
 SKIP_WEBUI_BUILD=1 cargo test -p snapdog --features test-harness --test zone_player --locked
 SKIP_WEBUI_BUILD=1 cargo test -p snapdog --features ap2 --lib receiver::airplay --locked
 SKIP_WEBUI_BUILD=1 cargo test -p snapdog --test mqtt_tier2 --locked -- --nocapture
-cargo audit
+cargo deny check
 ```
 
 The MQTT test must actually exercise Docker/Mosquitto: a `SKIP IT-T32` message is
