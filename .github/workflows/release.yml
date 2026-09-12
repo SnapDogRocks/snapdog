@@ -1599,7 +1599,7 @@ jobs:
           fi
 
   promote-images:
-    name: Move :latest to the promoted release (${{ matrix.image }})
+    name: Move floating tags to the promoted release (${{ matrix.image }})
     # Only after promote: the container :latest tag and the GitHub "latest"
     # release must not disagree. docker builds and pushes the exact version
     # earlier; this moves the floating tag once the release is really live.
@@ -1623,25 +1623,46 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Point :latest at the released digest
+      - name: Point the floating tags at the released digest
         env:
           REPO: ${{ matrix.repo }}
           TAG: ${{ needs.meta.outputs.tag }}
         run: |
           set -euo pipefail
-          # imagetools creates a tag against the existing manifest list; it does
-          # not rebuild and does not re-push layers, so :latest resolves to the
-          # exact bytes already signed and attested under the version tag.
+          version="${TAG#v}"
+          # promote-images is already gated on a non-prerelease tag; this is the
+          # belt-and-braces check, because a floating tag pointing at a
+          # prerelease is exactly the state this job exists to prevent.
+          case "$version" in
+            *-*) echo "::error::IMG003 refusing to move floating tags for prerelease ${TAG}"; exit 1 ;;
+          esac
+          major="${version%%.*}"
+          rest="${version#*.}"
+          minor="${major}.${rest%%.*}"
+
+          # imagetools creates tags against the existing manifest list; it does
+          # not rebuild and does not re-push layers, so every floating tag
+          # resolves to the exact bytes already signed and attested under the
+          # version tag.
           digest=$(docker buildx imagetools inspect "${REPO}:${TAG}" \
             --format '{{json .Manifest.Digest}}' | tr -d '"')
           test -n "$digest" || { echo "::error::IMG001 cannot resolve ${REPO}:${TAG}"; exit 1; }
-          docker buildx imagetools create --tag "${REPO}:latest" "${REPO}@${digest}"
-          latest_digest=$(docker buildx imagetools inspect "${REPO}:latest" \
-            --format '{{json .Manifest.Digest}}' | tr -d '"')
-          if [[ "$latest_digest" != "$digest" ]]; then
-            echo "::error::IMG002 ${REPO}:latest is ${latest_digest}, expected ${digest}"
-            exit 1
-          fi
+
+          docker buildx imagetools create \
+            --tag "${REPO}:latest" \
+            --tag "${REPO}:${minor}" \
+            --tag "${REPO}:${major}" \
+            "${REPO}@${digest}"
+
+          for floating in latest "$minor" "$major"; do
+            actual=$(docker buildx imagetools inspect "${REPO}:${floating}" \
+              --format '{{json .Manifest.Digest}}' | tr -d '"')
+            if [[ "$actual" != "$digest" ]]; then
+              echo "::error::IMG002 ${REPO}:${floating} is ${actual}, expected ${digest}"
+              exit 1
+            fi
+            echo "${REPO}:${floating} -> ${digest}"
+          done
 
   smoke-apt:
     name: Smoke-test the Debian packages
