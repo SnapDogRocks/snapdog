@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.7](https://github.com/SnapDogRocks/snapdog/compare/v0.27.6...v0.27.7) (2026-09-12)
+
+
+### Bug Fixes
+
+* **release:** name the Cloudflare account, make PF012 real, gate floating image tags on promote ([#265](https://github.com/SnapDogRocks/snapdog/issues/265)) ([e18874a](https://github.com/SnapDogRocks/snapdog/commit/e18874ae1a8bca28b7af60709f7bcf55a8885310))
+
 ## [0.27.6](https://github.com/SnapDogRocks/snapdog/compare/v0.27.5...v0.27.6) (2026-09-11)
 
 
