@@ -70,6 +70,10 @@ jobs:
             deps:
               - '**/Cargo.toml'
               - 'Cargo.lock'
+              # The exception list itself: editing deny.toml has to run the check
+              # that validates it, otherwise a stale or unjustified entry lands
+              # unseen and waits for the nightly run.
+              - 'deny.toml'
             macos:
               - 'macos-helper/**'
             macos_client:
@@ -355,7 +359,11 @@ jobs:
           tool: cargo-deny
       - name: Run cargo-deny (advisories, licences, bans, sources)
         # Ignored advisories, allowed licences and their reasons live in deny.toml.
-        run: cargo deny check
+        # `--deny advisory-not-detected` fails the run when an entry under
+        # `[advisories] ignore` no longer matches any crate, so exceptions cannot
+        # outlive the problem they were written for. Removing such an entry is the
+        # fix; it needs no source change.
+        run: cargo deny check --deny advisory-not-detected
 
   knxprod:
     name: KNX Product Database

@@ -60,9 +60,8 @@ quick-xml 0.38.4, so the two ignored advisories for it remain.
 - Clippy with warnings denied passed for the workspace and for the process-mode
   Snapcast build. Formatting is clean.
 - `cargo deny check` passed for advisories, bans, licences and sources with the
-  existing exception list. The three rustls-webpki ignores no longer match any
-  crate in the graph; that predates this update, because the lockfile already
-  resolved rustls-webpki 0.103.15 on main.
+  existing exception list. Six of its ignores no longer matched any crate in the
+  graph; that predates this update and is cleaned up in the follow-up below.
 - `cargo run -p xtask -- knx/snapdog.xml` regenerated the product database.
   knx-rs-prod 0.9.2 indents the `ChannelIndependentBlock` children consistently,
   so the committed `knx/snapdog.xml` changes by whitespace only (verified by
@@ -70,6 +69,41 @@ quick-xml 0.38.4, so the two ignored advisories for it remain.
   grows by the same 36 bytes. The ETS application version is unchanged.
 - Linux, Windows and the tier-2 service tests were not run locally; CI covers
   them.
+
+### Follow-up: obsolete advisory exceptions removed
+
+Six entries under `[advisories] ignore` in `deny.toml` no longer matched any
+crate, so `cargo deny` reported them as `advisory-not-detected`. An exception
+that matches nothing is not harmless: it hides whether the underlying problem
+was fixed or merely stopped being detected, and it survives every later review
+because nothing forces a re-read.
+
+- `RUSTSEC-2026-0049`, `RUSTSEC-2026-0098`, `RUSTSEC-2026-0099` and
+  `RUSTSEC-2026-0104` covered rustls-webpki 0.102 reached through
+  rumqttc 0.25 and rustls 0.22. rumqttc is built with `default-features = false`
+  and `use-native-tls`, so that chain is gone: the graph resolves rustls 0.23.44
+  and rustls-webpki 0.103.15 only. The recorded removal condition (rumqttc moving
+  to rustls 0.23+) never happened; the native-TLS feature choice removed the path
+  instead.
+- `RUSTSEC-2025-0134` covered rustls-pemfile through the same chain.
+  rustls-pemfile is no longer in the graph at all.
+- `RUSTSEC-2026-0097` covered rand 0.8 unsoundness. The advisory lists
+  `>= 0.8.6` as patched for that line, and the graph holds rand 0.8.8, 0.9.5 and
+  0.10.2, so every resolved version is patched. The recorded condition (the
+  chain moving to rand 0.9.3+) was stricter than the advisory requires.
+
+Three exceptions remain and all three still match: `RUSTSEC-2023-0071`
+(rsa 0.9.10) and `RUSTSEC-2026-0194` / `RUSTSEC-2026-0195` (quick-xml 0.38.4
+through librespot-core 0.8.0).
+
+Both cargo-deny steps now run with `--deny advisory-not-detected`, so this rots
+loudly instead of silently: an entry that stops matching fails the run. `deny.toml`
+is also part of ci.yml's `deps` path filter now, because the audit job was gated
+on `**/Cargo.toml` and `Cargo.lock` alone: editing the exception list did not run
+the check that validates it. Note that
+upstream can trigger it without a commit here, by withdrawing an advisory or
+narrowing its affected range. The fix is then to delete the entry, which needs no
+source change. The nightly run catches it on an unchanged lockfile.
 
 ## Explicit upstream holds
 
@@ -84,8 +118,9 @@ report that every version number is newest.
 
 ## Security exceptions
 
-An unfiltered `cargo audit` still reports three vulnerabilities, all through
-librespot 0.8.0. This is **not** a vulnerability-free dependency graph:
+`cargo deny check advisories` reports three vulnerabilities once the exception
+list is set aside, all through librespot 0.8.0. This is **not** a
+vulnerability-free dependency graph:
 
 - `RUSTSEC-2023-0071`: rsa 0.9.10, Marvin timing attack; no patched stable release.
 - `RUSTSEC-2026-0194`: quick-xml 0.38.4, quadratic duplicate-attribute checking.
@@ -93,9 +128,10 @@ librespot 0.8.0. This is **not** a vulnerability-free dependency graph:
 
 The quick-xml issues are fixed in 0.41+, but librespot-core 0.8.0 requires 0.38.
 These are runtime dependencies when Spotify is enabled, not merely test tools.
-CI and nightly auditing retain only these three existing exceptions. Ten obsolete
-exceptions have been removed. Review the unfiltered audit on every update; a
-successful audit with exceptions does not establish that these issues are safe.
+`deny.toml` retains exactly these three exceptions. Review the unfiltered result
+on every update, and drop any entry that `cargo deny` reports as
+`advisory-not-detected`: a passing check with exceptions does not establish that
+these issues are safe.
 
 ## Update and verification
 
