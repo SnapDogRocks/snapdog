@@ -96,6 +96,12 @@ Three exceptions remain and all three still match: `RUSTSEC-2023-0071`
 (rsa 0.9.10) and `RUSTSEC-2026-0194` / `RUSTSEC-2026-0195` (quick-xml 0.38.4
 through librespot-core 0.8.0).
 
+Both cargo-deny steps now run with `--deny advisory-not-detected`, so this rots
+loudly instead of silently: an entry that stops matching fails the run. Note that
+upstream can trigger it without a commit here, by withdrawing an advisory or
+narrowing its affected range. The fix is then to delete the entry, which needs no
+source change. The nightly run catches it on an unchanged lockfile.
+
 ## Explicit upstream holds
 
 | Crate | Held version | Reason and removal condition |
