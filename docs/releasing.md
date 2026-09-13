@@ -4,6 +4,23 @@ SnapDog releases are fail-closed and use one compilation per target. Release
 tarballs are the source of the binaries subsequently placed, byte-for-byte, in
 Debian packages, AUR packages, Homebrew formulae and container images.
 
+## How changes reach main
+
+`main` is governed by a merge queue. A pull request is not merged the moment its
+checks pass: it is queued, GitHub re-tests it on a temporary
+`gh-readonly-queue/main/**` branch containing the entries ahead of it, and merges
+it only if that combined state passes. This closes the gap that auto-merge leaves
+open, since auto-merge will not bring a branch that has fallen behind up to date
+and `main` requires branches to be up to date.
+
+`CI Success` is main's only required check, so ci.yml triggers on `merge_group`
+as well. Removing that trigger would stall every queued entry on a check that
+never reports.
+
+Release Please PRs queue like any other pull request, so the `vX.Y.Z` tag in step
+1 below appears once the queue merges the PR rather than at the instant you click
+merge.
+
 ## State machine
 
 1. Merging the release-please PR creates the immutable `vX.Y.Z` tag and a **draft**

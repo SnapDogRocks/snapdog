@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Required for the merge queue: `CI Success` is main's only required check, so
+  # it has to report on the queue's `gh-readonly-queue/**` branches. Without this
+  # trigger every queued entry waits for a check that never runs.
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -47,6 +51,11 @@ jobs:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.2
         id: filter
         with:
+          # A merge_group run has no pull-request context to infer a base from, so
+          # name it explicitly: the diff is then the queue branch against the base
+          # the queue is merging into, i.e. the union of every entry in the group.
+          # Left empty elsewhere so pull_request and push keep their own defaults.
+          base: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_ref || '' }}
           filters: |
             rust:
               - '**/*.rs'
