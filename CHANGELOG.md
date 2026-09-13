@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.8](https://github.com/SnapDogRocks/snapdog/compare/v0.27.7...v0.27.8) (2026-09-13)
+
+
+### Bug Fixes
+
+* **release:** reach the appcast over S3, the API the R2 token is scoped for ([#267](https://github.com/SnapDogRocks/snapdog/issues/267)) ([12f42e7](https://github.com/SnapDogRocks/snapdog/commit/12f42e76d6c02cda2a3f3cc0e219d196870455ca))
+
 ## [0.27.7](https://github.com/SnapDogRocks/snapdog/compare/v0.27.6...v0.27.7) (2026-09-12)
 
 
