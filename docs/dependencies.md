@@ -102,10 +102,46 @@ job in ci.yml is no longer path-filtered either. It was gated on `**/Cargo.toml`
 and `Cargo.lock`, so editing the exception list did not run the check that
 validates it, and neither did editing the cargo-deny step itself. The job takes
 about 20 seconds, which is not worth the risk of a check that silently does not
-run. Note that
-upstream can trigger it without a commit here, by withdrawing an advisory or
+run. Upstream can trip it without a commit here, by withdrawing an advisory or
 narrowing its affected range. The fix is then to delete the entry, which needs no
 source change. The nightly run catches it on an unchanged lockfile.
+
+## Stable update (2026-09-13)
+
+The KNX crates move to 0.9.3, a maintenance release cut from knx-rs's
+`release/0.9` branch. It carries the device-mode counterpart of the fix that
+0.9.2 applied to client mode: `knx-rs-device` now encodes a group object from its
+configured DPT's `wire_size` instead of inferring the wire form from the payload
+bytes, and keeps the old inference only for objects that have no DPT configured.
+
+Device mode was the half 0.9.2 did not reach, as recorded above. A one-byte
+status value of 0x3F or less was packed into the six-bit APCI data field, so a
+DPT 5.001 volume below 25 % or a DPT 5.010 count below 64 left the bus as a short
+telegram that a one-byte group object cannot read. Every group object this server
+serves has a DPT configured, since `set_value_if_changed` fails with `NoDpt`
+otherwise, so all of them take the corrected path. The published crate pins the
+behaviour: `DPT_SCALING` with `0x2A` now encodes as `[0x00, 0x80, 0x2A]`.
+
+Both modes are therefore correct from 0.9.3 on, client mode since 0.9.2 and
+device mode since this release. No source change was needed here for either.
+
+Note for a later update: knx-rs `main` is heading for 0.10.0, which removes the
+deprecated `GroupOps::group_write` and `group_respond` outright. This workspace
+never called them, so that upgrade is a manifest change alone.
+
+### Validation (knx-rs 0.9.3)
+
+- macOS ARM64, Rust 1.97.0 from `rust-toolchain.toml`: 354 workspace tests passed
+  under nextest.
+- Clippy with warnings denied passed for the workspace and for the process-mode
+  Snapcast build. Formatting is clean.
+- `cargo deny check --deny advisory-not-detected` passed for advisories, bans,
+  licences and sources.
+- `cargo run -p xtask -- knx/snapdog.xml` regenerated the product database
+  byte-for-byte identically to the 0.9.2 output, so knx-rs-prod 0.9.3 changes
+  nothing in the shipped ETS artifacts.
+- Linux, Windows and the tier-2 service tests were not run locally; CI covers
+  them.
 
 ## Explicit upstream holds
 
