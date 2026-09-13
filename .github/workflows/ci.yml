@@ -32,7 +32,6 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       webui: ${{ steps.filter.outputs.webui }}
       knx: ${{ steps.filter.outputs.knx }}
-      deps: ${{ steps.filter.outputs.deps }}
       macos: ${{ steps.filter.outputs.macos }}
       macos_client: ${{ steps.filter.outputs.macos_client }}
       docker: ${{ steps.filter.outputs.docker }}
@@ -67,13 +66,6 @@ jobs:
               - 'xtask/Cargo.toml'
               - 'snapdog/Cargo.toml'
               - 'Cargo.lock'
-            deps:
-              - '**/Cargo.toml'
-              - 'Cargo.lock'
-              # The exception list itself: editing deny.toml has to run the check
-              # that validates it, otherwise a stale or unjustified entry lands
-              # unseen and waits for the nightly run.
-              - 'deny.toml'
             macos:
               - 'macos-helper/**'
             macos_client:
@@ -345,8 +337,11 @@ jobs:
 
   audit:
     name: Security Audit
-    needs: changes
-    if: needs.changes.outputs.deps == 'true'
+    # Deliberately ungated. The job installs a prebuilt cargo-deny and finishes in
+    # about 20 seconds, so path-filtering it only ever bought noise: the filter has
+    # to name every file that can invalidate the result, and it missed both
+    # `deny.toml` and this workflow's own cargo-deny step. A check that silently
+    # does not run is worse than one that always does.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
