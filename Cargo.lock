@@ -5234,7 +5234,7 @@ dependencies = [
  "rustls-native-certs",
  "serde",
  "sha2 0.10.9",
- "snapcast-proto",
+ "snapcast-proto 0.17.2",
  "symphonia 0.5.5",
  "tokio",
  "tokio-rustls",
@@ -5256,10 +5256,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "snapcast-server"
-version = "0.17.2"
+name = "snapcast-proto"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0851a2a42c4966228de7cc0713ab14b3aad9d1b52d1b76568f7c6bc448f6c59b"
+checksum = "87aa0b938f9791ca63d864930ec95751514e5c4a9e7f7f3f8c9a40d4f9c65aa7"
+dependencies = [
+ "byteorder",
+ "libc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "snapcast-server"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a7193273f6b95a4ece4ed3a079d2424814707f1fb74c7bf2fc79a4093ca02a2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5271,7 +5284,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "snapcast-proto",
+ "snapcast-proto 0.18.0",
  "socket2 0.5.10",
  "subtle",
  "tokio",
@@ -5317,7 +5330,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shairplay",
- "snapcast-proto",
+ "snapcast-proto 0.17.2",
  "snapcast-server",
  "snapdog-common",
  "snapdog-testkit",
@@ -5358,7 +5371,7 @@ dependencies = [
  "sd-notify",
  "serde_json",
  "snapcast-client",
- "snapcast-proto",
+ "snapcast-proto 0.17.2",
  "snapdog-common",
  "tokio",
  "tracing",

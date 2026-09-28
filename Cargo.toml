@@ -77,7 +77,7 @@ thiserror = "2"
 anyhow = "1"
 
 # Snapcast
-snapcast-server = { version = "0.17.2", features = ["flac", "encryption", "custom-protocol"] }
+snapcast-server = { version = "0.18.0", features = ["flac", "encryption", "custom-protocol"] }
 snapcast-client = "0.17.2"
 snapcast-proto = "0.17.2"
 
