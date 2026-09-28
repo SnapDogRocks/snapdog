@@ -56,7 +56,7 @@ rumqttc = { version = "0.25", default-features = false, features = ["use-native-
 # KNX
 knx-rs-core = { version = "0.9.3", package = "knx-rs-core" }
 knx-rs-ip = { version = "0.9.3", package = "knx-rs-ip" }
-knx-rs-device = { version = "0.9.3", package = "knx-rs-device" }
+knx-rs-device = { version = "0.10.0", package = "knx-rs-device" }
 
 # HTTP client (Subsonic API, radio streams)
 reqwest = { version = "0.13", features = ["json", "stream"] }
