@@ -248,7 +248,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           package_json_file: webui/package.json
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -259,7 +259,7 @@ jobs:
       - name: Build WebUI (static export)
         working-directory: webui
         run: pnpm install --frozen-lockfile && pnpm run build
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: webui-out
           path: webui/out
@@ -291,7 +291,7 @@ jobs:
       # snapdog (an xtask dependency) embeds the WebUI via rust-embed; reuse the export so
       # its build.rs does not invoke npm here.
       - name: Fetch pre-built WebUI
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: webui-out
           path: webui/out
@@ -311,7 +311,7 @@ jobs:
         with:
           cosign-release: v3.1.1
       - name: Generate SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           # `path` scans a directory; .knxprod is a single file, so it needs
           # the action's separate `file` input (found live: `path` here made
@@ -330,7 +330,7 @@ jobs:
           subject-path: |
             knx/snapdog.knxprod
             knx/snapdog.knxprod.spdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: knxprod
           path: |
@@ -397,7 +397,7 @@ jobs:
       # Reuse the WebUI built once in the `webui` job. With webui/out present,
       # snapdog's build.rs early-returns instead of invoking npm — no Node on this runner.
       - name: Fetch pre-built WebUI
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: webui-out
           path: webui/out
@@ -407,7 +407,7 @@ jobs:
       # Reuse the (signed-if-key) .knxprod built once in the `knxprod` job; snapdog embeds
       # it via include_bytes!, so the download must land before the build.
       - name: Fetch pre-built .knxprod
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: knxprod
           path: knx
@@ -415,7 +415,7 @@ jobs:
         run: cargo build --release --timings --target ${{ matrix.target }} -p snapdog -p snapdog-client
       - name: Upload Cargo timings
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: cargo-timings-${{ matrix.target }}
           path: target/cargo-timings/cargo-timing.html
@@ -451,7 +451,7 @@ jobs:
         with:
           cosign-release: v3.1.1
       - name: Generate SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           # `path` scans a directory; PAYLOAD is a single file, so it needs
           # the action's separate `file` input (see the knxprod job's SBOM
@@ -468,7 +468,7 @@ jobs:
             ${{ env.PAYLOAD }}
             ${{ env.PAYLOAD }}.spdx.json
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: snapdog-${{ matrix.target }}
           path: |
@@ -640,7 +640,7 @@ jobs:
           set -euo pipefail
           echo "DMG=SnapDog-Server-${{ needs.meta.outputs.version }}.dmg" >> "$GITHUB_ENV"
       - name: Generate SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           # `path` scans a directory; the DMG is a single file, so it needs
           # the action's separate `file` input (see the knxprod job's SBOM
@@ -699,7 +699,7 @@ jobs:
           LENGTH=$(stat -f%z "$DMG")
 
           printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n  <channel>\n    <title>SnapDog Server</title>\n    <item>\n      <title>Version %s</title>\n%s      <sparkle:version>%s</sparkle:version>\n      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>\n      <enclosure url="https://github.com/SnapDogRocks/snapdog/releases/download/%s/%s"\n        sparkle:edSignature="%s"\n        length="%s"\n        type="application/octet-stream"/>\n    </item>\n  </channel>\n</rss>\n' "$VERSION" "$CHANNEL_LINE" "$VERSION" "$TAG" "$DMG" "$SIGNATURE" "$LENGTH" > appcast.xml
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: snapdog-macos-app
           path: |
@@ -741,7 +741,7 @@ jobs:
       # rebuild, and no native arm64 runner: cargo-deb sets Architecture from --target, so
       # both arches package on amd64.
       - name: Fetch pre-built binaries
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: snapdog-${{ matrix.target }}
           path: dist
@@ -778,7 +778,7 @@ jobs:
         with:
           cosign-release: v3.1.1
       - name: Generate SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           # `path` scans a directory; PAYLOAD is a single file, so it needs
           # the action's separate `file` input (see the knxprod job's SBOM
@@ -793,7 +793,7 @@ jobs:
           subject-path: |
             ${{ env.PAYLOAD }}
             ${{ env.PAYLOAD }}.spdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: deb-${{ matrix.pkg }}-${{ matrix.arch }}
           path: |
@@ -810,15 +810,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Only collect the current release outputs. In particular, the signed APT
       # repository contains historical .debs and must never enter this asset set.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           pattern: snapdog-*
           path: artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           pattern: deb-*
           path: artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: knxprod
           path: artifacts/knxprod
@@ -918,7 +918,7 @@ jobs:
             snapdog --version
             snapdog-client --version
           '
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: verified-release-assets
           path: release-assets
@@ -929,7 +929,7 @@ jobs:
     needs: [meta, build]
     runs-on: macos-latest
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: snapdog-${{ runner.arch == 'ARM64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
           path: artifacts
@@ -979,7 +979,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: snapdog-x86_64-unknown-linux-gnu
           path: artifacts
@@ -1035,7 +1035,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: verified-release-assets
           path: release-assets
@@ -1118,7 +1118,7 @@ jobs:
     environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: snapdog-macos-app
           path: artifacts
@@ -1164,7 +1164,7 @@ jobs:
       VERSION: ${{ needs.meta.outputs.version }}
       TAG: ${{ needs.meta.outputs.tag }}
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: verified-release-assets
           path: artifacts
@@ -1418,7 +1418,7 @@ jobs:
     environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           name: verified-release-assets
           path: artifacts
@@ -1669,7 +1669,7 @@ jobs:
     needs: [meta, build-deb]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           pattern: deb-*
           path: debs
@@ -1923,7 +1923,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Fetch pre-built Linux binaries
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
         with:
           pattern: snapdog-*-unknown-linux-gnu
           path: dl
