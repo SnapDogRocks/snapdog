@@ -455,6 +455,14 @@ A specialized Snapcast client that understands SnapDog's custom protocol extensi
   # Send volume on MIDI channel 3, CC11 (expression) to a named port
   snapdog-client --mixer midi:"Scarlett 18i8":2:11
   ```
+- **Behringer X32 / Midas M32 volume** — move channel faders over OSC on the network, no MIDI interface needed. The volume is the fader position over the whole travel, the same scale `--mixer midi` gives on the X32: 100 % is the top (+10 dB), 75 % is 0 dB. To stop at unity, set the client's `max_volume` to 75. Mute switches the channel off, but only when SnapDog itself mutes or unmutes: a plain volume change never re-opens a channel someone muted at the desk. Every write is read back and repeated if the desk lost it, and a desk that boots later still receives the volume.
+
+  ```bash
+  # Stereo pair on input channels 31 and 32 (both are written, whatever the desk's link covers)
+  snapdog-client --mixer x32:192.168.1.20:31,32
+  # One channel, OSC on a non-default port (the X32 itself always uses 10023)
+  snapdog-client --mixer x32:x32.local:5:10023
+  ```
 - **Encryption** — PSK-based chunk encryption matching the embedded server
 
 Available as binary and Docker image (`ghcr.io/snapdogrocks/snapdog-client`).

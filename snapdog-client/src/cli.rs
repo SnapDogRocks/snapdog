@@ -70,12 +70,13 @@ pub struct Cli {
     #[arg(long, default_value = "")]
     pub player: String,
 
-    /// Mixer mode: `software|hardware|midi|none|?[:<params>]`
+    /// Mixer mode: `software|hardware|midi|x32|none|?[:<params>]`
     ///
     /// Examples:
     ///   --mixer software (default, PCM amplitude scaling)
     ///   --mixer hardware:Master (ALSA control, Linux only)
     ///   --mixer midi:interface:ch[:cc] (MIDI CC, default CC7)
+    ///   --mixer x32:host:ch[,ch][:port] (Behringer X32 channel fader over OSC, same scale as midi)
     ///   --mixer none
     #[arg(long, default_value = "software")]
     pub mixer: String,
@@ -154,7 +155,8 @@ impl Cli {
             "software" => MixerMode::Software,
             "hardware" => MixerMode::Hardware,
             "script" => MixerMode::Script,
-            "none" | "midi" => MixerMode::None, // midi handled by snapdog-client Mixer
+            // midi and x32 are handled by snapdog-client's own Mixer.
+            "none" | "midi" | "x32" => MixerMode::None,
             other => bail!("unknown mixer mode: {other}"),
         };
 
@@ -312,6 +314,14 @@ mod tests {
         let s = cli.into_settings().unwrap();
         assert_eq!(s.player.mixer.mode, MixerMode::Hardware);
         assert_eq!(s.player.mixer.parameter, "hw:0");
+    }
+
+    #[test]
+    fn cli_into_settings_accepts_x32_mixer() {
+        // The client drives the desk itself; snapcast must not reject the mode.
+        let cli = Cli::parse_from(["snapdog-client", "--mixer", "x32:192.168.1.20:31,32"]);
+        let s = cli.into_settings().unwrap();
+        assert_eq!(s.player.mixer.mode, MixerMode::None);
     }
 
     #[test]
