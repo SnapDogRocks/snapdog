@@ -81,6 +81,11 @@ pub struct Cli {
     #[arg(long, default_value = "software")]
     pub mixer: String,
 
+    /// Which way volume flows between the server and a mixer that can report
+    /// changes made at the mixer itself (so far only x32)
+    #[arg(long, value_enum, default_value_t = MixerSync::Both)]
+    pub mixer_sync: MixerSync,
+
     /// Daemonize, optional process priority [-20..19]
     #[cfg(unix)]
     #[arg(short, long)]
@@ -104,6 +109,15 @@ pub struct Cli {
     #[cfg(feature = "encryption")]
     #[arg(long)]
     pub encryption_psk: Option<String>,
+}
+
+/// Value of `--mixer-sync`.
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixerSync {
+    /// The server sets the mixer, and changes made at the mixer are reported back to it
+    Both,
+    /// The server sets the mixer; changes made at the mixer stay until the next server volume
+    Out,
 }
 
 impl Cli {
@@ -322,6 +336,15 @@ mod tests {
         let cli = Cli::parse_from(["snapdog-client", "--mixer", "x32:192.168.1.20:31,32"]);
         let s = cli.into_settings().unwrap();
         assert_eq!(s.player.mixer.mode, MixerMode::None);
+    }
+
+    #[test]
+    fn mixer_sync_defaults_to_both_and_can_be_turned_off() {
+        let cli = Cli::parse_from(["snapdog-client"]);
+        assert_eq!(cli.mixer_sync, MixerSync::Both);
+        let cli = Cli::parse_from(["snapdog-client", "--mixer-sync", "out"]);
+        assert_eq!(cli.mixer_sync, MixerSync::Out);
+        assert!(Cli::try_parse_from(["snapdog-client", "--mixer-sync", "in"]).is_err());
     }
 
     #[test]

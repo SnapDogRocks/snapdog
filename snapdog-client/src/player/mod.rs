@@ -23,6 +23,10 @@ const SILENCE_THRESHOLD: f32 = 1e-6;
 /// Shared EQ processor, updated from the event loop, read from the audio thread.
 pub type SharedEq = Arc<Mutex<ZoneEq>>;
 
+/// Passes a volume and mute state changed at the mixer itself on to the server.
+/// Called from the mixer's own thread.
+pub type VolumeReport = Box<dyn Fn(u8, bool) + Send>;
+
 /// Shared fade state for crossfade on zone switch.
 ///
 /// Lock-free (atomics only) for safe use in the real-time audio callback.
@@ -152,7 +156,9 @@ pub enum Mixer {
 }
 
 impl Mixer {
-    pub fn from_cli(raw: &str, volume: Arc<VolumeState>) -> Self {
+    /// Build the mixer from `--mixer`. Mixers that can read their own state back use
+    /// `report` as the reverse channel; the others ignore it.
+    pub fn from_cli(raw: &str, volume: Arc<VolumeState>, report: Option<VolumeReport>) -> Self {
         let (mode, param) = raw.split_once(':').unwrap_or((raw, ""));
         match mode {
             "software" | "" => Self::Software(volume),
@@ -179,7 +185,7 @@ impl Mixer {
                     Self::Software(volume)
                 }
             },
-            "x32" => match start_x32(param) {
+            "x32" => match start_x32(param, report) {
                 Ok(desk) => Self::Desk(desk),
                 Err(e) => {
                     tracing::error!(error = %e, "X32 mixer init failed, falling back to software");
@@ -257,12 +263,14 @@ impl Mixer {
 }
 
 /// Start the desk mixer for `x32:<host>:<channels>[:<port>]`.
-fn start_x32(param: &str) -> anyhow::Result<osc_desk::DeskMixer> {
+fn start_x32(param: &str, report: Option<VolumeReport>) -> anyhow::Result<osc_desk::DeskMixer> {
     let target = osc_desk::parse_x32_param(param)?;
-    let desk = osc_desk::DeskMixer::start(osc_desk::X32, &target)?;
+    let sync = if report.is_some() { "both" } else { "out" };
+    let desk = osc_desk::DeskMixer::start(osc_desk::X32, &target, report)?;
     tracing::info!(
         addr = %target.addr,
         channels = ?target.channels,
+        sync,
         "X32 mixer started"
     );
     Ok(desk)
