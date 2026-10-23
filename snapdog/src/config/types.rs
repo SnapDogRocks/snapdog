@@ -318,6 +318,31 @@ impl GroupVolumeMode {
             }
         }
     }
+
+    /// The base volume at which a client plays at `effective`: the inverse of
+    /// [`effective`](Self::effective), for volumes a client reports itself.
+    ///
+    /// Clamped to `max_volume`, so the result may play quieter than asked.
+    /// `None` when no base volume can change the result: in absolute mode, or
+    /// when the zone is at 0.
+    #[must_use]
+    pub fn base_for(self, effective: i32, zone_volume: i32, max_volume: i32) -> Option<i32> {
+        let max = max_volume.clamp(0, 100);
+        let e = effective.clamp(0, 100);
+        let z = zone_volume.clamp(0, 100);
+        if z == 0 {
+            return None;
+        }
+        match self {
+            Self::Absolute => None,
+            // Round up: `effective` truncates, so this is the smallest base that reaches `e`.
+            Self::Relative => Some(((e * 100 + z - 1) / z).min(max)),
+            Self::Compressed => {
+                let factor = (f64::from(z) / 100.0).sqrt();
+                Some((f64::from(e) / factor).round().min(f64::from(max)) as i32)
+            }
+        }
+    }
 }
 
 // ── Presence ───────────────────────────────────────────────────

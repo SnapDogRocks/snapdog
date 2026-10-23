@@ -18,6 +18,7 @@ const fn event_tag(e: &SnapcastEvent) -> &'static str {
         SnapcastEvent::ClientConnected { .. } => "client_connected",
         SnapcastEvent::ClientDisconnected { .. } => "client_disconnected",
         SnapcastEvent::ClientVolumeChanged { .. } => "client_volume_changed",
+        SnapcastEvent::ClientVolumeReported { .. } => "client_volume_reported",
         SnapcastEvent::ClientLatencyChanged { .. } => "client_latency_changed",
         SnapcastEvent::ClientNameChanged { .. } => "client_name_changed",
         SnapcastEvent::ServerUpdated => "server_updated",

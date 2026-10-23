@@ -37,6 +37,34 @@ fn group_volume_mode_compressed_uses_sqrt_curve() {
 }
 
 #[test]
+fn base_for_inverts_effective_wherever_the_volume_is_reachable() {
+    for mode in [GroupVolumeMode::Relative, GroupVolumeMode::Compressed] {
+        for max in [100, 70] {
+            for zone in 1..=100 {
+                let ceiling = mode.effective(max, zone, max);
+                for wanted in 0..=100 {
+                    let base = mode.base_for(wanted, zone, max).unwrap();
+                    assert!((0..=max).contains(&base), "{mode:?} base {base}");
+                    let reached = mode.effective(base, zone, max);
+                    assert_eq!(
+                        reached,
+                        wanted.min(ceiling),
+                        "{mode:?} zone {zone} max {max} wanted {wanted}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn base_for_has_no_answer_in_absolute_mode_or_a_silent_zone() {
+    assert_eq!(GroupVolumeMode::Absolute.base_for(40, 80, 100), None);
+    assert_eq!(GroupVolumeMode::Relative.base_for(40, 0, 100), None);
+    assert_eq!(GroupVolumeMode::Compressed.base_for(40, 0, 100), None);
+}
+
+#[test]
 fn parse_time_accepts_hh_mm_and_rejects_garbage() {
     assert!(config::parse_time("07:30").is_ok());
     assert!(config::parse_time("00:00").is_ok());

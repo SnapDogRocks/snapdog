@@ -47,6 +47,18 @@ pub enum SnapcastEvent {
         /// Mute state.
         muted: bool,
     },
+    /// A client changed its own volume, for example at a mixing desk or over MPRIS.
+    ///
+    /// Unlike [`ClientVolumeChanged`](Self::ClientVolumeChanged), which confirms a
+    /// volume `SnapDog` set, this one did not come from `SnapDog`.
+    ClientVolumeReported {
+        /// Snapcast client ID.
+        id: String,
+        /// Volume (0–100) the client now plays at, after zone scaling.
+        volume: i32,
+        /// Mute state.
+        muted: bool,
+    },
     /// A client's latency changed.
     ClientLatencyChanged {
         /// Snapcast client ID.
