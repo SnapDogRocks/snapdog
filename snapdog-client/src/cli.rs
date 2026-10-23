@@ -78,7 +78,8 @@ pub struct Cli {
     ///   --mixer midi:interface:ch[:cc] (MIDI CC, default CC7)
     ///   --mixer x32:host:ch[,ch][:port] (Behringer X32 channel fader over OSC, same scale as midi)
     ///   --mixer none
-    #[arg(long, default_value = "software")]
+    // verbatim: clap would otherwise join the examples into one line.
+    #[arg(long, default_value = "software", verbatim_doc_comment)]
     pub mixer: String,
 
     /// Which way volume flows between the server and a mixer that can report
@@ -336,6 +337,18 @@ mod tests {
         let cli = Cli::parse_from(["snapdog-client", "--mixer", "x32:192.168.1.20:31,32"]);
         let s = cli.into_settings().unwrap();
         assert_eq!(s.player.mixer.mode, MixerMode::None);
+    }
+
+    #[test]
+    fn mixer_help_keeps_one_example_per_line() {
+        use clap::CommandFactory;
+        let help = Cli::command().render_long_help().to_string();
+        for example in ["--mixer software", "--mixer none"] {
+            assert!(
+                help.lines().any(|l| l.trim_start().starts_with(example)),
+                "{example:?} not on its own line:\n{help}"
+            );
+        }
     }
 
     #[test]
