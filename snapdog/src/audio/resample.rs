@@ -225,7 +225,7 @@ mod tests {
                 total.extend_from_slice(&out);
             }
         }
-        assert!(!total.is_empty());
+        assert_ne!(total.len(), 0);
     }
 
     #[test]
