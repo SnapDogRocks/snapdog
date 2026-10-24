@@ -48,7 +48,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 shairplay = "0.10.0"
 mdns-sd = "0.21"
 gethostname = "1"
-zbus = { version = "5", optional = true }
+zbus = { version = "6", optional = true, default-features = false, features = ["tokio", "service", "tracing"] }
 librespot-core = { version = "0.8", optional = true }
 librespot-playback = { version = "0.8", default-features = false, optional = true }
 librespot-connect = { version = "0.8", optional = true }

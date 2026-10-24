@@ -69,6 +69,15 @@ mod mpris {
                 zbus::Connection::session().await?
             };
 
+            // Serve the interfaces before taking the name, so no call reaches the name
+            // before something answers it.
+            conn.object_server()
+                .at("/org/mpris/MediaPlayer2", root)
+                .await?;
+            conn.object_server()
+                .at("/org/mpris/MediaPlayer2", player)
+                .await?;
+
             // Request bus name, appending .instanceN if already taken
             let base_name = format!("{BUS_NAME_PREFIX}.zone{}", zone.index);
             let acquired = if conn.request_name(base_name.as_str()).await.is_ok() {
@@ -88,13 +97,6 @@ mod mpris {
                 tracing::warn!(zone = %zone.name, "Could not acquire D-Bus name, skipping");
                 continue;
             }
-
-            conn.object_server()
-                .at("/org/mpris/MediaPlayer2", root)
-                .await?;
-            conn.object_server()
-                .at("/org/mpris/MediaPlayer2", player)
-                .await?;
 
             let iface_ref: InterfaceRef<PlayerInterface> = conn
                 .object_server()
