@@ -24,7 +24,7 @@ WORKDIR /build/webui
 # Pinned to the same version as webui/package.json's "packageManager" field.
 # Installed via plain npm (already in this base image), not corepack — see
 # webui/CLAUDE.md / the repo-standard skill's TypeScript reference.
-RUN npm install -g pnpm@12.3.4
+RUN npm install -g pnpm@11.28.8
 
 COPY webui/package.json webui/pnpm-lock.yaml webui/pnpm-workspace.yaml ./
 RUN --mount=type=cache,id=snapdog-pnpm-store,target=/root/.cache/pnpm-store,sharing=locked \

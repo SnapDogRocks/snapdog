@@ -2,3 +2,5 @@ allowBuilds:
   '@parcel/watcher': true
   '@swc/core': true
   unrs-resolver: true
+overrides:
+  postcss: ^8.5.23
