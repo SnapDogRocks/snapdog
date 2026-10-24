@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Mock API and WebSocket backend for SnapDog demo",
   "main": "server.js",
+  "packageManager": "pnpm@11.28.8",
   "scripts": {
     "start": "node server.js"
   },
