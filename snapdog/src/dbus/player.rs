@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc};
-use zbus::zvariant::Value;
+use zbus::Variant;
 
 use crate::player::ZoneCommand;
 
@@ -76,21 +76,21 @@ impl PlayerInterface {
         }
     }
 
-    fn build_metadata(&self, s: &PlayerState) -> HashMap<String, Value<'static>> {
-        let mut m: HashMap<String, Value<'static>> = HashMap::new();
+    fn build_metadata(&self, s: &PlayerState) -> HashMap<String, Variant<'static>> {
+        let mut m: HashMap<String, Variant<'static>> = HashMap::new();
         let track_id = format!(
             "/org/mpris/MediaPlayer2/snapdog/zone{}/track",
             self.zone_index
         );
-        m.insert("mpris:trackid".into(), Value::new(track_id));
+        m.insert("mpris:trackid".into(), Variant::new(track_id));
         if !s.title.is_empty() {
-            m.insert("xesam:title".into(), Value::new(s.title.clone()));
+            m.insert("xesam:title".into(), Variant::new(s.title.clone()));
         }
         if !s.artist.is_empty() {
-            m.insert("xesam:artist".into(), Value::new(vec![s.artist.clone()]));
+            m.insert("xesam:artist".into(), Variant::new(vec![s.artist.clone()]));
         }
         if !s.album.is_empty() {
-            m.insert("xesam:album".into(), Value::new(s.album.clone()));
+            m.insert("xesam:album".into(), Variant::new(s.album.clone()));
         }
         if let Some(ref url) = s.cover_url {
             let art_url = if url.starts_with("http") {
@@ -98,12 +98,12 @@ impl PlayerInterface {
             } else {
                 format!("{}{url}", self.art_base)
             };
-            m.insert("mpris:artUrl".into(), Value::new(art_url));
+            m.insert("mpris:artUrl".into(), Variant::new(art_url));
         }
         if s.duration_ms > 0 {
             m.insert(
                 "mpris:length".into(),
-                Value::new(s.duration_ms * 1000), // ms → µs
+                Variant::new(s.duration_ms * 1000), // ms → µs
             );
         }
         m
@@ -169,7 +169,7 @@ impl PlayerInterface {
     async fn set_position(
         &self,
         #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
-        #[allow(unused)] track_id: zbus::zvariant::ObjectPath<'_>,
+        #[allow(unused)] track_id: zbus::ObjectPath<'_>,
         position: i64,
     ) {
         let pos_ms = position / 1000;
@@ -199,7 +199,7 @@ impl PlayerInterface {
     }
 
     #[zbus(property)]
-    async fn metadata(&self) -> HashMap<String, Value<'static>> {
+    async fn metadata(&self) -> HashMap<String, Variant<'static>> {
         let s = self.state.lock().await;
         self.build_metadata(&s)
     }

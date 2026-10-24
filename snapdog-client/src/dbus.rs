@@ -268,7 +268,7 @@ impl PlayerInterface {
     }
 
     #[zbus(property)]
-    async fn metadata(&self) -> std::collections::HashMap<String, zbus::zvariant::Value<'_>> {
+    async fn metadata(&self) -> std::collections::HashMap<String, zbus::Variant<'_>> {
         let (title, artist, album, duration_us, cover_path) = {
             let s = self.state.lock().await;
             (
@@ -282,32 +282,24 @@ impl PlayerInterface {
         let mut map = std::collections::HashMap::new();
         map.insert(
             "mpris:trackid".into(),
-            zbus::zvariant::Value::from(
-                zbus::zvariant::ObjectPath::try_from("/org/snapdog/track").unwrap(),
-            ),
+            zbus::Variant::from(zbus::ObjectPath::try_from("/org/snapdog/track").unwrap()),
         );
         if !title.is_empty() {
-            map.insert("xesam:title".into(), zbus::zvariant::Value::from(title));
+            map.insert("xesam:title".into(), zbus::Variant::from(title));
         }
         if !artist.is_empty() {
-            map.insert(
-                "xesam:artist".into(),
-                zbus::zvariant::Value::from(vec![artist]),
-            );
+            map.insert("xesam:artist".into(), zbus::Variant::from(vec![artist]));
         }
         if !album.is_empty() {
-            map.insert("xesam:album".into(), zbus::zvariant::Value::from(album));
+            map.insert("xesam:album".into(), zbus::Variant::from(album));
         }
         if duration_us > 0 {
-            map.insert(
-                "mpris:length".into(),
-                zbus::zvariant::Value::from(duration_us),
-            );
+            map.insert("mpris:length".into(), zbus::Variant::from(duration_us));
         }
         if let Some(path) = cover_path {
             map.insert(
                 "mpris:artUrl".into(),
-                zbus::zvariant::Value::from(format!("file://{path}")),
+                zbus::Variant::from(format!("file://{path}")),
             );
         }
         map
@@ -369,7 +361,7 @@ impl PlayerInterface {
     }
     fn set_position(
         &self,
-        #[allow(unused)] track_id: zbus::zvariant::ObjectPath<'_>,
+        #[allow(unused)] track_id: zbus::ObjectPath<'_>,
         #[allow(unused)] position: i64,
     ) {
     }
