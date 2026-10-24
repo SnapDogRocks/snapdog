@@ -54,9 +54,9 @@ biquad = "0.6"
 rumqttc = { version = "0.25", default-features = false, features = ["use-native-tls"] }
 
 # KNX
-knx-rs-core = { version = "0.9.3", package = "knx-rs-core" }
-knx-rs-ip = { version = "0.9.3", package = "knx-rs-ip" }
-knx-rs-device = { version = "0.9.3", package = "knx-rs-device" }
+knx-rs-core = { version = "0.11.0", package = "knx-rs-core" }
+knx-rs-ip = { version = "0.11.0", package = "knx-rs-ip" }
+knx-rs-device = { version = "0.11.0", package = "knx-rs-device" }
 
 # HTTP client (Subsonic API, radio streams)
 reqwest = { version = "0.13", features = ["json", "stream"] }
@@ -77,9 +77,9 @@ thiserror = "2"
 anyhow = "1"
 
 # Snapcast
-snapcast-server = { version = "0.17.2", features = ["flac", "encryption", "custom-protocol"] }
-snapcast-client = "0.17.2"
-snapcast-proto = "0.17.2"
+snapcast-server = { version = "0.18.0", features = ["flac", "encryption", "custom-protocol"] }
+snapcast-client = "0.18.0"
+snapcast-proto = "0.18.0"
 
 # Shared
 snapdog-common = { path = "snapdog-common" }
