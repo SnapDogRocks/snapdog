@@ -12,7 +12,7 @@ utoipa = { workspace = true }
 
 [dev-dependencies]
 # Read the committed .knxprod (a ZIP) in the artifact-freshness test.
-zip = "8.6"
+zip = "9.0.5"
 
 [lints]
 workspace = true
