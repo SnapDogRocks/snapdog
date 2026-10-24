@@ -1,5 +1,6 @@
 [package]
 name = "snapdog-client"
+authors.workspace = true
 description = "SnapDog multiroom audio client"
 version.workspace = true
 edition.workspace = true
