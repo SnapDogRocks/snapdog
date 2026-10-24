@@ -23,12 +23,14 @@ fn push_padded(buf: &mut Vec<u8>, s: &str) {
 pub(super) fn encode(address: &str, args: &[Arg]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(32);
     push_padded(&mut buf, address);
+    // The tags are strings, not chars: Codacy's analyzer misreads `'i',` in a match
+    // arm and then counts the rest of the file as part of this function.
     let mut tags = String::from(",");
     for arg in args {
-        tags.push(match arg {
-            Arg::Int(_) => 'i',
-            Arg::Float(_) => 'f',
-            Arg::Str(_) => 's',
+        tags.push_str(match arg {
+            Arg::Int(_) => "i",
+            Arg::Float(_) => "f",
+            Arg::Str(_) => "s",
         });
     }
     push_padded(&mut buf, &tags);
