@@ -11,6 +11,8 @@ use tokio::sync::mpsc;
 
 use crate::eq::ZoneEq;
 
+pub mod osc_desk;
+
 /// Maximum MIDI CC value (7-bit).
 const MIDI_CC_MAX: u8 = 127;
 /// Polling interval while waiting for audio format from the stream.
@@ -20,6 +22,10 @@ const SILENCE_THRESHOLD: f32 = 1e-6;
 
 /// Shared EQ processor, updated from the event loop, read from the audio thread.
 pub type SharedEq = Arc<Mutex<ZoneEq>>;
+
+/// Passes a volume and mute state changed at the mixer itself on to the server.
+/// Called from the mixer's own thread.
+pub type VolumeReport = Box<dyn Fn(u8, bool) + Send>;
 
 /// Shared fade state for crossfade on zone switch.
 ///
@@ -143,36 +149,21 @@ pub enum Mixer {
         channel: u8,
         cc: u8,
     },
+    /// Channel faders on a networked mixing desk over OSC (Behringer X32/M32).
+    Desk(osc_desk::DeskMixer),
     /// No volume control.
     None,
 }
 
 impl Mixer {
-    pub fn from_cli(raw: &str, volume: Arc<VolumeState>) -> Self {
+    /// Build the mixer from `--mixer`. Mixers that can read their own state back use
+    /// `report` as the reverse channel; the others ignore it.
+    pub fn from_cli(raw: &str, volume: Arc<VolumeState>, report: Option<VolumeReport>) -> Self {
         let (mode, param) = raw.split_once(':').unwrap_or((raw, ""));
         match mode {
             "software" | "" => Self::Software(volume),
             #[cfg(target_os = "linux")]
-            "hardware" => {
-                let control = if param.is_empty() {
-                    // Auto-detect: try Master, then first available control
-                    detect_alsa_control().unwrap_or_else(|| "Master".to_string())
-                } else {
-                    param.to_string()
-                };
-                // Validate the control exists at startup
-                if validate_alsa_control(&control) {
-                    tracing::info!(control, "Hardware mixer initialized");
-                } else {
-                    tracing::warn!(
-                        control,
-                        "ALSA mixer control not found — volume changes will fail. \
-                         Available controls: {}",
-                        list_alsa_controls().unwrap_or_else(|| "none".into())
-                    );
-                }
-                Self::Hardware { control, volume }
-            }
+            "hardware" => Self::alsa(param, volume),
             #[cfg(not(target_os = "linux"))]
             "hardware" => {
                 tracing::warn!(
@@ -194,12 +185,42 @@ impl Mixer {
                     Self::Software(volume)
                 }
             },
+            "x32" => match start_x32(param, report) {
+                Ok(desk) => Self::Desk(desk),
+                Err(e) => {
+                    tracing::error!(error = %e, "X32 mixer init failed, falling back to software");
+                    Self::Software(volume)
+                }
+            },
             "none" => Self::None,
             other => {
                 tracing::warn!(mode = other, "Unknown mixer mode, using software");
                 Self::Software(volume)
             }
         }
+    }
+
+    /// ALSA control `param`, or an auto-detected one when empty (Linux only).
+    #[cfg(target_os = "linux")]
+    fn alsa(param: &str, volume: Arc<VolumeState>) -> Self {
+        let control = if param.is_empty() {
+            // Auto-detect: try Master, then first available control
+            detect_alsa_control().unwrap_or_else(|| "Master".to_string())
+        } else {
+            param.to_string()
+        };
+        // Validate the control exists at startup
+        if validate_alsa_control(&control) {
+            tracing::info!(control, "Hardware mixer initialized");
+        } else {
+            tracing::warn!(
+                control,
+                "ALSA mixer control not found — volume changes will fail. \
+                 Available controls: {}",
+                list_alsa_controls().unwrap_or_else(|| "none".into())
+            );
+        }
+        Self::Hardware { control, volume }
     }
 
     /// Apply a volume change.
@@ -218,12 +239,7 @@ impl Mixer {
                 set_alsa_volume(control, percent, muted);
             }
             Self::Midi { conn, channel, cc } => {
-                let value = if muted {
-                    0
-                } else {
-                    (u16::from(percent) * u16::from(MIDI_CC_MAX) / 100).min(u16::from(MIDI_CC_MAX))
-                        as u8
-                };
+                let value = midi_cc_value(percent, muted);
                 if let Ok(mut conn) = conn.lock() {
                     // CC message: 0xB0 | channel, cc, value
                     if let Err(e) = conn.send(&[0xB0 | channel, *cc, value]) {
@@ -231,18 +247,41 @@ impl Mixer {
                     }
                 }
             }
+            Self::Desk(desk) => desk.set(percent, muted),
             Self::None => {}
         }
     }
 
     /// Get the software gain to apply in the audio callback.
-    /// Returns 1.0 for hardware/midi/none (volume is handled elsewhere).
+    /// Returns 1.0 for hardware/midi/desk/none (volume is handled elsewhere).
     pub fn software_gain(&self) -> f32 {
         match self {
             Self::Software(vol) => vol.gain(),
             _ => 1.0,
         }
     }
+}
+
+/// Start the desk mixer for `x32:<host>:<channels>[:<port>]`.
+fn start_x32(param: &str, report: Option<VolumeReport>) -> anyhow::Result<osc_desk::DeskMixer> {
+    let target = osc_desk::parse_x32_param(param)?;
+    let sync = if report.is_some() { "both" } else { "out" };
+    let desk = osc_desk::DeskMixer::start(osc_desk::X32, &target, report)?;
+    tracing::info!(
+        addr = %target.addr,
+        channels = ?target.channels,
+        sync,
+        "X32 mixer started"
+    );
+    Ok(desk)
+}
+
+/// Volume as a MIDI CC value: 0–100 % over 0–127, 0 when muted.
+fn midi_cc_value(percent: u8, muted: bool) -> u8 {
+    if muted {
+        return 0;
+    }
+    (u16::from(percent) * u16::from(MIDI_CC_MAX) / 100).min(u16::from(MIDI_CC_MAX)) as u8
 }
 
 /// Parse `interface:ch[:cc]` → (`MidiOutputConnection`, `channel_0based`, cc)
@@ -687,4 +726,27 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
     std::thread::sleep(std::time::Duration::from_millis(100));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::osc_desk::{Desk, X32};
+    use super::*;
+
+    /// `--mixer midi` and `--mixer x32` drive the same X32 fader; a volume must land in the
+    /// same place either way. The X32 in Generic CC mode sets the fader to CC / 128
+    /// (measured: CC 96 = 0.75 = 0 dB). MIDI has 128 steps and rounds down, OSC has 1024,
+    /// so they may differ by up to two MIDI steps, never more.
+    #[test]
+    fn midi_and_x32_put_the_fader_in_the_same_place() {
+        for percent in 0..=100 {
+            let midi = f32::from(midi_cc_value(percent, false)) / 128.0;
+            let osc = X32.fader_value(percent);
+            assert!(
+                (osc - midi).abs() <= 2.0 / 128.0,
+                "{percent} %: OSC {osc}, MIDI {midi}"
+            );
+        }
+        assert_eq!(midi_cc_value(100, true), 0);
+    }
 }

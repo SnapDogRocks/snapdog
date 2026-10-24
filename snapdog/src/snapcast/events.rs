@@ -269,6 +269,19 @@ async fn handle_event(
                 crate::api::ws::broadcast_notification(notify, &n);
             }
         }
+        SnapcastEvent::ClientVolumeReported { id, volume, muted } => {
+            client_volume_reported(
+                &id,
+                volume,
+                muted,
+                config,
+                backend,
+                store,
+                notify,
+                zone_commands,
+            )
+            .await;
+        }
         SnapcastEvent::ClientLatencyChanged { id, latency } => {
             let mut s = store.write().await;
             if let Some((&idx, client)) = s
@@ -672,6 +685,139 @@ async fn sync_group_ids(
     }
 }
 
+/// Zone players by zone index.
+type ZoneCommands =
+    std::collections::HashMap<usize, tokio::sync::mpsc::Sender<crate::player::ZoneCommand>>;
+
+/// A client changed its volume itself, e.g. at a mixing desk. It reports the volume it
+/// plays at, which is the zone-scaled one; [`reported_volume`] works out what that means.
+#[allow(clippy::too_many_arguments)] // the event handler's context, passed through
+async fn client_volume_reported(
+    id: &str,
+    volume: i32,
+    muted: bool,
+    config: &AppConfig,
+    backend: &dyn SnapcastBackend,
+    store: &state::SharedState,
+    notify: &api::ws::NotifySender,
+    zone_commands: &ZoneCommands,
+) {
+    let mut s = store.write().await;
+    let Some((idx, zone_index, zone_volume, mode)) = locate_client(&s, config, id) else {
+        return;
+    };
+    let Some(client) = s.clients.get_mut(&idx) else {
+        return;
+    };
+    let next = reported_volume(
+        mode,
+        client.base_volume,
+        client.max_volume,
+        zone_volume,
+        volume,
+    );
+    client.base_volume = next.base;
+    client.volume = volume;
+    client.muted = muted;
+    tracing::info!(client = %client.name, volume, muted, base = next.base, "Client reported its own volume");
+    let n = client_notification(idx, client);
+    s.dirty = true;
+    drop(s);
+    crate::api::ws::broadcast_notification(notify, &n);
+
+    if next.send_back {
+        let action = ClientAction::Volume(next.base);
+        let client_id = id.to_owned();
+        let _ = backend
+            .execute(SnapcastCmd::Client { client_id, action })
+            .await;
+    }
+    if let Some(v) = next.zone_volume
+        && let Some(tx) = zone_commands.get(&zone_index)
+    {
+        let _ = tx.send(crate::player::ZoneCommand::SetVolume(v)).await;
+    }
+}
+
+/// The client with Snapcast `id`: its index, its zone, and that zone's volume and mode.
+fn locate_client(
+    s: &state::Store,
+    config: &AppConfig,
+    id: &str,
+) -> Option<(usize, usize, i32, crate::config::GroupVolumeMode)> {
+    let (&idx, client) = s
+        .clients
+        .iter()
+        .find(|(_, c)| c.snapcast_id.as_deref() == Some(id))?;
+    let zone_index = client.zone_index;
+    let zone_volume = s
+        .zones
+        .get(&zone_index)
+        .map_or(crate::state::DEFAULT_VOLUME, |z| z.volume);
+    let mode = config
+        .zones
+        .iter()
+        .find(|z| z.index == zone_index)
+        .map(|z| z.group_volume_mode)
+        .unwrap_or_default();
+    Some((idx, zone_index, zone_volume, mode))
+}
+
+/// What a client's own volume report changes.
+#[derive(Debug, PartialEq, Eq)]
+struct ReportedVolume {
+    /// The client's base volume from now on.
+    base: i32,
+    /// Send the volume back: the client cannot play what it reported.
+    send_back: bool,
+    /// Move the zone here (absolute mode).
+    zone_volume: Option<i32>,
+}
+
+/// Turn a reported, zone-scaled `volume` back into the base volume that produces it.
+/// In absolute mode a client has no volume of its own, so the zone follows. Where the
+/// volume cannot be reached (above `max_volume`, or the zone is at 0), the reachable one
+/// is sent back and the client's mixer moves there.
+fn reported_volume(
+    mode: crate::config::GroupVolumeMode,
+    base: i32,
+    max: i32,
+    zone_volume: i32,
+    volume: i32,
+) -> ReportedVolume {
+    let current = mode.effective(base, zone_volume, max);
+    let keep = ReportedVolume {
+        base,
+        send_back: false,
+        zone_volume: None,
+    };
+    if volume == current {
+        return keep;
+    }
+    match mode.base_for(volume, zone_volume, max) {
+        Some(base) => ReportedVolume {
+            base,
+            send_back: mode.effective(base, zone_volume, max) != volume,
+            zone_volume: None,
+        },
+        // Move the zone, but only if that changes what this client plays: above its
+        // `max_volume` the client stays put and the zone keeps its volume.
+        None if mode == crate::config::GroupVolumeMode::Absolute
+            && mode.effective(0, volume, max) != current =>
+        {
+            ReportedVolume {
+                zone_volume: Some(volume),
+                ..keep
+            }
+        }
+        // Capped in absolute mode, or a zone at 0: nothing the client does is audible.
+        None => ReportedVolume {
+            send_back: true,
+            ..keep
+        },
+    }
+}
+
 const fn client_notification(idx: usize, client: &state::ClientState) -> api::ws::Notification {
     api::ws::Notification::ClientStateChanged {
         client: idx,
@@ -697,6 +843,7 @@ mod tests {
     use crate::config::AppConfig;
     use crate::snapcast::backend::BoxFuture;
     use crate::snapcast::backend::ClientHello;
+    use std::collections::HashMap;
 
     struct MockBackend;
     impl SnapcastBackend for MockBackend {
@@ -849,6 +996,188 @@ mod tests {
         fn delete_client(&self, _id: &str) -> BoxFuture<'_, anyhow::Result<()>> {
             Box::pin(async { Ok(()) })
         }
+    }
+
+    /// Store with the one configured client connected as `c1`, its zone at `zone_volume`.
+    async fn reporting_setup(
+        mode: &str,
+        zone_volume: i32,
+        base: i32,
+        max: i32,
+    ) -> (AppConfig, crate::state::SharedState) {
+        let raw: crate::config::FileConfig = toml::from_str(&format!(
+            r#"
+            [[zone]]
+            name = "Ground Floor"
+            group_volume_mode = "{mode}"
+            [[client]]
+            name = "Living Room"
+            mac = "00:00:00:00:00:00"
+            zone = "Ground Floor"
+        "#
+        ))
+        .unwrap();
+        let config = crate::config::load_raw(raw).unwrap();
+        let store = crate::state::init(&config, None).unwrap();
+        {
+            let mut s = store.write().await;
+            s.zones.get_mut(&1).unwrap().volume = zone_volume;
+            let client = s.clients.get_mut(&1).unwrap();
+            client.snapcast_id = Some("c1".into());
+            client.base_volume = base;
+            client.max_volume = max;
+            drop(s);
+        }
+        (config, store)
+    }
+
+    async fn report(
+        config: &AppConfig,
+        store: &crate::state::SharedState,
+        backend: &RecordingBackend,
+        zone_commands: &ZoneCommands,
+        volume: i32,
+        muted: bool,
+    ) {
+        let (notify, _) = tokio::sync::broadcast::channel(16);
+        let temp_dir = tempfile::tempdir().unwrap();
+        let eq_store = Arc::new(std::sync::Mutex::new(EqStore::load(
+            &temp_dir.path().join("eq.json"),
+        )));
+        handle_event(
+            SnapcastEvent::ClientVolumeReported {
+                id: "c1".into(),
+                volume,
+                muted,
+            },
+            config,
+            backend,
+            store,
+            &notify,
+            &eq_store,
+            zone_commands,
+        )
+        .await;
+    }
+
+    async fn client(store: &crate::state::SharedState) -> crate::state::ClientState {
+        store.read().await.clients[&1].clone()
+    }
+
+    #[test]
+    fn reported_volume_decides_base_send_back_and_zone() {
+        use crate::config::GroupVolumeMode::{Absolute, Compressed, Relative};
+        let r = |base, send_back, zone_volume| ReportedVolume {
+            base,
+            send_back,
+            zone_volume,
+        };
+        // mode, base, max, zone, reported
+        assert_eq!(
+            reported_volume(Compressed, 60, 100, 25, 30),
+            r(60, false, None)
+        );
+        assert_eq!(
+            reported_volume(Compressed, 60, 100, 25, 40),
+            r(80, false, None)
+        );
+        assert_eq!(reported_volume(Relative, 40, 70, 50, 50), r(70, true, None));
+        assert_eq!(reported_volume(Relative, 50, 100, 0, 30), r(50, true, None));
+        assert_eq!(
+            reported_volume(Absolute, 50, 100, 40, 65),
+            r(50, false, Some(65))
+        );
+        assert_eq!(reported_volume(Absolute, 50, 50, 80, 70), r(50, true, None));
+        assert_eq!(
+            reported_volume(Absolute, 50, 50, 80, 30),
+            r(50, false, Some(30))
+        );
+    }
+
+    #[tokio::test]
+    async fn reported_volume_becomes_the_base_that_produces_it() {
+        // Compressed, zone 25 %: the client plays at base × 0.5.
+        let (config, store) = reporting_setup("compressed", 25, 60, 100).await;
+        let backend = RecordingBackend::default();
+        report(&config, &store, &backend, &HashMap::new(), 40, false).await;
+        let c = client(&store).await;
+        assert_eq!(c.base_volume, 80);
+        assert_eq!(c.volume, 40);
+        assert!(
+            backend.cmds.lock().unwrap().is_empty(),
+            "a reachable volume needs no answer"
+        );
+    }
+
+    #[tokio::test]
+    async fn reported_volume_above_the_cap_is_sent_back() {
+        // Relative, zone 50 %, max 70: the client cannot play above 35.
+        let (config, store) = reporting_setup("relative", 50, 40, 70).await;
+        let backend = RecordingBackend::default();
+        report(&config, &store, &backend, &HashMap::new(), 50, false).await;
+        assert_eq!(client(&store).await.base_volume, 70);
+        let cmds = backend.cmds.lock().unwrap();
+        assert!(
+            matches!(
+                cmds.as_slice(),
+                [SnapcastCmd::Client {
+                    action: ClientAction::Volume(70),
+                    ..
+                }]
+            ),
+            "{cmds:?}"
+        );
+        drop(cmds);
+    }
+
+    #[tokio::test]
+    async fn reported_mute_alone_keeps_the_base() {
+        let (config, store) = reporting_setup("compressed", 25, 60, 100).await;
+        let backend = RecordingBackend::default();
+        report(&config, &store, &backend, &HashMap::new(), 30, true).await;
+        let c = client(&store).await;
+        assert_eq!(c.base_volume, 60, "rounding must not creep into the base");
+        assert!(c.muted);
+        assert!(backend.cmds.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn reported_volume_in_absolute_mode_moves_the_zone() {
+        let (config, store) = reporting_setup("absolute", 40, 50, 100).await;
+        let backend = RecordingBackend::default();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        let zone_commands = HashMap::from([(1, tx)]);
+        report(&config, &store, &backend, &zone_commands, 65, false).await;
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(crate::player::ZoneCommand::SetVolume(65))
+        ));
+        assert!(backend.cmds.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn absolute_mode_leaves_the_zone_alone_above_the_clients_cap() {
+        // Zone 80, max 50: the client already plays at its cap of 50.
+        let (config, store) = reporting_setup("absolute", 80, 50, 50).await;
+        let backend = RecordingBackend::default();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        let zone_commands = HashMap::from([(1, tx)]);
+        report(&config, &store, &backend, &zone_commands, 70, false).await;
+        assert!(rx.try_recv().is_err(), "the zone must not drop to 70");
+        assert_eq!(
+            backend.cmds.lock().unwrap().len(),
+            1,
+            "the cap is sent back"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_silent_zone_sends_the_volume_back() {
+        let (config, store) = reporting_setup("relative", 0, 50, 100).await;
+        let backend = RecordingBackend::default();
+        report(&config, &store, &backend, &HashMap::new(), 30, false).await;
+        assert_eq!(client(&store).await.base_volume, 50);
+        assert_eq!(backend.cmds.lock().unwrap().len(), 1);
     }
 
     /// Firewall for the SSOT restore-on-connect contract: the embedded server starts

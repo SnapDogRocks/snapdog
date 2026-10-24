@@ -3,7 +3,9 @@
 
 //! Embedded Snapcast backend — in-process server via snapcast-server crate.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tokio::sync::mpsc;
@@ -18,17 +20,68 @@ use crate::state;
 /// Default audio buffer size in milliseconds for the embedded server.
 const DEFAULT_BUFFER_MS: u32 = 1000;
 
+/// How long a volume push waits for its echo. The server echoes at once, so this only
+/// bounds the leftovers of echoes it dropped.
+const ECHO_WINDOW: Duration = Duration::from_secs(5);
+
+/// Volume pushes per client that wait for their echo at most.
+const MAX_PENDING_ECHOES: usize = 64;
+
+/// Tells `SnapDog`'s own volume pushes apart from volumes a client reports itself.
+///
+/// snapcast-server announces both with the same `ClientVolumeChanged` event: once after
+/// `SetClientVolume`, and once when a client sends `ClientInfo`. The echo of a push carries
+/// exactly the pushed values and arrives in order, so each push is remembered until its
+/// echo shows up. An event that matches no push came from the client.
+#[derive(Default)]
+struct EchoFilter {
+    pending: HashMap<String, VecDeque<(u16, bool, Instant)>>,
+}
+
+impl EchoFilter {
+    /// Remember a push to `client_id`.
+    fn expect(&mut self, client_id: &str, volume: u16, muted: bool, now: Instant) {
+        let queue = self.pending.entry(client_id.to_owned()).or_default();
+        queue.retain(|&(_, _, at)| now.duration_since(at) < ECHO_WINDOW);
+        if queue.len() >= MAX_PENDING_ECHOES {
+            queue.pop_front();
+        }
+        queue.push_back((volume, muted, now));
+    }
+
+    /// Whether the event is the echo of a push. Consumes that push and any older ones,
+    /// whose echoes the server dropped.
+    fn is_echo(&mut self, client_id: &str, volume: u16, muted: bool, now: Instant) -> bool {
+        let Some(queue) = self.pending.get_mut(client_id) else {
+            return false;
+        };
+        queue.retain(|&(_, _, at)| now.duration_since(at) < ECHO_WINDOW);
+        let Some(pos) = queue
+            .iter()
+            .position(|&(v, m, _)| v == volume && m == muted)
+        else {
+            return false;
+        };
+        queue.drain(..=pos);
+        true
+    }
+}
+
+type SharedEchoFilter = Arc<Mutex<EchoFilter>>;
+
 /// Embedded Snapcast server backend.
 pub struct EmbeddedBackend {
     cmd_tx: mpsc::Sender<ServerCommand>,
     audio_txs: HashMap<usize, tokio::sync::Mutex<snapcast_server::F32AudioSender>>,
     store: state::SharedState,
     volume_modes: HashMap<usize, crate::config::GroupVolumeMode>,
+    echoes: SharedEchoFilter,
 }
 
 /// Event receiver from the embedded server.
 pub struct EmbeddedEventReceiver {
     event_rx: mpsc::Receiver<ServerEvent>,
+    echoes: SharedEchoFilter,
 }
 
 impl EmbeddedBackend {
@@ -136,6 +189,7 @@ impl EmbeddedBackend {
             "Embedded Snapcast server started"
         );
 
+        let echoes = SharedEchoFilter::default();
         Ok((
             Self {
                 cmd_tx,
@@ -146,8 +200,9 @@ impl EmbeddedBackend {
                     .iter()
                     .map(|z| (z.index, z.group_volume_mode))
                     .collect(),
+                echoes: Arc::clone(&echoes),
             },
-            EmbeddedEventReceiver { event_rx },
+            EmbeddedEventReceiver { event_rx, echoes },
         ))
     }
 
@@ -266,10 +321,34 @@ impl EmbeddedEventReceiver {
     pub async fn recv(&mut self) -> Option<SnapcastEvent> {
         loop {
             let event = self.event_rx.recv().await?;
-            if let Some(mapped) = EmbeddedBackend::map_event(event) {
+            if let Some(mapped) = self.classify(event) {
                 return Some(mapped);
             }
         }
+    }
+
+    /// Map an event, telling the echo of a volume push from a client's own change.
+    fn classify(&self, event: ServerEvent) -> Option<SnapcastEvent> {
+        if let ServerEvent::ClientVolumeChanged {
+            ref client_id,
+            volume,
+            muted,
+        } = event
+        {
+            let echo = self
+                .echoes
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_echo(client_id, volume, muted, Instant::now());
+            if !echo {
+                return Some(SnapcastEvent::ClientVolumeReported {
+                    id: client_id.clone(),
+                    volume: i32::from(volume),
+                    muted,
+                });
+            }
+        }
+        EmbeddedBackend::map_event(event)
     }
 }
 
@@ -420,6 +499,18 @@ impl SnapcastBackend for EmbeddedBackend {
                 _ => Self::map_command(cmd),
             };
             for c in commands {
+                // Before sending: the echo can arrive before `send` returns.
+                if let ServerCommand::SetClientVolume {
+                    ref client_id,
+                    volume,
+                    muted,
+                } = c
+                {
+                    self.echoes
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .expect(client_id, volume, muted, Instant::now());
+                }
                 self.cmd_tx
                     .send(c)
                     .await
@@ -610,6 +701,83 @@ mod tests {
                 muted: false,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn echoes_of_pushes_are_recognised_in_order() {
+        let mut f = EchoFilter::default();
+        let t = Instant::now();
+        f.expect("c1", 40, false, t);
+        f.expect("c1", 41, false, t);
+        assert!(f.is_echo("c1", 40, false, t));
+        assert!(f.is_echo("c1", 41, false, t));
+        assert!(!f.is_echo("c1", 41, false, t), "each push echoes once");
+        assert!(!f.is_echo("c2", 40, false, t), "per client");
+    }
+
+    #[test]
+    fn a_value_never_pushed_is_the_clients_own() {
+        let mut f = EchoFilter::default();
+        let t = Instant::now();
+        f.expect("c1", 40, false, t);
+        assert!(!f.is_echo("c1", 55, false, t));
+        assert!(!f.is_echo("c1", 40, true, t), "mute differs");
+        assert!(f.is_echo("c1", 40, false, t), "the push still waits");
+    }
+
+    #[test]
+    fn a_dropped_echo_does_not_swallow_a_later_report() {
+        let mut f = EchoFilter::default();
+        let t = Instant::now();
+        f.expect("c1", 40, false, t);
+        f.expect("c1", 41, false, t);
+        // The echo of 40 got lost; 41 arrives and clears both.
+        assert!(f.is_echo("c1", 41, false, t));
+        assert!(!f.is_echo("c1", 40, false, t));
+    }
+
+    #[test]
+    fn unanswered_pushes_expire() {
+        let mut f = EchoFilter::default();
+        let t = Instant::now();
+        f.expect("c1", 40, false, t);
+        assert!(!f.is_echo("c1", 40, false, t + ECHO_WINDOW));
+    }
+
+    #[test]
+    fn pending_pushes_are_bounded() {
+        let mut f = EchoFilter::default();
+        let t = Instant::now();
+        for v in 0..200 {
+            f.expect("c1", v, false, t);
+        }
+        assert_eq!(f.pending["c1"].len(), MAX_PENDING_ECHOES);
+    }
+
+    #[test]
+    fn classify_splits_echoes_from_reports() {
+        let (_tx, event_rx) = mpsc::channel(1);
+        let rx = EmbeddedEventReceiver {
+            event_rx,
+            echoes: SharedEchoFilter::default(),
+        };
+        rx.echoes
+            .lock()
+            .unwrap()
+            .expect("c1", 30, false, Instant::now());
+        let event = |volume| ServerEvent::ClientVolumeChanged {
+            client_id: "c1".into(),
+            volume,
+            muted: false,
+        };
+        assert!(matches!(
+            rx.classify(event(30)),
+            Some(SnapcastEvent::ClientVolumeChanged { volume: 30, .. })
+        ));
+        assert!(matches!(
+            rx.classify(event(35)),
+            Some(SnapcastEvent::ClientVolumeReported { volume: 35, .. })
         ));
     }
 

@@ -70,15 +70,22 @@ pub struct Cli {
     #[arg(long, default_value = "")]
     pub player: String,
 
-    /// Mixer mode: `software|hardware|midi|none|?[:<params>]`
+    /// Mixer mode: `software|hardware|midi|x32|none|?[:<params>]`
     ///
     /// Examples:
     ///   --mixer software (default, PCM amplitude scaling)
     ///   --mixer hardware:Master (ALSA control, Linux only)
     ///   --mixer midi:interface:ch[:cc] (MIDI CC, default CC7)
+    ///   --mixer x32:host:ch[,ch][:port] (Behringer X32 channel fader over OSC, same scale as midi)
     ///   --mixer none
-    #[arg(long, default_value = "software")]
+    // verbatim: clap would otherwise join the examples into one line.
+    #[arg(long, default_value = "software", verbatim_doc_comment)]
     pub mixer: String,
+
+    /// Which way volume flows between the server and a mixer that can report
+    /// changes made at the mixer itself (so far only x32)
+    #[arg(long, value_enum, default_value_t = MixerSync::Both)]
+    pub mixer_sync: MixerSync,
 
     /// Daemonize, optional process priority [-20..19]
     #[cfg(unix)]
@@ -103,6 +110,15 @@ pub struct Cli {
     #[cfg(feature = "encryption")]
     #[arg(long)]
     pub encryption_psk: Option<String>,
+}
+
+/// Value of `--mixer-sync`.
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixerSync {
+    /// The server sets the mixer, and changes made at the mixer are reported back to it
+    Both,
+    /// The server sets the mixer; changes made at the mixer stay until the next server volume
+    Out,
 }
 
 impl Cli {
@@ -154,7 +170,8 @@ impl Cli {
             "software" => MixerMode::Software,
             "hardware" => MixerMode::Hardware,
             "script" => MixerMode::Script,
-            "none" | "midi" => MixerMode::None, // midi handled by snapdog-client Mixer
+            // midi and x32 are handled by snapdog-client's own Mixer.
+            "none" | "midi" | "x32" => MixerMode::None,
             other => bail!("unknown mixer mode: {other}"),
         };
 
@@ -312,6 +329,35 @@ mod tests {
         let s = cli.into_settings().unwrap();
         assert_eq!(s.player.mixer.mode, MixerMode::Hardware);
         assert_eq!(s.player.mixer.parameter, "hw:0");
+    }
+
+    #[test]
+    fn cli_into_settings_accepts_x32_mixer() {
+        // The client drives the desk itself; snapcast must not reject the mode.
+        let cli = Cli::parse_from(["snapdog-client", "--mixer", "x32:192.168.1.20:31,32"]);
+        let s = cli.into_settings().unwrap();
+        assert_eq!(s.player.mixer.mode, MixerMode::None);
+    }
+
+    #[test]
+    fn mixer_help_keeps_one_example_per_line() {
+        use clap::CommandFactory;
+        let help = Cli::command().render_long_help().to_string();
+        for example in ["--mixer software", "--mixer none"] {
+            assert!(
+                help.lines().any(|l| l.trim_start().starts_with(example)),
+                "{example:?} not on its own line:\n{help}"
+            );
+        }
+    }
+
+    #[test]
+    fn mixer_sync_defaults_to_both_and_can_be_turned_off() {
+        let cli = Cli::parse_from(["snapdog-client"]);
+        assert_eq!(cli.mixer_sync, MixerSync::Both);
+        let cli = Cli::parse_from(["snapdog-client", "--mixer-sync", "out"]);
+        assert_eq!(cli.mixer_sync, MixerSync::Out);
+        assert!(Cli::try_parse_from(["snapdog-client", "--mixer-sync", "in"]).is_err());
     }
 
     #[test]

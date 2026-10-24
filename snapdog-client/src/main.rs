@@ -39,6 +39,7 @@ fn main() -> anyhow::Result<()> {
     let encryption_psk = cli.encryption_psk.clone();
     let null_player = cli.player == "null";
     let mixer_raw = cli.mixer.clone();
+    let mixer_sync = cli.mixer_sync;
     let mut settings = cli.into_settings()?;
 
     #[cfg(unix)]
@@ -114,9 +115,23 @@ fn main() -> anyhow::Result<()> {
         let stream_sample_rate =
             std::sync::Arc::new(std::sync::atomic::AtomicU32::new(DEFAULT_SAMPLE_RATE));
 
-        // Mixer — dispatches volume to software, hardware, midi, or none
+        // Mixer — dispatches volume to software, hardware, midi, x32, or none
         let volume = player::VolumeState::new();
-        let mixer = std::sync::Arc::new(player::Mixer::from_cli(&mixer_raw, volume));
+        // Reverse channel: changes made at the mixer go to the server as our own volume.
+        let report = (mixer_sync == cli::MixerSync::Both).then(|| {
+            let cmd = cmd.clone();
+            Box::new(move |volume: u8, muted: bool| {
+                let volume = u16::from(volume);
+                // The mixer reports from its own thread, outside the runtime.
+                if cmd
+                    .blocking_send(ClientCommand::SetVolume { volume, muted })
+                    .is_err()
+                {
+                    tracing::debug!(volume, muted, "Client stopped, mixer change not reported");
+                }
+            }) as player::VolumeReport
+        });
+        let mixer = std::sync::Arc::new(player::Mixer::from_cli(&mixer_raw, volume, report));
 
         // Audio output: cpal callback reads from Stream directly
         let player_stream = std::sync::Arc::clone(&client.stream);
