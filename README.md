@@ -405,7 +405,7 @@ $ playerctl -p snapdog.zone1 play
 $ playerctl -p snapdog.zone1 volume 0.8
 ```
 
-Each zone appears as `org.mpris.MediaPlayer2.snapdog.zone{N}` on the session bus (or system bus when running as root). Disable with:
+Each zone appears as `org.mpris.MediaPlayer2.snapdog.zone{N}`. SnapDog uses the session bus when `DBUS_SESSION_BUS_ADDRESS` is set and the system bus otherwise, which is the case for the systemd service. The system bus only lets a process own a name that a policy allows, so the `.deb`, AUR and SnapDog OS packages install one to `/usr/share/dbus-1/system.d/` (`snapdog.conf` for the server, `snapdog-client.conf` for the client). If you install the binaries by hand, copy the files from `packaging/` in the release archive there as well. Disable with:
 
 ```toml
 [dbus]

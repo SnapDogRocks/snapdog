@@ -51,6 +51,7 @@ depends = "libasound2, libavahi-compat-libdnssd1"
 assets = [
   ["target/release/snapdog-client", "usr/bin/", "755"],
   ["debian/snapdog-client.default", "etc/default/snapdog-client", "644"],
+  ["dbus/snapdog-client.conf", "usr/share/dbus-1/system.d/snapdog-client.conf", "644"],
 ]
 systemd-units = { unit-name = "snapdog-client", enable = true, start = true }
 
