@@ -1172,7 +1172,7 @@ mod tests {
                     got_format = true;
                 }
                 PcmMessage::Audio(samples) => {
-                    assert!(!samples.is_empty());
+                    assert_ne!(samples.len(), 0);
                     got_audio = true;
                 }
                 _ => {}

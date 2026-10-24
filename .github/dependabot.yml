@@ -21,6 +21,26 @@ updates:
           - minor
           - patch
 
+  # An entry of its own: the toolchain affects every build and never shares a
+  # pull request. `rust-toolchain` is missing from GitHub's ecosystem table but
+  # is in the published schema (json.schemastore.org/dependabot-2.0.json). The
+  # Rust images in the Dockerfiles and release.yml have to follow by hand;
+  # .github/scripts/test_rust_toolchain.py fails until they do.
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:05"
+    target-branch: main
+    commit-message:
+      prefix: chore
+    open-pull-requests-limit: 1
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 14
+
   - package-ecosystem: cargo
     directory: /
     schedule:

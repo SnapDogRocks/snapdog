@@ -303,7 +303,7 @@ mod tests {
         assert!(cli.url.is_none());
         let settings = cli.into_settings().unwrap();
         // No URL specified → empty host triggers mDNS discovery at runtime
-        assert!(settings.server.host.is_empty());
+        assert_eq!(settings.server.host, "");
     }
 
     #[test]
