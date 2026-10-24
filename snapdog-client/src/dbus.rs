@@ -386,7 +386,23 @@ pub async fn start(
         zbus::Connection::system().await?
     };
 
-    // Acquire bus name with retry
+    let state: SharedDbusState = Arc::new(Mutex::new(ClientDbusState::default()));
+
+    let root = RootInterface;
+    let player = PlayerInterface {
+        state: Arc::clone(&state),
+        cmd_tx,
+    };
+
+    conn.object_server()
+        .at("/org/mpris/MediaPlayer2", root)
+        .await?;
+    conn.object_server()
+        .at("/org/mpris/MediaPlayer2", player)
+        .await?;
+
+    // Take the name only now that the interfaces answer calls to it; retry with an
+    // instance suffix if another client holds it.
     let base = BUS_NAME_PREFIX;
     let acquired = if conn.request_name(base).await.is_ok() {
         true
@@ -404,21 +420,6 @@ pub async fn start(
     if !acquired {
         anyhow::bail!("Could not acquire D-Bus bus name");
     }
-
-    let state: SharedDbusState = Arc::new(Mutex::new(ClientDbusState::default()));
-
-    let root = RootInterface;
-    let player = PlayerInterface {
-        state: Arc::clone(&state),
-        cmd_tx,
-    };
-
-    conn.object_server()
-        .at("/org/mpris/MediaPlayer2", root)
-        .await?;
-    conn.object_server()
-        .at("/org/mpris/MediaPlayer2", player)
-        .await?;
 
     let iface_ref: InterfaceRef<PlayerInterface> = conn
         .object_server()
