@@ -14,9 +14,13 @@ RUN pnpm run build
 FROM node:25-slim
 WORKDIR /app
 
-# Install production dependencies for the mock backend
-COPY demo-backend/package.json demo-backend/package-lock.json* ./
-RUN npm install --production
+# Install production dependencies for the mock backend, exactly as locked, with
+# the pnpm from demo-backend/package.json's "packageManager". pnpm 11 rather
+# than the web UI's 12: GitHub's dependency graph cannot read the lockfile pnpm
+# 12 writes, so Dependabot would raise no security alerts for it.
+RUN npm install -g pnpm@11.28.8
+COPY demo-backend/package.json demo-backend/pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile
 
 # Copy static Web UI build from Stage 1
 COPY --from=frontend-builder /app/webui/out ./public
