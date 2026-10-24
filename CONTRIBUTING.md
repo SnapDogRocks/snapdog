@@ -49,7 +49,7 @@ That points Git at `.githooks/` and installs:
   staged files touch WebUI translation files or the macOS String Catalog,
   checks that the affected translations are complete.
 - `pre-push` — runs `cargo fmt --check`, `cargo clippy --all-targets -- -D
-  warnings`, `cargo test --workspace`, and `npm run lint` for the WebUI.
+  warnings`, `cargo test --workspace`, and `pnpm run lint` for the WebUI.
 
 You can also run the same checks manually at any time with:
 
@@ -58,8 +58,8 @@ make check
 ```
 
 which runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
-and the WebUI checks (`npm ci && npm run i18n:check && npm run lint && npm run
-typecheck && npm run build`).
+and the WebUI checks (`pnpm install --frozen-lockfile && pnpm run i18n:check &&
+pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build`).
 
 If a hook ever blocks you incorrectly, please fix the underlying issue rather
 than reaching for `--no-verify` — the same checks run again, and block the
