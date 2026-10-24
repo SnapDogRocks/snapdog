@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.28.0](https://github.com/SnapDogRocks/snapdog/compare/v0.27.8...v0.28.0) (2026-10-24)
+
+
+### Features
+
+* **client:** drive Behringer X32 channel faders over OSC (--mixer x32) ([c404bc8](https://github.com/SnapDogRocks/snapdog/commit/c404bc803d835949fd1f4a340a869b59190f8f75))
+* **client:** report X32 desk changes back to the server (--mixer-sync) ([c404bc8](https://github.com/SnapDogRocks/snapdog/commit/c404bc803d835949fd1f4a340a869b59190f8f75))
+* **server:** adopt volumes that clients report themselves ([c404bc8](https://github.com/SnapDogRocks/snapdog/commit/c404bc803d835949fd1f4a340a869b59190f8f75))
+
+
+### Bug Fixes
+
+* **client:** keep the --mixer examples on separate lines in --help ([c404bc8](https://github.com/SnapDogRocks/snapdog/commit/c404bc803d835949fd1f4a340a869b59190f8f75))
+* **dbus:** serve the MPRIS interfaces before taking the bus name ([6ace659](https://github.com/SnapDogRocks/snapdog/commit/6ace65922d91d9d39d5e6b4255b5792e4278645f))
+* **deps:** move D-Bus to zbus 6 (RUSTSEC-2026-0370 to 0372) ([6ace659](https://github.com/SnapDogRocks/snapdog/commit/6ace65922d91d9d39d5e6b4255b5792e4278645f))
+* **deps:** move to knx-rs 0.11 and snapcast 0.18 (RUSTSEC-2026-0367 to 0369) ([6ace659](https://github.com/SnapDogRocks/snapdog/commit/6ace65922d91d9d39d5e6b4255b5792e4278645f))
+* **deps:** update rustls, rustls-webpki, webpki-roots, webpki-root-certs and ctutils (RUSTSEC-2026-0346 to 0349, 0381 to 0383, 0385) ([6ace659](https://github.com/SnapDogRocks/snapdog/commit/6ace65922d91d9d39d5e6b4255b5792e4278645f))
+* **packaging:** install D-Bus policies so MPRIS2 works on the system bus ([#321](https://github.com/SnapDogRocks/snapdog/issues/321)) ([78a8b75](https://github.com/SnapDogRocks/snapdog/commit/78a8b755614c17a778e7efb12ca51e476fc55714))
+
 ## [0.27.8](https://github.com/SnapDogRocks/snapdog/compare/v0.27.7...v0.27.8) (2026-09-13)
 
 
