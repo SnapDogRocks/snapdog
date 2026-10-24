@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/SnapDogRocks/snapdog/compare/v0.28.0...v0.28.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **docker:** move the runtime images to Debian 12.15 for perl and pcre2 fixes ([#325](https://github.com/SnapDogRocks/snapdog/issues/325)) ([8ddb99c](https://github.com/SnapDogRocks/snapdog/commit/8ddb99c5f702ce6e244dc1018b7aeef5f684892e))
+
 ## [0.28.0](https://github.com/SnapDogRocks/snapdog/compare/v0.27.8...v0.28.0) (2026-10-24)
 
 
