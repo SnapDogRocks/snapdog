@@ -5051,7 +5051,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog"
-version = "0.27.8"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -5114,7 +5114,7 @@ dependencies = [
 
 [[package]]
 name = "snapdog-client"
-version = "0.27.8"
+version = "0.28.0"
 dependencies = [
  "alsa",
  "anyhow",
