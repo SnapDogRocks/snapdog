@@ -4186,11 +4186,11 @@
           "custom": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/EqConfig",
                 "description": "Custom EQ config. Mutually exclusive with `speaker`."
+              },
+              {
+                "type": "null"
               }
             ]
           },
