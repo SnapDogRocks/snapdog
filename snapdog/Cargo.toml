@@ -101,6 +101,7 @@ assets = [
   ["target/release/snapdog", "usr/bin/", "755"],
   ["../snapdog.example.toml", "etc/snapdog/snapdog.toml", "644"],
   ["debian/snapdog.default", "etc/default/snapdog", "644"],
+  ["dbus/snapdog.conf", "usr/share/dbus-1/system.d/snapdog.conf", "644"],
 ]
 systemd-units = { unit-name = "snapdog", enable = false, start = false }
 
