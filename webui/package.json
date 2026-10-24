@@ -50,9 +50,5 @@
     "typescript": "~6.0",
     "typescript-eslint": "^8.71.0",
     "vitest": "^5.0.2"
-  },
-  "overrides": {
-    "postcss": "^8.5.10",
-    "@swc/helpers": "0.5.23"
   }
 }
