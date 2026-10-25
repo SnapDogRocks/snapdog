@@ -136,6 +136,7 @@ impl Topics {
     }
 
     /// The normalised base topic (ends with `/`).
+    #[cfg(test)]
     pub fn base(&self) -> &str {
         &self.base
     }

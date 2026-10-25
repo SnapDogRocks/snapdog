@@ -121,10 +121,10 @@ async fn mqtt_tier2_online_state_roundtrip_and_lwt() {
 
     // Bridge: queue the retained "online" + a QoS1 retained zone state (rumqttc
     // enqueues these; they flush once the event loop is polled below).
-    let mut bridge = MqttBridge::connect(&mqtt_cfg, "http://test:5555", "SnapDog")
+    let mut bridge = MqttBridge::connect(&mqtt_cfg, "http://test:5555")
         .await
         .expect("bridge connect");
-    bridge.publish_ha_discovery(&[]).await.expect("online");
+    bridge.announce_online(0).await.expect("online");
     bridge
         .publish_zone_state(1, &zone1)
         .await
@@ -241,7 +241,7 @@ async fn mqtt_tier2_command_reaches_zone_channel() {
     );
     let store = state::init(&cfg, None).expect("state init");
 
-    let mut bridge = MqttBridge::connect(&mqtt_cfg, "http://test:5555", "SnapDog")
+    let mut bridge = MqttBridge::connect(&mqtt_cfg, "http://test:5555")
         .await
         .expect("bridge connect");
     bridge.subscribe_commands().await.expect("subscribe");
@@ -267,5 +267,111 @@ async fn mqtt_tier2_command_reaches_zone_channel() {
     assert!(
         matches!(cmd, Some(ZoneCommand::SetVolume(42))),
         "command published via the broker must reach the zone channel; got {cmd:?}"
+    );
+}
+
+/// Publish `messages` retained (QoS 1) with a throw-away client and wait for the
+/// broker's acknowledgements.
+async fn seed_retained(host: &str, port: u16, messages: &[(&str, &str)]) {
+    let mut opts = MqttOptions::new("it-t32-seed", host, port);
+    opts.set_keep_alive(Duration::from_secs(5));
+    let (client, mut eventloop) = AsyncClient::new(opts, 16);
+    for (topic, payload) in messages {
+        client
+            .publish(*topic, QoS::AtLeastOnce, true, payload.as_bytes())
+            .await
+            .expect("queue seed");
+    }
+    let mut acked = 0;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while acked < messages.len() {
+        let event = tokio::time::timeout_at(deadline, eventloop.poll())
+            .await
+            .expect("seed messages were not acknowledged")
+            .expect("seed client failed");
+        if matches!(event, Event::Incoming(Packet::PubAck(_))) {
+            acked += 1;
+        }
+    }
+    client.disconnect().await.expect("disconnect");
+    let _ = tokio::time::timeout(Duration::from_secs(2), async {
+        while eventloop.poll().await.is_ok() {}
+    })
+    .await;
+}
+
+/// Everything retained under `filter`, as the broker hands it to a new subscriber.
+async fn retained_under(host: &str, port: u16, filter: &str) -> HashMap<String, String> {
+    let mut opts = MqttOptions::new("it-t32-reader", host, port);
+    opts.set_keep_alive(Duration::from_secs(5));
+    let (client, mut eventloop) = AsyncClient::new(opts, 16);
+    client
+        .subscribe(filter, QoS::AtLeastOnce)
+        .await
+        .expect("subscribe");
+    // Retained messages arrive right after the SUBACK; a short quiet period ends it.
+    collect_until(&mut eventloop, 2, |_| false).await
+}
+
+/// SnapDog used to publish `media_player` discovery configs, a platform that Home
+/// Assistant's MQTT integration does not have. Those retained messages (and the
+/// stale double-slash status) must be cleared, and nothing under `homeassistant/`
+/// may be published any more.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_legacy_retained_messages_are_cleared() {
+    let Some(broker) = start_broker("IT-T32 legacy").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    seed_retained(
+        &host,
+        port,
+        &[
+            (
+                "homeassistant/media_player/snapdog_zone_1/config",
+                r#"{"name":"old"}"#,
+            ),
+            ("snapdog//status", "online"),
+        ],
+    )
+    .await;
+    assert_eq!(
+        retained_under(&host, port, "homeassistant/#").await.len(),
+        1,
+        "the seeded legacy discovery message is retained before SnapDog starts"
+    );
+
+    let cfg = config_for_broker(&host, port);
+    let mqtt_cfg = cfg.mqtt.clone().expect("mqtt config present");
+    let store = state::init(&cfg, None).expect("state init");
+    let mut bridge = MqttBridge::connect(&mqtt_cfg, "http://test:5555")
+        .await
+        .expect("bridge connect");
+    bridge.announce_online(1).await.expect("announce");
+    let (snap_tx, _snap_rx) = mpsc::channel(16);
+    let cmds: HashMap<usize, snapdog::player::ZoneCommandSender> = HashMap::new();
+
+    // Let the bridge deliver its queue, then look at what the broker retains.
+    let (ha, own) = tokio::select! {
+        result = bridge.run(cmds, store, snap_tx) => {
+            panic!("bridge event loop stopped unexpectedly: {result:?}");
+        }
+        view = async {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            (
+                retained_under(&host, port, "homeassistant/#").await,
+                retained_under(&host, port, "snapdog/#").await,
+            )
+        } => view,
+    };
+    assert!(ha.is_empty(), "legacy discovery not cleared; saw: {ha:?}");
+    assert!(
+        !own.contains_key("snapdog//status"),
+        "double-slash status not cleared; saw: {own:?}"
+    );
+    assert_eq!(
+        own.get("snapdog/status").map(String::as_str),
+        Some("online"),
+        "availability announced; saw: {own:?}"
     );
 }

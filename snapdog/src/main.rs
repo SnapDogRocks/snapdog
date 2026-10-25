@@ -496,14 +496,14 @@ pub async fn run_app() -> Result<()> {
 
     // ── MQTT bridge ───────────────────────────────────────────
     let mut mqtt_bridge = if let Some(mqtt_config) = &config.mqtt {
-        match mqtt::MqttBridge::connect(mqtt_config, &config.http.base_url, &config.name).await {
+        match mqtt::MqttBridge::connect(mqtt_config, &config.http.base_url).await {
             Ok(bridge) => {
                 if let Err(e) = bridge.subscribe_commands().await {
                     tracing::warn!(error = %e, "MQTT subscribe failed");
                 }
-                // Publish HA MQTT Discovery
-                if let Err(e) = bridge.publish_ha_discovery(&config.zones).await {
-                    tracing::warn!(error = %e, "HA MQTT Discovery publish failed");
+                // Availability, and clearing of stale retained messages
+                if let Err(e) = bridge.announce_online(config.zones.len()).await {
+                    tracing::warn!(error = %e, "MQTT online announcement failed");
                 }
                 // Publish initial state for all zones and clients
                 let (zones, clients) = {

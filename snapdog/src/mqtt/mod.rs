@@ -32,7 +32,6 @@ pub struct MqttBridge {
     eventloop: rumqttc::EventLoop,
     topics: Topics,
     base_url: String,
-    name: String,
 }
 
 impl MqttBridge {
@@ -42,7 +41,7 @@ impl MqttBridge {
     ///
     /// Returns an error if the broker connection fails.
     #[tracing::instrument(skip_all, fields(broker = %config.broker))]
-    pub async fn connect(config: &MqttConfig, base_url: &str, name: &str) -> Result<Self> {
+    pub async fn connect(config: &MqttConfig, base_url: &str) -> Result<Self> {
         let mut opts = MqttOptions::new(
             &config.client_id,
             parse_host(&config.broker),
@@ -69,7 +68,6 @@ impl MqttBridge {
             eventloop,
             topics,
             base_url: base_url.trim_end_matches('/').to_string(),
-            name: name.to_string(),
         })
     }
 
@@ -83,7 +81,6 @@ impl MqttBridge {
             eventloop,
             topics: Topics::new(base_topic),
             base_url: "http://localhost:5555".to_string(),
-            name: "SnapDog".to_string(),
         }
     }
 
@@ -112,29 +109,24 @@ impl MqttBridge {
         self.topics.command_filters()
     }
 
-    /// Publish Home Assistant MQTT Discovery messages for all zones.
+    /// Announce availability and clear what earlier releases left on the broker.
+    ///
+    /// Publishes the retained `online` on the availability topic (the last will is
+    /// `offline`) and clears two kinds of stale retained message:
+    ///
+    /// - `{base}/status` (double slash), `online` from a past topic bug;
+    /// - `homeassistant/media_player/snapdog_zone_{n}/config`, the discovery
+    ///   messages of a platform that Home Assistant's MQTT integration does not
+    ///   have, so they never produced an entity.
+    ///
+    /// A zero-length retained publish deletes a retained message (MQTT-3.3.1-10), so
+    /// the cleanup is idempotent. `SnapDog` publishes no discovery message at the
+    /// moment; see `docs/rfcs/0007-home-assistant-integration.md`.
     ///
     /// # Errors
     ///
-    /// Returns an error if publishing any discovery message fails.
-    pub async fn publish_ha_discovery(&self, zones: &[crate::config::ZoneConfig]) -> Result<()> {
-        for zone in zones {
-            let unique_id = format!("snapdog_zone_{}", zone.index);
-            let discovery = ha_discovery_payload(&self.topics, &self.name, zone);
-            self.client
-                .publish(
-                    format!("homeassistant/media_player/{unique_id}/config"),
-                    QoS::AtLeastOnce,
-                    true,
-                    discovery.to_string().as_bytes(),
-                )
-                .await
-                .with_context(|| {
-                    format!("Failed to publish HA discovery for zone {}", zone.index)
-                })?;
-        }
-
-        // Publish availability "online" to the SAME topic as the LWT (single slash).
+    /// Returns an error if a publish cannot be queued.
+    pub async fn announce_online(&self, zones: usize) -> Result<()> {
         self.client
             .publish(
                 self.topics.availability(),
@@ -144,20 +136,20 @@ impl MqttBridge {
             )
             .await?;
 
-        // Migration cleanup: clear the stale retained "online" left by pre-fix
-        // snapdog at the old buggy double-slash topic (`{base}/status`). A
-        // zero-length retained publish deletes a retained message (MQTT spec);
-        // idempotent, so it is harmless on every later reconnect.
-        self.client
-            .publish(
-                self.topics.legacy_double_slash_status(),
-                QoS::AtLeastOnce,
-                true,
-                Vec::<u8>::new(),
-            )
-            .await?;
+        let stale = std::iter::once(self.topics.legacy_double_slash_status()).chain(
+            (1..=zones)
+                .map(|zone| format!("homeassistant/media_player/snapdog_zone_{zone}/config")),
+        );
+        for topic in stale {
+            self.client
+                .publish(topic, QoS::AtLeastOnce, true, Vec::<u8>::new())
+                .await?;
+        }
 
-        tracing::info!(zones = zones.len(), "HA MQTT Discovery published");
+        tracing::info!(
+            zones,
+            "MQTT online announced, stale retained messages cleared"
+        );
         Ok(())
     }
 
@@ -518,58 +510,6 @@ fn client_state_payload(client: &state::ClientState) -> serde_json::Value {
     })
 }
 
-/// Build the Home Assistant MQTT-discovery payload for one zone (`media_player`).
-/// Pure: extracted from `publish_ha_discovery` so the schema is unit-testable.
-fn ha_discovery_payload(
-    topics: &Topics,
-    device_name: &str,
-    zone: &crate::config::ZoneConfig,
-) -> serde_json::Value {
-    let base = topics.base();
-    let idx = zone.index;
-    let unique_id = format!("snapdog_zone_{idx}");
-    serde_json::json!({
-        "name": zone.name,
-        "unique_id": &unique_id,
-        "object_id": &unique_id,
-        "icon": "mdi:speaker-group",
-        "state_topic": format!("{base}zones/{idx}/state"),
-        "volume_command_topic": format!("{base}zones/{idx}/volume/set"),
-        "mute_command_topic": format!("{base}zones/{idx}/mute/set"),
-        "media_position_command_topic": format!("{base}zones/{idx}/position/set"),
-        "payload_play": "play",
-        "payload_pause": "pause",
-        "payload_stop": "stop",
-        "payload_next": "next",
-        "payload_previous": "previous",
-        "command_topic": format!("{base}zones/{idx}/control/set"),
-        "shuffle_command_topic": format!("{base}zones/{idx}/shuffle/set"),
-        "repeat_command_topic": format!("{base}zones/{idx}/repeat/set"),
-        "volume_level_template": "{{ value_json.volume_level }}",
-        "is_volume_muted_template": "{{ value_json.is_volume_muted }}",
-        "state_template": "{{ value_json.state }}",
-        "media_title_template": "{{ value_json.media_title | default('') }}",
-        "media_artist_template": "{{ value_json.media_artist | default('') }}",
-        "media_album_name_template": "{{ value_json.media_album_name | default('') }}",
-        "media_duration_template": "{{ value_json.media_duration | default(0) }}",
-        "media_position_template": "{{ value_json.media_position | default(0) }}",
-        "media_image_url_template": "{{ value_json.media_image_url | default('') }}",
-        "shuffle_state_template": "{{ value_json.shuffle }}",
-        "repeat_state_template": "{{ value_json.repeat }}",
-        "supported_features": ["play", "pause", "stop", "next_track", "previous_track", "volume_set", "volume_mute", "shuffle_set", "repeat_set", "seek"],
-        "device": {
-            "identifiers": ["snapdog"],
-            "name": device_name,
-            "manufacturer": "metaneutrons",
-            "model": "Multi-zone Audio Controller",
-            "sw_version": env!("CARGO_PKG_VERSION"),
-        },
-        "availability_topic": topics.availability(),
-        "payload_available": "online",
-        "payload_not_available": "offline",
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -685,38 +625,6 @@ mod tests {
         assert_eq!(p["connected"], true);
         assert_eq!(p["zone"], 1);
         assert_eq!(p["latency"], 0);
-    }
-
-    #[test]
-    fn ha_discovery_payload_schema() {
-        let cfg = crate::config::load_raw(
-            toml::from_str(
-                r#"
-                [[zone]]
-                name = "Living Room"
-                [[client]]
-                name = "Speaker"
-                mac = "00:00:00:00:00:01"
-                zone = "Living Room"
-            "#,
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        let topics = Topics::new("snapdog/");
-        let p = ha_discovery_payload(&topics, "SnapDog", &cfg.zones[0]);
-        assert_eq!(p["name"], "Living Room");
-        assert_eq!(p["unique_id"], "snapdog_zone_1");
-        assert_eq!(p["state_topic"], "snapdog/zones/1/state");
-        assert_eq!(p["command_topic"], "snapdog/zones/1/control/set");
-        assert_eq!(p["volume_command_topic"], "snapdog/zones/1/volume/set");
-        // Must equal the LWT topic (single slash) — guards the snapdog//status bug.
-        assert_eq!(p["availability_topic"], "snapdog/status");
-        assert_eq!(p["availability_topic"], topics.availability());
-        assert_eq!(p["payload_available"], "online");
-        assert_eq!(p["payload_not_available"], "offline");
-        assert_eq!(p["device"]["identifiers"][0], "snapdog");
-        assert_eq!(p["device"]["name"], "SnapDog");
     }
 
     #[test]
@@ -951,7 +859,7 @@ mod tests {
         );
         let cfg = crate::config::load_raw(toml::from_str(&toml).unwrap()).unwrap();
         let mqtt = cfg.mqtt.unwrap();
-        let bridge = MqttBridge::connect(&mqtt, "http://localhost:5555", "SnapDog")
+        let bridge = MqttBridge::connect(&mqtt, "http://localhost:5555")
             .await
             .unwrap();
         (bridge, mqtt)
