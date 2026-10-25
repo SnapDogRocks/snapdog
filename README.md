@@ -37,7 +37,7 @@ SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system
 | 🔊 **Speaker Correction** | Per-client Spinorama profiles (1000+ speakers from (https://spinorama.org)) |
 | 🔀 **Audio Fade** | Smooth transitions: zone switch (client-side) and source switch (server-side) |
 | 🏠 **MQTT** | Bidirectional smart home integration, Home Assistant auto-discovery |
-| 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 35 group objects per zone, 11 per client, plus device-level global objects) |
+| 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 33 group objects per zone, 11 per client, plus 5 device-level global objects) |
 | 🌐 **REST API** | ~90 endpoints, full zone/client/media control |
 | 📡 **WebSocket** | Real-time state push notifications |
 | 🖥️ **WebUI** | Responsive SPA, drag-and-drop, tabbed EQ overlay, i18n (5 languages) |

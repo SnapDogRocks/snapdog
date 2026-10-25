@@ -689,7 +689,7 @@ pub(super) fn load_persisted_ets_params(ia: IndividualAddress) -> Option<EtsPara
     Some(parse_ets_memory(bau.memory_area()))
 }
 
-/// Build a BAU with 460 group objects configured with correct DPTs,
+/// Build a BAU with all `TOTAL_GO_COUNT` group objects configured with correct DPTs,
 /// and address/association tables from TOML config.
 fn build_bau(ia: IndividualAddress, config: &crate::config::AppConfig) -> Bau {
     let device = device_object::new_device_object(
