@@ -442,6 +442,7 @@ pub async fn run_app() -> Result<()> {
 
     // ── KNX bridge ────────────────────────────────────────────
     let mut knx_device_control: Option<knx::DeviceControlHandle> = None;
+    let mut knx_bridge: Option<knx::KnxBridge> = None;
     if config.knx.is_some() {
         let knx_notifications = notify_tx.subscribe();
         match knx::start(
@@ -453,10 +454,13 @@ pub async fn run_app() -> Result<()> {
         )
         .await
         {
-            Ok(handle) => {
-                knx_device_control = handle;
+            Ok(bridge) => {
+                knx_device_control = bridge.device_control();
+                knx_bridge = Some(bridge);
             }
-            Err(e) => tracing::warn!(error = %e, "KNX connection failed — running without KNX"),
+            Err(e) => {
+                tracing::warn!(error = %format_args!("{e:#}"), "KNX could not be started — running without KNX");
+            }
         }
     }
 
@@ -914,6 +918,9 @@ pub async fn run_app() -> Result<()> {
         });
     });
 
+    if let Some(bridge) = knx_bridge {
+        bridge.shutdown().await;
+    }
     let _ = backend.stop().await;
     let persist_result = store.write().await.persist();
     if let Err(e) = persist_result {

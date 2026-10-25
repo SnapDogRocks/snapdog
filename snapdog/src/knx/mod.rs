@@ -13,12 +13,16 @@
 //! group object finds its group address (see [`transport`]): client mode uses the
 //! configured addresses, device mode uses the associations ETS programmed.
 //!
+//! Both transports are supervised: a gateway that is unreachable at startup or lost later,
+//! and a device server that cannot bind or stops, are retried with capped exponential
+//! backoff, and every status value is published again once the transport is back.
 
 mod client;
 mod device;
 mod ets_config;
 pub mod group_objects;
 mod sink;
+mod supervisor;
 mod transport;
 
 pub use device::DeviceOptions;
@@ -34,6 +38,8 @@ use knx_rs_core::address::GroupAddress;
 use knx_rs_core::dpt::{
     self, DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_UCOUNT, DptValue,
 };
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
 
 use crate::config::AppConfig;
 use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
@@ -64,18 +70,52 @@ pub type DeviceControlHandle = Arc<device::DevicePublisher>;
 /// Re-export the device control trait for use by API routes.
 pub use transport::KnxDeviceControl;
 
-/// Start the KNX bridge. Returns a device control handle in device mode.
+/// A running KNX bridge. Dropping it leaves the bridge running; [`shutdown`](Self::shutdown)
+/// stops it.
+pub struct KnxBridge {
+    device: Option<DeviceControlHandle>,
+    shutdown: watch::Sender<bool>,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+impl KnxBridge {
+    /// Handle for programming mode and device info. `None` in client mode.
+    #[must_use]
+    pub fn device_control(&self) -> Option<DeviceControlHandle> {
+        self.device.clone()
+    }
+
+    /// Stop reconnecting, close the transport and wait briefly for the tasks to end.
+    pub async fn shutdown(self) {
+        let _ = self.shutdown.send(true);
+        for task in self.tasks {
+            if tokio::time::timeout(std::time::Duration::from_secs(2), task)
+                .await
+                .is_err()
+            {
+                tracing::warn!("KNX task did not stop in time");
+            }
+        }
+    }
+}
+
+/// Start the KNX bridge.
+///
+/// Client mode returns as soon as the configuration is valid: the gateway connection is made
+/// (and re-made) in the background, so an unreachable gateway no longer disables KNX for the
+/// lifetime of the process.
 ///
 /// # Errors
 ///
-/// Returns an error if KNX is not configured or the connection fails.
+/// Returns an error if KNX is not configured, the configuration is unusable (no or invalid
+/// URL, invalid individual address) or the device state cannot be set up.
 pub async fn start<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
     notify_rx: tokio::sync::broadcast::Receiver<Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
-) -> Result<Option<DeviceControlHandle>> {
+) -> Result<KnxBridge> {
     start_with_options(
         config,
         store,
@@ -92,16 +132,17 @@ pub async fn start<S: BuildHasher + Send + Sync + 'static>(
 ///
 /// # Errors
 ///
-/// Returns an error if KNX is not configured or the connection fails.
+/// See [`start`].
 pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
-    mut notify_rx: tokio::sync::broadcast::Receiver<Arc<str>>,
+    notify_rx: tokio::sync::broadcast::Receiver<Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
     options: &DeviceOptions,
-) -> Result<Option<DeviceControlHandle>> {
+) -> Result<KnxBridge> {
     let knx = config.knx.as_ref().context("KNX not configured")?;
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let bridge = Bridge::new(config, store, zone_commands, snap_tx);
     match knx.role {
         crate::config::KnxRole::Client => {
@@ -109,20 +150,18 @@ pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
                 .url
                 .as_deref()
                 .context("KNX client mode requires 'url'")?;
-            let spec = knx_rs_ip::parse_url(url).context("Invalid KNX URL")?;
-            let conn = knx_rs_ip::connect(spec)
-                .await
-                .context("KNX connection failed")?;
-            tracing::info!(%url, "KNX client connected");
-
-            let mux = knx_rs_ip::Multiplexer::new(conn);
-            let publisher = client::ClientPublisher::new(mux.handle());
-            let listener = client::ClientListener::new(mux.handle());
-            tokio::spawn(mux.run());
-            tokio::spawn(async move {
-                run_session(&publisher, listener, &bridge, &mut notify_rx).await;
-            });
-            Ok(None)
+            let target = supervisor::ClientTarget::parse(url)?;
+            let task = tokio::spawn(supervisor::run_client(
+                target,
+                bridge,
+                notify_rx,
+                shutdown_rx,
+            ));
+            Ok(KnxBridge {
+                device: None,
+                shutdown: shutdown_tx,
+                tasks: vec![task],
+            })
         }
         crate::config::KnxRole::Device => {
             let addr = knx
@@ -130,12 +169,20 @@ pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
                 .as_deref()
                 .context("KNX device mode requires 'individual_address'")?;
             let (publisher, listener, _ets_params) =
-                device::start_device_transport(addr, config, options).await?;
+                device::start_device_transport(addr, config, options, shutdown_rx.clone()).await?;
             let handle: DeviceControlHandle = Arc::new(publisher.clone());
-            tokio::spawn(async move {
-                run_session(&publisher, listener, &bridge, &mut notify_rx).await;
-            });
-            Ok(Some(handle))
+            let task = tokio::spawn(supervisor::run_device(
+                publisher,
+                listener,
+                bridge,
+                notify_rx,
+                shutdown_rx,
+            ));
+            Ok(KnxBridge {
+                device: Some(handle),
+                shutdown: shutdown_tx,
+                tasks: vec![task],
+            })
         }
     }
 }
@@ -179,6 +226,8 @@ impl<S> Bridge<S> {
 pub(crate) enum SessionEnd {
     /// The transport reported that the connection is closed.
     ConnectionClosed,
+    /// Several writes in a row failed: the gateway is gone although the tunnel has not noticed.
+    WriteFailures,
     /// The notification channel closed (the server is shutting down).
     NotificationsClosed,
 }
@@ -187,6 +236,7 @@ pub(crate) enum SessionEnd {
 pub(crate) async fn run_session<P, L, S>(
     publisher: &P,
     listener: L,
+    broken: Option<&tokio::sync::Notify>,
     bridge: &Bridge<S>,
     notify_rx: &mut tokio::sync::broadcast::Receiver<Arc<str>>,
 ) -> SessionEnd
@@ -198,6 +248,12 @@ where
     tokio::select! {
         () = publisher_loop(publisher, bridge, notify_rx) => SessionEnd::NotificationsClosed,
         () = listener_loop(listener, bridge) => SessionEnd::ConnectionClosed,
+        () = async {
+            match broken {
+                Some(n) => n.notified().await,
+                None => std::future::pending().await,
+            }
+        } => SessionEnd::WriteFailures,
     }
 }
 

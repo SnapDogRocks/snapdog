@@ -18,9 +18,13 @@ use knx_rs_core::dpt::{Dpt, DptValue};
 use knx_rs_device::bau::Bau;
 use knx_rs_device::device_object;
 use knx_rs_ip::tunnel_server::{DeviceServer, ServerEvent};
-use tokio::sync::{Notify, mpsc, oneshot};
+use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 use super::group_objects::mem;
+use super::supervisor::{
+    BACKOFF_BASE, BACKOFF_CAP, Backoff, STABLE_AFTER, sleep_or_shutdown, stop_requested,
+    warn_on_failure,
+};
 use super::transport::{Incoming, Target};
 
 /// Current monotonic time in milliseconds (for transport layer timeouts).
@@ -400,15 +404,15 @@ enum BauCmd {
 #[derive(Clone)]
 pub struct DevicePublisher {
     cmd_tx: mpsc::Sender<BauCmd>,
-    local_addr: std::net::SocketAddr,
+    local_addr: watch::Receiver<Option<std::net::SocketAddr>>,
     resync: Arc<Notify>,
 }
 
 impl DevicePublisher {
-    /// UDP address the KNXnet/IP device server is bound to.
+    /// UDP address the KNXnet/IP device server is bound to, `None` while it is not up.
     #[must_use]
-    pub const fn local_addr(&self) -> std::net::SocketAddr {
-        self.local_addr
+    pub fn local_addr(&self) -> Option<std::net::SocketAddr> {
+        *self.local_addr.borrow()
     }
 
     async fn send_cmd(&self, cmd: BauCmd) {
@@ -545,10 +549,14 @@ fn restore_state(bau: &mut Bau, path: &std::path::Path) {
 }
 
 /// Start the device server and BAU, returning a publisher/listener pair.
+///
+/// The server is supervised: when it cannot be bound (yet) or stops later, it is started
+/// again with backoff, and the bridge re-sends all status values once it is back.
 pub async fn start_device_transport(
     individual_address: &str,
     config: &crate::config::AppConfig,
     options: &DeviceOptions,
+    shutdown: watch::Receiver<bool>,
 ) -> Result<(DevicePublisher, DeviceListener, Option<EtsParams>)> {
     let ia = IndividualAddress::from_str(individual_address)
         .map_err(|e| anyhow::anyhow!("Invalid individual address: {e}"))?;
@@ -607,30 +615,42 @@ pub async fn start_device_transport(
         tracing::info!("KNX programming mode active (--knx-prog-mode)");
     }
 
-    let server = open_server(options.bind).await?;
-    let local_addr = server.local_addr();
+    // First bind inline so a caller (and the log) sees the result right away; a failure is
+    // not fatal, the supervisor keeps trying.
+    let (addr_tx, addr_rx) = watch::channel(None);
+    let first = match open_server(options.bind).await {
+        Ok(server) => {
+            let _ = addr_tx.send(Some(server.local_addr()));
+            Some(server)
+        }
+        Err(e) => {
+            tracing::warn!(error = %format!("{e:#}"), "KNX device server could not start — retrying in the background");
+            None
+        }
+    };
 
     let resync = Arc::new(Notify::new());
-    let resync_task = Arc::clone(&resync);
-    tokio::spawn(async move {
-        let mut task = DeviceTask {
+    tokio::spawn(device_supervisor(
+        DeviceTask {
             bau,
             cmd_rx,
             update_tx,
             persist_path,
             restart_after_ets,
-            resync: resync_task,
-        };
-        bau_task_loop(&mut task, server).await;
-        tracing::info!("KNX BAU task ended");
-    });
+            bind: options.bind,
+            addr_tx,
+            resync: Arc::clone(&resync),
+            shutdown,
+        },
+        first,
+    ));
 
     tracing::info!(%individual_address, persist, "KNX device mode started");
 
     Ok((
         DevicePublisher {
             cmd_tx,
-            local_addr,
+            local_addr: addr_rx,
             resync,
         },
         DeviceListener { update_rx },
@@ -668,23 +688,82 @@ impl super::transport::KnxListener for DeviceListener {
 
 // ── BAU task ──────────────────────────────────────────────────
 
-/// Everything the BAU task owns.
+/// Everything the BAU task owns across server restarts.
 struct DeviceTask {
     bau: Bau,
     cmd_rx: mpsc::Receiver<BauCmd>,
     update_tx: mpsc::Sender<(u16, Vec<u8>)>,
     persist_path: Option<PathBuf>,
     restart_after_ets: bool,
+    bind: Option<std::net::SocketAddr>,
+    addr_tx: watch::Sender<Option<std::net::SocketAddr>>,
     resync: Arc<Notify>,
+    shutdown: watch::Receiver<bool>,
 }
 
 /// Why [`bau_task_loop`] returned.
 #[derive(Debug, PartialEq, Eq)]
 enum LoopEnd {
-    /// The KNXnet/IP server stopped.
+    /// The KNXnet/IP server stopped; start it again.
     ServerClosed,
-    /// Nobody can send commands any more.
+    /// Nobody can send commands any more, or shutdown was requested.
     Stopped,
+}
+
+/// Keep the KNXnet/IP server running for the lifetime of the BAU.
+async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
+    let mut backoff = Backoff::new(BACKOFF_BASE, BACKOFF_CAP);
+    let mut server = first;
+    let mut restarted = false;
+
+    loop {
+        let srv = match server.take() {
+            Some(s) => s,
+            None => match open_server(task.bind).await {
+                Ok(s) => {
+                    if backoff.failures() > 0 {
+                        tracing::info!(attempts = backoff.failures(), "KNX device server is up");
+                    }
+                    backoff.reset();
+                    let _ = task.addr_tx.send(Some(s.local_addr()));
+                    s
+                }
+                Err(e) => {
+                    let delay = backoff.failure();
+                    let error = format!("{e:#}");
+                    if warn_on_failure(backoff.failures()) {
+                        tracing::warn!(attempt = backoff.failures(), %error, retry_in = ?delay, "KNX device server not available");
+                    } else {
+                        tracing::debug!(attempt = backoff.failures(), %error, retry_in = ?delay, "KNX device server not available");
+                    }
+                    if !sleep_or_shutdown(delay, &mut task.shutdown).await {
+                        break;
+                    }
+                    continue;
+                }
+            },
+        };
+        if restarted {
+            // The peers' view of our group objects is stale; send everything again.
+            task.resync.notify_one();
+        }
+        let started = tokio::time::Instant::now();
+        let end = bau_task_loop(&mut task, srv).await;
+        let _ = task.addr_tx.send(None);
+        if end == LoopEnd::Stopped {
+            break;
+        }
+        restarted = true;
+        if started.elapsed() >= STABLE_AFTER {
+            backoff.reset();
+        }
+        let delay = backoff.failure();
+        tracing::warn!(retry_in = ?delay, "KNX device server stopped — restarting");
+        if !sleep_or_shutdown(delay, &mut task.shutdown).await {
+            break;
+        }
+    }
+    tracing::info!("KNX BAU task ended");
 }
 
 #[allow(clippy::too_many_lines)] // One select loop over server events, commands and the persist timer
@@ -695,7 +774,9 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
         update_tx,
         persist_path,
         restart_after_ets,
+        shutdown,
         resync,
+        ..
     } = task;
     let mut memory_dirty = false;
     let persist_timer = tokio::time::sleep(ETS_PERSIST_DEBOUNCE);
@@ -805,6 +886,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     spawn_persist(bau.save(), path.clone());
                 }
             }
+            () = stop_requested(shutdown) => break LoopEnd::Stopped,
         }
     };
 

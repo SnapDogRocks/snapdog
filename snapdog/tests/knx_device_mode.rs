@@ -227,6 +227,7 @@ fn ets_params() -> Vec<u8> {
 
 struct Device {
     addr: SocketAddr,
+    bridge: knx::KnxBridge,
     store: state::SharedState,
     notify: broadcast::Sender<std::sync::Arc<str>>,
     zone_rx: HashMap<usize, mpsc::Receiver<ZoneCommand>>,
@@ -278,7 +279,7 @@ async fn start_device(cfg: &config::AppConfig, memory: PathBuf) -> Device {
         bind: Some("127.0.0.1:0".parse().unwrap()),
         memory_path: Some(memory.clone()),
     };
-    let handle = knx::start_with_options(
+    let bridge = knx::start_with_options(
         cfg,
         store.clone(),
         notify_rx,
@@ -287,10 +288,13 @@ async fn start_device(cfg: &config::AppConfig, memory: PathBuf) -> Device {
         &options,
     )
     .await
-    .expect("device transport starts")
-    .expect("device mode returns a control handle");
+    .expect("device transport starts");
+    let handle = bridge
+        .device_control()
+        .expect("device mode returns a control handle");
     Device {
-        addr: handle.local_addr(),
+        addr: handle.local_addr().expect("server bound"),
+        bridge,
         store,
         notify,
         zone_rx,
@@ -540,8 +544,8 @@ async fn programming_survives_restart() {
         let mut ets = connect(&dev).await;
         ets_download(&mut ets, &ets_links()).await;
         drain(&mut ets).await;
-        // The BAU task persists what ETS wrote after a short debounce.
-        let _ = dev;
+        // Stopping the bridge closes the server and persists what ETS wrote.
+        dev.bridge.shutdown().await;
     }
     timeout(T, async {
         while !memory.exists() {
