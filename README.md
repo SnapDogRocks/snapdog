@@ -292,7 +292,7 @@ default_zone = "Living Room"         # Zone for unknown clients (accept only)
 # enabled = true                     # MPRIS2 per zone (Linux only)
 
 [airplay]
-# mode = "airplay2"                  # airplay1 | airplay2
+# mode = "airplay2"                  # airplay1 | airplay2 (airplay2 needs a build with feature ap2)
 # password = "1234"
 
 [mqtt]
