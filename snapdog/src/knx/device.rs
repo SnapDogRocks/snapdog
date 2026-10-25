@@ -322,6 +322,73 @@ fn read_string(data: &[u8], offset: usize, max_len: usize) -> String {
     decode_latin9(&bytes[..len])
 }
 
+/// A point-to-point `L_Data.ind` management frame from [`INSTALL_SOURCE`] to the device.
+fn management_frame(bau: &Bau, apdu: &[u8]) -> Option<CemiFrame> {
+    let dst = bau.individual_address().raw();
+    let mut f = vec![
+        0x29,
+        0x00,
+        0xB0,
+        0x60,
+        (INSTALL_SOURCE >> 8) as u8,
+        (INSTALL_SOURCE & 0xFF) as u8,
+        (dst >> 8) as u8,
+        (dst & 0xFF) as u8,
+        u8::try_from(apdu.len().checked_sub(1)?).ok()?,
+    ];
+    f.extend_from_slice(apdu);
+    CemiFrame::parse(&f).ok()
+}
+
+/// Whether the BAU holds a programming ETS downloaded (as opposed to none, or tables snapdog
+/// installed from the TOML addresses, which leave the memory area empty).
+fn ets_programmed(bau: &Bau) -> bool {
+    bau.configured() && !bau.memory_area().is_empty()
+}
+
+/// Where the application program's parameter block starts in the BAU memory.
+///
+/// The device stack hands out memory by appending: every download, and every
+/// parameter-only download, allocates its segment behind everything allocated before. The
+/// parameters therefore start at offset 0 after the first download only. ETS reads the
+/// segment address with `PID_TABLE_REFERENCE` of the application program object before it
+/// writes there, and so does this, through the device stack's own management service.
+fn app_segment(bau: &mut Bau) -> Option<usize> {
+    use knx_rs_core::message::ApduType;
+
+    const OBJ_APP_PROGRAM: u8 = 4;
+    const PID_TABLE_REFERENCE: u8 = 7;
+
+    if !bau.configured() {
+        return None;
+    }
+    // Between events the outbox is empty; the response is the only frame after this.
+    while bau.next_outgoing_frame().is_some() {}
+    let [hi, lo] = {
+        let b = (ApduType::PropertyValueRead as u16).to_be_bytes();
+        [b[0] & 0x03, b[1]]
+    };
+    let frame = management_frame(
+        bau,
+        &[hi, lo, OBJ_APP_PROGRAM, PID_TABLE_REFERENCE, 0x10, 0x01],
+    )?;
+    bau.process_frame(&frame, now_ms());
+    let response = bau.next_outgoing_frame()?;
+    while bau.next_outgoing_frame().is_some() {}
+    let payload = response.payload();
+    let at = payload.len().checked_sub(4)?;
+    let reference = u32::from_be_bytes(payload[at..].try_into().ok()?);
+    usize::try_from(reference).ok()
+}
+
+/// The ETS parameters of the programming the BAU holds, read from the segment the last
+/// download wrote.
+fn app_parameters(bau: &mut Bau) -> Option<EtsParams> {
+    let at = app_segment(bau)?;
+    let block = bau.memory_area().get(at..at.checked_add(mem::TOTAL)?)?;
+    Some(parse_ets_memory(block))
+}
+
 /// Parse ETS parameters from BAU memory area.
 #[allow(clippy::too_many_lines)]
 pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
@@ -681,11 +748,11 @@ pub async fn start_device_transport(
         restore_state(&mut bau, path);
     }
 
-    let origin = if bau.configured() {
+    let origin = if ets_programmed(&bau) {
         tracing::info!(
             "Using ETS-programmed group address tables (TOML KNX addresses are not used for the device tables)"
         );
-        let ets = parse_ets_memory(bau.memory_area());
+        let ets = app_parameters(&mut bau).unwrap_or_default();
         tracing::info!(
             zones = ets.zone_active.iter().filter(|&&a| a).count(),
             clients = ets.client_active.iter().filter(|&&a| a).count(),
@@ -1090,10 +1157,10 @@ fn spawn_persist(state: Vec<u8>, path: PathBuf, ia: IaRecord) {
 pub(super) fn load_persisted_ets_params(ia: IndividualAddress) -> Option<EtsParams> {
     let saved = load_memory(std::path::Path::new(ETS_MEMORY_PATH)).ok()?;
     let mut bau = build_bau(ia);
-    if bau.restore(&saved.payload).is_err() || !bau.configured() {
+    if bau.restore(&saved.payload).is_err() || !ets_programmed(&bau) {
         return None;
     }
-    Some(parse_ets_memory(bau.memory_area()))
+    app_parameters(&mut bau)
 }
 
 /// Build a BAU with all group objects configured with their DPTs and buffer sizes.
@@ -1294,24 +1361,6 @@ const INSTALL_SOURCE: u16 = 0xFFFF;
 
 /// Cut `data` into pieces an `A_Memory_Write` can carry.
 const INSTALL_CHUNK: usize = 48;
-
-/// A point-to-point `L_Data.ind` management frame from [`INSTALL_SOURCE`] to the device.
-fn management_frame(bau: &Bau, apdu: &[u8]) -> Option<CemiFrame> {
-    let dst = bau.individual_address().raw();
-    let mut f = vec![
-        0x29,
-        0x00,
-        0xB0,
-        0x60,
-        (INSTALL_SOURCE >> 8) as u8,
-        (INSTALL_SOURCE & 0xFF) as u8,
-        (dst >> 8) as u8,
-        (dst & 0xFF) as u8,
-        u8::try_from(apdu.len().checked_sub(1)?).ok()?,
-    ];
-    f.extend_from_slice(apdu);
-    CemiFrame::parse(&f).ok()
-}
 
 /// Load the address and association table into the BAU through the same management
 /// services ETS uses (load state machine plus memory writes), with an empty application
@@ -1871,5 +1920,135 @@ mod tests {
         let empty = TableSummary::of(&build_bau(IndividualAddress::from_raw(0x1164)));
         assert!(!empty.configured);
         assert_eq!((empty.associations, empty.zone_objects), (0, 0));
+    }
+
+    // ── ETS downloads against the device stack ──────────────────────
+
+    fn apdu_header(t: knx_rs_core::message::ApduType) -> [u8; 2] {
+        let b = (t as u16).to_be_bytes();
+        [b[0] & 0x03, b[1]]
+    }
+
+    /// Send a management APDU from the programming tool and return what the device answers.
+    fn send_management(bau: &mut Bau, apdu: &[u8]) -> Vec<CemiFrame> {
+        let frame = management_frame(bau, apdu).unwrap();
+        bau.process_frame(&frame, 0);
+        std::iter::from_fn(|| bau.next_outgoing_frame()).collect()
+    }
+
+    /// Allocate a segment for `obj` the way ETS does (start loading, allocate, read the
+    /// table reference) and return where it is.
+    fn allocate_segment(bau: &mut Bau, obj: u8, size: usize) -> usize {
+        use knx_rs_core::message::ApduType;
+        let load_control = |payload: &[u8]| {
+            let [hi, lo] = apdu_header(ApduType::PropertyValueWrite);
+            let mut a = vec![hi, lo, obj, 5, 0x10, 0x01];
+            a.extend_from_slice(payload);
+            a
+        };
+        send_management(bau, &load_control(&[1]));
+        let mut alc = vec![0x03, 0x0B];
+        alc.extend_from_slice(&u32::try_from(size).unwrap().to_be_bytes());
+        alc.extend_from_slice(&[0x01, 0x00]);
+        send_management(bau, &load_control(&alc));
+        let [hi, lo] = apdu_header(ApduType::PropertyValueRead);
+        let response = send_management(bau, &[hi, lo, obj, 7, 0x10, 0x01]);
+        let p = response[0].payload();
+        u32::from_be_bytes(p[p.len() - 4..].try_into().unwrap()) as usize
+    }
+
+    fn write_segment(bau: &mut Bau, at: usize, data: &[u8]) {
+        use knx_rs_core::message::ApduType;
+        for (i, chunk) in data.chunks(48).enumerate() {
+            let [hi, lo] = apdu_header(ApduType::MemoryWrite);
+            let to = u16::try_from(at + i * 48).unwrap();
+            let mut a = vec![
+                hi,
+                lo | u8::try_from(chunk.len()).unwrap(),
+                (to >> 8) as u8,
+                (to & 0xFF) as u8,
+            ];
+            a.extend_from_slice(chunk);
+            send_management(bau, &a);
+        }
+    }
+
+    fn complete(bau: &mut Bau, obj: u8) {
+        use knx_rs_core::message::ApduType;
+        let [hi, lo] = apdu_header(ApduType::PropertyValueWrite);
+        send_management(bau, &[hi, lo, obj, 5, 0x10, 0x01, 2]);
+    }
+
+    fn params_with_zones(zones: u8) -> Vec<u8> {
+        let mut params = vec![0u8; mem::TOTAL];
+        params[mem::NUM_ZONES] = zones;
+        params
+    }
+
+    fn zones_of(p: &EtsParams) -> usize {
+        p.zone_active.iter().filter(|a| **a).count()
+    }
+
+    /// The download order of the generated product: application segment first, then the tables,
+    /// then the parameters. `tables` is `false` for a parameter-only download.
+    fn ets_download(bau: &mut Bau, zones: u8, tables: Option<(&[u8], &[u8])>) {
+        let params = params_with_zones(zones);
+        let app_at = allocate_segment(bau, 4, params.len());
+        if let Some((addr, assoc)) = tables {
+            for (obj, data) in [(1u8, addr), (2u8, assoc)] {
+                let at = allocate_segment(bau, obj, data.len());
+                write_segment(bau, at, data);
+                complete(bau, obj);
+            }
+        }
+        write_segment(bau, app_at, &params);
+        complete(bau, 4);
+    }
+
+    fn toml_tables() -> (Vec<u8>, Vec<u8>) {
+        // 1/0/1 and 1/0/2; zone 1 Play and Volume.
+        let addr = vec![0, 2, 0x08, 0x01, 0x08, 0x02];
+        let assoc = vec![0, 2, 0, 1, 0, 1, 0, 2, 0, 6];
+        (addr, assoc)
+    }
+
+    #[test]
+    fn a_parameter_only_download_replaces_the_parameters() {
+        let (addr, assoc) = toml_tables();
+        let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
+        ets_download(&mut bau, 3, Some((&addr, &assoc)));
+        assert!(ets_programmed(&bau));
+        assert_eq!(zones_of(&app_parameters(&mut bau).unwrap()), 3);
+
+        // ETS changes a parameter and downloads only the parameters. The device stack
+        // allocates a second segment behind the first; the first still holds the old values.
+        ets_download(&mut bau, 1, None);
+        assert_eq!(
+            bau.memory_area().len(),
+            2 * mem::TOTAL + addr.len() + assoc.len()
+        );
+        assert_eq!(
+            zones_of(&parse_ets_memory(bau.memory_area())),
+            3,
+            "the start of the memory is the stale first download"
+        );
+        assert_eq!(
+            zones_of(&app_parameters(&mut bau).unwrap()),
+            1,
+            "the parameters come from the segment the last download wrote"
+        );
+    }
+
+    #[test]
+    fn nothing_is_programmed_without_a_download() {
+        let mut bau = bau_from_toml(&toml_config());
+        assert!(bau.configured());
+        assert!(
+            !ets_programmed(&bau),
+            "TOML tables are not an ETS programming"
+        );
+        assert!(app_parameters(&mut bau).is_none());
+        let mut blank = build_bau(IndividualAddress::from_raw(0x1164));
+        assert!(app_segment(&mut blank).is_none());
     }
 }
