@@ -604,6 +604,40 @@ async fn programming_survives_restart() {
     );
 }
 
+/// The device stack appends the segments of every download. The persisted state keeps only the
+/// segments in use, so re-downloading does not grow the memory file (and, past 64 KB, did not
+/// corrupt it).
+#[tokio::test]
+async fn repeated_downloads_do_not_grow_the_memory_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let memory = tmp.path().join("knx-memory.bin");
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, memory.clone()).await;
+    let mut ets = connect(&dev).await;
+    for _ in 0..4 {
+        ets_download(&mut ets, &ets_links()).await;
+        drain(&mut ets).await;
+    }
+    dev.bridge.shutdown().await;
+
+    let raw = std::fs::read(&memory).unwrap();
+    let payload = usize::from(u16::from_le_bytes([raw[5], raw[6]]));
+    assert!(
+        payload < mem::TOTAL + 2_000,
+        "{payload} bytes after four downloads (one parameter block is {})",
+        mem::TOTAL
+    );
+
+    // And it restores to a device that works.
+    let mut dev = start_device(&cfg, memory).await;
+    let ets = connect(&dev).await;
+    ets.group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(matches!(cmd, Ok(Some(ZoneCommand::Play))), "{cmd:?}");
+}
+
 /// Status is sent when it changes, not on every state notification.
 #[tokio::test]
 async fn status_is_sent_on_change_only() {

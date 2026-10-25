@@ -105,7 +105,15 @@ struct Persisted {
 
 /// Write ETS memory to disk with integrity envelope (atomic).
 fn persist_memory(path: &std::path::Path, payload: &[u8], ia: IaRecord) -> std::io::Result<()> {
-    let len = payload.len() as u16;
+    let len = u16::try_from(payload.len()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "BAU state of {} bytes does not fit the memory file",
+                payload.len()
+            ),
+        )
+    })?;
     let mut record = Vec::with_capacity(PERSIST_IA_RECORD);
     record.extend_from_slice(&ia.configured.to_le_bytes());
     record.extend_from_slice(&ia.assigned.to_le_bytes());
@@ -344,6 +352,68 @@ fn management_frame(bau: &Bau, apdu: &[u8]) -> Option<CemiFrame> {
 /// installed from the TOML addresses, which leave the memory area empty).
 fn ets_programmed(bau: &Bau) -> bool {
     bau.configured() && !bau.memory_area().is_empty()
+}
+
+/// The BAU state to persist.
+///
+/// A device ETS never programmed saves an empty state: its tables are installed from the
+/// configuration at every boot, and saved table states would make the next boot take empty
+/// tables for an ETS programming. After a download the state is compacted (see
+/// [`compact_state`]).
+fn persisted_state(bau: &mut Bau) -> Vec<u8> {
+    if bau.memory_area().is_empty() {
+        return build_bau(bau.individual_address()).save();
+    }
+    compact_state(bau).unwrap_or_else(|| bau.save())
+}
+
+/// The state of a fully programmed BAU, with the memory laid out as a first download would
+/// leave it: the application parameters, then the address table, then the association table.
+///
+/// The device stack appends the segments of every download and never reclaims the old ones, so
+/// the live memory grows by about 12 KB per download. Saved as it is, the file would grow with
+/// it (and its 16-bit length field wrap after a handful of downloads). Only the segments the
+/// tables currently use are kept, and boot-time parsing finds the parameters at offset 0 again.
+/// Returns `None` when the BAU is not fully programmed; the caller saves it as it is.
+///
+/// The record layout is the one documented at [`Bau::save`]: three table object records of
+/// state, offset and size, the five program version bytes, the memory length and the memory.
+fn compact_state(bau: &mut Bau) -> Option<Vec<u8>> {
+    /// A table object record: `LoadState::Loaded`, offset and size.
+    fn record(offset: usize, size: usize) -> Option<[u8; 9]> {
+        let mut r = [0u8; 9];
+        r[0] = 1;
+        r[1..5].copy_from_slice(&u32::try_from(offset).ok()?.to_le_bytes());
+        r[5..9].copy_from_slice(&u32::try_from(size).ok()?.to_le_bytes());
+        Some(r)
+    }
+    const RECORDS: usize = 3 * 9;
+    const VERSION: usize = 5;
+
+    let app_at = app_segment(bau)?;
+    let memory = bau.memory_area();
+    let app = memory.get(app_at..app_at.checked_add(mem::TOTAL)?)?;
+    let addr = bau.addr_table_object().data(memory);
+    let assoc = bau.assoc_table_object().data(memory);
+    if addr.is_empty() || assoc.is_empty() {
+        return None;
+    }
+    let full = bau.save();
+    let version = full.get(RECORDS..RECORDS + VERSION)?;
+
+    let mut compact = Vec::with_capacity(app.len() + addr.len() + assoc.len());
+    compact.extend_from_slice(app);
+    compact.extend_from_slice(addr);
+    compact.extend_from_slice(assoc);
+
+    let mut blob = Vec::with_capacity(RECORDS + VERSION + 4 + compact.len());
+    blob.extend_from_slice(&record(mem::TOTAL, addr.len())?); // address table object
+    blob.extend_from_slice(&record(mem::TOTAL + addr.len(), assoc.len())?); // association table object
+    blob.extend_from_slice(&record(0, mem::TOTAL)?); // application program object
+    blob.extend_from_slice(version);
+    blob.extend_from_slice(&u32::try_from(compact.len()).ok()?.to_le_bytes());
+    blob.extend_from_slice(&compact);
+    Some(blob)
 }
 
 /// Where the application program's parameter block starts in the BAU memory.
@@ -1071,7 +1141,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     // abandons any spawned task, so the write must complete first.
                     if let Some(path) = persist_path.as_ref()
                         && (!bau.memory_area().is_empty() || bau.individual_address().raw() != *config_ia) {
-                            let state = bau.save();
+                            let state = persisted_state(bau);
                             if let Err(e) = persist_memory(path, &state, ia_record(bau, *config_ia)) {
                                 tracing::warn!(error = %e, "Failed to persist ETS state before restart");
                             } else {
@@ -1108,7 +1178,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                 memory_dirty = false;
                 tunnel_active = false;
                 if let Some(ref path) = *persist_path {
-                    spawn_persist(bau.save(), path.clone(), ia_record(bau, *config_ia));
+                    spawn_persist(persisted_state(bau), path.clone(), ia_record(bau, *config_ia));
                 }
             }
             () = stop_requested(shutdown) => break LoopEnd::Stopped,
@@ -1117,7 +1187,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
 
     // Persist on the way out if dirty
     if memory_dirty && let Some(ref path) = *persist_path {
-        let state = bau.save();
+        let state = persisted_state(bau);
         if let Err(e) = persist_memory(path, &state, ia_record(bau, *config_ia)) {
             tracing::warn!(error = %e, "Failed to persist ETS state on shutdown");
         } else {
@@ -2050,5 +2120,86 @@ mod tests {
         assert!(app_parameters(&mut bau).is_none());
         let mut blank = build_bau(IndividualAddress::from_raw(0x1164));
         assert!(app_segment(&mut blank).is_none());
+    }
+
+    #[test]
+    fn repeated_downloads_persist_a_compact_state() {
+        let (addr, assoc) = toml_tables();
+        let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
+        ets_download(&mut bau, 3, Some((&addr, &assoc)));
+        ets_download(&mut bau, 2, None);
+        ets_download(&mut bau, 1, None);
+        assert!(
+            bau.memory_area().len() > 3 * mem::TOTAL,
+            "the live memory grew"
+        );
+
+        let state = persisted_state(&mut bau);
+        assert_eq!(
+            state.len(),
+            27 + 5 + 4 + mem::TOTAL + addr.len() + assoc.len(),
+            "one parameter block and the two tables"
+        );
+        assert!(state.len() < usize::from(u16::MAX));
+
+        // A restore of the compact state is the same programming.
+        let mut restored = build_bau(IndividualAddress::from_raw(0x1164));
+        restored.restore(&state).unwrap();
+        assert!(ets_programmed(&restored));
+        assert_eq!(zones_of(&app_parameters(&mut restored).unwrap()), 1);
+        assert_eq!(
+            zones_of(&parse_ets_memory(restored.memory_area())),
+            1,
+            "the parameters are at offset 0 again"
+        );
+        let (a, b) = (TableSummary::of(&bau), TableSummary::of(&restored));
+        assert_eq!(a, b);
+        assert_eq!((b.group_addresses, b.associations), (2, 2));
+        assert_eq!(
+            restored.association_table().translate_asap(1),
+            bau.association_table().translate_asap(1)
+        );
+        assert_eq!(
+            restored.address_table().get_tsap(0x0802),
+            bau.address_table().get_tsap(0x0802)
+        );
+
+        // Saving the restored state again changes nothing.
+        assert_eq!(persisted_state(&mut restored), state);
+    }
+
+    #[test]
+    fn a_device_without_ets_programming_persists_an_unprogrammed_state() {
+        // Only the individual address is saved for a TOML-configured device. The next boot must
+        // rebuild its tables from the configuration instead of finding "loaded" tables that
+        // are empty.
+        let mut bau = bau_from_toml(&toml_config());
+        let state = persisted_state(&mut bau);
+        let mut restored = build_bau(IndividualAddress::from_raw(0x1164));
+        restored.restore(&state).unwrap();
+        assert!(!restored.configured());
+        assert!(!ets_programmed(&restored));
+    }
+
+    #[test]
+    fn a_state_too_big_for_the_file_is_an_error_not_a_wrapped_length() {
+        let dir = std::env::temp_dir().join("snapdog_test_too_big");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("big.bin");
+        let err = persist_memory(&path, &vec![0u8; 70_000], IA).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_partly_programmed_device_is_saved_as_it_is() {
+        let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
+        let (addr, _) = toml_tables();
+        let at = allocate_segment(&mut bau, 1, addr.len());
+        write_segment(&mut bau, at, &addr);
+        complete(&mut bau, 1);
+        assert!(!bau.configured());
+        assert!(compact_state(&mut bau).is_none());
     }
 }
