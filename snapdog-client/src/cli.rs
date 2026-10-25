@@ -13,12 +13,13 @@ use snapcast_client::config::{self, Auth, ClientSettings, MixerMode, ServerSetti
     version,
     about,
     after_help = "\
-  With 'url' = <tcp|ws|wss>://<snapserver host or IP or mDNS service name>[:port]\n\
-  For example: 'tcp://192.168.1.1:1704', or 'ws://homeserver.local'\n\
-  If 'url' is not configured, snapdog-client defaults to 'tcp://_snapdog._tcp'"
+  With 'url' = tcp://<snapserver host or IP>[:port], optionally with user:password@ before the host\n\
+  For example: 'tcp://192.168.1.1:1704'\n\
+  If 'url' is not given, snapdog-client looks for a SnapDog server on the local network (mDNS, 5 s)\n\
+  ws:// and wss:// are not supported by the Snapcast client library and are rejected"
 )]
 pub struct Cli {
-    /// Snapserver URL: `<tcp|ws|wss>://<host>[:<port>]`
+    /// Snapserver URL: `tcp://<host>[:<port>]` (default: find a server via mDNS)
     pub url: Option<String>,
 
     /// Instance id when running multiple instances on the same host
@@ -29,24 +30,24 @@ pub struct Cli {
     #[arg(long = "hostID")]
     pub host_id: Option<String>,
 
-    /// Client certificate file (PEM format)
-    #[arg(long = "cert")]
+    /// Client certificate file (PEM format). Has no effect: TLS is not available (see --help)
+    #[arg(long = "cert", hide = true)]
     pub certificate: Option<PathBuf>,
 
-    /// Client private key file (PEM format)
-    #[arg(long = "cert-key")]
+    /// Client private key file (PEM format). Has no effect: TLS is not available
+    #[arg(long = "cert-key", hide = true)]
     pub certificate_key: Option<PathBuf>,
 
-    /// Key password (for encrypted private key)
-    #[arg(long = "key-password")]
+    /// Key password (for encrypted private key). Has no effect: TLS is not available
+    #[arg(long = "key-password", hide = true)]
     pub key_password: Option<String>,
 
-    /// Verify server with CA certificate (PEM format). Use without value for default certificates.
-    #[arg(long = "server-cert")]
+    /// Verify server with CA certificate (PEM format). Has no effect: TLS is not available
+    #[arg(long = "server-cert", hide = true)]
     #[allow(clippy::option_option)]
     pub server_certificate: Option<Option<PathBuf>>,
 
-    /// List PCM devices
+    /// List the audio output devices (index and name) and exit
     #[arg(short, long)]
     pub list: bool,
 
@@ -54,7 +55,7 @@ pub struct Cli {
     #[arg(long)]
     pub test_tone: bool,
 
-    /// PCM device index or name
+    /// Audio output device: `default`, an index from --list, or part of a device name
     #[arg(short, long, default_value = "default")]
     pub soundcard: String,
 
@@ -62,15 +63,16 @@ pub struct Cli {
     #[arg(long, default_value_t = 0)]
     pub latency: i32,
 
-    /// Resample to `<rate>:<bits>:<channels>`
-    #[arg(long)]
+    /// Accepted for compatibility, has no effect: the output follows the stream's format
+    #[arg(long, hide = true)]
     pub sampleformat: Option<String>,
 
-    /// Audio player backend and optional parameters: `<name>[:<params>|?]`
+    /// `null` discards the audio (no output). Any other value is ignored: playback
+    /// always uses the system audio output, choose the device with --soundcard
     #[arg(long, default_value = "")]
     pub player: String,
 
-    /// Mixer mode: `software|hardware|midi|x32|none|?[:<params>]`
+    /// Mixer mode: `software|hardware|midi|x32|none[:<params>]`
     ///
     /// Examples:
     ///   --mixer software (default, PCM amplitude scaling)
@@ -93,12 +95,13 @@ pub struct Cli {
     #[allow(clippy::option_option)]
     pub daemon: Option<Option<i32>>,
 
-    /// The `user[:group]` to run snapclient as when daemonized
+    /// Not implemented, so it is refused. Use the service manager's user setting
+    /// (the shipped systemd unit uses `DynamicUser=yes`)
     #[cfg(unix)]
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub user: Option<String>,
 
-    /// Log sink: null|system|stdout|stderr|file:`<path>`
+    /// Log sink: null|stdout|stderr|file:`<path>`|system (`system` writes to stderr, not syslog)
     #[arg(long, default_value = "stdout")]
     pub logsink: String,
 
@@ -121,7 +124,88 @@ pub enum MixerSync {
     Out,
 }
 
+/// Something about the command line that cannot work as written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Issue {
+    /// The flag cannot be honoured and running anyway would mislead the user. Startup stops.
+    Error(String),
+    /// The flag is accepted for compatibility but ignored. Logged once at startup.
+    Warning(String),
+}
+
 impl Cli {
+    /// Check the command line for flags this client cannot honour. Nothing a user
+    /// types is silently dropped: it either works, is rejected here, or is
+    /// reported here as ignored.
+    #[must_use]
+    pub fn issues(&self) -> Vec<Issue> {
+        let mut issues = Vec::new();
+
+        if let Some((scheme, _)) = self.url.as_deref().and_then(|u| u.split_once("://"))
+            && matches!(scheme, "ws" | "wss")
+        {
+            issues.push(Issue::Error(format!(
+                "{scheme}:// is not supported: the Snapcast client library streams audio over \
+                 tcp:// only. Use tcp://<host>[:1704]."
+            )));
+        }
+
+        #[cfg(unix)]
+        if let Some(user) = &self.user {
+            issues.push(Issue::Error(format!(
+                "--user {user} is not implemented, so the client would keep running with the \
+                 privileges of the invoking user. Run it as that user instead (the systemd unit \
+                 uses DynamicUser=yes)."
+            )));
+        }
+
+        let player = self.player.split(':').next().unwrap_or_default();
+        if !matches!(player, "" | "null") {
+            issues.push(Issue::Warning(format!(
+                "--player {} is ignored: audio always plays on the system's audio output. Use \
+                 --soundcard to choose the device, or --player null to discard the audio.",
+                self.player
+            )));
+        }
+        if player == "null" && self.soundcard != "default" {
+            issues.push(Issue::Warning(format!(
+                "--soundcard {} is ignored with --player null: no audio device is opened.",
+                self.soundcard
+            )));
+        }
+
+        if let Some(format) = &self.sampleformat {
+            issues.push(Issue::Warning(format!(
+                "--sampleformat {format} is ignored: the output follows the stream's format."
+            )));
+        }
+
+        if self.mixer.split(':').next() == Some("script") {
+            issues.push(Issue::Warning(
+                "--mixer script is not implemented: using the software mixer.".into(),
+            ));
+        }
+
+        let tls: Vec<&str> = [
+            (self.certificate.is_some(), "--cert"),
+            (self.certificate_key.is_some(), "--cert-key"),
+            (self.key_password.is_some(), "--key-password"),
+            (self.server_certificate.is_some(), "--server-cert"),
+        ]
+        .into_iter()
+        .filter_map(|(set, flag)| set.then_some(flag))
+        .collect();
+        if !tls.is_empty() {
+            issues.push(Issue::Warning(format!(
+                "{} {} ignored: this client connects over plain tcp://, TLS is not available.",
+                tls.join(", "),
+                if tls.len() == 1 { "is" } else { "are" }
+            )));
+        }
+
+        issues
+    }
+
     /// Parse CLI args and build a [`ClientSettings`].
     pub fn into_settings(self) -> Result<ClientSettings> {
         let url = self.url.as_deref().unwrap_or("tcp://");
@@ -403,7 +487,7 @@ mod tests {
             "/path/to/key.pem",
             "--key-password",
             "secret",
-            "wss://server:1788",
+            "tcp://server:1704",
         ]);
         let s = cli.into_settings().unwrap();
         assert_eq!(
@@ -421,5 +505,126 @@ mod tests {
     fn cli_list_flag() {
         let cli = Cli::parse_from(["snapdog-client", "--list"]);
         assert!(cli.list);
+    }
+
+    fn issues(args: &[&str]) -> Vec<Issue> {
+        let command_line: Vec<&str> = std::iter::once("snapdog-client")
+            .chain(args.iter().copied())
+            .collect();
+        Cli::parse_from(command_line).issues()
+    }
+
+    fn assert_clean(args: &[&str]) {
+        assert_eq!(issues(args), Vec::<Issue>::new(), "{args:?}");
+    }
+
+    fn only(issue: &[Issue]) -> &str {
+        assert_eq!(issue.len(), 1, "{issue:?}");
+        match &issue[0] {
+            Issue::Error(m) | Issue::Warning(m) => m,
+        }
+    }
+
+    #[test]
+    fn plain_invocations_have_no_issues() {
+        assert_clean(&[]);
+        assert_clean(&["tcp://192.168.1.1:1704"]);
+        assert_clean(&["--player", "null"]);
+        assert_clean(&["--soundcard", "hw:1", "--mixer", "hardware:Master"]);
+        assert_clean(&["--mixer", "x32:192.168.1.20:1", "--latency", "30"]);
+    }
+
+    #[test]
+    fn websocket_urls_are_rejected_before_connecting() {
+        for url in ["ws://homeserver.local", "wss://secure.host:1788"] {
+            let found = issues(&[url]);
+            assert!(
+                matches!(found.as_slice(), [Issue::Error(m)] if m.contains("tcp://")),
+                "{found:?}"
+            );
+        }
+        // The URL parser still understands them, so the message can name the scheme.
+        assert_eq!(parse_url("wss://h").unwrap().scheme, "wss");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn user_is_refused_because_it_is_not_implemented() {
+        let found = issues(&["--daemon", "--user", "nobody"]);
+        assert!(matches!(found.as_slice(), [Issue::Error(m)] if m.contains("--user nobody")));
+        assert!(matches!(
+            issues(&["--user", "nobody"]).as_slice(),
+            [Issue::Error(_)]
+        ));
+    }
+
+    #[test]
+    fn unknown_player_is_reported_as_ignored() {
+        let found = issues(&["--player", "alsa:buffer_time=100"]);
+        assert!(only(&found).contains("--player alsa:buffer_time=100 is ignored"));
+        assert!(matches!(found[0], Issue::Warning(_)));
+    }
+
+    #[test]
+    fn soundcard_with_null_player_is_reported() {
+        let found = issues(&["--player", "null", "--soundcard", "hw:1"]);
+        assert!(only(&found).contains("--soundcard hw:1 is ignored"));
+    }
+
+    #[test]
+    fn sampleformat_is_validated_and_reported() {
+        let found = issues(&["--sampleformat", "48000:16:*"]);
+        assert!(only(&found).contains("--sampleformat 48000:16:* is ignored"));
+        let cli = Cli::parse_from(["snapdog-client", "--sampleformat", "garbage"]);
+        assert!(cli.into_settings().is_err());
+    }
+
+    #[test]
+    fn mixer_script_is_reported() {
+        let found = issues(&["--mixer", "script:/usr/bin/vol.sh"]);
+        assert!(only(&found).contains("--mixer script is not implemented"));
+    }
+
+    #[test]
+    fn tls_flags_are_reported_once_together() {
+        let found = issues(&["--cert", "c.pem", "--cert-key", "k.pem", "--server-cert"]);
+        let message = only(&found);
+        assert!(
+            message.contains("--cert, --cert-key, --server-cert are ignored"),
+            "{message}"
+        );
+        let found = issues(&["--key-password", "x"]);
+        assert!(only(&found).contains("--key-password is ignored"));
+    }
+
+    #[test]
+    fn stub_flags_are_hidden_from_help() {
+        use clap::CommandFactory;
+        let help = Cli::command().render_long_help().to_string();
+        for hidden in [
+            "--cert",
+            "--key-password",
+            "--server-cert",
+            "--sampleformat",
+            "--user ",
+        ] {
+            assert!(
+                !help.contains(hidden),
+                "{hidden} should not be advertised:\n{help}"
+            );
+        }
+        for shown in [
+            "--player",
+            "--soundcard",
+            "--list",
+            "--mixer-sync",
+            "--mixer",
+        ] {
+            assert!(help.contains(shown), "{shown} missing from help");
+        }
+        assert!(
+            !help.contains("<tcp|ws|wss>"),
+            "ws/wss must not be advertised"
+        );
     }
 }

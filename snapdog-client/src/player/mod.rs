@@ -193,6 +193,9 @@ impl Mixer {
                 }
             },
             "none" => Self::None,
+            // Accepted by the command line (compatibility), but there is no script
+            // mixer; the startup check has already said so.
+            "script" => Self::Software(volume),
             other => {
                 tracing::warn!(mode = other, "Unknown mixer mode, using software");
                 Self::Software(volume)
@@ -405,9 +408,143 @@ fn detect_alsa_control() -> Option<String> {
     })
 }
 
+/// Which output device `--soundcard` names.
+#[derive(Debug, PartialEq, Eq)]
+enum DeviceSelector<'a> {
+    /// The system default.
+    Default,
+    /// Position in the list printed by `--list`.
+    Index(usize),
+    /// Any device whose name contains this text.
+    Name(&'a str),
+}
+
+impl<'a> DeviceSelector<'a> {
+    fn parse(raw: &'a str) -> Self {
+        let raw = raw.trim();
+        if raw.is_empty() || raw == "default" {
+            Self::Default
+        } else if let Ok(index) = raw.parse() {
+            Self::Index(index)
+        } else {
+            Self::Name(raw)
+        }
+    }
+
+    /// Position of the selected device in `names`, or `None` for the system default.
+    fn pick(&self, names: &[String]) -> Result<Option<usize>, String> {
+        match self {
+            Self::Default => Ok(None),
+            Self::Index(index) if *index < names.len() => Ok(Some(*index)),
+            Self::Index(index) => Err(format!(
+                "there is no output device with index {index} ({} found)",
+                names.len()
+            )),
+            Self::Name(part) => {
+                let matches: Vec<usize> = names
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, name)| name.contains(part))
+                    .map(|(i, _)| i)
+                    .collect();
+                match matches.as_slice() {
+                    [one] => Ok(Some(*one)),
+                    [] => Err(format!("no output device name contains '{part}'")),
+                    several => Err(format!(
+                        "'{part}' matches {} output devices ({}), be more specific or use the index",
+                        several.len(),
+                        several
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                }
+            }
+        }
+    }
+}
+
+fn output_device_names(host: &cpal::Host) -> anyhow::Result<(Vec<cpal::Device>, Vec<String>)> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let devices: Vec<cpal::Device> = host.output_devices()?.collect();
+    let names = devices
+        .iter()
+        .map(|d| {
+            d.description()
+                .map_or_else(|_| "(unnamed device)".to_string(), |n| format!("{n}"))
+        })
+        .collect();
+    Ok((devices, names))
+}
+
+/// The output device chosen with `--soundcard`.
+pub fn find_output_device(host: &cpal::Host, soundcard: &str) -> anyhow::Result<cpal::Device> {
+    use cpal::traits::HostTrait;
+    let selector = DeviceSelector::parse(soundcard);
+    if selector == DeviceSelector::Default {
+        return host
+            .default_output_device()
+            .ok_or_else(|| anyhow::anyhow!("no output device"));
+    }
+    let (mut devices, names) = output_device_names(host).map_err(|e| {
+        anyhow::anyhow!("--soundcard {soundcard}: cannot list the output devices: {e}")
+    })?;
+    match selector.pick(&names) {
+        Ok(Some(index)) => Ok(devices.swap_remove(index)),
+        Ok(None) => unreachable!("handled above"),
+        Err(why) => anyhow::bail!(
+            "--soundcard {soundcard}: {why}. Available devices: {}",
+            if names.is_empty() {
+                "none".to_string()
+            } else {
+                names
+                    .iter()
+                    .enumerate()
+                    .map(|(i, n)| format!("{i}: {n}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            }
+        ),
+    }
+}
+
+/// Fail at startup if `--soundcard` names a device that does not exist.
+pub fn check_output_device(soundcard: &str) -> anyhow::Result<()> {
+    if DeviceSelector::parse(soundcard) == DeviceSelector::Default {
+        return Ok(());
+    }
+    find_output_device(&cpal::default_host(), soundcard).map(|_| ())
+}
+
+/// Print the output devices, one `index: name` per line (`--list`).
+pub fn list_output_devices() -> anyhow::Result<()> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let (_, names) = output_device_names(&host)?;
+    let default = host
+        .default_output_device()
+        .and_then(|d| d.description().ok())
+        .map(|d| format!("{d}"));
+    if names.is_empty() {
+        println!("No audio output devices found");
+    }
+    for (index, name) in names.iter().enumerate() {
+        let marker = if default.as_deref() == Some(name.as_str()) {
+            " (default)"
+        } else {
+            ""
+        };
+        println!("{index}: {name}{marker}");
+    }
+    Ok(())
+}
+
 /// Start audio output. Waits for the Stream to have audio, then starts cpal.
 /// Automatically restarts the pipeline if the stream format changes.
+#[allow(clippy::too_many_arguments)]
 pub async fn play_audio(
+    soundcard: Arc<str>,
     rx: mpsc::Receiver<AudioFrame>,
     stream: Arc<Mutex<Stream>>,
     time_provider: Arc<Mutex<TimeProvider>>,
@@ -454,10 +591,12 @@ pub async fn play_audio(
         let mixer_clone = Arc::clone(&mixer);
         let fade_clone = Arc::clone(&fade);
         let fc_clone = Arc::clone(&format_changed);
+        let soundcard_clone = Arc::clone(&soundcard);
 
         // Spawn cpal thread — don't join, just let it run
         std::thread::spawn(move || {
             if let Err(e) = run_cpal(
+                &soundcard_clone,
                 stream_clone,
                 tp_clone,
                 format,
@@ -486,6 +625,7 @@ pub async fn play_audio(
 #[allow(clippy::too_many_lines)]
 // Audio output setup with callback — splitting would obscure control flow
 fn run_cpal(
+    soundcard: &str,
     stream: Arc<Mutex<Stream>>,
     time_provider: Arc<Mutex<TimeProvider>>,
     format: snapcast_proto::SampleFormat,
@@ -495,12 +635,10 @@ fn run_cpal(
     fade: Arc<FadeState>,
     format_changed: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use cpal::traits::{DeviceTrait, StreamTrait};
 
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| anyhow::anyhow!("no output device"))?;
+    let device = find_output_device(&host, soundcard)?;
 
     tracing::info!(device = %device.description().map(|d| format!("{d}")).unwrap_or_default(), "Using audio device");
 
@@ -658,22 +796,14 @@ fn run_cpal(
 
 /// Play a 440 Hz sine wave for 2 seconds to verify audio output, then exit.
 pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use cpal::traits::{DeviceTrait, StreamTrait};
 
     const FREQ: f32 = 440.0;
     const DURATION_SECS: f32 = 2.0;
     const AMPLITUDE: f32 = 0.3;
 
     let host = cpal::default_host();
-    let device = if device_name == "default" {
-        host.default_output_device()
-    } else {
-        host.output_devices()?.find(|d| {
-            d.description()
-                .is_ok_and(|n| format!("{n}").contains(device_name))
-        })
-    }
-    .ok_or_else(|| anyhow::anyhow!("no output device '{device_name}'"))?;
+    let device = find_output_device(&host, device_name)?;
 
     let config = device.default_output_config()?;
     let sample_rate = config.sample_rate() as f32;
@@ -730,6 +860,49 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    // ── --soundcard selection ─────────────────────────────────
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|n| (*n).to_string()).collect()
+    }
+
+    #[test]
+    fn soundcard_selector_parses_default_index_and_name() {
+        assert_eq!(DeviceSelector::parse("default"), DeviceSelector::Default);
+        assert_eq!(DeviceSelector::parse(""), DeviceSelector::Default);
+        assert_eq!(DeviceSelector::parse("2"), DeviceSelector::Index(2));
+        assert_eq!(DeviceSelector::parse("hw:1"), DeviceSelector::Name("hw:1"));
+        assert_eq!(DeviceSelector::parse(" USB "), DeviceSelector::Name("USB"));
+    }
+
+    #[test]
+    fn soundcard_selector_picks_by_index_and_unique_name() {
+        let devices = names(&["Built-in Output", "USB Audio DAC", "HDMI"]);
+        assert_eq!(DeviceSelector::Default.pick(&devices), Ok(None));
+        assert_eq!(DeviceSelector::Index(1).pick(&devices), Ok(Some(1)));
+        assert_eq!(DeviceSelector::Name("DAC").pick(&devices), Ok(Some(1)));
+    }
+
+    #[test]
+    fn soundcard_selector_refuses_what_it_cannot_find_or_decide() {
+        let devices = names(&["USB Audio DAC", "USB Audio Line"]);
+        let missing = DeviceSelector::Index(5).pick(&devices).unwrap_err();
+        assert!(
+            missing.contains("no output device with index 5"),
+            "{missing}"
+        );
+        let none = DeviceSelector::Name("HDMI").pick(&devices).unwrap_err();
+        assert!(
+            none.contains("no output device name contains 'HDMI'"),
+            "{none}"
+        );
+        let ambiguous = DeviceSelector::Name("USB").pick(&devices).unwrap_err();
+        assert!(
+            ambiguous.contains("matches 2 output devices"),
+            "{ambiguous}"
+        );
+    }
+
     use super::osc_desk::{Desk, X32};
     use super::*;
 
