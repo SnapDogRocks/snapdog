@@ -921,6 +921,10 @@ jobs:
             apt-get install -y /packages/*_amd64.deb
             snapdog --version
             snapdog-client --version
+            # The maintainer scripts enable the client on install and leave the
+            # server disabled; deb-systemd-helper links units even without systemd.
+            test -L /etc/systemd/system/multi-user.target.wants/snapdog-client.service
+            test ! -e /etc/systemd/system/multi-user.target.wants/snapdog.service
           '
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
