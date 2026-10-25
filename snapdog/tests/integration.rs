@@ -87,19 +87,52 @@ fn mqtt_config() -> Option<config::MqttConfig> {
     })
 }
 
+/// A bridge that is wired to nothing: no zone players, an empty server state.
+async fn start_idle_bridge(cfg: &config::MqttConfig) -> snapdog::mqtt::MqttBridge {
+    let app = config::load_raw(
+        toml::from_str(
+            r#"
+            [[zone]]
+            name = "Z1"
+            [[client]]
+            name = "C1"
+            mac = "02:42:ac:11:00:10"
+            zone = "Z1"
+            "#,
+        )
+        .expect("test TOML parses"),
+    )
+    .expect("config resolves");
+    let store = snapdog::state::init(&app, None).expect("state init");
+    let (snap_tx, _snap_rx) = tokio::sync::mpsc::channel(16);
+    let (notify_tx, _) = snapdog::api::ws::notification_channel();
+    snapdog::mqtt::MqttBridge::start(
+        cfg,
+        "http://localhost:5555",
+        snapdog::mqtt::MqttRuntime {
+            zone_commands: std::collections::HashMap::new(),
+            state: store,
+            snap_tx,
+            notifications: notify_tx.subscribe(),
+        },
+    )
+    .await
+    .expect("MQTT bridge should start")
+}
+
 #[tokio::test]
 async fn mqtt_connect_and_subscribe() {
     let Some(cfg) = mqtt_config() else {
         eprintln!("Skipping — no MQTT credentials in .env.test");
         return;
     };
-    let bridge = snapdog::mqtt::MqttBridge::connect(&cfg, "http://localhost:5555")
-        .await
-        .expect("MQTT connect should succeed");
-    bridge
-        .subscribe_commands()
-        .await
-        .expect("MQTT subscribe should succeed");
+    let bridge = start_idle_bridge(&cfg).await;
+    assert!(
+        bridge
+            .wait_connected(std::time::Duration::from_secs(10))
+            .await,
+        "MQTT broker should accept the connection"
+    );
 }
 
 #[tokio::test]
@@ -108,11 +141,14 @@ async fn mqtt_publish_and_receive() {
         eprintln!("Skipping — no MQTT credentials in .env.test");
         return;
     };
-    let bridge = snapdog::mqtt::MqttBridge::connect(&cfg, "http://localhost:5555")
-        .await
-        .expect("MQTT connect should succeed");
+    let bridge = start_idle_bridge(&cfg).await;
+    assert!(
+        bridge
+            .wait_connected(std::time::Duration::from_secs(10))
+            .await,
+        "MQTT broker should accept the connection"
+    );
     bridge
         .publish("test/ping", "pong")
-        .await
         .expect("MQTT publish should succeed");
 }
