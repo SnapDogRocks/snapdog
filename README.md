@@ -36,7 +36,7 @@ SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system
 | 🎛️ **Multiband Parametric EQ** | Per-zone and per-client, genre presets, real-time via custom protocol |
 | 🔊 **Speaker Correction** | Per-client Spinorama profiles (1000+ speakers from (https://spinorama.org)) |
 | 🔀 **Audio Fade** | Smooth transitions: zone switch (client-side) and source switch (server-side) |
-| 🏠 **MQTT** | Bidirectional smart home integration, Home Assistant auto-discovery |
+| 🏠 **MQTT** | Bidirectional smart home integration over MQTT 3.1.1: retained state, commands, availability; TLS and mutual TLS |
 | 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 35 group objects per zone, 11 per client, plus device-level global objects) |
 | 🌐 **REST API** | ~90 endpoints, full zone/client/media control |
 | 📡 **WebSocket** | Real-time state push notifications |
@@ -296,10 +296,13 @@ default_zone = "Living Room"         # Zone for unknown clients (accept only)
 # password = "1234"
 
 [mqtt]
-broker = "192.168.1.10:1883"
+broker = "192.168.1.10:1883"         # or "mqtts://broker.example.org:8883" for TLS
 # client_id = "snapdog"              # Must be unique per broker
 # username = "user"
-# password = "pass"
+# password_file = "/run/secrets/mqtt_password"   # or password = "pass", or SNAPDOG_MQTT_PASSWORD
+# ca_file = "/etc/snapdog/mqtt-ca.pem"           # private CA (TLS only)
+# client_cert = "/etc/snapdog/mqtt-client.pem"   # mutual TLS (TLS only)
+# client_key = "/etc/snapdog/mqtt-client.key"
 base_topic = "snapdog/"
 
 [subsonic]
@@ -335,11 +338,19 @@ url = "https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac"
 Snapcast sink paths, stream names, and AirPlay names are auto-generated from zone/client definitions. KNX addresses are explicit in client mode (fits into existing installations). In device mode, ETS assigns group addresses via the `.knxprod` product database.
 
 <details>
-<summary><strong>Home Assistant Integration</strong></summary>
+<summary><strong>MQTT</strong></summary>
 
-SnapDog publishes [MQTT Discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) messages automatically. Zones appear as `media_player` entities in Home Assistant with zero configuration — just point both at the same MQTT broker.
+Topics, all below `base_topic` (`{n}` is the 1-based position of the `[[zone]]` or `[[client]]`):
 
-Supported features: play, pause, stop, next/previous, volume, mute, shuffle, repeat (off/one/all), seek, cover art, track metadata, and availability.
+- `status`: `online` / `offline`, retained. `offline` is the last will, and is also published on a clean shutdown.
+- `zones/{n}/state`, `clients/{n}/state`: retained JSON.
+- `zones/{n}/{volume,mute,control,shuffle,repeat,position,track,playlist}/set`, `zones/{n}/presence/{,enable/,timeout/}set`, `clients/{n}/{volume,mute,latency,zone}/set`: commands. `volume` takes `0.0..1.0` or `0..100` (so `1` is 100 %); booleans take `true`/`false`, `on`/`off`, `1`/`0`. A retained command is ignored.
+
+After a reconnect SnapDog subscribes again and republishes availability and state. Commands are rate limited per zone and client.
+
+`broker` takes `host:port` (plaintext) or `mqtts://host:8883` (TLS 1.2 or newer, certificate and host name always verified, optional `ca_file` and mutual TLS). `snapdog.example.toml` describes every key and how to harden the broker (TLS-only listener, per-client credentials, ACL).
+
+SnapDog does **not** announce itself to Home Assistant at the moment. Home Assistant's MQTT integration has no `media_player` platform, so the discovery messages earlier releases published never produced an entity (SnapDog now clears them from the broker). [RFC 0007](docs/rfcs/0007-home-assistant-integration.md) proposes how a proper Home Assistant integration could work.
 
 </details>
 
