@@ -290,6 +290,25 @@ pub struct EtsParams {
     pub radio_covers: Radios<String>,
 }
 
+/// Decode ISO 8859-15 (Latin-9), the text parameter encoding the product database declares
+/// (`TextParameterEncoding`). It is Latin-1 except for eight positions.
+fn decode_latin9(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|&b| match b {
+            0xA4 => '\u{20AC}', // €
+            0xA6 => '\u{0160}', // Š
+            0xA8 => '\u{0161}', // š
+            0xB4 => '\u{017D}', // Ž
+            0xB8 => '\u{017E}', // ž
+            0xBC => '\u{0152}', // Œ
+            0xBD => '\u{0153}', // œ
+            0xBE => '\u{0178}', // Ÿ
+            _ => char::from(b),
+        })
+        .collect()
+}
+
 /// Read a null-terminated or fixed-length string from a byte slice.
 fn read_string(data: &[u8], offset: usize, max_len: usize) -> String {
     if offset + max_len > data.len() {
@@ -298,7 +317,7 @@ fn read_string(data: &[u8], offset: usize, max_len: usize) -> String {
     let bytes = &data[offset..offset + max_len];
     // Find null terminator or use full length
     let len = bytes.iter().position(|&b| b == 0).unwrap_or(max_len);
-    String::from_utf8_lossy(&bytes[..len]).into_owned()
+    decode_latin9(&bytes[..len])
 }
 
 /// Parse ETS parameters from BAU memory area.
@@ -1346,6 +1365,20 @@ async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(u16, Vec<
 mod tests {
     use super::group_objects::zone_asap;
     use super::*;
+
+    #[test]
+    fn text_parameters_are_decoded_as_iso_8859_15() {
+        // "Küche", "Bücher", "5 €", "Œuvre" as ETS stores them.
+        assert_eq!(decode_latin9(b"K\xFCche"), "Küche");
+        assert_eq!(decode_latin9(b"B\xFCcher"), "Bücher");
+        assert_eq!(decode_latin9(b"5 \xA4"), "5 €");
+        assert_eq!(decode_latin9(b"\xBCuvre"), "Œuvre");
+        assert_eq!(decode_latin9(b"plain ASCII"), "plain ASCII");
+
+        let mut mem = vec![0u8; 32];
+        mem[4..9].copy_from_slice(b"K\xFCche");
+        assert_eq!(read_string(&mem, 4, 16), "Küche");
+    }
 
     #[test]
     fn parse_ets_memory_defaults() {
