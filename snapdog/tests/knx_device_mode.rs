@@ -273,6 +273,12 @@ zone = "Living"
 }
 
 async fn start_device(cfg: &config::AppConfig, memory: PathBuf) -> Device {
+    start_device_on(cfg, memory, "127.0.0.1:0".parse().unwrap()).await
+}
+
+/// Start the device on `bind`. For an address with a port the server may not be up yet when
+/// this returns; for port 0 it is, and its address is read back.
+async fn start_device_on(cfg: &config::AppConfig, memory: PathBuf, bind: SocketAddr) -> Device {
     // `RUST_LOG=snapdog=info cargo test ... -- --nocapture` shows the startup summary.
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -291,7 +297,7 @@ async fn start_device(cfg: &config::AppConfig, memory: PathBuf) -> Device {
     }
     let (snap_tx, snap_rx) = mpsc::channel(16);
     let options = DeviceOptions {
-        bind: Some("127.0.0.1:0".parse().unwrap()),
+        bind: Some(bind),
         memory_path: Some(memory.clone()),
     };
     let bridge = knx::start_with_options(
@@ -308,7 +314,11 @@ async fn start_device(cfg: &config::AppConfig, memory: PathBuf) -> Device {
         .device_control()
         .expect("device mode returns a control handle");
     Device {
-        addr: handle.local_addr().expect("server bound"),
+        addr: if bind.port() == 0 {
+            handle.local_addr().expect("server bound")
+        } else {
+            bind
+        },
         handle,
         bridge,
         store,
@@ -694,6 +704,49 @@ volume_status = "1/1/3"
             .map(f64::round),
         Some(30.0)
     );
+}
+
+// ── Server supervision ────────────────────────────────────────
+
+/// A port that is taken when the device starts (knxd on the host, a second instance, no
+/// multicast route yet at boot) must not disable KNX for good: the device keeps trying, answers
+/// the programming-mode API meanwhile, and works once the server is up.
+#[tokio::test]
+async fn device_starts_serving_once_its_port_frees_up() {
+    let blocker = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let addr = blocker.local_addr().unwrap();
+
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let mut dev = start_device_on(&cfg, tmp.path().join("knx-memory.bin"), addr).await;
+    assert_eq!(
+        dev.handle.local_addr(),
+        None,
+        "no server while the port is taken"
+    );
+
+    // The management API does not wait for the server.
+    assert!(!dev.handle.get_prog_mode().await);
+    dev.handle.set_prog_mode(true).await;
+    assert!(dev.handle.get_prog_mode().await);
+
+    drop(blocker);
+    timeout(T, async {
+        while dev.handle.local_addr().is_none() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the device server started after the port was released");
+
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+    ets.group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(matches!(cmd, Ok(Some(ZoneCommand::Play))), "{cmd:?}");
 }
 
 // ── Individual address ────────────────────────────────────────

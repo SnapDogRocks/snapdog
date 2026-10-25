@@ -685,7 +685,7 @@ where
             }
         }
     }
-    tracing::warn!("KNX connection closed");
+    tracing::debug!("KNX listener ended: the transport closed");
 }
 
 /// Canonical form of a configured group address: the 3-level notation the bus side prints

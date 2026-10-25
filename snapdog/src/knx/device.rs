@@ -22,8 +22,7 @@ use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 use super::group_objects::mem;
 use super::supervisor::{
-    BACKOFF_BASE, BACKOFF_CAP, Backoff, STABLE_AFTER, sleep_or_shutdown, stop_requested,
-    warn_on_failure,
+    BACKOFF_BASE, BACKOFF_CAP, Backoff, STABLE_AFTER, stop_requested, warn_on_failure,
 };
 use super::transport::{Incoming, Target};
 
@@ -817,7 +816,16 @@ enum LoopEnd {
 async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
     let mut backoff = Backoff::new(BACKOFF_BASE, BACKOFF_CAP);
     let mut server = first;
-    let mut restarted = false;
+    // The first bind happened (and failed) in start_device_transport: count it, and let
+    // everything the publisher offered meanwhile go out once the server is up.
+    let mut restarted = server.is_none();
+    if restarted {
+        let delay = backoff.failure();
+        if !idle(&mut task, delay).await {
+            tracing::info!("KNX BAU task ended");
+            return;
+        }
+    }
 
     loop {
         let srv = match server.take() {
@@ -839,7 +847,7 @@ async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
                     } else {
                         tracing::debug!(attempt = backoff.failures(), %error, retry_in = ?delay, "KNX device server not available");
                     }
-                    if !sleep_or_shutdown(delay, &mut task.shutdown).await {
+                    if !idle(&mut task, delay).await {
                         break;
                     }
                     continue;
@@ -862,11 +870,51 @@ async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
         }
         let delay = backoff.failure();
         tracing::warn!(retry_in = ?delay, "KNX device server stopped — restarting");
-        if !sleep_or_shutdown(delay, &mut task.shutdown).await {
+        if !idle(&mut task, delay).await {
             break;
         }
     }
     tracing::info!("KNX BAU task ended");
+}
+
+/// Wait `delay` while there is no server, still serving the commands that need none:
+/// programming mode can be read and set, and values land in their group objects, from where
+/// the first poll after the restart sends them. Returns `false` on shutdown.
+async fn idle(task: &mut DeviceTask, delay: std::time::Duration) -> bool {
+    let sleep = tokio::time::sleep(delay);
+    tokio::pin!(sleep);
+    loop {
+        tokio::select! {
+            () = &mut sleep => return !*task.shutdown.borrow(),
+            () = stop_requested(&mut task.shutdown) => return false,
+            cmd = task.cmd_rx.recv() => match cmd {
+                None => return false,
+                Some(BauCmd::WriteObject { asap, value }) => {
+                    if task.bau.association_table().translate_asap(asap).is_some()
+                        && let Some(go) = task.bau.group_objects_mut().get_mut(asap)
+                    {
+                        let _ = go.set_value(&value);
+                    }
+                }
+                Some(cmd) => handle_management_command(&mut task.bau, cmd),
+            },
+        }
+    }
+}
+
+/// Programming mode commands, which work with or without a server.
+fn handle_management_command(bau: &mut Bau, cmd: BauCmd) {
+    match cmd {
+        BauCmd::SetProgMode { enabled } => {
+            knx_rs_device::device_object::set_prog_mode(bau.device_mut(), enabled);
+            tracing::info!(enabled, "KNX programming mode changed");
+        }
+        BauCmd::GetProgMode { reply } => {
+            let enabled = knx_rs_device::device_object::prog_mode(bau.device());
+            let _ = reply.send(enabled);
+        }
+        BauCmd::WriteObject { .. } => {}
+    }
 }
 
 #[allow(clippy::too_many_lines)] // One select loop over server events, commands and the persist timer
@@ -887,6 +935,12 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
     tokio::pin!(persist_timer);
     let mut persist_armed = false;
     let mut tunnel_active = false;
+
+    // Values written while there was no server wait in their group objects.
+    bau.poll(now_ms());
+    while let Some(out) = bau.next_outgoing_frame() {
+        let _ = server.send_frame(out).await;
+    }
 
     let end = loop {
         tokio::select! {
@@ -976,14 +1030,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     BauCmd::WriteObject { asap, value } => {
                         write_object(bau, &server, asap, &value).await;
                     }
-                    BauCmd::SetProgMode { enabled } => {
-                        knx_rs_device::device_object::set_prog_mode(bau.device_mut(), enabled);
-                        tracing::info!(enabled, "KNX programming mode changed");
-                    }
-                    BauCmd::GetProgMode { reply } => {
-                        let enabled = knx_rs_device::device_object::prog_mode(bau.device());
-                        let _ = reply.send(enabled);
-                    }
+                    other => handle_management_command(bau, other),
                 }
             }
             // Debounced persist timer
