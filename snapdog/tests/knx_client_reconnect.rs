@@ -180,6 +180,7 @@ async fn bridge_survives_late_start_and_gateway_restart() {
         .unwrap();
     let cmd = timeout(T, b.zone_rx.recv()).await;
     assert!(matches!(cmd, Ok(Some(ZoneCommand::Play))), "{cmd:?}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(
         b.zone_rx.try_recv().is_err(),
         "the confirmation did not trigger a second command"

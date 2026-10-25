@@ -6,7 +6,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use knx_rs_core::address::GroupAddress;
+use knx_rs_core::cemi::CemiFrame;
 use knx_rs_core::dpt::{Dpt, DptValue};
+use knx_rs_core::message::MessageCode;
 use knx_rs_ip::KnxIpError;
 use knx_rs_ip::multiplex::MultiplexHandle;
 use knx_rs_ip::ops::GroupOps;
@@ -109,11 +112,24 @@ impl ClientListener {
     }
 }
 
+/// The group write carried by `frame`, if it is one the bus sent to us.
+///
+/// Only `L_Data.ind` is a telegram from the bus. The gateway also returns `L_Data.con` for
+/// every telegram this client sent. Treating those confirmations as commands would make
+/// every status write that shares its group address with a command object (a trigger such
+/// as `play` and a status such as `control_status`, say) execute that command again.
+fn bus_group_write(frame: &CemiFrame) -> Option<(GroupAddress, Vec<u8>)> {
+    if frame.message_code_raw() != MessageCode::LDataInd as u8 {
+        return None;
+    }
+    frame.as_group_write()
+}
+
 impl KnxListener for ClientListener {
     async fn recv(&mut self) -> Option<Incoming> {
         loop {
             let cemi = self.handle.recv().await?;
-            if let Some((ga, data)) = cemi.as_group_write() {
+            if let Some((ga, data)) = bus_group_write(&cemi) {
                 return Some(Incoming::Address(ga, data));
             }
         }
@@ -122,7 +138,36 @@ impl KnxListener for ClientListener {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use knx_rs_core::address::{DestinationAddress, IndividualAddress};
+    use knx_rs_core::types::Priority;
+
     use super::*;
+
+    fn group_write(code: MessageCode) -> CemiFrame {
+        // TPCI/APCI for a 6-bit group value write of 1: 0x00 0x81.
+        CemiFrame::new_l_data(
+            code,
+            IndividualAddress::from_raw(0x1101),
+            DestinationAddress::Group(GroupAddress::from_str("1/0/1").unwrap()),
+            Priority::Low,
+            &[0x00, 0x81],
+        )
+    }
+
+    #[test]
+    fn bus_telegrams_are_commands() {
+        let (ga, data) = bus_group_write(&group_write(MessageCode::LDataInd)).unwrap();
+        assert_eq!(ga.to_string(), "1/0/1");
+        assert_eq!(data, vec![0x01]);
+    }
+
+    #[test]
+    fn own_confirmations_and_requests_are_not_commands() {
+        assert!(bus_group_write(&group_write(MessageCode::LDataCon)).is_none());
+        assert!(bus_group_write(&group_write(MessageCode::LDataReq)).is_none());
+    }
 
     #[test]
     fn write_errors_are_judged_by_what_they_say_about_the_link() {
