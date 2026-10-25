@@ -15,13 +15,12 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use tracing_subscriber::EnvFilter;
 
 #[cfg(all(feature = "dbus", target_os = "linux"))]
 use snapdog::dbus;
 #[cfg(feature = "snapcast-process")]
 use snapdog::process;
-use snapdog::{api, audio, config, knx, mqtt, player, snapcast, state};
+use snapdog::{api, audio, config, knx, logging, mqtt, player, snapcast, state};
 
 /// Multi-zone audio controller with `AirPlay`, Snapcast, MQTT, and KNX integration.
 #[derive(Parser)]
@@ -297,12 +296,22 @@ pub async fn run_app() -> Result<()> {
     let config = Arc::new(app_config);
 
     // ── Initialize logging ────────────────────────────────────
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive(format!("snapdog={}", config.system.log_level).parse()?),
-        )
-        .init();
+    // `log_guard` must live until shutdown: dropping it stops file logging.
+    let logging::LogSetup {
+        subscriber,
+        file_guard: log_guard,
+        file_error: log_file_error,
+    } = logging::build(
+        &config.system.log_level.to_string(),
+        config.system.log_file.as_deref(),
+    )?;
+    logging::install(subscriber)?;
+    if let (Some(error), Some(path)) = (log_file_error, config.system.log_file.as_deref()) {
+        tracing::warn!(
+            path,
+            "log_file is not used, logging to stdout only: {error}"
+        );
+    }
     config.log_notices();
 
     tracing::info!(
@@ -930,6 +939,8 @@ pub async fn run_app() -> Result<()> {
     snapserver.stop().await?;
 
     tracing::info!("SnapDog server terminated");
+    // `exit` skips destructors: flush the log file explicitly.
+    drop(log_guard);
     std::process::exit(0);
 }
 

@@ -228,10 +228,14 @@ pub struct SystemConfig {
     /// Tracing log level: trace, debug, info, warn, error.
     #[serde(default)]
     pub log_level: LogLevel,
-    /// Optional log file path (daily rotation).
+    /// Optional log file, written in addition to stdout with daily rotation.
+    /// The date is inserted before the extension (`snapdog.log` becomes
+    /// `snapdog.2026-10-25.log`). Old files are not removed. If the file cannot
+    /// be opened, `SnapDog` logs a warning and continues with stdout only.
     pub log_file: Option<String>,
-    /// Directory for persistent state files (zones.json, eq.json, snapcast.json).
-    /// Defaults to platform-appropriate path.
+    /// Directory for persistent state files (`zones.json`, `eq.json`,
+    /// `server_id`, and `airplay-pairing` with the `ap2` feature).
+    /// Defaults to a platform-appropriate path.
     #[serde(default = "default_state_dir")]
     pub state_dir: String,
 }
