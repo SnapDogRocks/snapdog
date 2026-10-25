@@ -266,7 +266,7 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 
 [http]
 port = 5555
-bind = "0.0.0.0"                       # :: for dual-stack IPv4+IPv6
+bind = "::"                            # default; 0.0.0.0 for IPv4 only
 base_url = "http://192.168.1.10:5555"  # Required for MQTT cover art URLs; REST API uses relative URLs
 # tls_cert = "/etc/snapdog/tls/fullchain.pem"  # Enables HTTPS
 # tls_key = "/etc/snapdog/tls/privkey.pem"

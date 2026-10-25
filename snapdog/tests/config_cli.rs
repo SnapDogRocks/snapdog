@@ -102,3 +102,58 @@ fn check_config_is_silent_for_a_clean_file() {
     assert!(output.status.success());
     assert!(!String::from_utf8_lossy(&output.stderr).contains("warning:"));
 }
+
+#[test]
+fn knx_device_flag_warns_when_it_replaces_the_configured_address() {
+    let config = r#"
+        [knx]
+        role = "device"
+        individual_address = "1.1.100"
+
+        [[zone]]
+        name = "Living"
+    "#;
+
+    let replaced = run_check(config, &["--knx-device"]);
+    assert!(replaced.status.success());
+    let stderr = String::from_utf8_lossy(&replaced.stderr);
+    assert!(
+        stderr.contains("replaces [knx].individual_address = 1.1.100")
+            && stderr.contains("15.15.255"),
+        "{stderr}"
+    );
+
+    let explicit_same = run_check(config, &["--knx-device", "--knx-address", "1.1.100"]);
+    assert!(!String::from_utf8_lossy(&explicit_same.stderr).contains("replaces"));
+
+    let explicit_other = run_check(config, &["--knx-device", "--knx-address", "1.1.200"]);
+    assert!(String::from_utf8_lossy(&explicit_other.stderr).contains("with 1.1.200"));
+}
+
+#[test]
+fn command_line_overrides_are_validated_like_file_values() {
+    let output = run_check("[[zone]]\nname = \"Living\"\n", &["--sample-rate", "12345"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unsupported sample rate: 12345"));
+
+    let output = run_check(
+        "[[zone]]\nname = \"Living\"\n",
+        &["--streaming-port", "5555"],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("must not be the same"));
+}
+
+#[test]
+fn help_describes_codec_and_bind_as_the_code_behaves() {
+    let output = Command::new(env!("CARGO_BIN_EXE_snapdog"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(help.contains("default: ::"), "{help}");
+    assert!(!help.contains("default: 0.0.0.0"), "{help}");
+    assert!(help.contains("Snapcast stream codec"), "{help}");
+    assert!(help.contains("--check-config"));
+    assert!(help.contains("--knx-sync-system-clock"));
+}

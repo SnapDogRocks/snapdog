@@ -54,7 +54,7 @@ struct Cli {
     #[arg(short, long)]
     port: Option<u16>,
 
-    /// Bind address (default: 0.0.0.0). Use :: for dual-stack IPv4+IPv6.
+    /// HTTP bind address (default: ::, dual-stack IPv4+IPv6). Use 0.0.0.0 for IPv4 only.
     #[arg(short, long)]
     bind: Option<String>,
 
@@ -66,7 +66,7 @@ struct Cli {
     #[arg(long)]
     tls_key: Option<std::path::PathBuf>,
 
-    /// Audio codec: pcm, flac, f32lz4, f32lz4e
+    /// Snapcast stream codec, overrides [snapcast].codec: pcm, flac, f32lz4, f32lz4e
     #[arg(long)]
     codec: Option<String>,
 
@@ -82,7 +82,8 @@ struct Cli {
     #[arg(long)]
     streaming_port: Option<u16>,
 
-    /// Server display name (`mDNS`, MQTT, KNX). Default: "`SnapDog`"
+    /// Server display name (`mDNS` instance name, Home Assistant device name,
+    /// system version endpoint). Default: "`SnapDog`"
     #[arg(long)]
     name: Option<String>,
 
@@ -105,6 +106,8 @@ const SNAPCAST_CMD_CHANNEL_SIZE: usize = 64;
 const SNAPSERVER_STARTUP_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 /// State file names (relative to `config.system.state_dir`).
 const STATE_FILE: &str = "zones.json";
+/// Individual address of a KNX device started with `--knx-device` and no `--knx-address`.
+const DEFAULT_KNX_DEVICE_ADDRESS: &str = "15.15.255";
 const EQ_FILE: &str = "eq.json";
 
 /// Coalesces rapid volume changes per client within a time window.
@@ -207,7 +210,22 @@ pub async fn run_app() -> Result<()> {
     if cli.knx_device {
         let knx = app_config.knx.get_or_insert_default();
         knx.role = config::KnxRole::Device;
-        knx.individual_address = Some(cli.knx_address.unwrap_or_else(|| "15.15.255".into()));
+        let address = cli
+            .knx_address
+            .clone()
+            .unwrap_or_else(|| DEFAULT_KNX_DEVICE_ADDRESS.into());
+        if let Some(configured) = knx.individual_address.as_ref()
+            && *configured != address
+        {
+            let message = format!(
+                "--knx-device replaces [knx].individual_address = {configured} from the \
+                 configuration file with {address}. Pass --knx-address {configured} to keep the \
+                 file's address."
+            );
+            app_config.warn(message);
+        }
+        let knx = app_config.knx.get_or_insert_default();
+        knx.individual_address = Some(address);
     }
 
     // --knx-prog-mode: set flag for BAU task to activate on start
@@ -268,6 +286,9 @@ pub async fn run_app() -> Result<()> {
             ),
         };
     }
+
+    // The command-line overrides above bypass file validation: check them too.
+    config::validate(&mut app_config)?;
 
     // Validate TLS configuration
     match (&app_config.http.tls_cert, &app_config.http.tls_key) {

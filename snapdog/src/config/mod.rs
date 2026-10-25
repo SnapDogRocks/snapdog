@@ -246,24 +246,15 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
     Ok(config)
 }
 
-/// Cross-field validation and normalization. Runs after all overrides are applied.
-fn validate(config: &mut AppConfig) -> Result<()> {
+/// Cross-field validation and normalization. Runs after all overrides are applied,
+/// and again after command-line overrides (see `main`), so it must be idempotent.
+///
+/// # Errors
+///
+/// Returns an error if a value is out of range or two settings contradict each other.
+pub fn validate(config: &mut AppConfig) -> Result<()> {
     // ── Audio format constraints ──────────────────────────────
-    if !(8_000..=384_000).contains(&config.audio.sample_rate) {
-        anyhow::bail!(
-            "sample_rate {} is out of range (8000–384000)",
-            config.audio.sample_rate
-        );
-    }
-    if !matches!(config.audio.bit_depth, 16 | 24 | 32) {
-        anyhow::bail!(
-            "bit_depth {} is invalid (must be 16, 24, or 32)",
-            config.audio.bit_depth
-        );
-    }
-    if !(1..=8).contains(&config.audio.channels) {
-        anyhow::bail!("channels {} is out of range (1–8)", config.audio.channels);
-    }
+    validate_audio_format(&config.audio)?;
 
     // FLAC supports max 24-bit
     if config.snapcast.codec == AudioCodec::Flac && config.audio.bit_depth > 24 {
@@ -319,6 +310,31 @@ fn validate(config: &mut AppConfig) -> Result<()> {
     Ok(())
 }
 
+/// Check sample rate, bit depth and channel count. Shared by file loading and the
+/// re-validation after command-line overrides, so `--sample-rate 12345` fails like
+/// `sample_rate = 12345` does.
+fn validate_audio_format(audio: &AudioConfig) -> Result<()> {
+    anyhow::ensure!(
+        matches!(
+            audio.sample_rate,
+            44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
+        ),
+        "Unsupported sample rate: {}. Use 44100, 48000, 88200, 96000, 176400, or 192000",
+        audio.sample_rate
+    );
+    anyhow::ensure!(
+        matches!(audio.bit_depth, 16 | 24 | 32),
+        "Unsupported bit depth: {}. Use 16, 24, or 32",
+        audio.bit_depth
+    );
+    anyhow::ensure!(
+        audio.channels > 0 && audio.channels <= 8,
+        "Unsupported number of channels: {}. Use 1 to 8",
+        audio.channels
+    );
+    Ok(())
+}
+
 /// Validate uniqueness of zone/client names and audio format parameters.
 fn validate_raw_inputs(raw: &FileConfig) -> Result<()> {
     let mut zone_names_set = std::collections::HashSet::new();
@@ -342,24 +358,7 @@ fn validate_raw_inputs(raw: &FileConfig) -> Result<()> {
             .with_context(|| format!("Invalid MAC address format: '{}'", client.mac))?;
     }
 
-    anyhow::ensure!(
-        matches!(
-            raw.audio.sample_rate,
-            44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
-        ),
-        "Unsupported sample rate: {}. Use 44100, 48000, 88200, 96000, 176400, or 192000",
-        raw.audio.sample_rate
-    );
-    anyhow::ensure!(
-        matches!(raw.audio.bit_depth, 16 | 24 | 32),
-        "Unsupported bit depth: {}. Use 16, 24, or 32",
-        raw.audio.bit_depth
-    );
-    anyhow::ensure!(
-        raw.audio.channels > 0 && raw.audio.channels <= 8,
-        "Unsupported number of channels: {}. Use 1 to 8",
-        raw.audio.channels
-    );
+    validate_audio_format(&raw.audio)?;
     Ok(())
 }
 
@@ -1153,6 +1152,18 @@ mod tests {
         assert_eq!(config.http.port, 8080);
     }
 
+    #[test]
+    fn revalidation_catches_values_set_after_loading() {
+        let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
+        assert!(validate(&mut config).is_ok());
+        config.audio.sample_rate = 12345;
+        let error = validate(&mut config).unwrap_err().to_string();
+        assert!(error.contains("Unsupported sample rate"), "{error}");
+
+        let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
+        config.http.port = config.snapcast.streaming_port;
+        assert!(validate(&mut config).is_err());
+    }
 
     #[test]
     fn revalidation_does_not_repeat_notices() {
