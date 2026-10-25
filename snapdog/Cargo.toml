@@ -91,6 +91,8 @@ assert-json-diff = "2"                                  # REST/MQTT JSON body as
 tokio-tungstenite = "0.30"                              # WS client for the WS lifecycle tests (IT-T21)
 testcontainers = "0.28"
 snapdog-testkit = { path = "../snapdog-testkit" }       # reusable testkit (IT-T94)
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] } # throwaway CA/server/client certificates for the TLS tests (aws-lc-rs: RSA key generation)
+time = "0.3"                                            # validity window of those certificates (already in the graph)
 
 [package.metadata.deb]
 section = "sound"

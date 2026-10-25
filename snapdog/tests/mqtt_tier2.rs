@@ -24,12 +24,16 @@ use snapdog::mqtt::{MqttBridge, MqttRuntime};
 use snapdog::player::ZoneCommand;
 use snapdog::{config, state};
 use testcontainers::{
-    ContainerAsync, GenericImage, ImageExt,
+    ContainerAsync, CopyTargetOptions, GenericImage, ImageExt,
     core::{ContainerPort, WaitFor},
     runners::AsyncRunner,
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+
+// The throwaway CA of the TLS tests, shared with the unit tests.
+#[path = "../src/mqtt/test_pki.rs"]
+mod test_pki;
 
 // ── Broker ────────────────────────────────────────────────────
 
@@ -98,15 +102,12 @@ async fn start_broker_on_fixed_port(test: &str) -> Option<Broker> {
 
 // ── Bridge under test ─────────────────────────────────────────
 
-/// AppConfig (via TOML → load_raw) with `[mqtt]` pointed at `host:port`.
-fn config_for_broker(host: &str, port: u16) -> config::AppConfig {
+/// AppConfig (via TOML → load_raw) with the given `[mqtt]` section.
+fn config_with_mqtt(mqtt_section: &str) -> config::AppConfig {
     let toml = format!(
         r#"
 [mqtt]
-broker = "{host}:{port}"
-username = ""
-password = ""
-base_topic = "snapdog/"
+{mqtt_section}
 
 [[zone]]
 name = "Z1"
@@ -121,6 +122,13 @@ zone = "Z1"
     config::load_raw(raw).expect("config resolves")
 }
 
+/// AppConfig with `[mqtt]` pointed at the plaintext `host:port`.
+fn config_for_broker(host: &str, port: u16) -> config::AppConfig {
+    config_with_mqtt(&format!(
+        "broker = \"{host}:{port}\"\nusername = \"\"\npassword = \"\"\nbase_topic = \"snapdog/\""
+    ))
+}
+
 /// A started bridge and the receiving ends of the channels it commands.
 struct Rig {
     bridge: MqttBridge,
@@ -130,13 +138,14 @@ struct Rig {
 }
 
 async fn start_bridge(host: &str, port: u16) -> Rig {
-    let cfg = config_for_broker(host, port);
+    try_start_bridge(&config_for_broker(host, port))
+        .await
+        .expect("bridge starts")
+}
+
+async fn try_start_bridge(cfg: &config::AppConfig) -> anyhow::Result<Rig> {
     let mqtt_cfg = cfg.mqtt.clone().expect("mqtt config present");
-    assert_eq!(
-        mqtt_cfg.base_topic, "snapdog/",
-        "config normalises the base"
-    );
-    let store = state::init(&cfg, None).expect("state init");
+    let store = state::init(cfg, None).expect("state init");
 
     let (zone_tx, zone_rx) = mpsc::channel(16);
     let zone_commands: HashMap<usize, snapdog::player::ZoneCommandSender> =
@@ -154,14 +163,13 @@ async fn start_bridge(host: &str, port: u16) -> Rig {
             notifications: notify_tx.subscribe(),
         },
     )
-    .await
-    .expect("bridge starts");
-    Rig {
+    .await?;
+    Ok(Rig {
         bridge,
         zone_rx,
         _snap_rx: snap_rx,
         _notify_tx: notify_tx,
-    }
+    })
 }
 
 // ── Second clients ────────────────────────────────────────────
@@ -594,4 +602,290 @@ async fn mqtt_tier2_graceful_shutdown_publishes_offline() {
         .wait_for(5, |seen| last_on(seen, "snapdog/status") == Some("offline"))
         .await;
     assert!(offline, "retained offline; saw: {:?}", observer.seen());
+}
+
+// ── TLS ───────────────────────────────────────────────────────
+
+/// mosquitto with a plaintext listener (for observers), a TLS listener and a
+/// listener that demands a client certificate, all signed by a throwaway CA.
+struct TlsBroker {
+    _container: ContainerAsync<GenericImage>,
+    plain_port: u16,
+    tls_port: u16,
+    mtls_port: u16,
+    /// The CA, a client certificate and key, and an unrelated CA, as files.
+    dir: tempfile::TempDir,
+}
+
+impl TlsBroker {
+    fn file(&self, name: &str) -> String {
+        self.dir.path().join(name).display().to_string()
+    }
+}
+
+const MOSQUITTO_TLS_CONF: &str = "\
+persistence false
+allow_anonymous true
+
+listener 1883
+
+listener 8883
+cafile /mosquitto/config/ca.pem
+certfile /mosquitto/config/server.pem
+keyfile /mosquitto/config/server.key
+
+listener 8884
+cafile /mosquitto/config/ca.pem
+certfile /mosquitto/config/server.pem
+keyfile /mosquitto/config/server.key
+require_certificate true
+";
+
+/// Start the TLS mosquitto with a server certificate valid for `server_names`.
+async fn start_tls_broker(test: &str, server_names: &[&str]) -> Option<TlsBroker> {
+    let pki = test_pki::generate_for(server_names);
+    let copy = |path: &str| CopyTargetOptions::new(path).with_mode(0o644);
+    let image = mosquitto()
+        .with_exposed_port(ContainerPort::Tcp(8883))
+        .with_exposed_port(ContainerPort::Tcp(8884))
+        .with_copy_to(
+            copy("/mosquitto/config/tls.conf"),
+            MOSQUITTO_TLS_CONF.as_bytes().to_vec(),
+        )
+        .with_copy_to(
+            copy("/mosquitto/config/ca.pem"),
+            pki.ca.clone().into_bytes(),
+        )
+        .with_copy_to(
+            copy("/mosquitto/config/server.pem"),
+            pki.server_cert.clone().into_bytes(),
+        )
+        .with_copy_to(
+            copy("/mosquitto/config/server.key"),
+            pki.server_key.clone().into_bytes(),
+        )
+        .with_cmd(["mosquitto", "-c", "/mosquitto/config/tls.conf"]);
+    let container = match image.start().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("SKIP {test}: Docker/mosquitto unavailable: {e}");
+            return None;
+        }
+    };
+    let dir = tempfile::tempdir().expect("tempdir");
+    for (name, content) in [
+        ("ca.pem", pki.ca.as_str()),
+        ("other-ca.pem", test_pki::unrelated_ca_pem().as_str()),
+        ("client.pem", pki.client_cert.as_str()),
+        ("client.key", pki.client_key.as_str()),
+    ] {
+        std::fs::write(dir.path().join(name), content).expect("write PEM");
+    }
+    Some(TlsBroker {
+        plain_port: container.get_host_port_ipv4(1883).await.expect("1883"),
+        tls_port: container.get_host_port_ipv4(8883).await.expect("8883"),
+        mtls_port: container.get_host_port_ipv4(8884).await.expect("8884"),
+        _container: container,
+        dir,
+    })
+}
+
+/// A bridge on `base` (so that scenarios on one broker do not see each other) with
+/// the given `[mqtt]` lines after the broker address.
+async fn tls_bridge(broker: &str, base: &str, tls_lines: &str) -> anyhow::Result<Rig> {
+    try_start_bridge(&config_with_mqtt(&format!(
+        "broker = \"{broker}\"\nbase_topic = \"{base}\"\n{tls_lines}"
+    )))
+    .await
+}
+
+/// Whether the bridge connects within `secs`.
+async fn connects(rig: &Rig, secs: u64) -> bool {
+    rig.bridge.wait_connected(Duration::from_secs(secs)).await
+}
+
+/// TLS: the bridge connects when it trusts the CA, and does not otherwise. A
+/// failed handshake is never turned into a plaintext connection.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_tls_verifies_the_server() {
+    // The server certificate is for `localhost` only.
+    let Some(b) = start_tls_broker("IT-T32 TLS", &["localhost"]).await else {
+        return;
+    };
+    let ca = b.file("ca.pem");
+    let tls = format!("mqtts://localhost:{}", b.tls_port);
+    // Plaintext observer: what the bridge publishes over TLS is visible here.
+    let observer = Observer::start("it-t32-tls-obs", "localhost", b.plain_port, "#");
+
+    // Without the CA the system roots do not know the test CA: rejected.
+    let rig = tls_bridge(&tls, "tls/no-ca/", "").await.expect("starts");
+    assert!(!connects(&rig, 4).await, "an unknown CA must not verify");
+    drop(rig);
+
+    // With a CA that did not sign the server certificate: rejected.
+    let other = b.file("other-ca.pem");
+    let rig = tls_bridge(&tls, "tls/wrong-ca/", &format!("ca_file = {other:?}"))
+        .await
+        .expect("starts");
+    assert!(!connects(&rig, 4).await, "a foreign CA must not verify");
+    drop(rig);
+
+    // The right CA but the wrong name: 127.0.0.1 is not in the certificate.
+    let by_ip = format!("mqtts://127.0.0.1:{}", b.tls_port);
+    let rig = tls_bridge(&by_ip, "tls/wrong-name/", &format!("ca_file = {ca:?}"))
+        .await
+        .expect("starts");
+    assert!(
+        !connects(&rig, 4).await,
+        "a certificate for another name must not verify"
+    );
+    drop(rig);
+
+    // TLS to a plaintext listener: no handshake, no connection, and no fallback.
+    let to_plain = format!("mqtts://localhost:{}", b.plain_port);
+    let rig = tls_bridge(&to_plain, "tls/to-plain/", &format!("ca_file = {ca:?}"))
+        .await
+        .expect("starts");
+    assert!(
+        !connects(&rig, 4).await,
+        "TLS to a plaintext port must fail"
+    );
+    drop(rig);
+
+    // Nothing of the failed attempts reached the broker, in plaintext or otherwise.
+    assert!(
+        observer.seen().iter().all(|m| !m.topic.starts_with("tls/")),
+        "failed TLS attempts must publish nothing; saw {:?}",
+        observer.seen()
+    );
+
+    // The right CA and the right name: connected, and the retained online arrives.
+    let rig = tls_bridge(&tls, "tls/ok/", &format!("ca_file = {ca:?}"))
+        .await
+        .expect("starts");
+    assert!(connects(&rig, 20).await, "the right CA must verify");
+    assert!(
+        observer
+            .wait_for(20, |seen| last_on(seen, "tls/ok/status") == Some("online"))
+            .await,
+        "retained online over TLS; saw {:?}",
+        observer.seen()
+    );
+}
+
+/// A command published in plaintext reaches a bridge that listens over TLS: the
+/// transport is the only thing that differs.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_tls_carries_commands() {
+    let Some(b) = start_tls_broker("IT-T32 TLS command", &["localhost"]).await else {
+        return;
+    };
+    let tls = format!("mqtts://localhost:{}", b.tls_port);
+    let mut rig = tls_bridge(
+        &tls,
+        "snapdog/",
+        &format!("ca_file = {:?}", b.file("ca.pem")),
+    )
+    .await
+    .expect("starts");
+    assert!(connects(&rig, 20).await);
+    let cmd = publish_until_received(
+        "localhost",
+        b.plain_port,
+        "snapdog/zones/1/volume/set",
+        "37",
+        &mut rig.zone_rx,
+        20,
+    )
+    .await;
+    assert!(matches!(cmd, Some(ZoneCommand::SetVolume(37))), "{cmd:?}");
+}
+
+/// Mutual TLS: the broker demands a client certificate, and the bridge presents
+/// the one it is configured with (or none, and is turned away).
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_mutual_tls() {
+    let Some(b) = start_tls_broker("IT-T32 mTLS", &["localhost"]).await else {
+        return;
+    };
+    let ca = b.file("ca.pem");
+    let mtls = format!("mqtts://localhost:{}", b.mtls_port);
+    let observer = Observer::start("it-t32-mtls-obs", "localhost", b.plain_port, "#");
+
+    let rig = tls_bridge(&mtls, "mtls/no-cert/", &format!("ca_file = {ca:?}"))
+        .await
+        .expect("starts");
+    assert!(
+        !connects(&rig, 4).await,
+        "no client certificate: turned away"
+    );
+    drop(rig);
+
+    let identity = format!(
+        "ca_file = {ca:?}\nclient_cert = {:?}\nclient_key = {:?}",
+        b.file("client.pem"),
+        b.file("client.key")
+    );
+    let rig = tls_bridge(&mtls, "mtls/ok/", &identity)
+        .await
+        .expect("starts");
+    assert!(connects(&rig, 20).await, "client certificate accepted");
+    assert!(
+        observer
+            .wait_for(20, |seen| last_on(seen, "mtls/ok/status") == Some("online"))
+            .await,
+        "retained online over mutual TLS; saw {:?}",
+        observer.seen()
+    );
+    assert!(
+        observer
+            .seen()
+            .iter()
+            .all(|m| !m.topic.starts_with("mtls/no-cert/")),
+        "the rejected attempt published nothing"
+    );
+}
+
+/// Material that cannot be used stops the bridge from starting. There is no
+/// plaintext fallback to start with instead.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_unusable_tls_material_stops_the_bridge() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bogus = dir.path().join("bogus.pem");
+    std::fs::write(
+        &bogus,
+        "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n",
+    )
+    .expect("write");
+    // The config check passes (it looks like PEM), starting the bridge does not.
+    let cfg = config_with_mqtt(&format!(
+        "broker = \"mqtts://localhost:8883\"\nca_file = {:?}",
+        bogus.display().to_string()
+    ));
+    let Err(err) = try_start_bridge(&cfg).await else {
+        panic!("a bridge must not start with unusable TLS material");
+    };
+    let msg = format!("{err:#}");
+    assert!(msg.contains("ca_file"), "{msg}");
+
+    // The config loader refuses most mistakes before anything starts.
+    let raw: config::FileConfig = toml::from_str(
+        r#"
+[mqtt]
+broker = "localhost:1883"
+ca_file = "/nonexistent/ca.pem"
+[[zone]]
+name = "Z1"
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+"#,
+    )
+    .expect("parses");
+    let err = config::load_raw(raw).expect_err("rejected at load");
+    assert!(
+        err.to_string().contains("plaintext"),
+        "TLS options on a plaintext address: {err:#}"
+    );
 }

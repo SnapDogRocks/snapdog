@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
-use rumqttc::{AsyncClient, LastWill, MqttOptions, QoS};
+use anyhow::Result;
+use rumqttc::AsyncClient;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 
@@ -31,17 +31,18 @@ mod payloads;
 mod publisher;
 mod runner;
 #[cfg(test)]
+mod test_pki;
+#[cfg(test)]
 mod test_support;
 mod topics;
+mod transport;
 
 use commands::CommandHandler;
 use limits::LogThrottle;
 use publisher::{Publisher, request_capacity};
 use runner::{Session, run_connection, run_state_publisher};
 use topics::Topics;
-
-/// MQTT keep-alive interval.
-const MQTT_KEEP_ALIVE: Duration = Duration::from_mins(1);
+use transport::mqtt_options;
 
 /// What the bridge needs from the rest of the server.
 pub struct MqttRuntime {
@@ -73,11 +74,15 @@ impl MqttBridge {
     ///
     /// # Errors
     ///
-    /// Returns an error if the broker address is invalid.
+    /// Returns an error if the broker address is invalid or the TLS material cannot
+    /// be used. The bridge then does not start; it never falls back to plaintext.
     #[tracing::instrument(skip_all, fields(broker = %config.broker))]
     pub async fn start(config: &MqttConfig, base_url: &str, runtime: MqttRuntime) -> Result<Self> {
         let topics = Topics::new(&config.base_topic);
         let options = mqtt_options(config, &topics)?;
+        if let Some(warning) = config.plaintext_credentials_warning() {
+            tracing::warn!("{warning}");
+        }
 
         let capacity = {
             let store = runtime.state.read().await;
@@ -189,76 +194,5 @@ impl Drop for MqttBridge {
         for task in &self.tasks {
             task.abort();
         }
-    }
-}
-
-/// Connection options for `config`: address, keep-alive, credentials, last will.
-fn mqtt_options(config: &MqttConfig, topics: &Topics) -> Result<MqttOptions> {
-    let mut opts = MqttOptions::new(
-        &config.client_id,
-        parse_host(&config.broker),
-        parse_port(&config.broker)?,
-    );
-    opts.set_keep_alive(MQTT_KEEP_ALIVE);
-    if !config.username.is_empty() {
-        opts.set_credentials(&config.username, &*config.password);
-    }
-    opts.set_last_will(LastWill::new(
-        topics.availability(),
-        "offline",
-        QoS::AtLeastOnce,
-        true,
-    ));
-    Ok(opts)
-}
-
-fn parse_host(broker: &str) -> &str {
-    broker.rsplit_once(':').map_or(broker, |(h, _)| h)
-}
-
-fn parse_port(broker: &str) -> Result<u16> {
-    broker
-        .rsplit_once(':')
-        .and_then(|(_, p)| p.parse().ok())
-        .context("Invalid broker address — expected host:port")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_broker_port() {
-        assert_eq!(parse_port("mqtt:1883").unwrap(), 1883);
-        assert_eq!(parse_port("localhost:1883").unwrap(), 1883);
-        assert!(parse_port("no-port").is_err());
-    }
-
-    #[test]
-    fn last_will_is_the_retained_offline_on_the_availability_topic() {
-        let cfg = crate::config::load_raw(
-            toml::from_str(
-                r#"
-                [mqtt]
-                broker = "localhost:1883"
-                base_topic = "home/audio"
-                [[zone]]
-                name = "Z1"
-                [[client]]
-                name = "C1"
-                mac = "00:00:00:00:00:01"
-                zone = "Z1"
-                "#,
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        let mqtt = cfg.mqtt.unwrap();
-        let topics = Topics::new(&mqtt.base_topic);
-        let opts = mqtt_options(&mqtt, &topics).unwrap();
-        let will = opts.last_will().expect("last will set");
-        assert_eq!(will.topic, "home/audio/status");
-        assert_eq!(&will.message[..], b"offline");
-        assert!(will.retain);
     }
 }

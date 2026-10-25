@@ -84,6 +84,7 @@ fn mqtt_config() -> Option<config::MqttConfig> {
         username,
         password: password.into(),
         base_topic: "snapdog/test".to_string(),
+        ..config::MqttConfig::default()
     })
 }
 

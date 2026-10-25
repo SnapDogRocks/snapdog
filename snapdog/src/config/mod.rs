@@ -7,8 +7,10 @@
 //! Convention over configuration: sensible defaults, auto-generated where possible.
 
 mod convention;
+mod mqtt;
 mod types;
 
+pub use mqtt::*;
 pub use types::*;
 
 use std::path::Path;
@@ -147,9 +149,31 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
     };
 
     apply_env_overrides(&mut config);
+    resolve_mqtt(&mut config, skip_zone_validation)?;
     validate(&mut config)?;
 
     Ok(config)
+}
+
+/// Check the `[mqtt]` section and load its file-based secrets.
+///
+/// A broken section stops the start-up, like any other config error. KNX device
+/// mode (`lenient`) is the exception: its MQTT settings come from ETS, and a
+/// device that refuses to boot cannot be reprogrammed, so MQTT is switched off
+/// (loudly) instead. Either way there is no fallback to a weaker setting.
+fn resolve_mqtt(config: &mut AppConfig, lenient: bool) -> Result<()> {
+    let Some(mqtt) = config.mqtt.as_mut() else {
+        return Ok(());
+    };
+    match mqtt.resolve() {
+        Ok(()) => Ok(()),
+        Err(e) if lenient => {
+            tracing::error!(error = %format!("{e:#}"), "Invalid MQTT settings (ETS), MQTT is disabled");
+            config.mqtt = None;
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Cross-field validation and normalization. Runs after all overrides are applied.
@@ -347,10 +371,25 @@ fn apply_env_overrides(config: &mut AppConfig) {
     {
         subsonic.password = SecretString::from(val);
     }
-    if let Some(ref mut mqtt) = config.mqtt
-        && let Ok(val) = std::env::var("SNAPDOG_MQTT_PASSWORD")
-    {
-        mqtt.password = SecretString::from(val);
+    if let Some(ref mut mqtt) = config.mqtt {
+        if let Ok(val) = std::env::var("SNAPDOG_MQTT_PASSWORD") {
+            mqtt.password = SecretString::from(val);
+            // The environment wins over the file, so a password_file next to it is moot.
+            mqtt.password_file = None;
+        }
+        if let Ok(val) = std::env::var("SNAPDOG_MQTT_USERNAME") {
+            mqtt.username = val;
+        }
+        // Paths: what KNX device mode needs, as ETS has no field for them.
+        for (var, slot) in [
+            ("SNAPDOG_MQTT_CA_FILE", &mut mqtt.ca_file),
+            ("SNAPDOG_MQTT_CLIENT_CERT", &mut mqtt.client_cert),
+            ("SNAPDOG_MQTT_CLIENT_KEY", &mut mqtt.client_key),
+        ] {
+            if let Some(path) = std::env::var_os(var).filter(|v| !v.is_empty()) {
+                *slot = Some(path.into());
+            }
+        }
     }
     if let Ok(val) = std::env::var("SNAPDOG_SNAPCAST_ENCRYPTION_PSK") {
         config.snapcast.encryption_psk = Some(SecretString::from(val));

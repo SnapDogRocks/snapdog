@@ -513,7 +513,7 @@ pub async fn run_app() -> Result<()> {
         {
             Ok(bridge) => Some(bridge),
             Err(e) => {
-                tracing::error!(error = %e, "MQTT configuration is invalid — running without MQTT");
+                tracing::error!(error = %e, "MQTT configuration is invalid, running without MQTT");
                 None
             }
         }
