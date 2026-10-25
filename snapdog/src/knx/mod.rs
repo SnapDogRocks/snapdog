@@ -17,6 +17,7 @@ mod ets_config;
 pub mod group_objects;
 mod transport;
 
+pub use device::DeviceOptions;
 pub use ets_config::ets_device_config;
 
 use std::collections::HashMap;
@@ -58,6 +59,31 @@ pub async fn start<S: BuildHasher + Send + Sync + 'static>(
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<Option<DeviceControlHandle>> {
+    start_with_options(
+        config,
+        store,
+        notify_rx,
+        zone_commands,
+        snap_tx,
+        &DeviceOptions::default(),
+    )
+    .await
+}
+
+/// Like [`start`], with explicit device-transport options (loopback bind and memory
+/// path for tests).
+///
+/// # Errors
+///
+/// Returns an error if KNX is not configured or the connection fails.
+pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
+    config: &AppConfig,
+    store: state::SharedState,
+    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
+    zone_commands: HashMap<usize, ZoneCommandSender, S>,
+    snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
+    options: &DeviceOptions,
+) -> Result<Option<DeviceControlHandle>> {
     let knx = config.knx.as_ref().context("KNX not configured")?;
     match knx.role {
         crate::config::KnxRole::Client => {
@@ -65,7 +91,8 @@ pub async fn start<S: BuildHasher + Send + Sync + 'static>(
             Ok(None)
         }
         crate::config::KnxRole::Device => {
-            let handle = start_device(config, store, notify_rx, zone_commands, snap_tx).await?;
+            let handle =
+                start_device(config, store, notify_rx, zone_commands, snap_tx, options).await?;
             Ok(Some(handle))
         }
     }
@@ -112,6 +139,7 @@ async fn start_device<S: BuildHasher + Send + Sync + 'static>(
     notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
+    options: &DeviceOptions,
 ) -> Result<DeviceControlHandle> {
     let addr = config
         .knx
@@ -120,7 +148,7 @@ async fn start_device<S: BuildHasher + Send + Sync + 'static>(
         .context("KNX device mode requires 'individual_address'")?;
 
     let (pub_transport, listen_transport, _ets_params) =
-        device::start_device_transport(addr, config).await?;
+        device::start_device_transport(addr, config, options).await?;
     let handle: DeviceControlHandle = std::sync::Arc::new(pub_transport.clone());
 
     spawn_bridge(

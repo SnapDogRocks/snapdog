@@ -399,9 +399,16 @@ enum BauCmd {
 #[derive(Clone)]
 pub struct DevicePublisher {
     cmd_tx: mpsc::Sender<BauCmd>,
+    local_addr: std::net::SocketAddr,
 }
 
 impl DevicePublisher {
+    /// UDP address the KNXnet/IP device server is bound to.
+    #[must_use]
+    pub const fn local_addr(&self) -> std::net::SocketAddr {
+        self.local_addr
+    }
+
     async fn send_cmd(&self, cmd: BauCmd) {
         let _ = self.cmd_tx.send(cmd).await;
     }
@@ -424,23 +431,44 @@ pub struct DeviceListener {
     update_rx: mpsc::Receiver<(GroupAddress, Vec<u8>)>,
 }
 
+/// Overrides for the device transport's environment.
+///
+/// Production uses the defaults (UDP 3671 plus the KNX multicast group, memory file in the
+/// working directory). Tests bind a loopback port and keep the memory file in a temp dir.
+#[derive(Debug, Clone, Default)]
+pub struct DeviceOptions {
+    /// Bind the KNXnet/IP server to this unicast address instead of `0.0.0.0:3671`.
+    /// No multicast group is joined in that case.
+    pub bind: Option<std::net::SocketAddr>,
+    /// Path of the persisted ETS memory (default: `knx-memory.bin` in the working directory).
+    pub memory_path: Option<PathBuf>,
+}
+
 /// Start the device server and BAU, returning a publisher/listener pair.
 pub async fn start_device_transport(
     individual_address: &str,
     config: &crate::config::AppConfig,
+    options: &DeviceOptions,
 ) -> Result<(DevicePublisher, DeviceListener, Option<EtsParams>)> {
     let ia = IndividualAddress::from_str(individual_address)
         .map_err(|e| anyhow::anyhow!("Invalid individual address: {e}"))?;
 
-    let server = DeviceServer::start(Ipv4Addr::UNSPECIFIED)
-        .await
-        .context("Failed to start KNX device server")?;
+    let server = match options.bind {
+        Some(addr) => DeviceServer::start_at(addr).await,
+        None => DeviceServer::start(Ipv4Addr::UNSPECIFIED).await,
+    }
+    .context("Failed to start KNX device server")?;
 
     let knx = config.knx.as_ref().expect("KNX config required");
     let persist = knx.persist_ets_config.unwrap_or(true);
     let restart_after_ets = knx.restart_after_ets.unwrap_or(true);
     let persist_path = if persist {
-        Some(PathBuf::from(ETS_MEMORY_PATH))
+        Some(
+            options
+                .memory_path
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(ETS_MEMORY_PATH)),
+        )
     } else {
         None
     };
@@ -497,6 +525,7 @@ pub async fn start_device_transport(
         tracing::info!("KNX programming mode active (--knx-prog-mode)");
     }
 
+    let local_addr = server.local_addr();
     tokio::spawn(bau_task_loop(
         bau,
         server,
@@ -509,7 +538,7 @@ pub async fn start_device_transport(
     tracing::info!(%individual_address, persist, "KNX device mode started");
 
     Ok((
-        DevicePublisher { cmd_tx },
+        DevicePublisher { cmd_tx, local_addr },
         DeviceListener { update_rx },
         ets_params,
     ))
