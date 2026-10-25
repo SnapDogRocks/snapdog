@@ -1007,7 +1007,7 @@ jobs:
             sed -i "s/^pkgver=.*/pkgver=${CORE}/" "aur-smoke/$pkg/PKGBUILD"
             sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${sha}')/" "aur-smoke/$pkg/PKGBUILD"
             if [ "$pkg" = snapdog ]; then
-              aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog.example.toml snapdog/dbus/snapdog.conf | awk '{printf "\047%s\047 ", $1}')
+              aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog/debian/snapdog.toml snapdog/dbus/snapdog.conf | awk '{printf "\047%s\047 ", $1}')
             else
               aux=$(sha256sum snapdog-client/systemd/snapdog-client.service snapdog-client/debian/snapdog-client.default snapdog-client/dbus/snapdog-client.conf | awk '{printf "\047%s\047 ", $1}')
             fi
@@ -1444,7 +1444,7 @@ jobs:
           sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X64_SHA}')/" ${{ matrix.pkgbuild }}
           sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${ARM_SHA}')/" ${{ matrix.pkgbuild }}
           if [ "${{ matrix.pkg }}" = snapdog ]; then
-            aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog.example.toml snapdog/dbus/snapdog.conf | awk '{printf "\047%s\047 ", $1}')
+            aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog/debian/snapdog.toml snapdog/dbus/snapdog.conf | awk '{printf "\047%s\047 ", $1}')
           else
             aux=$(sha256sum snapdog-client/systemd/snapdog-client.service snapdog-client/debian/snapdog-client.default snapdog-client/dbus/snapdog-client.conf | awk '{printf "\047%s\047 ", $1}')
           fi

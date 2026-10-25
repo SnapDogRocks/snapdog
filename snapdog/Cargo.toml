@@ -102,7 +102,7 @@ depends = "libasound2, libavahi-compat-libdnssd1, libssl3"
 conf-files = ["/etc/snapdog/snapdog.toml", "/etc/default/snapdog"]
 assets = [
   ["target/release/snapdog", "usr/bin/", "755"],
-  ["../snapdog.example.toml", "etc/snapdog/snapdog.toml", "644"],
+  ["debian/snapdog.toml", "etc/snapdog/snapdog.toml", "644"],
   ["debian/snapdog.default", "etc/default/snapdog", "644"],
   ["dbus/snapdog.conf", "usr/share/dbus-1/system.d/snapdog.conf", "644"],
 ]

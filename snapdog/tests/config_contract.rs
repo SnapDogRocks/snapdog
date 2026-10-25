@@ -233,3 +233,62 @@ fn example_config_documents_every_zone_and_client_knx_key() {
         "client.knx keys in the example: {client:?}"
     );
 }
+
+// ── The config the Debian and Arch packages install ───────────────────────
+//
+// It used to be snapdog.example.toml itself, with a made-up Navidrome login and an
+// MQTT broker at 192.168.1.10 active on every fresh install.
+
+const PACKAGED: &str = include_str!("../debian/snapdog.toml");
+
+#[test]
+fn packaged_default_config_loads_cleanly_and_starts_no_external_service() {
+    let config = config::load_str(PACKAGED).expect("packaged config loads");
+    let warnings: Vec<_> = config
+        .notices
+        .iter()
+        .filter(|n| n.level == config::NoticeLevel::Warn)
+        .map(|n| n.message.as_str())
+        .collect();
+    assert!(warnings.is_empty(), "packaged config warns: {warnings:#?}");
+    assert_eq!(config.zones.len(), 1, "one starter zone");
+    assert!(
+        config.clients.is_empty(),
+        "no invented speaker MAC addresses"
+    );
+    assert!(config.subsonic.is_none(), "no Subsonic server is assumed");
+    assert!(config.mqtt.is_none(), "no MQTT broker is assumed");
+    assert!(config.knx.is_none(), "KNX is opt-in");
+}
+
+#[test]
+fn packaged_default_config_has_no_unknown_keys() {
+    let unknown = unknown_in(PACKAGED);
+    assert!(
+        unknown.is_empty(),
+        "unknown keys in debian/snapdog.toml: {unknown:?}"
+    );
+}
+
+#[test]
+fn deb_and_aur_install_the_packaged_config_not_the_example() {
+    let deb =
+        std::fs::read_to_string(format!("{}/Cargo.toml", env!("CARGO_MANIFEST_DIR"))).unwrap();
+    assert!(
+        deb.contains(r#"["debian/snapdog.toml", "etc/snapdog/snapdog.toml", "644"]"#),
+        "the .deb must install debian/snapdog.toml as /etc/snapdog/snapdog.toml"
+    );
+    let pkgbuild = std::fs::read_to_string(format!(
+        "{}/../aur/snapdog/PKGBUILD",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    assert!(
+        pkgbuild.contains("snapdog/debian/snapdog.toml"),
+        "the AUR package must install debian/snapdog.toml"
+    );
+    assert!(
+        !pkgbuild.contains(r#"$srcdir/snapdog.example.toml" "$pkgdir/etc/snapdog"#),
+        "the AUR package must not install the example as the live config"
+    );
+}
