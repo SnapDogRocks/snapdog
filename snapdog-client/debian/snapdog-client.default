@@ -1,15 +1,17 @@
 # Configuration for snapdog-client systemd service.
 # Edit this file, then: systemctl restart snapdog-client
 
-# Server URL. Leave empty for automatic mDNS discovery.
+# Server URL (tcp:// only). Leave empty to look for a SnapDog server on the network
+# with mDNS (_snapdog._tcp, 5 seconds).
 # Examples: tcp://192.168.1.10:1704, tcp://snapdog.local:1704
 #SNAPDOG_CLIENT_ARGS="tcp://192.168.1.10:1704"
 
-# mDNS service name to search for (default: _snapdog._tcp)
-#SNAPDOG_CLIENT_ARGS="--mdns-name _snapdog._tcp"
-
 # Client ID (default: MAC address). Set to distinguish multiple clients on same host.
 #SNAPDOG_CLIENT_ARGS="--hostID kitchen-speaker"
+
+# Audio output device (default: the system default). List the devices with
+# `snapdog-client --list`, then pass the index or part of the name.
+#SNAPDOG_CLIENT_ARGS="--soundcard 1"
 
 # Combined example:
 #SNAPDOG_CLIENT_ARGS="tcp://192.168.1.10:1704 --hostID kitchen-speaker"
