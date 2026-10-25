@@ -15,6 +15,10 @@ use crate::config::MqttConfig;
 use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
 use crate::state;
 
+mod topics;
+
+use topics::{Route, TopicError, Topics};
+
 /// MQTT keep-alive interval.
 const MQTT_KEEP_ALIVE: std::time::Duration = std::time::Duration::from_mins(1);
 /// Delay before MQTT reconnection attempt.
@@ -26,7 +30,7 @@ const MQTT_EVENT_CAPACITY: usize = 64;
 pub struct MqttBridge {
     client: AsyncClient,
     eventloop: rumqttc::EventLoop,
-    base_topic: String,
+    topics: Topics,
     base_url: String,
     name: String,
 }
@@ -49,9 +53,9 @@ impl MqttBridge {
             opts.set_credentials(&config.username, &*config.password);
         }
 
-        let status_topic = availability_topic(&config.base_topic);
+        let topics = Topics::new(&config.base_topic);
         opts.set_last_will(LastWill::new(
-            &status_topic,
+            topics.availability(),
             "offline",
             QoS::AtLeastOnce,
             true,
@@ -63,7 +67,7 @@ impl MqttBridge {
         Ok(Self {
             client,
             eventloop,
-            base_topic: config.base_topic.clone(),
+            topics,
             base_url: base_url.trim_end_matches('/').to_string(),
             name: name.to_string(),
         })
@@ -77,7 +81,7 @@ impl MqttBridge {
         Self {
             client,
             eventloop,
-            base_topic: base_topic.to_string(),
+            topics: Topics::new(base_topic),
             base_url: "http://localhost:5555".to_string(),
             name: "SnapDog".to_string(),
         }
@@ -89,34 +93,23 @@ impl MqttBridge {
     ///
     /// Returns an error if any subscription fails.
     pub async fn subscribe_commands(&self) -> Result<()> {
-        let topics = [
-            "zones/+/volume/set",
-            "zones/+/mute/set",
-            "zones/+/control/set",
-            "zones/+/shuffle/set",
-            "zones/+/repeat/set",
-            "zones/+/position/set",
-            "zones/+/track/set",
-            "zones/+/track/position/set",
-            "zones/+/playlist/set",
-            "zones/+/presence/set",
-            "zones/+/presence/enable/set",
-            "zones/+/presence/timeout/set",
-            "clients/+/volume/set",
-            "clients/+/mute/set",
-            "clients/+/latency/set",
-            "clients/+/zone/set",
-        ];
-
-        for topic in &topics {
+        let mut count = 0_usize;
+        for filter in self.subscription_topics() {
             self.client
-                .subscribe(format!("{}{topic}", self.base_topic), QoS::AtLeastOnce)
+                .subscribe(&filter, QoS::AtLeastOnce)
                 .await
-                .with_context(|| format!("Failed to subscribe to {topic}"))?;
+                .with_context(|| format!("Failed to subscribe to {filter}"))?;
+            count += 1;
         }
 
-        tracing::info!(topics = topics.len(), "MQTT subscribed");
+        tracing::info!(topics = count, "MQTT subscribed");
         Ok(())
+    }
+
+    /// The subscription filters, generated from the same route table that
+    /// [`Self::handle_command`] parses incoming topics with.
+    pub(crate) fn subscription_topics(&self) -> impl Iterator<Item = String> + '_ {
+        self.topics.command_filters()
     }
 
     /// Publish Home Assistant MQTT Discovery messages for all zones.
@@ -127,7 +120,7 @@ impl MqttBridge {
     pub async fn publish_ha_discovery(&self, zones: &[crate::config::ZoneConfig]) -> Result<()> {
         for zone in zones {
             let unique_id = format!("snapdog_zone_{}", zone.index);
-            let discovery = ha_discovery_payload(&self.base_topic, &self.name, zone);
+            let discovery = ha_discovery_payload(&self.topics, &self.name, zone);
             self.client
                 .publish(
                     format!("homeassistant/media_player/{unique_id}/config"),
@@ -144,7 +137,7 @@ impl MqttBridge {
         // Publish availability "online" to the SAME topic as the LWT (single slash).
         self.client
             .publish(
-                availability_topic(&self.base_topic),
+                self.topics.availability(),
                 QoS::AtLeastOnce,
                 true,
                 b"online",
@@ -157,7 +150,7 @@ impl MqttBridge {
         // idempotent, so it is harmless on every later reconnect.
         self.client
             .publish(
-                format!("{}/status", self.base_topic),
+                self.topics.legacy_double_slash_status(),
                 QoS::AtLeastOnce,
                 true,
                 Vec::<u8>::new(),
@@ -174,13 +167,13 @@ impl MqttBridge {
     ///
     /// Returns an error if the MQTT publish fails.
     pub async fn publish(&self, topic: &str, payload: &str) -> Result<()> {
+        self.publish_to(self.topics.join(topic), payload).await
+    }
+
+    /// Publish `payload` retained to the full `topic`.
+    async fn publish_to(&self, topic: String, payload: &str) -> Result<()> {
         self.client
-            .publish(
-                format!("{}{topic}", self.base_topic),
-                QoS::AtLeastOnce,
-                true,
-                payload.as_bytes(),
-            )
+            .publish(&topic, QoS::AtLeastOnce, true, payload.as_bytes())
             .await
             .with_context(|| format!("Failed to publish to {topic}"))
     }
@@ -192,7 +185,7 @@ impl MqttBridge {
     /// Returns an error if the MQTT publish fails.
     pub async fn publish_zone_state(&self, index: usize, zone: &state::ZoneState) -> Result<()> {
         let payload = zone_state_payload(&self.base_url, zone);
-        self.publish(&format!("zones/{index}/state"), &payload.to_string())
+        self.publish_to(self.topics.zone_state(index), &payload.to_string())
             .await
     }
 
@@ -206,8 +199,8 @@ impl MqttBridge {
         index: usize,
         client: &state::ClientState,
     ) -> Result<()> {
-        self.publish(
-            &format!("clients/{index}/state"),
+        self.publish_to(
+            self.topics.client_state(index),
             &client_state_payload(client).to_string(),
         )
         .await
@@ -265,17 +258,19 @@ impl MqttBridge {
         state: &state::SharedState,
         snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
     ) -> Result<()> {
-        let stripped = topic
-            .strip_prefix(&self.base_topic)
-            .and_then(|t| t.strip_prefix('/'))
-            .context("Topic doesn't match base")?;
+        let parsed = match self.topics.parse_command(topic) {
+            Ok(parsed) => parsed,
+            Err(TopicError::UnknownRoute) => {
+                tracing::debug!(topic = ?topic, "Unhandled MQTT command topic");
+                return Ok(());
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let index = parsed.index;
 
-        let parts: Vec<&str> = stripped.split('/').collect();
-
-        match parts.as_slice() {
+        match parsed.route {
             // Zone commands → routed through ZonePlayer
-            ["zones", idx, "volume", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZoneVolume => {
                 let volume: f64 = payload.parse()?;
                 // Accept both 0.0-1.0 (HA) and 0-100 (legacy)
                 let volume_int = if volume <= 1.0 {
@@ -290,13 +285,11 @@ impl MqttBridge {
                 )
                 .await;
             }
-            ["zones", idx, "mute", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZoneMute => {
                 let muted = matches!(payload.trim(), "true" | "1" | "on");
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetMute(muted)).await;
             }
-            ["zones", idx, "control", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZoneControl => {
                 let cmd = match payload.to_lowercase().as_str() {
                     "play" => Some(ZoneCommand::Play),
                     "pause" => Some(ZoneCommand::Pause),
@@ -312,29 +305,24 @@ impl MqttBridge {
                     send_zone_cmd(zone_commands, index, cmd).await;
                 }
             }
-            ["zones", idx, "playlist", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZonePlaylist => {
                 let playlist: usize = payload.parse()?;
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetPlaylist(playlist, 0)).await;
             }
-            ["zones", idx, "track", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZoneTrack => {
                 let track: usize = payload.parse()?;
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetTrack(track)).await;
             }
-            ["zones", idx, "position", "set"] | ["zones", idx, "track", "position", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZonePosition => {
                 let pos_secs: f64 = payload.parse()?;
                 let pos_ms = (pos_secs * 1000.0) as i64;
                 send_zone_cmd(zone_commands, index, ZoneCommand::Seek(pos_ms)).await;
             }
-            ["zones", idx, "shuffle", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZoneShuffle => {
                 let shuffle = matches!(payload.trim(), "true" | "1" | "on");
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetShuffle(shuffle)).await;
             }
-            ["zones", idx, "repeat", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZoneRepeat => {
                 let mode = match payload.trim() {
                     "one" | "track" => snapdog_common::RepeatMode::Track,
                     "all" | "playlist" => snapdog_common::RepeatMode::Playlist,
@@ -342,13 +330,11 @@ impl MqttBridge {
                 };
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetRepeat(mode)).await;
             }
-            ["zones", idx, "presence", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZonePresence => {
                 let present: bool = payload.parse()?;
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetPresence(present)).await;
             }
-            ["zones", idx, "presence", "enable", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZonePresenceEnable => {
                 let enabled: bool = payload.parse()?;
                 send_zone_cmd(
                     zone_commands,
@@ -357,15 +343,13 @@ impl MqttBridge {
                 )
                 .await;
             }
-            ["zones", idx, "presence", "timeout", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ZonePresenceTimeout => {
                 let delay: u16 = payload.parse()?;
                 send_zone_cmd(zone_commands, index, ZoneCommand::SetAutoOffDelay(delay)).await;
             }
 
-            // Client commands → direct state mutation (no ZonePlayer involvement)
-            ["clients", idx, "volume", "set"] => {
-                let index: usize = idx.parse()?;
+            // Client commands → Snapcast commands or direct state mutation
+            Route::ClientVolume => {
                 let volume: i32 = payload.parse()?;
                 let snap_id = {
                     let store = state.read().await;
@@ -383,8 +367,7 @@ impl MqttBridge {
                         .await;
                 }
             }
-            ["clients", idx, "mute", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ClientMute => {
                 let muted: bool = payload.parse()?;
                 let snap_id = {
                     let store = state.read().await;
@@ -402,8 +385,7 @@ impl MqttBridge {
                         .await;
                 }
             }
-            ["clients", idx, "latency", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ClientLatency => {
                 let latency: i32 = payload.parse()?;
                 let snap_id = {
                     let store = state.read().await;
@@ -421,8 +403,7 @@ impl MqttBridge {
                         .await;
                 }
             }
-            ["clients", idx, "zone", "set"] => {
-                let index: usize = idx.parse()?;
+            Route::ClientZone => {
                 let zone: usize = payload.parse()?;
                 let mut store = state.write().await;
                 if zone == 0 || !store.zones.contains_key(&zone) {
@@ -444,9 +425,6 @@ impl MqttBridge {
                 store.dirty = true;
                 drop(store);
                 let _ = snap_tx.send(SnapcastCmd::ReconcileZones).await;
-            }
-            _ => {
-                tracing::debug!(topic = stripped, "Unhandled MQTT command topic");
             }
         }
 
@@ -540,22 +518,14 @@ fn client_state_payload(client: &state::ClientState) -> serde_json::Value {
     })
 }
 
-/// Online/offline availability topic (LWT + retained "online").
-///
-/// `base_topic` is normalized to end with `/`, so this must NOT add a second slash.
-/// Single source of truth shared by `connect`'s LWT and HA discovery so the two
-/// can never drift (they previously did: `{base}status` vs `{base}/status`).
-fn availability_topic(base_topic: &str) -> String {
-    format!("{base_topic}status")
-}
-
 /// Build the Home Assistant MQTT-discovery payload for one zone (`media_player`).
 /// Pure: extracted from `publish_ha_discovery` so the schema is unit-testable.
 fn ha_discovery_payload(
-    base: &str,
+    topics: &Topics,
     device_name: &str,
     zone: &crate::config::ZoneConfig,
 ) -> serde_json::Value {
+    let base = topics.base();
     let idx = zone.index;
     let unique_id = format!("snapdog_zone_{idx}");
     serde_json::json!({
@@ -594,7 +564,7 @@ fn ha_discovery_payload(
             "model": "Multi-zone Audio Controller",
             "sw_version": env!("CARGO_PKG_VERSION"),
         },
-        "availability_topic": availability_topic(base),
+        "availability_topic": topics.availability(),
         "payload_available": "online",
         "payload_not_available": "offline",
     })
@@ -718,14 +688,6 @@ mod tests {
     }
 
     #[test]
-    fn availability_topic_single_slash_matches_lwt() {
-        // base_topic is normalized to end with "/"; the availability topic must NOT
-        // double the slash. connect()'s LWT and HA discovery share this fn so they
-        // can't drift (regression guard for the snapdog//status bug).
-        assert_eq!(availability_topic("snapdog/"), "snapdog/status");
-    }
-
-    #[test]
     fn ha_discovery_payload_schema() {
         let cfg = crate::config::load_raw(
             toml::from_str(
@@ -741,7 +703,8 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let p = ha_discovery_payload("snapdog/", "SnapDog", &cfg.zones[0]);
+        let topics = Topics::new("snapdog/");
+        let p = ha_discovery_payload(&topics, "SnapDog", &cfg.zones[0]);
         assert_eq!(p["name"], "Living Room");
         assert_eq!(p["unique_id"], "snapdog_zone_1");
         assert_eq!(p["state_topic"], "snapdog/zones/1/state");
@@ -749,7 +712,7 @@ mod tests {
         assert_eq!(p["volume_command_topic"], "snapdog/zones/1/volume/set");
         // Must equal the LWT topic (single slash) — guards the snapdog//status bug.
         assert_eq!(p["availability_topic"], "snapdog/status");
-        assert_eq!(p["availability_topic"], availability_topic("snapdog/"));
+        assert_eq!(p["availability_topic"], topics.availability());
         assert_eq!(p["payload_available"], "online");
         assert_eq!(p["payload_not_available"], "offline");
         assert_eq!(p["device"]["identifiers"][0], "snapdog");
@@ -956,6 +919,132 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    // ── Regression: command topics under the real, normalised base topic ──
+    //
+    // `config` appends the trailing slash ("snapdog" becomes "snapdog/"). The bridge
+    // once re-derived the base by hand when parsing, so every inbound command was
+    // dropped in production while the tests (which used "snapdog" without slash)
+    // passed. These tests go through the config deserializer and take the topics
+    // from the function that builds the subscriptions.
+
+    /// A bridge built the way `main` builds it: TOML, config loader, `connect`.
+    /// `connect` is lazy, nothing is dialled until the event loop is polled.
+    async fn bridge_from_toml(base_topic: Option<&str>) -> (MqttBridge, MqttConfig) {
+        let base_line = base_topic.map_or(String::new(), |b| format!("base_topic = \"{b}\""));
+        let toml = format!(
+            r#"
+            [mqtt]
+            broker = "localhost:1883"
+            {base_line}
+
+            [[zone]]
+            name = "Z1"
+            [[zone]]
+            name = "Z2"
+            [[client]]
+            name = "C1"
+            mac = "00:00:00:00:00:01"
+            zone = "Z1"
+            "#
+        );
+        let cfg = crate::config::load_raw(toml::from_str(&toml).unwrap()).unwrap();
+        let mqtt = cfg.mqtt.unwrap();
+        let bridge = MqttBridge::connect(&mqtt, "http://localhost:5555", "SnapDog")
+            .await
+            .unwrap();
+        (bridge, mqtt)
+    }
+
+    /// A payload every command accepts.
+    fn valid_payload(tail: &str) -> &'static str {
+        match tail {
+            "volume/set" => "50",
+            "mute/set" | "shuffle/set" | "presence/set" | "presence/enable/set" => "true",
+            "control/set" => "play",
+            "repeat/set" => "all",
+            "position/set" | "track/position/set" => "30",
+            "track/set" | "zone/set" => "2",
+            "playlist/set" => "1",
+            "presence/timeout/set" => "60",
+            "latency/set" => "20",
+            other => panic!("no sample payload for {other}: extend valid_payload"),
+        }
+    }
+
+    #[tokio::test]
+    async fn command_on_default_normalised_base_is_not_dropped() {
+        // The exact topic from the bug report, with the base the config really produces.
+        let bridge = MqttBridge::test_bridge("snapdog/");
+        let (snap_tx, _snap_rx) = snap_channel();
+        let (cmds, mut rx) = zone_channels();
+        let state = test_state_with_client();
+        bridge
+            .handle_command("snapdog/zones/1/volume/set", "75", &cmds, &state, &snap_tx)
+            .await
+            .unwrap();
+        assert!(matches!(rx.recv().await, Some(ZoneCommand::SetVolume(75))));
+    }
+
+    #[tokio::test]
+    async fn every_subscribed_topic_is_handled_under_the_real_config_base() {
+        for (configured, effective) in [
+            (None, "snapdog/"),
+            (Some("snapdog"), "snapdog/"),
+            (Some("snapdog/"), "snapdog/"),
+            (Some("home/audio"), "home/audio/"),
+            (Some("home/audio/"), "home/audio/"),
+        ] {
+            let (bridge, mqtt) = bridge_from_toml(configured).await;
+            assert_eq!(mqtt.base_topic, effective, "config normalisation");
+
+            let filters: Vec<String> = bridge.subscription_topics().collect();
+            assert_eq!(
+                filters.len(),
+                16,
+                "documented command set, base {effective}"
+            );
+            for filter in filters {
+                assert!(filter.starts_with(effective), "{filter}");
+                // A concrete topic that this very subscription delivers.
+                let topic = filter.replace('+', "1");
+                let tail = topic
+                    .strip_prefix(effective)
+                    .and_then(|t| t.split_once("/1/"))
+                    .map(|(_, tail)| tail)
+                    .expect("scope/1/tail");
+
+                let (snap_tx, mut snap_rx) = snap_channel();
+                let (cmds, mut zone_rx) = zone_channels();
+                let state = test_state_with_client();
+                bridge
+                    .handle_command(&topic, valid_payload(tail), &cmds, &state, &snap_tx)
+                    .await
+                    .unwrap_or_else(|e| panic!("{topic} was rejected: {e}"));
+                assert!(
+                    zone_rx.try_recv().is_ok() || snap_rx.try_recv().is_ok(),
+                    "{topic} (subscribed) produced no command"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_topic_outside_the_normalised_base() {
+        let bridge = MqttBridge::test_bridge("snapdog/");
+        let (snap_tx, _snap_rx) = snap_channel();
+        let (cmds, _rx) = zone_channels();
+        let state = test_state_with_client();
+        for topic in ["other/zones/1/volume/set", "snapdogs/zones/1/volume/set"] {
+            assert!(
+                bridge
+                    .handle_command(topic, "50", &cmds, &state, &snap_tx)
+                    .await
+                    .is_err(),
+                "{topic}"
+            );
+        }
     }
 
     #[tokio::test]

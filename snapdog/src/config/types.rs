@@ -823,14 +823,24 @@ pub struct MqttConfig {
     pub base_topic: String,
 }
 
-fn deserialize_base_topic<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<String, D::Error> {
-    let mut v = String::deserialize(deserializer)?;
+/// Normalise an MQTT base topic to end in exactly one `/`. Idempotent.
+///
+/// The single definition of the normalisation: the config deserializer and the
+/// MQTT bridge's topic scheme both call it, so a base topic means the same thing
+/// wherever it is read.
+#[must_use]
+pub fn normalize_base_topic(base: &str) -> String {
+    let mut v = base.to_string();
     if !v.ends_with('/') {
         v.push('/');
     }
-    Ok(v)
+    v
+}
+
+fn deserialize_base_topic<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    Ok(normalize_base_topic(&String::deserialize(deserializer)?))
 }
 
 fn default_mqtt_client_id() -> String {
