@@ -1795,4 +1795,56 @@ zone = "Z1"
         assert_eq!(prog.1, DPT_SCALING);
         assert_eq!(dpt::encode(prog.1, &prog.2).unwrap(), vec![0x4D]); // 30% → round(76.5)=77
     }
+
+    /// Radio and Subsonic playback make the zone announce itself every second because the
+    /// position is part of the state. The publisher used to rewrite every configured status
+    /// address each time; measure what reaches the bus now.
+    #[tokio::test(start_paused = true)]
+    #[allow(clippy::significant_drop_tightening)] // guard held only for the multi-field seed
+    async fn a_minute_of_playback_ticks_stays_quiet() {
+        const TICKS: usize = 60;
+        const ADDRESSES: usize = 8; // the status addresses of cfg_with_status_gas
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        {
+            let mut s = store.write().await;
+            let z = s.zones.get_mut(&1).unwrap();
+            z.playback = state::PlaybackState::Playing;
+            z.track = Some(track(0, 200_000)); // a 200 s track
+        }
+        let rec = Rec::default();
+        let mut sink = StatusSink::new(&rec);
+
+        for tick in 0..TICKS {
+            {
+                let mut s = store.write().await;
+                s.zones.get_mut(&1).unwrap().track =
+                    Some(track(i64::try_from(tick).unwrap() * 1000, 200_000));
+            }
+            // What the publisher does for every ZoneChanged.
+            publish_zone_state(1, &cfg, &store, &mut sink).await;
+            publish_zone_track(1, &cfg, &store, &mut sink).await;
+            publish_all_mute_status(&cfg, &store, &mut sink).await;
+            tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        }
+
+        let offered = TICKS * ADDRESSES;
+        let sent = rec.count();
+        println!("{TICKS} ticks, {offered} values offered, {sent} telegrams sent");
+        // The first tick sends all addresses; afterwards only progress moves: one whole
+        // percent per two seconds on this track.
+        assert!(
+            sent <= ADDRESSES + TICKS / 2 + 2,
+            "{sent} telegrams for {TICKS} ticks"
+        );
+        assert!(sent >= ADDRESSES, "the first tick sends everything");
+        let progress = written(&rec)
+            .iter()
+            .filter(|(g, _, _)| g == "1/1/8")
+            .count();
+        assert!(
+            progress >= TICKS / 2 - 1,
+            "progress still advances ({progress})"
+        );
+    }
 }
