@@ -273,6 +273,11 @@ zone = "Living"
 }
 
 async fn start_device(cfg: &config::AppConfig, memory: PathBuf) -> Device {
+    // `RUST_LOG=snapdog=info cargo test ... -- --nocapture` shows the startup summary.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_test_writer()
+        .try_init();
     let store = state::init(cfg, None).unwrap();
     // Commands for a client only go out once Snapcast has told us its id.
     store.write().await.clients.get_mut(&1).unwrap().snapcast_id = Some("snap-1".into());

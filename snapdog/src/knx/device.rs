@@ -594,7 +594,9 @@ impl TableSummary {
             configured = self.configured,
             "KNX device: group objects associated with group addresses"
         );
-        if self.associations == 0 {
+        // A download in progress has loaded the address table before the associations.
+        let downloading = origin == "ETS download" && !self.configured;
+        if self.associations == 0 && !downloading {
             tracing::warn!(
                 "KNX device: no group object is associated with a group address, so snapdog \
                  neither reacts to nor sends group telegrams. Download the .knxprod from ETS \
