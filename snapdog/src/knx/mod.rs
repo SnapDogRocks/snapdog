@@ -1594,6 +1594,84 @@ volume = "2/0/1"
         assert_eq!(m.get("2/0/1").copied(), Some((1usize, "volume")));
     }
 
+    // ── Group address notation ───────────────────────────────────────
+
+    /// A zone whose command addresses are written in 2-level and zero-padded notation, and
+    /// a global address in 2-level notation.
+    fn cfg_with_mixed_notation() -> crate::config::AppConfig {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+all_stop = "0/9"
+
+[[zone]]
+name = "Z1"
+[zone.knx]
+play = "1/2047"
+volume = "01/0/06"
+pause = "1/0/3"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+"#;
+        let raw: crate::config::FileConfig = toml::from_str(toml).unwrap();
+        crate::config::load_raw(raw).unwrap()
+    }
+
+    #[test]
+    fn ga_maps_are_keyed_by_the_three_level_form() {
+        let cfg = cfg_with_mixed_notation();
+        let zones = build_zone_ga_map(&cfg);
+        assert_eq!(zones.get("1/7/255").copied(), Some((1usize, "play")));
+        assert_eq!(zones.get("1/0/6").copied(), Some((1usize, "volume")));
+        assert_eq!(zones.get("1/0/3").copied(), Some((1usize, "pause")));
+        assert!(
+            !zones.contains_key("1/2047"),
+            "2-level key would never match"
+        );
+        assert_eq!(
+            build_global_ga_map(&cfg).get("0/0/9").copied(),
+            Some("all_stop")
+        );
+    }
+
+    #[tokio::test]
+    async fn telegrams_match_addresses_configured_in_two_level_notation() {
+        let cfg = cfg_with_mixed_notation();
+        let (tx, mut rx) = mpsc::channel(4);
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let cmds = HashMap::from([(1, tx)]);
+        handle_incoming(
+            ga("1/7/255"),
+            &[],
+            &build_zone_ga_map(&cfg),
+            &build_client_ga_map(&cfg),
+            &build_global_ga_map(&cfg),
+            &cmds,
+            &snap_tx,
+            &test_state(),
+            false,
+        )
+        .await;
+        assert!(matches!(rx.try_recv(), Ok(ZoneCommand::Play)));
+        handle_incoming(
+            ga("0/0/9"),
+            &[],
+            &build_zone_ga_map(&cfg),
+            &build_client_ga_map(&cfg),
+            &build_global_ga_map(&cfg),
+            &cmds,
+            &snap_tx,
+            &test_state(),
+            false,
+        )
+        .await;
+        assert!(matches!(rx.try_recv(), Ok(ZoneCommand::Stop)));
+    }
+
     // ── IT-T42: publisher — status GOs with fixed DPTs + progress scaling ──
 
     type Rec = sink::testing::Recorder<true>;
