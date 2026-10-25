@@ -84,6 +84,41 @@ pub fn display_key_path(path: &str) -> String {
     out
 }
 
+/// Expand a leading `~` or `~/` to the user's home directory. Other forms
+/// (`~user`, a `~` elsewhere) and a missing home directory leave the text unchanged.
+#[must_use]
+pub fn expand_tilde(path: &str) -> String {
+    let home = || {
+        std::env::var("HOME")
+            .ok()
+            .or_else(|| std::env::var("USERPROFILE").ok())
+            .filter(|h| !h.is_empty())
+    };
+    if path == "~" {
+        return home().unwrap_or_else(|| path.to_string());
+    }
+    match (path.strip_prefix("~/"), home()) {
+        (Some(rest), Some(home)) => format!("{}/{rest}", home.trim_end_matches('/')),
+        _ => path.to_string(),
+    }
+}
+
+/// Apply `~` expansion to every path-valued key a user writes by hand.
+fn expand_paths(raw: &mut FileConfig) {
+    raw.system.state_dir = expand_tilde(&raw.system.state_dir);
+    raw.system.log_file = raw.system.log_file.take().map(|p| expand_tilde(&p));
+    if let Some(subsonic) = raw.subsonic.as_mut() {
+        subsonic.cache.path = expand_tilde(&subsonic.cache.path);
+    }
+    let expand = |p: &mut Option<std::path::PathBuf>| {
+        if let Some(path) = p.as_ref().and_then(|p| p.to_str()) {
+            *p = Some(std::path::PathBuf::from(expand_tilde(path)));
+        }
+    };
+    expand(&mut raw.http.tls_cert);
+    expand(&mut raw.http.tls_key);
+}
+
 /// Resolve raw TOML config into fully populated `AppConfig` with conventions applied.
 ///
 /// # Errors
@@ -102,7 +137,8 @@ pub fn load_raw_no_validate(raw: FileConfig) -> Result<AppConfig> {
     load_raw_inner(raw, true)
 }
 
-fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConfig> {
+fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<AppConfig> {
+    expand_paths(&mut raw);
     if !skip_zone_validation {
         anyhow::ensure!(
             !raw.zone.is_empty(),
@@ -1042,7 +1078,63 @@ mod tests {
         assert!(load_raw(raw).is_ok());
     }
 
-    // ── environment overrides, re-validation ──────
+    // ── `~` expansion, environment overrides, re-validation ──────
+
+    fn home() -> Option<String> {
+        std::env::var("HOME").ok().filter(|h| !h.is_empty())
+    }
+
+    #[test]
+    fn tilde_expands_only_at_the_start() {
+        let Some(home) = home() else { return };
+        assert_eq!(expand_tilde("~"), home);
+        assert_eq!(
+            expand_tilde("~/.cache/snapdog/tracks"),
+            format!("{}/.cache/snapdog/tracks", home.trim_end_matches('/'))
+        );
+        assert_eq!(expand_tilde("/var/~/x"), "/var/~/x");
+        assert_eq!(expand_tilde("~other/x"), "~other/x");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+    }
+
+    #[test]
+    fn tilde_is_expanded_in_every_user_written_path() {
+        let Some(home) = home() else { return };
+        let config = load_str(
+            r#"
+            [system]
+            state_dir = "~/state"
+            log_file = "~/snapdog.log"
+            [http]
+            tls_cert = "~/cert.pem"
+            tls_key = "~/key.pem"
+            [subsonic]
+            url = "http://navidrome:4533"
+            username = "u"
+            password = "p"
+            [subsonic.cache]
+            path = "~/.cache/snapdog/tracks"
+            [[zone]]
+            name = "A"
+        "#,
+        )
+        .unwrap();
+        let prefix = home.trim_end_matches('/');
+        assert_eq!(config.system.state_dir, format!("{prefix}/state"));
+        assert_eq!(
+            config.system.log_file.as_deref(),
+            Some(format!("{prefix}/snapdog.log").as_str())
+        );
+        assert_eq!(
+            config.http.tls_cert.as_deref().and_then(|p| p.to_str()),
+            Some(format!("{prefix}/cert.pem").as_str())
+        );
+        assert_eq!(
+            config.subsonic.unwrap().cache.path,
+            format!("{prefix}/.cache/snapdog/tracks")
+        );
+    }
+
     #[test]
     fn unparsable_http_port_variable_is_reported() {
         let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
@@ -1060,6 +1152,7 @@ mod tests {
         override_http_port(&mut config, None);
         assert_eq!(config.http.port, 8080);
     }
+
 
     #[test]
     fn revalidation_does_not_repeat_notices() {
