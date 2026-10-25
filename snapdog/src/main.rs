@@ -349,14 +349,20 @@ pub async fn run_app() -> Result<()> {
     // instead of crashing mid-startup or silently degrading.
 
     // HTTP API listener — passed into api::serve() so no TOCTOU window.
-    let http_addr = format!("{}:{}", config.http.bind, config.http.port);
-    let http_listener = tokio::net::TcpListener::bind(&http_addr)
+    let http_listener = api::bind_http_listener(&config.http.bind, config.http.port)
         .await
-        .with_context(|| {
-            format!(
-                "HTTP API port {} is already in use — is snapdog already running?",
-                config.http.port
-            )
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                anyhow::anyhow!(
+                    "HTTP API port {} is already in use — is snapdog already running?",
+                    config.http.port
+                )
+            } else {
+                anyhow::Error::new(e).context(format!(
+                    "cannot bind the HTTP API to {}:{}",
+                    config.http.bind, config.http.port
+                ))
+            }
         })?;
 
     // Snapcast streaming port — probe-bind then immediately release so the
