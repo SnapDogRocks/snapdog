@@ -3,12 +3,11 @@
 
 //! Client-mode KNX transport — connects to an external KNX/IP gateway.
 
-use knx_rs_core::address::GroupAddress;
 use knx_rs_core::dpt::{Dpt, DptValue};
 use knx_rs_ip::multiplex::MultiplexHandle;
 use knx_rs_ip::ops::GroupOps;
 
-use super::transport::{KnxListener, KnxPublisher};
+use super::transport::{Incoming, KnxListener, KnxPublisher, Target};
 
 /// Client-mode publisher: sends group writes via a `MultiplexHandle`.
 pub struct ClientPublisher {
@@ -22,10 +21,17 @@ impl ClientPublisher {
 }
 
 impl KnxPublisher for ClientPublisher {
-    async fn write(&self, ga: GroupAddress, dpt: Dpt, value: &DptValue) {
+    const ADDRESSED: bool = true;
+
+    async fn write(&self, target: Target, dpt: Dpt, value: &DptValue) -> bool {
+        let Target::Address(ga) = target else {
+            return false;
+        };
         if let Err(e) = self.handle.group_write_value(ga, dpt, value).await {
             tracing::warn!(ga = %ga, error = %e, "KNX write failed");
+            return false;
         }
+        true
     }
 }
 
@@ -41,11 +47,11 @@ impl ClientListener {
 }
 
 impl KnxListener for ClientListener {
-    async fn recv_group_write(&mut self) -> Option<(GroupAddress, Vec<u8>)> {
+    async fn recv(&mut self) -> Option<Incoming> {
         loop {
             let cemi = self.handle.recv().await?;
-            if let Some(result) = cemi.as_group_write() {
-                return Some(result);
+            if let Some((ga, data)) = cemi.as_group_write() {
+                return Some(Incoming::Address(ga, data));
             }
         }
     }

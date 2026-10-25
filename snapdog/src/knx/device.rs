@@ -9,16 +9,19 @@
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use knx_rs_core::address::{GroupAddress, IndividualAddress};
+use knx_rs_core::cemi::CemiFrame;
 use knx_rs_core::dpt::{Dpt, DptValue};
 use knx_rs_device::bau::Bau;
 use knx_rs_device::device_object;
 use knx_rs_ip::tunnel_server::{DeviceServer, ServerEvent};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Notify, mpsc, oneshot};
 
 use super::group_objects::mem;
+use super::transport::{Incoming, Target};
 
 /// Current monotonic time in milliseconds (for transport layer timeouts).
 fn now_ms() -> u64 {
@@ -39,8 +42,9 @@ fn device_serial() -> [u8; 6] {
     [0x00, 0xFA, mac[2], mac[3], mac[4], mac[5]]
 }
 
-/// Maximum concurrent KNXnet/IP tunnelling connections.
-const MAX_TUNNEL_CONNECTIONS: usize = 1;
+/// Buffer size in bytes of a group object before its DPT is set (the third argument of
+/// `Bau::new`). Every object gets its DPT in [`build_bau`], which grows the buffer as needed.
+const DEFAULT_GO_SIZE: usize = 1;
 
 /// Channel buffer size for BAU command/update channels.
 const BAU_CHANNEL_CAPACITY: usize = 64;
@@ -134,7 +138,8 @@ fn crc32(data: &[u8]) -> u32 {
 use super::group_objects::{
     self, CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS,
     CGO_MUTE_TOGGLE, CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS,
-    CLIENT_GOS, MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZGO_CONTROL_STATUS, ZGO_MUTE,
+    CLIENT_GOS, GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE, GGO_SYSTEM_FAULT,
+    MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZGO_CONTROL_STATUS, ZGO_MUTE,
     ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT,
     ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
     ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
@@ -383,12 +388,8 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
 
 /// Command sent to the BAU task.
 enum BauCmd {
-    /// Write a DPT-encoded value to a group object by GA string.
-    Write {
-        ga: GroupAddress,
-        dpt: Dpt,
-        value: DptValue,
-    },
+    /// Write a value to a group object. The programmed associations decide the address.
+    WriteObject { asap: u16, value: DptValue },
     /// Set programming mode on/off.
     SetProgMode { enabled: bool },
     /// Get current programming mode state.
@@ -400,6 +401,7 @@ enum BauCmd {
 pub struct DevicePublisher {
     cmd_tx: mpsc::Sender<BauCmd>,
     local_addr: std::net::SocketAddr,
+    resync: Arc<Notify>,
 }
 
 impl DevicePublisher {
@@ -428,7 +430,7 @@ impl super::transport::KnxDeviceControl for DevicePublisher {
 
 /// Device-mode listener: receives group object updates from the BAU task.
 pub struct DeviceListener {
-    update_rx: mpsc::Receiver<(GroupAddress, Vec<u8>)>,
+    update_rx: mpsc::Receiver<(u16, Vec<u8>)>,
 }
 
 /// Overrides for the device transport's environment.
@@ -444,6 +446,104 @@ pub struct DeviceOptions {
     pub memory_path: Option<PathBuf>,
 }
 
+/// Start the KNXnet/IP server (UDP 3671 plus multicast, or the test address).
+async fn open_server(bind: Option<std::net::SocketAddr>) -> Result<DeviceServer> {
+    match bind {
+        Some(addr) => DeviceServer::start_at(addr).await,
+        None => DeviceServer::start(Ipv4Addr::UNSPECIFIED).await,
+    }
+    .context("Failed to start KNX device server")
+}
+
+/// What the BAU holds in its address and association tables, for the startup log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TableSummary {
+    /// Group addresses in the address table.
+    pub group_addresses: u16,
+    /// Entries in the association table.
+    pub associations: u16,
+    /// Zone objects with at least one association.
+    pub zone_objects: usize,
+    /// Client objects with at least one association.
+    pub client_objects: usize,
+    /// Device-level objects with at least one association.
+    pub global_objects: usize,
+    /// Whether the BAU takes part in group communication (tables and application loaded).
+    pub configured: bool,
+}
+
+impl TableSummary {
+    /// Read the counts from `bau`.
+    pub(super) fn of(bau: &Bau) -> Self {
+        let zone_end = (MAX_ZONES * group_objects::ZONE_GO_COUNT) as u16;
+        let client_end = zone_end + (MAX_CLIENTS * group_objects::CLIENT_GO_COUNT) as u16;
+        let mut s = Self {
+            group_addresses: bau.address_table().entry_count(),
+            associations: bau.association_table().entry_count(),
+            zone_objects: 0,
+            client_objects: 0,
+            global_objects: 0,
+            configured: bau.configured(),
+        };
+        for asap in 1..=TOTAL_GO_COUNT as u16 {
+            if bau.association_table().translate_asap(asap).is_none() {
+                continue;
+            }
+            if asap <= zone_end {
+                s.zone_objects += 1;
+            } else if asap <= client_end {
+                s.client_objects += 1;
+            } else {
+                s.global_objects += 1;
+            }
+        }
+        s
+    }
+
+    /// Log the summary, and a warning when nothing is associated.
+    pub(super) fn log(&self, origin: &str) {
+        tracing::info!(
+            origin,
+            group_addresses = self.group_addresses,
+            associations = self.associations,
+            zone_objects = self.zone_objects,
+            client_objects = self.client_objects,
+            global_objects = self.global_objects,
+            configured = self.configured,
+            "KNX device: group objects associated with group addresses"
+        );
+        if self.associations == 0 {
+            tracing::warn!(
+                "KNX device: no group object is associated with a group address, so snapdog \
+                 neither reacts to nor sends group telegrams. Download the .knxprod from ETS \
+                 to this device or configure [[zone]].knx / [[client]].knx addresses."
+            );
+        }
+    }
+}
+
+/// Restore the persisted ETS programming into `bau`, if there is any.
+fn restore_state(bau: &mut Bau, path: &std::path::Path) {
+    match load_memory(path) {
+        Ok(data) => {
+            if bau.restore(&data).is_ok() {
+                tracing::info!(
+                    path = %path.display(),
+                    addr_table = ?bau.addr_table_object().load_state(),
+                    assoc_table = ?bau.assoc_table_object().load_state(),
+                    "Restored ETS device state"
+                );
+            } else {
+                tracing::warn!(path = %path.display(), "ETS state restore failed — ETS will need to reprogram");
+            }
+        }
+        Err(e) if path.exists() => {
+            tracing::warn!(path = %path.display(), error = %e, "Discarding corrupted ETS memory file — ETS will need to reprogram");
+        }
+        Err(_) => {}
+    }
+}
+
 /// Start the device server and BAU, returning a publisher/listener pair.
 pub async fn start_device_transport(
     individual_address: &str,
@@ -452,12 +552,6 @@ pub async fn start_device_transport(
 ) -> Result<(DevicePublisher, DeviceListener, Option<EtsParams>)> {
     let ia = IndividualAddress::from_str(individual_address)
         .map_err(|e| anyhow::anyhow!("Invalid individual address: {e}"))?;
-
-    let server = match options.bind {
-        Some(addr) => DeviceServer::start_at(addr).await,
-        None => DeviceServer::start(Ipv4Addr::UNSPECIFIED).await,
-    }
-    .context("Failed to start KNX device server")?;
 
     let knx = config.knx.as_ref().expect("KNX config required");
     let persist = knx.persist_ets_config.unwrap_or(true);
@@ -474,33 +568,16 @@ pub async fn start_device_transport(
     };
 
     // Build BAU and restore state before spawning the task
-    let mut bau = build_bau(ia, config);
+    let mut bau = build_bau(ia);
     let mut ets_params = None;
-
     if let Some(ref path) = persist_path {
-        match load_memory(path) {
-            Ok(data) => {
-                if bau.restore(&data).is_ok() {
-                    tracing::info!(
-                        path = %path.display(),
-                        addr_table = ?bau.addr_table_object().load_state(),
-                        assoc_table = ?bau.assoc_table_object().load_state(),
-                        "Restored ETS device state"
-                    );
-                } else {
-                    tracing::warn!(path = %path.display(), "ETS state restore failed — ETS will need to reprogram");
-                }
-            }
-            Err(e) if path.exists() => {
-                tracing::warn!(path = %path.display(), error = %e, "Discarding corrupted ETS memory file — ETS will need to reprogram");
-            }
-            Err(_) => {}
-        }
+        restore_state(&mut bau, path);
     }
 
-    let ets_programmed = bau.configured();
-    if ets_programmed {
-        tracing::info!("Using ETS-programmed group address tables (TOML KNX addresses ignored)");
+    let origin = if bau.configured() {
+        tracing::info!(
+            "Using ETS-programmed group address tables (TOML KNX addresses are not used for the device tables)"
+        );
         let ets = parse_ets_memory(bau.memory_area());
         tracing::info!(
             zones = ets.zone_active.iter().filter(|&&a| a).count(),
@@ -511,10 +588,15 @@ pub async fn start_device_transport(
             "ETS parameters loaded"
         );
         ets_params = Some(ets);
-    } else {
+        "ETS programming"
+    } else if build_tables_from_config(&mut bau, config) {
         tracing::info!("No ETS programming found — using group addresses from TOML config");
-        build_tables_from_config(&mut bau, config);
-    }
+        "TOML configuration"
+    } else {
+        tracing::info!("No ETS programming and no TOML group addresses");
+        "none"
+    };
+    TableSummary::of(&bau).log(origin);
 
     let (cmd_tx, cmd_rx) = mpsc::channel(BAU_CHANNEL_CAPACITY);
     let (update_tx, update_rx) = mpsc::channel(BAU_CHANNEL_CAPACITY);
@@ -525,64 +607,106 @@ pub async fn start_device_transport(
         tracing::info!("KNX programming mode active (--knx-prog-mode)");
     }
 
+    let server = open_server(options.bind).await?;
     let local_addr = server.local_addr();
-    tokio::spawn(bau_task_loop(
-        bau,
-        server,
-        cmd_rx,
-        update_tx,
-        persist_path,
-        restart_after_ets,
-    ));
+
+    let resync = Arc::new(Notify::new());
+    let resync_task = Arc::clone(&resync);
+    tokio::spawn(async move {
+        let mut task = DeviceTask {
+            bau,
+            cmd_rx,
+            update_tx,
+            persist_path,
+            restart_after_ets,
+            resync: resync_task,
+        };
+        bau_task_loop(&mut task, server).await;
+        tracing::info!("KNX BAU task ended");
+    });
 
     tracing::info!(%individual_address, persist, "KNX device mode started");
 
     Ok((
-        DevicePublisher { cmd_tx, local_addr },
+        DevicePublisher {
+            cmd_tx,
+            local_addr,
+            resync,
+        },
         DeviceListener { update_rx },
         ets_params,
     ))
 }
 
 impl super::transport::KnxPublisher for DevicePublisher {
-    async fn write(&self, ga: GroupAddress, dpt: Dpt, value: &DptValue) {
-        let _ = self
-            .cmd_tx
-            .send(BauCmd::Write {
-                ga,
-                dpt,
+    const ADDRESSED: bool = false;
+
+    async fn write(&self, target: Target, _dpt: Dpt, value: &DptValue) -> bool {
+        let Target::Object(asap) = target else {
+            return false;
+        };
+        self.cmd_tx
+            .send(BauCmd::WriteObject {
+                asap,
                 value: value.clone(),
             })
-            .await;
+            .await
+            .is_ok()
+    }
+
+    async fn resync(&self) {
+        self.resync.notified().await;
     }
 }
 
 impl super::transport::KnxListener for DeviceListener {
-    async fn recv_group_write(&mut self) -> Option<(GroupAddress, Vec<u8>)> {
-        self.update_rx.recv().await
+    async fn recv(&mut self) -> Option<Incoming> {
+        let (asap, data) = self.update_rx.recv().await?;
+        Some(Incoming::Object(asap, data))
     }
 }
 
 // ── BAU task ──────────────────────────────────────────────────
 
-async fn bau_task_loop(
-    mut bau: Bau,
-    mut server: DeviceServer,
-    mut cmd_rx: mpsc::Receiver<BauCmd>,
-    update_tx: mpsc::Sender<(GroupAddress, Vec<u8>)>,
+/// Everything the BAU task owns.
+struct DeviceTask {
+    bau: Bau,
+    cmd_rx: mpsc::Receiver<BauCmd>,
+    update_tx: mpsc::Sender<(u16, Vec<u8>)>,
     persist_path: Option<PathBuf>,
     restart_after_ets: bool,
-) {
+    resync: Arc<Notify>,
+}
+
+/// Why [`bau_task_loop`] returned.
+#[derive(Debug, PartialEq, Eq)]
+enum LoopEnd {
+    /// The KNXnet/IP server stopped.
+    ServerClosed,
+    /// Nobody can send commands any more.
+    Stopped,
+}
+
+#[allow(clippy::too_many_lines)] // One select loop over server events, commands and the persist timer
+async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopEnd {
+    let DeviceTask {
+        bau,
+        cmd_rx,
+        update_tx,
+        persist_path,
+        restart_after_ets,
+        resync,
+    } = task;
     let mut memory_dirty = false;
     let persist_timer = tokio::time::sleep(ETS_PERSIST_DEBOUNCE);
     tokio::pin!(persist_timer);
     let mut persist_armed = false;
     let mut tunnel_active = false;
 
-    loop {
+    let end = loop {
         tokio::select! {
             event = server.recv() => {
-                let Some(event) = event else { break };
+                let Some(event) = event else { break LoopEnd::ServerClosed };
                 let is_tunnel = matches!(event, ServerEvent::TunnelFrame(_));
                 let frame = match event {
                     ServerEvent::TunnelFrame(f) | ServerEvent::RoutingFrame(f) => f,
@@ -597,6 +721,7 @@ async fn bau_task_loop(
                     );
                 }
 
+                let before = TableSummary::of(bau);
                 bau.process_frame(&frame, now_ms());
                 bau.poll(now_ms());
 
@@ -609,6 +734,13 @@ async fn bau_task_loop(
                     memory_dirty = true;
                     persist_timer.as_mut().reset(tokio::time::Instant::now() + ETS_PERSIST_DEBOUNCE);
                     persist_armed = true;
+                }
+
+                // Log (and re-publish) when a download changed what is associated.
+                let after = TableSummary::of(bau);
+                if after != before {
+                    after.log("ETS download");
+                    resync.notify_one();
                 }
 
                 // An A_Restart / master reset from ETS ends the programming session
@@ -633,7 +765,7 @@ async fn bau_task_loop(
                                 tracing::info!(bytes = state.len(), "ETS programming persisted before restart");
                             }
                         }
-                    if restart_after_ets {
+                    if *restart_after_ets {
                         // Reboot into the new programming — the boot-time config
                         // path (KEA-0004) then applies the ETS parameters.
                         tracing::info!("ETS programming complete — restarting snapdog to apply parameters");
@@ -645,14 +777,14 @@ async fn bau_task_loop(
                     }
                 }
 
-                dispatch_updated_gos(&mut bau, &update_tx).await;
+                dispatch_updated_gos(bau, update_tx).await;
             }
 
             cmd = cmd_rx.recv() => {
-                let Some(cmd) = cmd else { break };
+                let Some(cmd) = cmd else { break LoopEnd::Stopped };
                 match cmd {
-                    BauCmd::Write { ga, dpt, value } => {
-                        handle_write(&mut bau, &server, ga, dpt, &value).await;
+                    BauCmd::WriteObject { asap, value } => {
+                        write_object(bau, &server, asap, &value).await;
                     }
                     BauCmd::SetProgMode { enabled } => {
                         knx_rs_device::device_object::set_prog_mode(bau.device_mut(), enabled);
@@ -669,15 +801,15 @@ async fn bau_task_loop(
                 persist_armed = false;
                 memory_dirty = false;
                 tunnel_active = false;
-                if let Some(ref path) = persist_path {
+                if let Some(ref path) = *persist_path {
                     spawn_persist(bau.save(), path.clone());
                 }
             }
         }
-    }
+    };
 
-    // Persist on shutdown if dirty
-    if memory_dirty && let Some(ref path) = persist_path {
+    // Persist on the way out if dirty
+    if memory_dirty && let Some(ref path) = *persist_path {
         let state = bau.save();
         if let Err(e) = persist_memory(path, &state) {
             tracing::warn!(error = %e, "Failed to persist ETS state on shutdown");
@@ -685,8 +817,8 @@ async fn bau_task_loop(
             tracing::info!(path = %path.display(), "ETS state persisted on shutdown");
         }
     }
-
-    tracing::info!("KNX BAU task ended");
+    server.stop().await;
+    end
 }
 
 /// Persist a saved BAU memory snapshot to `path` in a blocking task, logging the
@@ -709,23 +841,23 @@ fn spawn_persist(state: Vec<u8>, path: PathBuf) {
 /// real KNX device transport starts (KEA-0004 boot-time apply).
 pub(super) fn load_persisted_ets_params(ia: IndividualAddress) -> Option<EtsParams> {
     let data = load_memory(std::path::Path::new(ETS_MEMORY_PATH)).ok()?;
-    let device = device_object::new_device_object(device_serial(), group_objects::HARDWARE_TYPE);
-    let mut bau = Bau::new(device, TOTAL_GO_COUNT as u16, MAX_TUNNEL_CONNECTIONS);
-    device_object::set_individual_address(bau.device_mut(), ia.raw());
+    let mut bau = build_bau(ia);
     if bau.restore(&data).is_err() || !bau.configured() {
         return None;
     }
     Some(parse_ets_memory(bau.memory_area()))
 }
 
-/// Build a BAU with 460 group objects configured with correct DPTs,
-/// and address/association tables from TOML config.
-fn build_bau(ia: IndividualAddress, config: &crate::config::AppConfig) -> Bau {
+/// Build a BAU with all group objects configured with their DPTs and buffer sizes.
+///
+/// The address and association tables stay empty: they come from the persisted ETS
+/// programming or, for a device ETS never programmed, from [`build_tables_from_config`].
+fn build_bau(ia: IndividualAddress) -> Bau {
     let device = device_object::new_device_object(
         device_serial(),
         group_objects::HARDWARE_TYPE, // must match the .knxprod LdCtrlCompareProp (PID 78)
     );
-    let mut bau = Bau::new(device, TOTAL_GO_COUNT as u16, MAX_TUNNEL_CONNECTIONS);
+    let mut bau = Bau::new(device, TOTAL_GO_COUNT as u16, DEFAULT_GO_SIZE);
     device_object::set_individual_address(bau.device_mut(), ia.raw());
 
     // Configure zone GOs with DPTs
@@ -748,15 +880,26 @@ fn build_bau(ia: IndividualAddress, config: &crate::config::AppConfig) -> Bau {
         }
     }
 
-    // Build address table and association table from TOML KNX config
-    build_tables_from_config(&mut bau, config);
+    // Configure the device-level GOs. Without a DPT a write fails with `NoDpt`, and the
+    // default one-byte buffer would cut the three-byte KNX time.
+    for (i, go_def) in group_objects::GLOBAL_GOS.iter().enumerate() {
+        let asap = group_objects::global_asap(i);
+        if let Some(go) = bau.group_objects_mut().get_mut(asap) {
+            go.set_dpt(go_def.dpt);
+        }
+    }
 
     bau
 }
 
-/// Build address and association tables from TOML zone/client KNX addresses.
+/// Build address and association tables from TOML zone/client/global KNX addresses and
+/// install them as if ETS had downloaded them. Returns `false` when no address is configured.
+///
+/// For an object with two addresses (a command and its status), the sending address comes
+/// first: the device stack sends to the first association and treats the others as listening
+/// addresses.
 #[allow(clippy::too_many_lines)] // Table construction from config — linear data flow
-fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
+fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) -> bool {
     // Collect all (GA string, ASAP) pairs
     let mut ga_asap_pairs: Vec<(u16, u16)> = Vec::new();
 
@@ -796,8 +939,8 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
             (&knx.track_album_status, ZGO_TRACK_ALBUM),
             (&knx.track_progress_status, ZGO_TRACK_PROGRESS),
             (&knx.presence, ZGO_PRESENCE),
-            (&knx.presence_enable, ZGO_PRESENCE_ENABLE),
             (&knx.presence_enable_status, ZGO_PRESENCE_ENABLE),
+            (&knx.presence_enable, ZGO_PRESENCE_ENABLE),
             (&knx.presence_timer_status, ZGO_PRESENCE_TIMER_ACTIVE),
         ];
         for (ga_opt, go_idx) in zone_gas {
@@ -836,8 +979,26 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
         }
     }
 
+    if let Some(knx) = config.knx.as_ref() {
+        let global_gas: &[(&Option<String>, usize)] = &[
+            (&knx.server_online, GGO_SERVER_ONLINE),
+            (&knx.all_stop, GGO_ALL_STOP),
+            (&knx.all_mute_status, GGO_ALL_MUTE),
+            (&knx.all_mute, GGO_ALL_MUTE),
+            (&knx.system_fault, GGO_SYSTEM_FAULT),
+            (&knx.knx_time, GGO_KNX_TIME),
+        ];
+        for (ga_opt, go_idx) in global_gas {
+            if let Some(ga_str) = ga_opt
+                && let Ok(ga) = GroupAddress::from_str(ga_str)
+            {
+                ga_asap_pairs.push((ga.raw(), group_objects::global_asap(*go_idx)));
+            }
+        }
+    }
+
     if ga_asap_pairs.is_empty() {
-        return;
+        return false;
     }
 
     // Build address table: unique GAs → TSAPs (1-based)
@@ -851,7 +1012,6 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
     for ga in &unique_gas {
         addr_data.extend_from_slice(&ga.to_be_bytes());
     }
-    bau.address_table_mut().load(&addr_data);
 
     // Build association table: (TSAP, ASAP) pairs
     let mut assoc_data = Vec::new();
@@ -871,36 +1031,120 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) {
         assoc_data.extend_from_slice(&tsap.to_be_bytes());
         assoc_data.extend_from_slice(&asap.to_be_bytes());
     }
-    bau.association_table_mut().load(&assoc_data);
+    install_tables(bau, &addr_data, &assoc_data);
 
     tracing::info!(
         gas = unique_gas.len(),
         associations = assoc_entries.len(),
         "KNX address/association tables loaded from TOML"
     );
+    true
 }
 
-/// Handle a write from the publisher: encode value, write to GO, poll BAU, send frames.
-async fn handle_write(
-    bau: &mut Bau,
-    server: &DeviceServer,
-    ga: GroupAddress,
-    _dpt: Dpt,
-    value: &DptValue,
-) {
-    // Find the ASAP for this GA via the address table
-    let ga_raw = ga.raw();
-    let Some(tsap) = bau.address_table().get_tsap(ga_raw) else {
-        // GA not in address table — can't map to a GO
-        tracing::trace!(ga = %ga, "GA not in address table, skipping write");
-        return;
+/// Source address of the management frames [`install_tables`] feeds the BAU (15.15.255).
+const INSTALL_SOURCE: u16 = 0xFFFF;
+
+/// Cut `data` into pieces an `A_Memory_Write` can carry.
+const INSTALL_CHUNK: usize = 48;
+
+/// A point-to-point `L_Data.ind` management frame from [`INSTALL_SOURCE`] to the device.
+fn management_frame(bau: &Bau, apdu: &[u8]) -> Option<CemiFrame> {
+    let dst = bau.individual_address().raw();
+    let mut f = vec![
+        0x29,
+        0x00,
+        0xB0,
+        0x60,
+        (INSTALL_SOURCE >> 8) as u8,
+        (INSTALL_SOURCE & 0xFF) as u8,
+        (dst >> 8) as u8,
+        (dst & 0xFF) as u8,
+        u8::try_from(apdu.len().checked_sub(1)?).ok()?,
+    ];
+    f.extend_from_slice(apdu);
+    CemiFrame::parse(&f).ok()
+}
+
+/// Load the address and association table into the BAU through the same management
+/// services ETS uses (load state machine plus memory writes), with an empty application
+/// program, and leave the BAU's memory area empty.
+///
+/// The device stack takes part in group communication only when the address table, the
+/// association table and the application program all report *loaded*, and those states are
+/// not reachable from outside the crate. Filling the runtime tables directly would receive
+/// telegrams but never send one.
+fn install_tables(bau: &mut Bau, addr: &[u8], assoc: &[u8]) {
+    use knx_rs_core::message::ApduType;
+
+    const LOAD_STATE_CONTROL: u8 = 5;
+    const OBJ_ADDR_TABLE: u8 = 1;
+    const OBJ_ASSOC_TABLE: u8 = 2;
+    const OBJ_APP_PROGRAM: u8 = 4;
+
+    let header = |t: ApduType| {
+        let b = (t as u16).to_be_bytes();
+        [b[0] & 0x03, b[1]]
+    };
+    let feed = |bau: &mut Bau, apdu: &[u8]| {
+        if let Some(frame) = management_frame(bau, apdu) {
+            bau.process_frame(&frame, now_ms());
+        }
+        // The property read-backs are for a programming tool; there is none.
+        while bau.next_outgoing_frame().is_some() {}
     };
 
-    // Find associated GO and write value
-    for asap in bau.association_table().asaps_for_tsap(tsap) {
-        if let Some(go) = bau.group_objects_mut().get_mut(asap) {
-            let _ = go.set_value_if_changed(value);
+    let mut offset = 0usize;
+    for (obj, data) in [
+        (OBJ_ADDR_TABLE, addr),
+        (OBJ_ASSOC_TABLE, assoc),
+        (OBJ_APP_PROGRAM, &[][..]),
+    ] {
+        let load_control = |payload: &[u8]| {
+            let [hi, lo] = header(ApduType::PropertyValueWrite);
+            let mut a = vec![hi, lo, obj, LOAD_STATE_CONTROL, 0x10, 0x01];
+            a.extend_from_slice(payload);
+            a
+        };
+        feed(bau, &load_control(&[1])); // start loading
+        let mut alloc = vec![0x03, 0x0B];
+        alloc.extend_from_slice(&u32::try_from(data.len()).unwrap_or(0).to_be_bytes());
+        alloc.extend_from_slice(&[0x01, 0x00]); // relative allocation, filled with zeros
+        feed(bau, &load_control(&alloc));
+        for (i, chunk) in data.chunks(INSTALL_CHUNK).enumerate() {
+            let [hi, lo] = header(ApduType::MemoryWrite);
+            let at = u16::try_from(offset + i * INSTALL_CHUNK).unwrap_or(0);
+            let mut a = vec![
+                hi,
+                lo | u8::try_from(chunk.len()).unwrap_or(0),
+                (at >> 8) as u8,
+                (at & 0xFF) as u8,
+            ];
+            a.extend_from_slice(chunk);
+            feed(bau, &a);
         }
+        feed(bau, &load_control(&[2])); // load completed
+        offset += data.len();
+    }
+
+    // The tables now live in the runtime lookup structures. Forget the memory image: it is
+    // not ETS programming and must not be persisted as such, and a later ETS download
+    // allocates the application parameters at offset 0, where `parse_ets_memory` expects them.
+    bau.set_memory_area(Vec::new());
+}
+
+/// Write a value to a group object. The associations decide the address; an object that is
+/// not associated with any address has nowhere to go and is skipped.
+async fn write_object(bau: &mut Bau, server: &DeviceServer, asap: u16, value: &DptValue) {
+    if bau.association_table().translate_asap(asap).is_none() {
+        tracing::trace!(asap, "group object has no group address, skipping write");
+        return;
+    }
+    let Some(go) = bau.group_objects_mut().get_mut(asap) else {
+        return;
+    };
+    if let Err(e) = go.set_value(value) {
+        tracing::warn!(asap, error = %e, "KNX group object write failed");
+        return;
     }
 
     // Poll to send pending writes
@@ -910,31 +1154,26 @@ async fn handle_write(
     }
 }
 
-/// Check all GOs for Updated flag and forward to the listener channel.
-async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(GroupAddress, Vec<u8>)>) {
-    while let Some(asap) = bau.group_objects_mut().next_updated() {
-        if let Some(result) = resolve_go_update(bau, asap) {
-            let _ = update_tx.send(result).await;
-        }
-        // Acknowledge the update
+/// Forward every group object the bus updated to the listener channel.
+async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(u16, Vec<u8>)>) {
+    while let Some(asap) = bau.group_objects().next_updated() {
+        let data = bau
+            .group_objects()
+            .get(asap)
+            .map(|go| go.value_ref().to_vec());
+        // Acknowledge first: a closed channel must not keep this loop spinning.
         if let Some(go) = bau.group_objects_mut().get_mut(asap) {
             go.set_comm_flag(knx_rs_device::group_object::ComFlag::Ok);
+        }
+        if let Some(data) = data {
+            let _ = update_tx.send((asap, data)).await;
         }
     }
 }
 
-/// Find the next updated GO and return its GA + data.
-/// Resolve an ASAP to (`GroupAddress`, data) via the association and address tables.
-fn resolve_go_update(bau: &Bau, asap: u16) -> Option<(GroupAddress, Vec<u8>)> {
-    let go = bau.group_objects().get(asap)?;
-    let data = go.value_ref().to_vec();
-    let tsap = bau.association_table().translate_asap(asap)?;
-    let ga_raw = bau.address_table().get_group_address(tsap)?;
-    Some((GroupAddress::from_raw(ga_raw), data))
-}
-
 #[cfg(test)]
 mod tests {
+    use super::group_objects::zone_asap;
     use super::*;
 
     #[test]
@@ -1003,8 +1242,7 @@ mod tests {
         )
         .unwrap();
         let config = crate::config::load_raw(raw).unwrap();
-        let ia = IndividualAddress::from_raw(0x1101);
-        let bau = build_bau(ia, &config);
+        let bau = bau_from_toml(&config);
 
         // Should have 5 unique GAs
         assert_eq!(bau.address_table().entry_count(), 5);
@@ -1141,15 +1379,40 @@ mod tests {
     }
 
     #[test]
-    fn resolve_go_update_translates_asap_to_group_address() {
+    fn asap_resolves_to_the_toml_group_address() {
+        let bau = bau_from_toml(&toml_config());
+        let ga_of = |asap: u16| {
+            let tsap = bau.association_table().translate_asap(asap)?;
+            bau.address_table().get_group_address(tsap)
+        };
+        // ASAP 1 = zone 1 Play.
+        assert_eq!(
+            ga_of(zone_asap(1, ZGO_PLAY)),
+            Some(GroupAddress::from_str("1/0/1").unwrap().raw())
+        );
+        // A non-existent ASAP resolves to nothing.
+        assert_eq!(ga_of(60000), None);
+    }
+
+    fn toml_config() -> crate::config::AppConfig {
         let raw: crate::config::FileConfig = toml::from_str(
             r#"
+            [knx]
+            role = "device"
+            individual_address = "1.1.100"
+            all_stop = "0/0/1"
+            all_mute = "0/0/2"
+            all_mute_status = "0/0/3"
+            knx_time = "0/0/4"
+
             [[zone]]
             name = "Test"
             [zone.knx]
             play = "1/0/1"
             volume = "1/0/2"
             volume_status = "1/0/3"
+            presence_enable = "1/0/4"
+            presence_enable_status = "1/0/5"
 
             [[client]]
             name = "Speaker"
@@ -1161,14 +1424,120 @@ mod tests {
         "#,
         )
         .unwrap();
-        let config = crate::config::load_raw(raw).unwrap();
-        let bau = build_bau(IndividualAddress::from_raw(0x1101), &config);
+        crate::config::load_raw(raw).unwrap()
+    }
 
-        // ASAP 1 = zone 1 Play → GA 1/0/1, via the asap→tsap→GA translation chain.
-        let (ga, _data) = resolve_go_update(&bau, 1).expect("asap 1 resolves");
-        assert_eq!(ga.raw(), GroupAddress::from_str("1/0/1").unwrap().raw());
+    /// A BAU the way `start_device_transport` builds it for a device ETS never programmed.
+    fn bau_from_toml(config: &crate::config::AppConfig) -> Bau {
+        let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
+        assert!(!bau.configured(), "no tables yet");
+        assert!(build_tables_from_config(&mut bau, config));
+        bau
+    }
 
-        // A non-existent ASAP resolves to None.
-        assert!(resolve_go_update(&bau, 60000).is_none());
+    #[test]
+    fn every_group_object_has_its_dpt_and_a_big_enough_buffer() {
+        let bau = build_bau(IndividualAddress::from_raw(0x1164));
+        let check = |asap: u16, def: &group_objects::GoDefinition| {
+            let go = bau.group_objects().get(asap).unwrap();
+            assert_eq!(go.dpt(), Some(def.dpt), "{} dpt", def.name);
+            assert!(
+                go.value_size() >= def.dpt.data_length() as usize,
+                "{} buffer {} < {}",
+                def.name,
+                go.value_size(),
+                def.dpt.data_length()
+            );
+        };
+        for (i, def) in group_objects::GLOBAL_GOS.iter().enumerate() {
+            check(group_objects::global_asap(i), def);
+        }
+        for (i, def) in ZONE_GOS.iter().enumerate() {
+            check(zone_asap(MAX_ZONES, i), def);
+        }
+        for (i, def) in CLIENT_GOS.iter().enumerate() {
+            check(group_objects::client_asap(MAX_CLIENTS, i), def);
+        }
+        // The KNX time needs all three bytes.
+        let time = bau
+            .group_objects()
+            .get(group_objects::global_asap(GGO_KNX_TIME))
+            .unwrap();
+        assert_eq!(time.value_size(), 3);
+    }
+
+    #[test]
+    fn toml_tables_configure_the_device_so_it_sends() {
+        let mut bau = bau_from_toml(&toml_config());
+        assert!(
+            bau.configured(),
+            "tables installed through the load state machine"
+        );
+        assert_eq!(
+            bau.next_outgoing_frame().map(|_| ()),
+            None,
+            "read-backs discarded"
+        );
+
+        // A status object sends on its TOML address.
+        let go = bau
+            .group_objects_mut()
+            .get_mut(zone_asap(1, ZGO_VOLUME_STATUS))
+            .unwrap();
+        go.set_value(&DptValue::Float(40.0)).unwrap();
+        bau.poll(0);
+        let frame = bau.next_outgoing_frame().expect("status telegram");
+        assert_eq!(
+            frame.destination_address_raw(),
+            GroupAddress::from_str("1/0/3").unwrap().raw()
+        );
+
+        // A global status object does as well.
+        let go = bau
+            .group_objects_mut()
+            .get_mut(group_objects::global_asap(GGO_ALL_MUTE))
+            .unwrap();
+        go.set_value(&DptValue::Bool(true)).unwrap();
+        bau.poll(0);
+        let frame = bau.next_outgoing_frame().expect("all-mute status telegram");
+        assert_eq!(
+            frame.destination_address_raw(),
+            GroupAddress::from_str("0/0/3").unwrap().raw(),
+            "the status address sends, the command address only listens"
+        );
+    }
+
+    #[test]
+    fn object_with_command_and_status_address_sends_on_the_status_address() {
+        let mut bau = bau_from_toml(&toml_config());
+        let go = bau
+            .group_objects_mut()
+            .get_mut(zone_asap(1, ZGO_PRESENCE_ENABLE))
+            .unwrap();
+        go.set_value(&DptValue::Bool(true)).unwrap();
+        bau.poll(0);
+        let frame = bau.next_outgoing_frame().expect("presence-enable status");
+        assert_eq!(
+            frame.destination_address_raw(),
+            GroupAddress::from_str("1/0/5").unwrap().raw()
+        );
+    }
+
+    #[test]
+    fn table_summary_counts_associated_objects_by_kind() {
+        let bau = bau_from_toml(&toml_config());
+        let s = TableSummary::of(&bau);
+        assert!(s.configured);
+        // zone: play, volume, volume_status, presence_enable (x2 addresses, one object)
+        assert_eq!(s.zone_objects, 4);
+        assert_eq!(s.client_objects, 2);
+        // all_stop, all_mute (x2), knx_time
+        assert_eq!(s.global_objects, 3);
+        assert_eq!(s.group_addresses, 11);
+        assert_eq!(s.associations, 11);
+
+        let empty = TableSummary::of(&build_bau(IndividualAddress::from_raw(0x1164)));
+        assert!(!empty.configured);
+        assert_eq!((empty.associations, empty.zone_objects), (0, 0));
     }
 }

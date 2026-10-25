@@ -1,0 +1,677 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Fabian Schmieder
+
+//! KNX device mode over loopback: an ETS-style programmed device must dispatch group
+//! telegrams to zone/client commands and send status values on the programmed addresses.
+//!
+//! The device transport is started through the public `knx::start_with_options` seam on a
+//! loopback UDP port (never 3671, no multicast) and programmed through a real KNXnet/IP
+//! tunnelling connection from knx-rs. The ETS download is *simulated*: the management
+//! telegrams (load state machine, memory writes) are the same cEMI frames knx-rs's own
+//! frame-driven download harness uses, not output of a real ETS.
+
+#![allow(clippy::doc_markdown, clippy::unwrap_used, clippy::expect_used)]
+
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::time::Duration;
+
+use knx_rs_core::address::GroupAddress;
+use knx_rs_core::cemi::CemiFrame;
+use knx_rs_core::dpt::{self, DPT_SCALING, DPT_SWITCH, DptValue};
+use knx_rs_core::message::ApduType;
+use knx_rs_ip::ops::GroupOps;
+use knx_rs_ip::{KnxConnection, TunnelConnection};
+use snapdog::api::ws::Notification;
+use snapdog::config;
+use snapdog::knx::group_objects::{
+    CGO_VOLUME, GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE, ZGO_MUTE,
+    ZGO_MUTE_STATUS, ZGO_PLAY, ZGO_VOLUME, ZGO_VOLUME_STATUS, client_asap, global_asap, mem,
+    zone_asap,
+};
+use snapdog::knx::{self, DeviceOptions};
+use snapdog::player::{ClientAction, SnapcastCmd, ZoneCommand};
+use snapdog::state;
+use tokio::sync::{broadcast, mpsc};
+use tokio::time::timeout;
+
+const T: Duration = Duration::from_secs(5);
+/// Management address of the (simulated) ETS and the device's own address.
+const ETS_IA: u16 = 0xFFB1;
+const DEVICE_IA: u16 = 0x1164; // 1.1.100
+
+// ── ETS download simulation ───────────────────────────────────
+
+fn ga(s: &str) -> GroupAddress {
+    GroupAddress::from_str(s).unwrap()
+}
+
+const fn apci_hdr(t: ApduType) -> [u8; 2] {
+    let b = (t as u16).to_be_bytes();
+    [b[0] & 0x03, b[1]]
+}
+
+/// Point-to-point `L_Data.req` carrying `apdu` from the ETS to the device.
+fn mgmt_frame(dst: u16, apdu: &[u8]) -> CemiFrame {
+    let mut f = vec![
+        0x11,
+        0x00,
+        0xB0,
+        0x60,
+        (ETS_IA >> 8) as u8,
+        (ETS_IA & 0xFF) as u8,
+        (dst >> 8) as u8,
+        (dst & 0xFF) as u8,
+        u8::try_from(apdu.len() - 1).unwrap(),
+    ];
+    f.extend_from_slice(apdu);
+    CemiFrame::parse(&f).unwrap()
+}
+
+/// Broadcast (`group 0`) `L_Data.req`, e.g. for individual-address services.
+#[allow(dead_code)]
+fn broadcast_frame(apdu: &[u8]) -> CemiFrame {
+    let mut f = vec![
+        0x11,
+        0x00,
+        0xB0,
+        0xE0,
+        (ETS_IA >> 8) as u8,
+        (ETS_IA & 0xFF) as u8,
+        0x00,
+        0x00,
+        u8::try_from(apdu.len() - 1).unwrap(),
+    ];
+    f.extend_from_slice(apdu);
+    CemiFrame::parse(&f).unwrap()
+}
+
+fn prop_write(obj: u8, pid: u8, data: &[u8]) -> Vec<u8> {
+    let [hi, lo] = apci_hdr(ApduType::PropertyValueWrite);
+    let mut a = vec![hi, lo, obj, pid, 0x10, 0x01];
+    a.extend_from_slice(data);
+    a
+}
+
+fn mem_write(address: u16, data: &[u8]) -> Vec<u8> {
+    let [hi, lo] = apci_hdr(ApduType::MemoryWrite);
+    let mut a = vec![
+        hi,
+        lo | u8::try_from(data.len()).unwrap(),
+        (address >> 8) as u8,
+        (address & 0xFF) as u8,
+    ];
+    a.extend_from_slice(data);
+    a
+}
+
+/// Write a property and wait for the device's response, as ETS does. A client that keeps
+/// writing while the server waits for its acknowledgement of that response only makes both
+/// sides retry.
+async fn property_write(ets: &mut TunnelConnection, obj: u8, pid: u8, data: Vec<u8>) {
+    ets.send(mgmt_frame(DEVICE_IA, &prop_write(obj, pid, &data)))
+        .await
+        .unwrap();
+    timeout(T, async {
+        loop {
+            let frame = ets.recv().await.expect("tunnel open");
+            if frame.as_group_write().is_none() {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("property response");
+}
+
+/// Group objects the simulated ETS associates with group addresses.
+struct Programming {
+    /// `(group address, ASAP)` in association-table order. The first entry of an object is
+    /// its sending address.
+    links: Vec<(&'static str, u16)>,
+    /// Parameter memory image (what ETS writes into the application program segment).
+    params: Vec<u8>,
+}
+
+/// ETS reads where the device placed a segment (`PID_TABLE_REFERENCE`) before it writes there.
+async fn table_reference(ets: &mut TunnelConnection, obj: u8) -> u16 {
+    const TABLE_REFERENCE: u8 = 7;
+    let [hi, lo] = apci_hdr(ApduType::PropertyValueRead);
+    ets.send(mgmt_frame(
+        DEVICE_IA,
+        &[hi, lo, obj, TABLE_REFERENCE, 0x10, 0x01],
+    ))
+    .await
+    .unwrap();
+    let response = timeout(T, async {
+        loop {
+            let frame = ets.recv().await.expect("tunnel open");
+            if frame.as_group_write().is_none() {
+                return frame;
+            }
+        }
+    })
+    .await
+    .expect("table reference response");
+    let p = response.payload();
+    u16::try_from(u32::from_be_bytes(p[p.len() - 4..].try_into().unwrap())).unwrap()
+}
+
+/// Allocate a relative segment of `size` bytes for `obj` (start loading, then allocate).
+async fn allocate(ets: &mut TunnelConnection, obj: u8, size: usize) -> u16 {
+    const LSC: u8 = 5; // PID_LOAD_STATE_CONTROL
+    property_write(ets, obj, LSC, vec![1]).await;
+    let mut alc = vec![0x03, 0x0B];
+    alc.extend_from_slice(&u32::try_from(size).unwrap().to_be_bytes());
+    alc.extend_from_slice(&[0x01, 0x00]); // relative allocation, fill with 0
+    property_write(ets, obj, LSC, alc).await;
+    table_reference(ets, obj).await
+}
+
+async fn write_segment(ets: &TunnelConnection, at: u16, data: &[u8]) {
+    for (i, chunk) in data.chunks(60).enumerate() {
+        let to = at + u16::try_from(i * 60).unwrap();
+        ets.send(mgmt_frame(DEVICE_IA, &mem_write(to, chunk)))
+            .await
+            .unwrap();
+    }
+}
+
+/// The download order of the generated product: the application segment is allocated first
+/// (load procedure 2), then the address and association tables are loaded, then the
+/// parameters are written into the application segment and it is completed.
+async fn ets_download(ets: &mut TunnelConnection, p: &Programming) {
+    const LSC: u8 = 5; // PID_LOAD_STATE_CONTROL
+    const ADDR_TABLE: u8 = 1;
+    const ASSOC_TABLE: u8 = 2;
+    const APP_PROGRAM: u8 = 4;
+
+    let mut gas: Vec<u16> = p.links.iter().map(|(g, _)| ga(g).raw()).collect();
+    gas.sort_unstable();
+    gas.dedup();
+    let mut addr = u16::try_from(gas.len()).unwrap().to_be_bytes().to_vec();
+    for g in &gas {
+        addr.extend_from_slice(&g.to_be_bytes());
+    }
+    let mut assoc = u16::try_from(p.links.len()).unwrap().to_be_bytes().to_vec();
+    for (g, asap) in &p.links {
+        let tsap = gas.iter().position(|x| *x == ga(g).raw()).unwrap() + 1;
+        assoc.extend_from_slice(&u16::try_from(tsap).unwrap().to_be_bytes());
+        assoc.extend_from_slice(&asap.to_be_bytes());
+    }
+
+    let app_at = allocate(ets, APP_PROGRAM, p.params.len()).await;
+    for (obj, data) in [(ADDR_TABLE, &addr), (ASSOC_TABLE, &assoc)] {
+        let at = allocate(ets, obj, data.len()).await;
+        write_segment(ets, at, data).await;
+        property_write(ets, obj, LSC, vec![2]).await; // load completed
+        // Completing a table can make a device configured, which then sends its status.
+        drain(ets).await;
+    }
+    write_segment(ets, app_at, &p.params).await;
+    property_write(ets, APP_PROGRAM, LSC, vec![2]).await;
+}
+
+/// Parameter memory with two zones, one client and no radios.
+fn ets_params() -> Vec<u8> {
+    let mut m = vec![0u8; mem::TOTAL];
+    m[mem::NUM_ZONES] = 2;
+    m[mem::NUM_CLIENTS] = 1;
+    m[mem::GLOBAL_HTTP_PORT..mem::GLOBAL_HTTP_PORT + 2].copy_from_slice(&5555u16.to_be_bytes());
+    m
+}
+
+// ── Fixture ───────────────────────────────────────────────────
+
+struct Device {
+    addr: SocketAddr,
+    store: state::SharedState,
+    notify: broadcast::Sender<std::sync::Arc<str>>,
+    zone_rx: HashMap<usize, mpsc::Receiver<ZoneCommand>>,
+    snap_rx: mpsc::Receiver<SnapcastCmd>,
+}
+
+/// Zones and a client as `--knx-device` derives them from ETS parameters: no group
+/// addresses anywhere in the configuration (`RawZoneKnxConfig::default()`).
+fn ets_style_config(extra_knx: &str, zone_knx: &str) -> config::AppConfig {
+    let toml = format!(
+        r#"
+[knx]
+role = "device"
+individual_address = "1.1.100"
+restart_after_ets = false
+{extra_knx}
+
+[[zone]]
+name = "Living"
+{zone_knx}
+
+[[zone]]
+name = "Kitchen"
+
+[[client]]
+name = "Speaker"
+mac = "02:42:ac:11:00:10"
+zone = "Living"
+"#
+    );
+    let raw: config::FileConfig = toml::from_str(&toml).unwrap();
+    config::load_raw(raw).unwrap()
+}
+
+async fn start_device(cfg: &config::AppConfig, memory: PathBuf) -> Device {
+    let store = state::init(cfg, None).unwrap();
+    // Commands for a client only go out once Snapcast has told us its id.
+    store.write().await.clients.get_mut(&1).unwrap().snapcast_id = Some("snap-1".into());
+    let (notify, notify_rx) = broadcast::channel(64);
+    let mut zone_commands = HashMap::new();
+    let mut zone_rx = HashMap::new();
+    for z in 1..=cfg.zones.len() {
+        let (tx, rx) = mpsc::channel(16);
+        zone_commands.insert(z, tx);
+        zone_rx.insert(z, rx);
+    }
+    let (snap_tx, snap_rx) = mpsc::channel(16);
+    let options = DeviceOptions {
+        bind: Some("127.0.0.1:0".parse().unwrap()),
+        memory_path: Some(memory.clone()),
+    };
+    let handle = knx::start_with_options(
+        cfg,
+        store.clone(),
+        notify_rx,
+        zone_commands,
+        snap_tx,
+        &options,
+    )
+    .await
+    .expect("device transport starts")
+    .expect("device mode returns a control handle");
+    Device {
+        addr: handle.local_addr(),
+        store,
+        notify,
+        zone_rx,
+        snap_rx,
+    }
+}
+
+async fn connect(dev: &Device) -> TunnelConnection {
+    let mut conn = TunnelConnection::connect(dev.addr).await.unwrap();
+    // A device that is already configured publishes its state at startup; let that settle.
+    drain(&mut conn).await;
+    conn
+}
+
+/// Receive (and thereby acknowledge) whatever the device sends until the tunnel is quiet.
+///
+/// A knx-rs tunnel client does not acknowledge frames from the server while it waits for
+/// the acknowledgement of its own request, and the server in turn waits for that
+/// acknowledgement before it handles the request. A write that crosses a server-initiated
+/// frame therefore stalls until the retries run out. Tests drain before they write.
+async fn drain(conn: &mut TunnelConnection) -> Vec<CemiFrame> {
+    let mut frames = Vec::new();
+    while let Ok(Some(frame)) = timeout(Duration::from_millis(500), conn.recv()).await {
+        frames.push(frame);
+    }
+    frames
+}
+
+/// Wait until the next group write to `dst` arrives on the tunnel and return its payload.
+async fn expect_group_write(conn: &mut TunnelConnection, dst: &str) -> Vec<u8> {
+    let want = ga(dst);
+    timeout(T, async {
+        loop {
+            let frame = conn.recv().await.expect("tunnel open");
+            if let Some((g, data)) = frame.as_group_write()
+                && g == want
+            {
+                return data;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("no group write to {dst} within {T:?}"))
+}
+
+/// Assert that no group write to `dst` arrives within a short window.
+async fn expect_no_group_write(conn: &mut TunnelConnection, dst: &str) {
+    let want = ga(dst);
+    let r = timeout(Duration::from_millis(700), async {
+        loop {
+            let frame = conn.recv().await?;
+            if let Some((g, _)) = frame.as_group_write()
+                && g == want
+            {
+                return Some(());
+            }
+        }
+    })
+    .await;
+    assert!(
+        !matches!(r, Ok(Some(()))),
+        "unexpected group write to {dst}"
+    );
+}
+
+fn notify_volume(dev: &Device, zone: usize, volume: i32, muted: bool) {
+    let n = Notification::ZoneVolumeChanged {
+        zone,
+        volume,
+        muted,
+    };
+    dev.notify
+        .send(serde_json::to_string(&n).unwrap().into())
+        .unwrap();
+}
+
+async fn set_zone_volume(dev: &Device, zone: usize, volume: i32, muted: bool) {
+    let mut s = dev.store.write().await;
+    let z = s.zones.get_mut(&zone).unwrap();
+    z.volume = volume;
+    z.muted = muted;
+    drop(s);
+    notify_volume(dev, zone, volume, muted);
+}
+
+fn ets_links() -> Programming {
+    Programming {
+        links: vec![
+            ("1/1/1", zone_asap(1, ZGO_PLAY)),
+            ("1/1/2", zone_asap(1, ZGO_VOLUME)),
+            ("1/1/3", zone_asap(1, ZGO_VOLUME_STATUS)),
+            ("1/1/4", zone_asap(1, ZGO_MUTE_STATUS)),
+            ("1/2/1", zone_asap(2, ZGO_MUTE)),
+            ("2/1/1", client_asap(1, CGO_VOLUME)),
+            ("0/0/1", global_asap(GGO_ALL_STOP)),
+            ("0/0/2", global_asap(GGO_ALL_MUTE)),
+            ("0/0/3", global_asap(GGO_KNX_TIME)),
+            ("0/0/4", global_asap(GGO_SERVER_ONLINE)),
+        ],
+        params: ets_params(),
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────
+
+/// Commands on ETS-programmed addresses reach the zones, the client and the global objects,
+/// although the configuration carries no group address at all.
+#[tokio::test]
+async fn ets_programmed_device_dispatches_telegrams() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let mut dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    // Zone 1: trigger and percentage.
+    ets.group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(
+        matches!(cmd, Ok(Some(ZoneCommand::Play))),
+        "zone 1 play: {cmd:?}"
+    );
+
+    ets.group_write_value(ga("1/1/2"), DPT_SCALING, &DptValue::Float(75.0))
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(
+        matches!(cmd, Ok(Some(ZoneCommand::SetVolume(75)))),
+        "zone 1 volume: {cmd:?}"
+    );
+
+    // Zone 2 is addressed by its own object, not zone 1's.
+    ets.group_write_value(ga("1/2/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&2).unwrap().recv()).await;
+    assert!(
+        matches!(cmd, Ok(Some(ZoneCommand::SetMute(true)))),
+        "zone 2 mute: {cmd:?}"
+    );
+    assert!(dev.zone_rx.get_mut(&1).unwrap().try_recv().is_err());
+
+    // Client object.
+    ets.group_write_value(ga("2/1/1"), DPT_SCALING, &DptValue::Float(40.0))
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.snap_rx.recv()).await;
+    assert!(
+        matches!(
+            cmd,
+            Ok(Some(SnapcastCmd::Client {
+                action: ClientAction::Volume(40),
+                ..
+            }))
+        ),
+        "client volume: {cmd:?}"
+    );
+
+    // Global "All Stop" reaches every zone.
+    ets.group_write_value(ga("0/0/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    for z in [1, 2] {
+        let cmd = timeout(T, dev.zone_rx.get_mut(&z).unwrap().recv()).await;
+        assert!(
+            matches!(cmd, Ok(Some(ZoneCommand::Stop))),
+            "all stop, zone {z}: {cmd:?}"
+        );
+    }
+}
+
+/// A state change is written to the address ETS associated with the status object.
+#[tokio::test]
+async fn ets_programmed_device_sends_status_on_programmed_addresses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    set_zone_volume(&dev, 1, 30, true).await;
+
+    let vol = expect_group_write(&mut ets, "1/1/3").await;
+    assert_eq!(
+        dpt::decode(DPT_SCALING, &vol)
+            .unwrap()
+            .as_f64()
+            .map(f64::round),
+        Some(30.0)
+    );
+    let muted = expect_group_write(&mut ets, "1/1/4").await;
+    assert!(dpt::decode(DPT_SWITCH, &muted).unwrap().as_bool().unwrap());
+}
+
+/// Global objects work in device mode as well: the three-byte KNX time arrives intact and
+/// the "All Mute" status is sent on its address.
+#[tokio::test]
+async fn ets_programmed_device_handles_global_objects() {
+    use std::sync::atomic::Ordering;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    // 03:00:00, DPT 10.001. The schedule offset must follow the received time.
+    knx::KNX_TIME_OFFSET_SECS.store(i64::MAX, Ordering::Relaxed);
+    ets.group_write_value(
+        ga("0/0/3"),
+        dpt::DPT_TIMEOFDAY,
+        &DptValue::Bytes(vec![3, 0, 0]),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("time write: {e}"));
+    timeout(T, async {
+        while knx::KNX_TIME_OFFSET_SECS.load(Ordering::Relaxed) == i64::MAX {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("KNX time telegram applied");
+
+    // Both zones muted: the all-mute status goes out.
+    for z in [1, 2] {
+        set_zone_volume(&dev, z, 50, true).await;
+    }
+    let all = expect_group_write(&mut ets, "0/0/2").await;
+    assert!(dpt::decode(DPT_SWITCH, &all).unwrap().as_bool().unwrap());
+}
+
+/// The programming survives a restart: a second device instance restores the persisted
+/// tables and dispatches on the same addresses.
+#[tokio::test]
+async fn programming_survives_restart() {
+    let tmp = tempfile::tempdir().unwrap();
+    let memory = tmp.path().join("knx-memory.bin");
+    let cfg = ets_style_config("", "");
+    {
+        let dev = start_device(&cfg, memory.clone()).await;
+        let mut ets = connect(&dev).await;
+        ets_download(&mut ets, &ets_links()).await;
+        drain(&mut ets).await;
+        // The BAU task persists what ETS wrote after a short debounce.
+        let _ = dev;
+    }
+    timeout(T, async {
+        while !memory.exists() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("ETS programming persisted");
+
+    let mut dev = start_device(&cfg, memory).await;
+    let mut ets = connect(&dev).await;
+    ets.group_write_value(ga("1/1/2"), DPT_SCALING, &DptValue::Float(20.0))
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(
+        matches!(cmd, Ok(Some(ZoneCommand::SetVolume(20)))),
+        "restored tables dispatch: {cmd:?}"
+    );
+
+    // The restored device also sends on the programmed address.
+    set_zone_volume(&dev, 1, 45, false).await;
+    let vol = expect_group_write(&mut ets, "1/1/3").await;
+    assert_eq!(
+        dpt::decode(DPT_SCALING, &vol)
+            .unwrap()
+            .as_f64()
+            .map(f64::round),
+        Some(45.0)
+    );
+}
+
+/// Status is sent when it changes, not on every state notification.
+#[tokio::test]
+async fn status_is_sent_on_change_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    set_zone_volume(&dev, 1, 30, false).await;
+    expect_group_write(&mut ets, "1/1/3").await;
+    drain(&mut ets).await;
+
+    // Playback progress makes the zone announce itself about once a second.
+    for _ in 0..5 {
+        notify_volume(&dev, 1, 30, false);
+    }
+    expect_no_group_write(&mut ets, "1/1/3").await;
+    expect_no_group_write(&mut ets, "1/1/4").await;
+
+    set_zone_volume(&dev, 1, 31, false).await;
+    expect_group_write(&mut ets, "1/1/3").await;
+}
+
+// ── Controls: TOML-configured addresses ───────────────────────
+
+/// Control for the ETS tests above: the same ETS programming works when the configuration
+/// repeats the programmed addresses as strings (what device mode needed before dispatch
+/// followed the group object identity). Proves the tables, the tunnel and the simulated
+/// download are sound and that the ETS-only failures come from the missing strings.
+#[tokio::test]
+async fn control_toml_strings_matching_the_programming_work() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config(
+        "",
+        r#"
+[zone.knx]
+play = "1/1/1"
+volume_status = "1/1/3"
+"#,
+    );
+    let mut dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    ets.group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(
+        matches!(cmd, Ok(Some(ZoneCommand::Play))),
+        "zone 1 play: {cmd:?}"
+    );
+
+    set_zone_volume(&dev, 1, 30, false).await;
+    let vol = expect_group_write(&mut ets, "1/1/3").await;
+    assert_eq!(
+        dpt::decode(DPT_SCALING, &vol)
+            .unwrap()
+            .as_f64()
+            .map(f64::round),
+        Some(30.0)
+    );
+}
+
+/// Device mode that ETS never programmed takes its tables from the TOML addresses.
+#[tokio::test]
+async fn toml_only_device_dispatches_and_sends() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config(
+        "",
+        r#"
+[zone.knx]
+play = "1/1/1"
+volume_status = "1/1/3"
+"#,
+    );
+    let mut dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+
+    ets.group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(
+        matches!(cmd, Ok(Some(ZoneCommand::Play))),
+        "zone 1 play: {cmd:?}"
+    );
+
+    set_zone_volume(&dev, 1, 30, false).await;
+    let vol = expect_group_write(&mut ets, "1/1/3").await;
+    assert_eq!(
+        dpt::decode(DPT_SCALING, &vol)
+            .unwrap()
+            .as_f64()
+            .map(f64::round),
+        Some(30.0)
+    );
+}
