@@ -220,6 +220,9 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy (default / embedded)
         run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (full / release feature set)
+        # Releases build with `snapdog/full` (ap2, api-docs, ...); lint exactly that set.
+        run: cargo clippy -p snapdog --features full --all-targets -- -D warnings
       - name: Clippy (process mode)
         run: cargo clippy -p snapdog --no-default-features --features snapcast-process --all-targets -- -D warnings
       - name: Workspace tests (default / embedded)

@@ -413,7 +413,13 @@ jobs:
           name: knxprod
           path: knx
       - name: Build release
-        run: cargo build --release --timings --target ${{ matrix.target }} -p snapdog -p snapdog-client
+        # `snapdog/full` is the feature set a released binary carries (AirPlay 2, the Scalar
+        # API console, ...). The qualified name pins the feature to the server crate: a bare
+        # `--features full` resolves the same way today, but with two `-p` packages Cargo
+        # applies a bare name to every selected package that defines it (snapdog-client
+        # already has its own `dbus`). snapdog/tests/feature_consistency.rs fails if this
+        # line stops using it.
+        run: cargo build --release --timings --target ${{ matrix.target }} -p snapdog -p snapdog-client --features snapdog/full
       - name: Upload Cargo timings
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0

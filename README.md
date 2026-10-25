@@ -126,7 +126,8 @@ For unattended, signature-verified updates with health-gated rollback, use the
 pin a version or digest instead of `latest`. On Linux,
 mDNS discovery and KNX/IP routing use multicast and generally require host networking
 or a multicast-capable macvlan/ipvlan network; published ports alone cover unicast
-traffic.
+traffic. AirPlay 2 also listens on UDP 319 and 320 and registers `_airplay._tcp`
+(see the [upgrade notes](docs/upgrading.md)).
 
 ### KNX Device Mode (no config file needed)
 
@@ -652,6 +653,9 @@ Available as binary and Docker image (`ghcr.io/snapdogrocks/snapdog-client`).
 
 ### Feature Flags
 
+Release binaries and the published container images are built with `full`, which enables every
+feature below except the alternative `snapcast-process` engine. A plain `cargo build` uses the default set.
+
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `snapcast-embedded` | ✅ | In-process Snapcast server ([snapcast-server](https://crates.io/crates/snapcast-server)) |
@@ -659,6 +663,13 @@ Available as binary and Docker image (`ghcr.io/snapdogrocks/snapdog-client`).
 | `ap2` | — | AirPlay 2 (encrypted transport, HAP pairing) |
 | `dbus` | ✅ | MPRIS2 D-Bus interface per zone (Linux only) |
 | `spotify` | ✅ | Spotify Connect receiver ([librespot](https://github.com/librespot-org/librespot)) |
+| `api-docs` | — | OpenAPI document at `/api/v1/openapi.json` (behind the API key) and the optional API console (Scalar) at `/docs`, which is off unless `[http].api_console = true` |
+| `full` | — | `snapcast-embedded`, `ap2`, `dbus`, `spotify` and `api-docs`: what a release carries |
+
+`ap2` is what makes `[airplay].mode = "airplay2"` take effect. Release builds carry it, so AirPlay 2
+is the default there and `mode = "airplay1"` is the way back. Without `ap2` the setting is ignored and
+the receiver is AirPlay 1 only. What changes for an existing installation is in the
+[upgrade notes](docs/upgrading.md).
 
 See [Architecture Decision Records](docs/architecture/decisions.md) for design rationale.
 

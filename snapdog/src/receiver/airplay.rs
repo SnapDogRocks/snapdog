@@ -18,7 +18,22 @@ use shairplay::{BindConfig, PairingStore};
 
 use super::{AudioFormat, AudioSender, ReceiverEvent, ReceiverEventTx, ReceiverProvider};
 
-use crate::config::AirplayConfig;
+use crate::config::{AirplayConfig, AirplayMode};
+
+/// The protocol mode a receiver really runs.
+///
+/// `[airplay].mode` only takes effect in builds with the `ap2` feature. Without it
+/// shairplay is `AirPlay` 1 only, whatever the configuration says. Released binaries
+/// carry `ap2` (the `full` feature), so there the default `airplay2` is live. The
+/// start-up log line prints this value, so an operator can see which one they got.
+#[must_use]
+pub(crate) const fn effective_mode(configured: AirplayMode) -> AirplayMode {
+    if cfg!(feature = "ap2") {
+        configured
+    } else {
+        AirplayMode::Airplay1
+    }
+}
 
 /// Base port for `AirPlay` receivers (each zone gets base + `zone_index`).
 const AIRPLAY_BASE_PORT: u16 = 7000;
@@ -87,7 +102,6 @@ impl ReceiverProvider for AirPlayReceiver {
 
         #[cfg(feature = "ap2")]
         {
-            use crate::config::AirplayMode;
             let mode = match self.config.mode {
                 AirplayMode::Airplay1 => shairplay::AirPlayMode::AirPlay1,
                 AirplayMode::Airplay2 => shairplay::AirPlayMode::AirPlay2,
@@ -110,7 +124,12 @@ impl ReceiverProvider for AirPlayReceiver {
         server.start().await?;
 
         let port = server.service_info().port;
-        tracing::info!(zone = %self.airplay_name, port, "AirPlay started");
+        tracing::info!(
+            zone = %self.airplay_name,
+            port,
+            mode = ?effective_mode(self.config.mode),
+            "AirPlay started"
+        );
 
         self.server = Some(server);
         Ok(())
@@ -307,6 +326,32 @@ mod tests {
     use super::*;
     use shairplay::AudioHandler;
     use tokio::sync::mpsc;
+
+    /// `[airplay].mode` is compiled out without `ap2`: the default `airplay2` must
+    /// then resolve to `AirPlay` 1, and with `ap2` both modes are honoured. This is
+    /// the pair of facts that made the release-build switch a behaviour change.
+    #[test]
+    fn effective_mode_follows_the_ap2_feature() {
+        if cfg!(feature = "ap2") {
+            assert_eq!(effective_mode(AirplayMode::Airplay2), AirplayMode::Airplay2);
+            assert_eq!(effective_mode(AirplayMode::Airplay1), AirplayMode::Airplay1);
+        } else {
+            assert_eq!(effective_mode(AirplayMode::Airplay2), AirplayMode::Airplay1);
+            assert_eq!(effective_mode(AirplayMode::Airplay1), AirplayMode::Airplay1);
+        }
+    }
+
+    /// `AirPlay` 2 is the documented default and `airplay1` is the documented way back
+    /// (docs/upgrading.md). Changing either is a user-visible change of the released
+    /// receiver: update the upgrade notes and mark the commit as breaking.
+    #[test]
+    fn airplay_mode_defaults_to_airplay2_and_airplay1_stays_selectable() {
+        assert_eq!(AirplayConfig::default().mode, AirplayMode::Airplay2);
+        let configured: AirplayConfig = toml::from_str(r#"mode = "airplay1""#).unwrap();
+        assert_eq!(configured.mode, AirplayMode::Airplay1);
+        let unset: AirplayConfig = toml::from_str("").unwrap();
+        assert_eq!(unset.mode, AirplayMode::Airplay2);
+    }
 
     #[test]
     fn test_detect_hwaddr_not_all_zeros() {
