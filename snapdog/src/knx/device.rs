@@ -61,29 +61,66 @@ const ETS_MEMORY_PATH: &str = "knx-memory.bin";
 
 // ── Persistence format ────────────────────────────────────────
 //
-// File layout: [magic 4B] [version 1B] [length 2B (LE)] [payload …] [crc32 4B (LE)]
-// Total overhead: 11 bytes. Atomic write via temp file + rename.
+// Version 2: [magic 4B] [version 1B] [length 2B (LE)] [payload …] [configured IA 2B (LE)]
+//            [assigned IA 2B (LE)] [crc32 4B (LE) over payload and both addresses]
+// Version 1 (read only): the same without the two addresses; the CRC covers the payload.
+// Atomic write via temp file + rename.
 
 /// Magic bytes identifying a `SnapDog` KNX memory file.
 const PERSIST_MAGIC: &[u8; 4] = b"SDKM";
 
 /// Current persistence format version. Bump when memory layout changes.
-const PERSIST_VERSION: u8 = 1;
+const PERSIST_VERSION: u8 = 2;
+
+/// The first format, without the individual address record.
+const PERSIST_VERSION_1: u8 = 1;
 
 /// Header size: magic (4) + version (1) + length (2).
 const PERSIST_HEADER: usize = 7;
 
-/// Write ETS memory to disk with integrity envelope (atomic).
-fn persist_memory(path: &std::path::Path, payload: &[u8]) -> std::io::Result<()> {
-    let len = payload.len() as u16;
-    let crc = crc32(payload);
+/// Size of the individual address record in version 2.
+const PERSIST_IA_RECORD: usize = 4;
 
-    let mut buf = Vec::with_capacity(PERSIST_HEADER + payload.len() + 4);
+/// The individual address a device has, and the one it was configured with when it got it.
+///
+/// ETS assigns an individual address over the bus (`A_IndividualAddress_Write` in
+/// programming mode) and then addresses every management service to it. The device stack
+/// keeps it in RAM only, so it is saved with the programming: without it the device would
+/// come back after the restart that ends a download under its configured address, and the
+/// next ETS session could not reach it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IaRecord {
+    /// Raw address from the configuration (or `--knx-address`) at the time of saving.
+    configured: u16,
+    /// Raw address the device had at the time of saving.
+    assigned: u16,
+}
+
+/// What a memory file holds.
+struct Persisted {
+    /// The saved BAU state.
+    payload: Vec<u8>,
+    /// The individual address record (version 2 files).
+    ia: Option<IaRecord>,
+}
+
+/// Write ETS memory to disk with integrity envelope (atomic).
+fn persist_memory(path: &std::path::Path, payload: &[u8], ia: IaRecord) -> std::io::Result<()> {
+    let len = payload.len() as u16;
+    let mut record = Vec::with_capacity(PERSIST_IA_RECORD);
+    record.extend_from_slice(&ia.configured.to_le_bytes());
+    record.extend_from_slice(&ia.assigned.to_le_bytes());
+    let mut crc = crc32fast::Hasher::new();
+    crc.update(payload);
+    crc.update(&record);
+
+    let mut buf = Vec::with_capacity(PERSIST_HEADER + payload.len() + PERSIST_IA_RECORD + 4);
     buf.extend_from_slice(PERSIST_MAGIC);
     buf.push(PERSIST_VERSION);
     buf.extend_from_slice(&len.to_le_bytes());
     buf.extend_from_slice(payload);
-    buf.extend_from_slice(&crc.to_le_bytes());
+    buf.extend_from_slice(&record);
+    buf.extend_from_slice(&crc.finalize().to_le_bytes());
 
     // Atomic write: temp file + rename
     let tmp = path.with_extension("tmp");
@@ -93,7 +130,7 @@ fn persist_memory(path: &std::path::Path, payload: &[u8]) -> std::io::Result<()>
 }
 
 /// Load ETS memory from disk, verifying magic, version, length, and CRC32.
-fn load_memory(path: &std::path::Path) -> Result<Vec<u8>> {
+fn load_memory(path: &std::path::Path) -> Result<Persisted> {
     let data = std::fs::read(path).context("reading ETS memory file")?;
     anyhow::ensure!(
         data.len() >= PERSIST_HEADER + 4,
@@ -104,34 +141,49 @@ fn load_memory(path: &std::path::Path) -> Result<Vec<u8>> {
         &data[..4] == PERSIST_MAGIC,
         "invalid magic (not a SnapDog KNX memory file)"
     );
+    let version = data[4];
     anyhow::ensure!(
-        data[4] == PERSIST_VERSION,
-        "unsupported version {} (expected {})",
-        data[4],
-        PERSIST_VERSION
+        version == PERSIST_VERSION || version == PERSIST_VERSION_1,
+        "unsupported version {version} (expected {PERSIST_VERSION})"
     );
+    let record_len = if version == PERSIST_VERSION {
+        PERSIST_IA_RECORD
+    } else {
+        0
+    };
 
     let len = u16::from_le_bytes([data[5], data[6]]) as usize;
     anyhow::ensure!(
-        data.len() == PERSIST_HEADER + len + 4,
+        data.len() == PERSIST_HEADER + len + record_len + 4,
         "length mismatch: header says {len} bytes, file has {}",
-        data.len() - PERSIST_HEADER - 4
+        data.len().saturating_sub(PERSIST_HEADER + record_len + 4)
     );
 
-    let payload = &data[PERSIST_HEADER..PERSIST_HEADER + len];
+    let covered = &data[PERSIST_HEADER..PERSIST_HEADER + len + record_len];
+    let crc_at = PERSIST_HEADER + len + record_len;
     let stored_crc = u32::from_le_bytes([
-        data[PERSIST_HEADER + len],
-        data[PERSIST_HEADER + len + 1],
-        data[PERSIST_HEADER + len + 2],
-        data[PERSIST_HEADER + len + 3],
+        data[crc_at],
+        data[crc_at + 1],
+        data[crc_at + 2],
+        data[crc_at + 3],
     ]);
-    let actual_crc = crc32(payload);
+    let actual_crc = crc32(covered);
     anyhow::ensure!(
         stored_crc == actual_crc,
         "CRC32 mismatch (file corrupted): stored {stored_crc:#010x}, computed {actual_crc:#010x}"
     );
 
-    Ok(payload.to_vec())
+    let ia = (record_len > 0).then(|| {
+        let r = &data[PERSIST_HEADER + len..PERSIST_HEADER + len + PERSIST_IA_RECORD];
+        IaRecord {
+            configured: u16::from_le_bytes([r[0], r[1]]),
+            assigned: u16::from_le_bytes([r[2], r[3]]),
+        }
+    });
+    Ok(Persisted {
+        payload: data[PERSIST_HEADER..PERSIST_HEADER + len].to_vec(),
+        ia,
+    })
 }
 
 /// CRC32 (ISO 3309 / ITU-T V.42 — same as zlib/PNG).
@@ -526,11 +578,31 @@ impl TableSummary {
     }
 }
 
-/// Restore the persisted ETS programming into `bau`, if there is any.
+/// The individual address to take from a memory file, if any.
+///
+/// The saved address wins when ETS assigned it under the configuration that is in force now.
+/// A configuration that changed since (a different `individual_address` or `--knx-address`)
+/// was changed on purpose and wins, so that an operator can always move the device by
+/// editing the configuration.
+fn restored_individual_address(saved: Option<IaRecord>, configured: u16) -> Option<u16> {
+    let saved = saved?;
+    (saved.configured == configured && saved.assigned != configured).then_some(saved.assigned)
+}
+
+/// Restore the persisted ETS programming and individual address into `bau`, if there is any.
 fn restore_state(bau: &mut Bau, path: &std::path::Path) {
     match load_memory(path) {
-        Ok(data) => {
-            if bau.restore(&data).is_ok() {
+        Ok(saved) => {
+            let configured = bau.individual_address().raw();
+            if let Some(ia) = restored_individual_address(saved.ia, configured) {
+                tracing::info!(
+                    assigned = %IndividualAddress::from_raw(ia),
+                    configured = %IndividualAddress::from_raw(configured),
+                    "Using the individual address ETS assigned"
+                );
+                device_object::set_individual_address(bau.device_mut(), ia);
+            }
+            if bau.restore(&saved.payload).is_ok() {
                 tracing::info!(
                     path = %path.display(),
                     addr_table = ?bau.addr_table_object().load_state(),
@@ -637,6 +709,7 @@ pub async fn start_device_transport(
             update_tx,
             persist_path,
             restart_after_ets,
+            config_ia: ia.raw(),
             bind: options.bind,
             addr_tx,
             resync: Arc::clone(&resync),
@@ -695,6 +768,8 @@ struct DeviceTask {
     update_tx: mpsc::Sender<(u16, Vec<u8>)>,
     persist_path: Option<PathBuf>,
     restart_after_ets: bool,
+    /// Individual address from the configuration, before ETS assigned another.
+    config_ia: u16,
     bind: Option<std::net::SocketAddr>,
     addr_tx: watch::Sender<Option<std::net::SocketAddr>>,
     resync: Arc<Notify>,
@@ -774,6 +849,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
         update_tx,
         persist_path,
         restart_after_ets,
+        config_ia,
         shutdown,
         resync,
         ..
@@ -803,6 +879,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                 }
 
                 let before = TableSummary::of(bau);
+                let ia_before = bau.individual_address();
                 bau.process_frame(&frame, now_ms());
                 bau.poll(now_ms());
 
@@ -810,8 +887,12 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     let _ = server.send_frame(out).await;
                 }
 
-                // ETS programs via tunnel — mark dirty for persistence
-                if is_tunnel && persist_path.is_some() && !bau.memory_area().is_empty() {
+                // ETS programs via tunnel — mark dirty for persistence. So does an individual
+                // address assignment, which can come before the download.
+                if persist_path.is_some()
+                    && ((is_tunnel && !bau.memory_area().is_empty())
+                        || bau.individual_address() != ia_before)
+                {
                     memory_dirty = true;
                     persist_timer.as_mut().reset(tokio::time::Instant::now() + ETS_PERSIST_DEBOUNCE);
                     persist_armed = true;
@@ -838,9 +919,9 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     // Persist SYNCHRONOUSLY here: if we restart below, the re-exec
                     // abandons any spawned task, so the write must complete first.
                     if let Some(path) = persist_path.as_ref()
-                        && !bau.memory_area().is_empty() {
+                        && (!bau.memory_area().is_empty() || bau.individual_address().raw() != *config_ia) {
                             let state = bau.save();
-                            if let Err(e) = persist_memory(path, &state) {
+                            if let Err(e) = persist_memory(path, &state, ia_record(bau, *config_ia)) {
                                 tracing::warn!(error = %e, "Failed to persist ETS state before restart");
                             } else {
                                 tracing::info!(bytes = state.len(), "ETS programming persisted before restart");
@@ -883,7 +964,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                 memory_dirty = false;
                 tunnel_active = false;
                 if let Some(ref path) = *persist_path {
-                    spawn_persist(bau.save(), path.clone());
+                    spawn_persist(bau.save(), path.clone(), ia_record(bau, *config_ia));
                 }
             }
             () = stop_requested(shutdown) => break LoopEnd::Stopped,
@@ -893,7 +974,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
     // Persist on the way out if dirty
     if memory_dirty && let Some(ref path) = *persist_path {
         let state = bau.save();
-        if let Err(e) = persist_memory(path, &state) {
+        if let Err(e) = persist_memory(path, &state, ia_record(bau, *config_ia)) {
             tracing::warn!(error = %e, "Failed to persist ETS state on shutdown");
         } else {
             tracing::info!(path = %path.display(), "ETS state persisted on shutdown");
@@ -903,10 +984,18 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
     end
 }
 
+/// The individual address record to save next to the BAU state.
+fn ia_record(bau: &Bau, config_ia: u16) -> IaRecord {
+    IaRecord {
+        configured: config_ia,
+        assigned: bau.individual_address().raw(),
+    }
+}
+
 /// Persist a saved BAU memory snapshot to `path` in a blocking task, logging the
 /// outcome. Shared by the debounced-persist and restart-persist paths.
-fn spawn_persist(state: Vec<u8>, path: PathBuf) {
-    tokio::task::spawn_blocking(move || match persist_memory(&path, &state) {
+fn spawn_persist(state: Vec<u8>, path: PathBuf, ia: IaRecord) {
+    tokio::task::spawn_blocking(move || match persist_memory(&path, &state, ia) {
         Ok(()) => {
             tracing::info!(path = %path.display(), bytes = state.len(), "ETS programming persisted");
         }
@@ -922,9 +1011,9 @@ fn spawn_persist(state: Vec<u8>, path: PathBuf) {
 /// `DeviceServer` and no UDP bind — so it is safe to call at boot **before** the
 /// real KNX device transport starts (KEA-0004 boot-time apply).
 pub(super) fn load_persisted_ets_params(ia: IndividualAddress) -> Option<EtsParams> {
-    let data = load_memory(std::path::Path::new(ETS_MEMORY_PATH)).ok()?;
+    let saved = load_memory(std::path::Path::new(ETS_MEMORY_PATH)).ok()?;
     let mut bau = build_bau(ia);
-    if bau.restore(&data).is_err() || !bau.configured() {
+    if bau.restore(&saved.payload).is_err() || !bau.configured() {
         return None;
     }
     Some(parse_ets_memory(bau.memory_area()))
@@ -1342,6 +1431,11 @@ mod tests {
         assert!(tsap.is_some());
     }
 
+    const IA: IaRecord = IaRecord {
+        configured: 0x1164,
+        assigned: 0x1201,
+    };
+
     #[test]
     fn persist_roundtrip() {
         let dir = std::env::temp_dir().join("snapdog_test_persist");
@@ -1349,9 +1443,10 @@ mod tests {
         let path = dir.join("test.bin");
 
         let payload = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x42];
-        super::persist_memory(&path, &payload).unwrap();
+        super::persist_memory(&path, &payload, IA).unwrap();
         let loaded = super::load_memory(&path).unwrap();
-        assert_eq!(loaded, payload);
+        assert_eq!(loaded.payload, payload);
+        assert_eq!(loaded.ia, Some(IA));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1363,18 +1458,26 @@ mod tests {
         let path = dir.join("corrupt.bin");
 
         let payload = vec![1, 2, 3, 4, 5];
-        super::persist_memory(&path, &payload).unwrap();
+        super::persist_memory(&path, &payload, IA).unwrap();
 
         // Flip a byte in the payload area
         let mut raw = std::fs::read(&path).unwrap();
         raw[super::PERSIST_HEADER] ^= 0xFF;
         std::fs::write(&path, &raw).unwrap();
 
-        let err = super::load_memory(&path).unwrap_err();
+        let err = super::load_memory(&path).err().unwrap();
         assert!(
             err.to_string().contains("CRC32 mismatch"),
             "expected CRC error, got: {err}"
         );
+
+        // So does a flipped byte in the individual address record.
+        super::persist_memory(&path, &payload, IA).unwrap();
+        let mut raw = std::fs::read(&path).unwrap();
+        raw[super::PERSIST_HEADER + payload.len()] ^= 0x01;
+        std::fs::write(&path, &raw).unwrap();
+        let err = super::load_memory(&path).err().unwrap();
+        assert!(err.to_string().contains("CRC32 mismatch"), "got: {err}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1385,13 +1488,13 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("version.bin");
 
-        super::persist_memory(&path, &[0; 10]).unwrap();
+        super::persist_memory(&path, &[0; 10], IA).unwrap();
 
         let mut raw = std::fs::read(&path).unwrap();
         raw[4] = 99;
         std::fs::write(&path, &raw).unwrap();
 
-        let err = super::load_memory(&path).unwrap_err();
+        let err = super::load_memory(&path).err().unwrap();
         assert!(
             err.to_string().contains("unsupported version"),
             "expected version error, got: {err}"
@@ -1407,7 +1510,7 @@ mod tests {
         let path = dir.join("truncated.bin");
 
         std::fs::write(&path, b"SDKM").unwrap();
-        let err = super::load_memory(&path).unwrap_err();
+        let err = super::load_memory(&path).err().unwrap();
         assert!(
             err.to_string().contains("too short"),
             "expected too-short error, got: {err}"
@@ -1419,45 +1522,95 @@ mod tests {
     #[test]
     fn persist_envelope_byte_layout() {
         // Pin the on-disk format (the IT-T43 §9.2 Bau.save drift risk):
-        // [4 magic]["SDKM"][1 version][2 len LE][payload][4 crc32 LE].
+        // ["SDKM"][1 version][2 len LE][payload][2 configured IA LE][2 assigned IA LE]
+        // [4 crc32 LE over payload and both addresses].
         let dir = std::env::temp_dir().join("snapdog_test_envelope");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("envelope.bin");
         let payload = vec![0xDE_u8, 0xAD, 0xBE, 0xEF, 0x42];
-        super::persist_memory(&path, &payload).unwrap();
+        super::persist_memory(&path, &payload, IA).unwrap();
         let raw = std::fs::read(&path).unwrap();
         let n = payload.len();
 
         assert_eq!(&raw[0..4], b"SDKM", "magic");
-        assert_eq!(raw[4], super::PERSIST_VERSION, "version byte");
+        assert_eq!(raw[4], 2, "version byte");
         assert_eq!(
             u16::from_le_bytes([raw[5], raw[6]]),
             n as u16,
-            "length is little-endian u16"
+            "length is little-endian u16 and counts the payload only"
+        );
+        let h = super::PERSIST_HEADER;
+        assert_eq!(&raw[h..h + n], &payload[..], "payload verbatim");
+        assert_eq!(
+            &raw[h + n..h + n + 2],
+            &[0x64, 0x11],
+            "configured address, LE"
         );
         assert_eq!(
-            &raw[super::PERSIST_HEADER..super::PERSIST_HEADER + n],
-            &payload[..],
-            "payload verbatim"
+            &raw[h + n + 2..h + n + 4],
+            &[0x01, 0x12],
+            "assigned address, LE"
         );
-        let crc = u32::from_le_bytes([
-            raw[super::PERSIST_HEADER + n],
-            raw[super::PERSIST_HEADER + n + 1],
-            raw[super::PERSIST_HEADER + n + 2],
-            raw[super::PERSIST_HEADER + n + 3],
-        ]);
+        let crc = u32::from_le_bytes(raw[h + n + 4..h + n + 8].try_into().unwrap());
         assert_eq!(
             crc,
-            super::crc32(&payload),
-            "trailing CRC32 is little-endian"
+            super::crc32(&raw[h..h + n + 4]),
+            "trailing CRC32 is little-endian and covers payload and addresses"
         );
         assert_eq!(
             raw.len(),
-            super::PERSIST_HEADER + n + 4,
-            "total = 7-byte header + payload + 4-byte CRC"
+            h + n + 4 + 4,
+            "header + payload + addresses + CRC"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn version_1_files_still_load() {
+        // Written by releases before the individual address was persisted.
+        let dir = std::env::temp_dir().join("snapdog_test_v1");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("v1.bin");
+        let payload = [9u8, 8, 7];
+        let mut raw = b"SDKM".to_vec();
+        raw.push(1);
+        raw.extend_from_slice(&3u16.to_le_bytes());
+        raw.extend_from_slice(&payload);
+        raw.extend_from_slice(&crc32fast::hash(&payload).to_le_bytes());
+        std::fs::write(&path, &raw).unwrap();
+
+        let loaded = super::load_memory(&path).unwrap();
+        assert_eq!(loaded.payload, payload);
+        assert_eq!(loaded.ia, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn assigned_individual_address_wins_only_under_the_same_configuration() {
+        let rec = |configured, assigned| {
+            Some(IaRecord {
+                configured,
+                assigned,
+            })
+        };
+        // ETS assigned 1.2.1 while 1.1.100 was configured, and it still is.
+        assert_eq!(
+            restored_individual_address(rec(0x1164, 0x1201), 0x1164),
+            Some(0x1201)
+        );
+        // The operator changed the configured address since: the configuration wins.
+        assert_eq!(
+            restored_individual_address(rec(0x1164, 0x1201), 0x1165),
+            None
+        );
+        // Nothing assigned, or nothing saved (version 1 file).
+        assert_eq!(
+            restored_individual_address(rec(0x1164, 0x1164), 0x1164),
+            None
+        );
+        assert_eq!(restored_individual_address(None, 0x1164), None);
     }
 
     #[test]

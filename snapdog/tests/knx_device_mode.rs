@@ -31,7 +31,7 @@ use snapdog::knx::group_objects::{
     ZGO_MUTE_STATUS, ZGO_PLAY, ZGO_VOLUME, ZGO_VOLUME_STATUS, client_asap, global_asap, mem,
     zone_asap,
 };
-use snapdog::knx::{self, DeviceOptions};
+use snapdog::knx::{self, DeviceOptions, KnxDeviceControl as _};
 use snapdog::player::{ClientAction, SnapcastCmd, ZoneCommand};
 use snapdog::state;
 use tokio::sync::{broadcast, mpsc};
@@ -41,6 +41,16 @@ const T: Duration = Duration::from_secs(5);
 /// Management address of the (simulated) ETS and the device's own address.
 const ETS_IA: u16 = 0xFFB1;
 const DEVICE_IA: u16 = 0x1164; // 1.1.100
+
+thread_local! {
+    /// The address the simulated ETS manages. Tests run on a current-thread runtime, so a
+    /// thread-local is per test. It changes once ETS has assigned a new individual address.
+    static MANAGED_IA: std::cell::Cell<u16> = const { std::cell::Cell::new(DEVICE_IA) };
+}
+
+fn managed_ia() -> u16 {
+    MANAGED_IA.with(std::cell::Cell::get)
+}
 
 // ── ETS download simulation ───────────────────────────────────
 
@@ -71,7 +81,6 @@ fn mgmt_frame(dst: u16, apdu: &[u8]) -> CemiFrame {
 }
 
 /// Broadcast (`group 0`) `L_Data.req`, e.g. for individual-address services.
-#[allow(dead_code)]
 fn broadcast_frame(apdu: &[u8]) -> CemiFrame {
     let mut f = vec![
         0x11,
@@ -111,7 +120,7 @@ fn mem_write(address: u16, data: &[u8]) -> Vec<u8> {
 /// writing while the server waits for its acknowledgement of that response only makes both
 /// sides retry.
 async fn property_write(ets: &mut TunnelConnection, obj: u8, pid: u8, data: Vec<u8>) {
-    ets.send(mgmt_frame(DEVICE_IA, &prop_write(obj, pid, &data)))
+    ets.send(mgmt_frame(managed_ia(), &prop_write(obj, pid, &data)))
         .await
         .unwrap();
     timeout(T, async {
@@ -140,7 +149,7 @@ async fn table_reference(ets: &mut TunnelConnection, obj: u8) -> u16 {
     const TABLE_REFERENCE: u8 = 7;
     let [hi, lo] = apci_hdr(ApduType::PropertyValueRead);
     ets.send(mgmt_frame(
-        DEVICE_IA,
+        managed_ia(),
         &[hi, lo, obj, TABLE_REFERENCE, 0x10, 0x01],
     ))
     .await
@@ -173,7 +182,7 @@ async fn allocate(ets: &mut TunnelConnection, obj: u8, size: usize) -> u16 {
 async fn write_segment(ets: &TunnelConnection, at: u16, data: &[u8]) {
     for (i, chunk) in data.chunks(60).enumerate() {
         let to = at + u16::try_from(i * 60).unwrap();
-        ets.send(mgmt_frame(DEVICE_IA, &mem_write(to, chunk)))
+        ets.send(mgmt_frame(managed_ia(), &mem_write(to, chunk)))
             .await
             .unwrap();
     }
@@ -227,6 +236,7 @@ fn ets_params() -> Vec<u8> {
 
 struct Device {
     addr: SocketAddr,
+    handle: knx::DeviceControlHandle,
     bridge: knx::KnxBridge,
     store: state::SharedState,
     notify: broadcast::Sender<std::sync::Arc<str>>,
@@ -294,6 +304,7 @@ async fn start_device(cfg: &config::AppConfig, memory: PathBuf) -> Device {
         .expect("device mode returns a control handle");
     Device {
         addr: handle.local_addr().expect("server bound"),
+        handle,
         bridge,
         store,
         notify,
@@ -677,5 +688,70 @@ volume_status = "1/1/3"
             .as_f64()
             .map(f64::round),
         Some(30.0)
+    );
+}
+
+// ── Individual address ────────────────────────────────────────
+
+/// The individual address of the device, as it answers `A_IndividualAddress_Read` in
+/// programming mode (the source of the response).
+async fn individual_address_of(dev: &Device, ets: &mut TunnelConnection) -> u16 {
+    dev.handle.set_prog_mode(true).await;
+    let [hi, lo] = apci_hdr(ApduType::IndividualAddressRead);
+    ets.send(broadcast_frame(&[hi, lo])).await.unwrap();
+    timeout(T, async {
+        loop {
+            let frame = ets.recv().await.expect("tunnel open");
+            if frame.as_group_write().is_none() {
+                return frame.source_address().raw();
+            }
+        }
+    })
+    .await
+    .expect("individual address response")
+}
+
+/// ETS assigns an individual address in programming mode and downloads to it. After the
+/// restart that follows the download, the device must still answer to that address.
+#[tokio::test]
+async fn individual_address_assigned_by_ets_survives_a_restart() {
+    const ASSIGNED: u16 = 0x1201; // 1.2.1
+
+    let tmp = tempfile::tempdir().unwrap();
+    let memory = tmp.path().join("knx-memory.bin");
+    let cfg = ets_style_config("", "");
+    {
+        let dev = start_device(&cfg, memory.clone()).await;
+        let mut ets = connect(&dev).await;
+        assert_eq!(individual_address_of(&dev, &mut ets).await, DEVICE_IA);
+
+        dev.handle.set_prog_mode(true).await;
+        let [hi, lo] = apci_hdr(ApduType::IndividualAddressWrite);
+        ets.send(broadcast_frame(&[hi, lo, 0x12, 0x01]))
+            .await
+            .unwrap();
+        assert_eq!(individual_address_of(&dev, &mut ets).await, ASSIGNED);
+
+        // The download that follows addresses the new address.
+        MANAGED_IA.with(|ia| ia.set(ASSIGNED));
+        ets_download(&mut ets, &ets_links()).await;
+        drain(&mut ets).await;
+        dev.bridge.shutdown().await;
+    }
+    timeout(T, async {
+        while !memory.exists() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("ETS programming persisted");
+
+    // Restart with the same configuration: the configured address is still 1.1.100.
+    let dev = start_device(&cfg, memory).await;
+    let mut ets = connect(&dev).await;
+    assert_eq!(
+        individual_address_of(&dev, &mut ets).await,
+        ASSIGNED,
+        "the address ETS assigned is restored"
     );
 }
