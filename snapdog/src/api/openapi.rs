@@ -14,6 +14,10 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
     paths(
         system::get_status,
         system::get_version,
+        system::update_status,
+        system::check_updates,
+        system::apply_update,
+        system::configure_updates,
 
         // KNX
         crate::api::routes::knx::get_programming_mode,
@@ -125,6 +129,9 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
         schemas(
             SystemStatus,
             VersionInfo,
+            system::UpdateStatus,
+            system::UpdateProgress,
+            system::UpdateConfig,
             ErrorBody,
 
             // snapdog-common shared schemas
