@@ -1051,4 +1051,15 @@ mod tests {
         );
         assert!(toml("system_fault", "x").is_err());
     }
+
+    #[test]
+    fn knx_table_from_the_command_line_has_the_toml_defaults() {
+        // `--knx-device` and `--knx-sync-system-clock` create the table with `Default`.
+        let from_toml: KnxConfig = toml::from_str("role = \"device\"").unwrap();
+        assert_eq!(
+            KnxConfig::default().heartbeat_minutes,
+            from_toml.heartbeat_minutes
+        );
+        assert_eq!(KnxConfig::default().heartbeat_minutes, 5);
+    }
 }

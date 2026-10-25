@@ -130,6 +130,11 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
     } else {
         SourceConflict::LastWins
     };
+    // Heartbeat of the cyclic "Server Online" object. A table the caller creates for device
+    // mode keeps it; zero means the memory carried none.
+    if ets.heartbeat_minutes != 0 {
+        base.knx.get_or_insert_default().heartbeat_minutes = ets.heartbeat_minutes;
+    }
     base.audio.zone_switch_fade_ms = ets.zone_switch_fade.min(1000);
     base.audio.source_switch_fade_ms = ets.source_switch_fade.min(1000);
     // Secrets (plaintext in ETS memory by product decision). Applied only when set.
@@ -293,6 +298,18 @@ mod tests {
         assert!(cfg.client.is_empty());
         assert!(cfg.subsonic.is_none());
         assert_eq!(cfg.name, "Base", "base fields preserved");
+    }
+
+    #[test]
+    fn heartbeat_interval_comes_from_ets() {
+        let mut ets = EtsParams::default();
+        ets.heartbeat_minutes = 30;
+        let cfg = ets_params_to_file_config(&ets, FileConfig::default());
+        assert_eq!(cfg.knx.expect("knx table").heartbeat_minutes, 30);
+
+        // Without a value the base stays as it is.
+        let cfg = ets_params_to_file_config(&EtsParams::default(), FileConfig::default());
+        assert!(cfg.knx.is_none());
     }
 
     #[test]

@@ -838,13 +838,15 @@ fn default_mqtt_client_id() -> String {
 }
 
 /// KNX/IP integration settings.
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct KnxConfig {
     /// Device role: `client` (default) or `device` (ETS-programmable).
     #[serde(default, alias = "mode")]
     pub role: KnxRole,
     /// KNX/IP gateway URL for tunnel/routing.
-    /// Required for client role. Optional for device role (enables GA reception via tunnel).
+    /// Required for client role, ignored in device role (the device is its own KNXnet/IP server
+    /// on UDP 3671). `udp://`, `tunnel://` or `router://` followed by `host:port`; `udp://` picks
+    /// routing for a multicast address and tunnelling otherwise.
     /// Examples: `udp://192.168.1.50:3671` (tunnel), `udp://224.0.23.12:3671` (routing)
     pub url: Option<String>,
     /// KNX individual address (device role). Example: `"1.1.100"`
@@ -883,6 +885,31 @@ pub struct KnxConfig {
 /// Default heartbeat interval (minutes) for the global "server online" send.
 const fn default_heartbeat_minutes() -> u16 {
     5
+}
+
+impl Default for KnxConfig {
+    /// The same values a `[knx]` table without keys deserializes to, so a table created from
+    /// the command line (`--knx-device`, `--knx-sync-system-clock`) behaves like one from
+    /// TOML. The derived default would have left the heartbeat at 0, which the publisher
+    /// clamps to one minute.
+    fn default() -> Self {
+        Self {
+            role: KnxRole::default(),
+            url: None,
+            individual_address: None,
+            persist_ets_config: None,
+            restart_after_ets: None,
+            start_prog_mode: false,
+            server_online: None,
+            all_stop: None,
+            all_mute: None,
+            all_mute_status: None,
+            system_fault: None,
+            knx_time: None,
+            heartbeat_minutes: default_heartbeat_minutes(),
+            sync_system_clock: false,
+        }
+    }
 }
 
 // ── Raw zone/client/radio (user-facing, optional fields) ──────

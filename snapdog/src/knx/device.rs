@@ -258,6 +258,9 @@ pub struct EtsParams {
     pub zone_switch_fade: u16,
     /// Global source-switch fade duration in ms.
     pub source_switch_fade: u16,
+    /// Interval of the cyclic "Server Online" object in minutes (1, 3, 5, 10, 15, 30, 45 or
+    /// 60; the ETS dropdown stores the minutes themselves). 5 when the memory holds none.
+    pub heartbeat_minutes: u16,
     /// Per-zone presence default-source index (0 = none, 1..=`MAX_RADIOS` = radio index).
     pub zone_presence_source: [u8; MAX_ZONES],
     pub radio_active: Radios<bool>,
@@ -375,6 +378,10 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
         u16::from_be_bytes([data[mem::GLOBAL_ZONE_FADE], data[mem::GLOBAL_ZONE_FADE + 1]]);
     p.source_switch_fade =
         u16::from_be_bytes([data[mem::GLOBAL_SRC_FADE], data[mem::GLOBAL_SRC_FADE + 1]]);
+    p.heartbeat_minutes = match data[mem::GLOBAL_HEARTBEAT] {
+        0 => 5, // an unprogrammed byte; the ETS dropdown has no 0
+        m => u16::from(m),
+    };
     // Radios: a single count byte replaces the former per-radio active flags —
     // radios 1..=NUM_RADIOS are active (contiguous), the rest are off.
     let num_radios = usize::from(data[mem::NUM_RADIOS]).min(mem::MAX_RADIOS);
@@ -1384,6 +1391,10 @@ mod tests {
     fn parse_ets_memory_defaults() {
         let data = vec![0u8; mem::TOTAL];
         let p = parse_ets_memory(&data);
+        assert_eq!(
+            p.heartbeat_minutes, 5,
+            "unprogrammed memory keeps the default"
+        );
         assert!(!p.zone_active[0]);
         assert_eq!(p.zone_max_volume[0], 0);
         assert!(!p.client_active[0]);
@@ -1400,7 +1411,9 @@ mod tests {
         data[mem::CLIENT_DEF_LAT] = 50;
         data[mem::GLOBAL_SRATE] = 3; // 96000 Hz
         data[mem::GLOBAL_BITD] = 1; // 24 bit
+        data[mem::GLOBAL_HEARTBEAT] = 15;
         let p = parse_ets_memory(&data);
+        assert_eq!(p.heartbeat_minutes, 15);
         assert!(p.zone_active[0]);
         assert!(p.zone_active[1]);
         assert!(p.zone_active[2]);
