@@ -306,3 +306,146 @@ impl PlayerInterface {
         true
     }
 }
+
+/// Served over a peer-to-peer connection, which needs a Unix socket pair.
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    use zbus::{Guid, connection};
+
+    use super::*;
+
+    const PATH: &str = "/org/mpris/MediaPlayer2";
+    const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
+    /// A reply that never arrives is the failure these tests exist to catch, so every wait
+    /// has a deadline.
+    const DEADLINE: Duration = Duration::from_secs(5);
+
+    /// The Player interface served over a peer-to-peer connection (a socketpair), so no bus
+    /// daemon is needed, and the calling end of it.
+    struct Fixture {
+        caller: zbus::Connection,
+        /// Keeps the serving end open.
+        _server: zbus::Connection,
+        state: Arc<Mutex<PlayerState>>,
+        commands: mpsc::Receiver<ZoneCommand>,
+    }
+
+    async fn fixture() -> Fixture {
+        let (server_end, caller_end) = UnixStream::pair().expect("socketpair");
+        let (cmd_tx, commands) = mpsc::channel(8);
+        let state = Arc::new(Mutex::new(PlayerState::default()));
+        let player = PlayerInterface::new(
+            1,
+            "http://localhost:5555".into(),
+            Arc::clone(&state),
+            cmd_tx,
+        );
+        let (server, caller) = tokio::try_join!(
+            async {
+                connection::Builder::unix_stream(server_end)
+                    .server(Guid::generate())
+                    .p2p()
+                    .serve_at(PATH, player)
+                    .build()
+                    .await
+            },
+            connection::Builder::unix_stream(caller_end).p2p().build(),
+        )
+        .expect("peer-to-peer handshake");
+        Fixture {
+            caller,
+            _server: server,
+            state,
+            commands,
+        }
+    }
+
+    async fn call<B>(caller: &zbus::Connection, method: &str, body: &B)
+    where
+        B: zbus::export::serde::Serialize + zbus::zvariant::DynamicType,
+    {
+        tokio::time::timeout(
+            DEADLINE,
+            caller.call_method(None::<&str>, PATH, Some(PLAYER), method, body),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            panic!("{method} got no reply within {DEADLINE:?}: the method most likely panicked")
+        })
+        .unwrap_or_else(|e| panic!("{method} failed: {e}"));
+    }
+
+    async fn next_command(commands: &mut mpsc::Receiver<ZoneCommand>) -> ZoneCommand {
+        tokio::time::timeout(DEADLINE, commands.recv())
+            .await
+            .expect("no command was forwarded")
+            .expect("command channel closed")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn play_pause_plays_unless_playing() {
+        let mut f = fixture().await;
+        for status in ["Stopped", "Paused"] {
+            f.state.lock().await.playback = status.into();
+            call(&f.caller, "PlayPause", &()).await;
+            assert!(
+                matches!(next_command(&mut f.commands).await, ZoneCommand::Play),
+                "{status}"
+            );
+        }
+        f.state.lock().await.playback = "Playing".into();
+        call(&f.caller, "PlayPause", &()).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Pause
+        ));
+    }
+
+    /// Every method has to answer on the runtime thread, so a blocking call added to any of
+    /// them shows up here.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn every_method_replies_and_forwards_its_command() {
+        let mut f = fixture().await;
+        call(&f.caller, "Play", &()).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Play
+        ));
+        call(&f.caller, "Pause", &()).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Pause
+        ));
+        call(&f.caller, "Stop", &()).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Stop
+        ));
+        call(&f.caller, "Next", &()).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Next
+        ));
+        call(&f.caller, "Previous", &()).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Previous
+        ));
+        // MPRIS offsets and positions are microseconds, the zone player takes milliseconds.
+        call(&f.caller, "Seek", &(2_500_000_i64,)).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Seek(2500)
+        ));
+        let track = zbus::ObjectPath::try_from("/org/snapdog/track").expect("path");
+        call(&f.caller, "SetPosition", &(track, 7_000_000_i64)).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Seek(7000)
+        ));
+        call(&f.caller, "OpenUri", &("file:///x",)).await;
+    }
+}

@@ -81,6 +81,8 @@ full = ["snapcast-embedded", "ap2", "dbus", "spotify", "api-docs"]
 test-harness = []
 
 [dev-dependencies]
+# Peer-to-peer connections let the D-Bus interface tests run without a bus daemon.
+zbus = { version = "6", default-features = false, features = ["tokio", "p2p"] }
 mockall = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }
