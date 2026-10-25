@@ -170,6 +170,11 @@ impl PlayerInterface {
     }
 }
 
+// zbus runs every method and property on the tokio runtime that serves the connection.
+// Nothing in here may block the thread: `blocking_lock`, `blocking_send`, `block_on` and
+// `std::thread::sleep` either panic ("Cannot block the current thread from within a
+// runtime") or stall every other call on the connection. Take the state with
+// `.lock().await` and send with `try_send` or `.send().await`.
 #[zbus::interface(name = "org.mpris.MediaPlayer2.Player")]
 impl PlayerInterface {
     #[zbus(property)]
@@ -331,14 +336,14 @@ impl PlayerInterface {
     fn pause(&self) {
         self.send_control(snapdog_common::PlaybackControl::Pause);
     }
-    fn play_pause(&self) {
-        // Toggle based on current state
-        let state = self.state.blocking_lock();
-        if state.playing {
-            drop(state);
+    async fn play_pause(&self) {
+        // Toggle on the state the event loop last reported. This has to be async: the
+        // method runs on the tokio runtime that serves the connection, and
+        // `Mutex::blocking_lock` panics there.
+        let playing = self.state.lock().await.playing;
+        if playing {
             self.send_control(snapdog_common::PlaybackControl::Pause);
         } else {
-            drop(state);
             self.send_control(snapdog_common::PlaybackControl::Play);
         }
     }
@@ -429,4 +434,178 @@ pub async fn start(
     tracing::info!("MPRIS2 D-Bus interface registered");
 
     Ok((conn, state, iface_ref))
+}
+
+/// The interface served over a peer-to-peer connection needs a Unix socket pair.
+#[cfg(all(test, unix))]
+mod p2p_tests {
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    use snapdog_common::PlaybackControl;
+    use zbus::{Guid, connection};
+
+    use super::*;
+
+    const PATH: &str = "/org/mpris/MediaPlayer2";
+    const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
+    /// A reply that never arrives is the failure these tests exist to catch, so every wait
+    /// has a deadline.
+    const DEADLINE: Duration = Duration::from_secs(5);
+
+    /// The Player interface served over a peer-to-peer connection (a socketpair), so no bus
+    /// daemon is needed, and the calling end of it.
+    struct Fixture {
+        caller: zbus::Connection,
+        /// Keeps the serving end open.
+        _server: zbus::Connection,
+        state: SharedDbusState,
+        commands: mpsc::Receiver<ClientCommand>,
+    }
+
+    async fn fixture() -> Fixture {
+        let (server_end, caller_end) = UnixStream::pair().expect("socketpair");
+        let (cmd_tx, commands) = mpsc::channel(8);
+        let state: SharedDbusState = Arc::new(Mutex::new(ClientDbusState::default()));
+        let player = PlayerInterface {
+            state: Arc::clone(&state),
+            cmd_tx,
+        };
+        let (server, caller) = tokio::try_join!(
+            async {
+                connection::Builder::unix_stream(server_end)
+                    .server(Guid::generate())
+                    .p2p()
+                    .serve_at(PATH, RootInterface)
+                    .serve_at(PATH, player)
+                    .build()
+                    .await
+            },
+            connection::Builder::unix_stream(caller_end).p2p().build(),
+        )
+        .expect("peer-to-peer handshake");
+        Fixture {
+            caller,
+            _server: server,
+            state,
+            commands,
+        }
+    }
+
+    async fn call<B>(caller: &zbus::Connection, method: &str, body: &B) -> zbus::Message
+    where
+        B: zbus::export::serde::Serialize + zbus::zvariant::DynamicType,
+    {
+        tokio::time::timeout(
+            DEADLINE,
+            caller.call_method(None::<&str>, PATH, Some(PLAYER), method, body),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            panic!("{method} got no reply within {DEADLINE:?}: the method most likely panicked")
+        })
+        .unwrap_or_else(|e| panic!("{method} failed: {e}"))
+    }
+
+    async fn next_control(commands: &mut mpsc::Receiver<ClientCommand>) -> PlaybackControl {
+        let cmd = tokio::time::timeout(DEADLINE, commands.recv())
+            .await
+            .expect("no command was forwarded")
+            .expect("command channel closed");
+        let ClientCommand::SendCustom(msg) = cmd else {
+            panic!("expected a custom message");
+        };
+        assert_eq!(msg.type_id, snapdog_common::MSG_TYPE_PLAYBACK_CONTROL);
+        serde_json::from_slice(&msg.payload).expect("payload is a PlaybackControl")
+    }
+
+    // The old `play_pause` took the state lock with `blocking_lock`, which panics inside
+    // the tokio runtime that zbus runs the method on: the caller never got a reply.
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn play_pause_replies_and_plays_when_not_playing() {
+        let mut f = fixture().await;
+        f.state.lock().await.playing = false;
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Play);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn play_pause_replies_and_pauses_when_playing() {
+        let mut f = fixture().await;
+        f.state.lock().await.playing = true;
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Pause);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn play_pause_follows_the_state_between_calls() {
+        let mut f = fixture().await;
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Play);
+        f.state.lock().await.playing = true;
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Pause);
+        f.state.lock().await.playing = false;
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Play);
+    }
+
+    /// Every method has to answer on the runtime thread, so a blocking call added to any of
+    /// them shows up here.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn every_method_replies_and_forwards_its_command() {
+        let mut f = fixture().await;
+        for (method, expected) in [
+            ("Play", PlaybackControl::Play),
+            ("Pause", PlaybackControl::Pause),
+            ("Stop", PlaybackControl::Stop),
+            ("Next", PlaybackControl::Next),
+            ("Previous", PlaybackControl::Previous),
+        ] {
+            call(&f.caller, method, &()).await;
+            assert_eq!(next_control(&mut f.commands).await, expected, "{method}");
+        }
+        // MPRIS offsets are microseconds, the control message carries milliseconds.
+        call(&f.caller, "Seek", &(2_500_000_i64,)).await;
+        assert_eq!(
+            next_control(&mut f.commands).await,
+            PlaybackControl::Seek {
+                position_ms: None,
+                offset_ms: Some(2500),
+            }
+        );
+        // Accepted and ignored, but the caller still gets its reply.
+        let track = zbus::ObjectPath::try_from("/org/snapdog/track").expect("path");
+        call(&f.caller, "SetPosition", &(track, 1_000_000_i64)).await;
+        call(&f.caller, "OpenUri", &("file:///x",)).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn playback_status_property_follows_the_state() {
+        let f = fixture().await;
+        let get = |name: &'static str| {
+            let caller = f.caller.clone();
+            async move {
+                let reply = tokio::time::timeout(
+                    DEADLINE,
+                    caller.call_method(
+                        None::<&str>,
+                        PATH,
+                        Some("org.freedesktop.DBus.Properties"),
+                        "Get",
+                        &(PLAYER, name),
+                    ),
+                )
+                .await
+                .expect("Properties.Get got no reply")
+                .expect("Properties.Get failed");
+                let value: zbus::OwnedVariant = reply.body().deserialize().expect("body");
+                String::try_from(value).expect("string property")
+            }
+        };
+        assert_eq!(get("PlaybackStatus").await, "Stopped");
+        f.state.lock().await.playing = true;
+        assert_eq!(get("PlaybackStatus").await, "Playing");
+    }
 }
