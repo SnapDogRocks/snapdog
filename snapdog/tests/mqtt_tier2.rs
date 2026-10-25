@@ -399,6 +399,51 @@ async fn mqtt_tier2_command_reaches_zone_channel() {
     );
 }
 
+/// A retained message on a `/set` topic is replayed by the broker at every
+/// subscribe, i.e. on every restart and reconnect. It must not be executed.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_retained_command_is_not_executed() {
+    let Some(broker) = start_broker("IT-T32 retained").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    seed_retained(
+        &host,
+        port,
+        &[
+            ("snapdog/zones/1/volume/set", "13"),
+            ("snapdog/zones/1/control/set", "stop"),
+        ],
+    )
+    .await;
+
+    let mut rig = start_bridge(&host, port).await;
+    assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+    // The retained messages reach the bridge right after its SUBACK, before any
+    // live message. A live command then proves the subscription works, and if it is
+    // the first thing on the zone channel, the retained ones were not executed.
+    let first = publish_until_received(
+        &host,
+        port,
+        "snapdog/zones/1/volume/set",
+        "44",
+        &mut rig.zone_rx,
+        20,
+    )
+    .await;
+    assert!(
+        matches!(first, Some(ZoneCommand::SetVolume(44))),
+        "the retained command must not run; first command was {first:?}"
+    );
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    while let Ok(cmd) = rig.zone_rx.try_recv() {
+        assert!(
+            matches!(cmd, ZoneCommand::SetVolume(44)),
+            "only the live command may arrive; got {cmd:?}"
+        );
+    }
+}
+
 /// SnapDog used to publish `media_player` discovery configs, a platform that Home
 /// Assistant's MQTT integration does not have. Those retained messages (and the
 /// stale double-slash status) must be cleared, and nothing under `homeassistant/`

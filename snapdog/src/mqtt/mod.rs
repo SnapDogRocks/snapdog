@@ -25,6 +25,8 @@ use crate::player::{SnapcastCmd, ZoneCommandSender};
 use crate::state;
 
 mod commands;
+mod limits;
+mod parse;
 mod payloads;
 mod publisher;
 mod runner;
@@ -33,6 +35,7 @@ mod test_support;
 mod topics;
 
 use commands::CommandHandler;
+use limits::LogThrottle;
 use publisher::{Publisher, request_capacity};
 use runner::{Session, run_connection, run_state_publisher};
 use topics::Topics;
@@ -97,6 +100,7 @@ impl MqttBridge {
             store: runtime.state.clone(),
             connected: connected_tx,
             shutdown: shutdown_rx.clone(),
+            log_throttle: LogThrottle::new(Duration::from_secs(10)),
         };
         let tasks = vec![
             tokio::spawn(run_connection(eventloop, session)),

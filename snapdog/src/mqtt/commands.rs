@@ -7,15 +7,91 @@
 //! to the Snapcast command channel. Nothing here blocks: a full channel drops
 //! the command, so a stalled zone cannot hold up the MQTT event loop (and with
 //! it the keep-alive).
+//!
+//! Every message passes the same gates, cheapest first:
+//!
+//! 1. a **retained** message is ignored: a retained command would run again on
+//!    every restart, long after anyone meant it;
+//! 2. the payload must be small ([`MAX_PAYLOAD_BYTES`]) and UTF-8;
+//! 3. the topic must be a command below our base topic;
+//! 4. the addressed zone or client is **rate limited**;
+//! 5. the payload must be understood exactly (see [`super::parse`]).
 
 use std::collections::HashMap;
+use std::time::Instant;
 
-use anyhow::Result;
 use tokio::sync::mpsc;
 
+use super::limits::RateLimiter;
+use super::parse::{
+    MAX_PAYLOAD_BYTES, PayloadError, Transport, parse_bool, parse_client_volume, parse_count,
+    parse_latency_ms, parse_repeat, parse_seconds, parse_seek_ms, parse_transport,
+    parse_zone_volume,
+};
 use super::topics::{Route, TopicError, Topics};
 use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
 use crate::state;
+
+/// What became of a message that was not rejected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Handled {
+    /// A command was queued.
+    Dispatched,
+    /// Retained messages are never executed.
+    IgnoredRetained,
+    /// Too many commands for this zone or client (or in total).
+    RateLimited,
+    /// Below the base topic, but not one of our command topics.
+    NotACommand,
+    /// The client exists but is not connected to Snapcast, so there is nobody to tell.
+    ClientOffline,
+}
+
+/// Why a message was refused. Never carries the payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rejected {
+    Topic(TopicError),
+    PayloadTooLarge,
+    PayloadNotUtf8,
+    Payload(PayloadError),
+    /// No such zone or client.
+    NoSuchTarget,
+    /// The command channel is full or closed.
+    NotDelivered,
+}
+
+impl std::fmt::Display for Rejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Topic(e) => e.fmt(f),
+            Self::PayloadTooLarge => f.write_str("payload is too large"),
+            Self::PayloadNotUtf8 => f.write_str("payload is not valid UTF-8"),
+            Self::Payload(e) => e.fmt(f),
+            Self::NoSuchTarget => f.write_str("no such zone or client"),
+            Self::NotDelivered => f.write_str("command channel is full or closed"),
+        }
+    }
+}
+
+impl std::error::Error for Rejected {}
+
+impl From<PayloadError> for Rejected {
+    fn from(e: PayloadError) -> Self {
+        Self::Payload(e)
+    }
+}
+
+impl Rejected {
+    /// A stable name for log throttling.
+    pub const fn category(&self) -> &'static str {
+        match self {
+            Self::Topic(_) => "rejected: topic",
+            Self::PayloadTooLarge | Self::PayloadNotUtf8 | Self::Payload(_) => "rejected: payload",
+            Self::NoSuchTarget => "rejected: no such target",
+            Self::NotDelivered => "rejected: not delivered",
+        }
+    }
+}
 
 /// Turns incoming MQTT messages into commands.
 pub struct CommandHandler {
@@ -23,11 +99,12 @@ pub struct CommandHandler {
     zone_commands: HashMap<usize, ZoneCommandSender>,
     state: state::SharedState,
     snap_tx: mpsc::Sender<SnapcastCmd>,
+    limiter: RateLimiter,
 }
 
 impl CommandHandler {
     /// A handler for the topics below `topics`.
-    pub const fn new(
+    pub fn new(
         topics: Topics,
         zone_commands: HashMap<usize, ZoneCommandSender>,
         state: state::SharedState,
@@ -38,178 +115,173 @@ impl CommandHandler {
             zone_commands,
             state,
             snap_tx,
+            limiter: RateLimiter::new(Instant::now()),
         }
     }
 
     /// Handle one incoming message.
     ///
-    /// A topic that is below the base but not a command is ignored (`Ok`).
+    /// # Errors
+    ///
+    /// See [`Rejected`].
+    pub async fn handle(
+        &mut self,
+        topic: &str,
+        payload: &[u8],
+        retain: bool,
+    ) -> Result<Handled, Rejected> {
+        self.handle_at(topic, payload, retain, Instant::now()).await
+    }
+
+    /// [`Self::handle`] with the clock as a parameter.
     ///
     /// # Errors
     ///
-    /// Returns an error for a topic outside the base or with an invalid index,
-    /// an unparsable payload, or a command that could not be delivered.
-    #[allow(clippy::too_many_lines)] // Match dispatcher for MQTT topics — splitting would obscure control flow
-    pub async fn handle(&self, topic: &str, payload: &str) -> Result<()> {
+    /// See [`Rejected`].
+    pub async fn handle_at(
+        &mut self,
+        topic: &str,
+        payload: &[u8],
+        retain: bool,
+        now: Instant,
+    ) -> Result<Handled, Rejected> {
+        if retain {
+            return Ok(Handled::IgnoredRetained);
+        }
+        if payload.len() > MAX_PAYLOAD_BYTES {
+            return Err(Rejected::PayloadTooLarge);
+        }
+        let payload = std::str::from_utf8(payload).map_err(|_| Rejected::PayloadNotUtf8)?;
         let parsed = match self.topics.parse_command(topic) {
             Ok(parsed) => parsed,
-            Err(TopicError::UnknownRoute) => {
-                tracing::debug!(topic = ?topic, "Unhandled MQTT command topic");
-                return Ok(());
-            }
-            Err(e) => return Err(e.into()),
+            Err(TopicError::UnknownRoute) => return Ok(Handled::NotACommand),
+            Err(e) => return Err(Rejected::Topic(e)),
         };
-        let index = parsed.index;
+        if !self.limiter.allow(parsed.scope, parsed.index, now) {
+            return Ok(Handled::RateLimited);
+        }
+        self.dispatch(parsed.route, parsed.index, payload).await
+    }
 
-        match parsed.route {
+    async fn dispatch(
+        &self,
+        route: Route,
+        index: usize,
+        payload: &str,
+    ) -> Result<Handled, Rejected> {
+        match route {
             // Zone commands → routed through ZonePlayer
             Route::ZoneVolume => {
-                let volume: f64 = payload.parse()?;
-                // Accept both 0.0-1.0 (HA) and 0-100 (legacy)
-                let volume_int = if volume <= 1.0 {
-                    (volume * 100.0).round() as i32
-                } else {
-                    volume as i32
-                };
-                self.send_zone(index, ZoneCommand::SetVolume(volume_int.clamp(0, 100)))?;
+                self.send_zone(index, ZoneCommand::SetVolume(parse_zone_volume(payload)?))
             }
-            Route::ZoneMute => {
-                let muted = matches!(payload.trim(), "true" | "1" | "on");
-                self.send_zone(index, ZoneCommand::SetMute(muted))?;
-            }
-            Route::ZoneControl => {
-                let cmd = match payload.to_lowercase().as_str() {
-                    "play" => Some(ZoneCommand::Play),
-                    "pause" => Some(ZoneCommand::Pause),
-                    "stop" => Some(ZoneCommand::Stop),
-                    "next" => Some(ZoneCommand::Next),
-                    "previous" => Some(ZoneCommand::Previous),
-                    _ => {
-                        tracing::debug!(zone = index, "Unknown control command");
-                        None
-                    }
-                };
-                if let Some(cmd) = cmd {
-                    self.send_zone(index, cmd)?;
-                }
-            }
+            Route::ZoneMute => self.send_zone(index, ZoneCommand::SetMute(parse_bool(payload)?)),
+            Route::ZoneControl => self.send_zone(
+                index,
+                match parse_transport(payload)? {
+                    Transport::Play => ZoneCommand::Play,
+                    Transport::Pause => ZoneCommand::Pause,
+                    Transport::Stop => ZoneCommand::Stop,
+                    Transport::Next => ZoneCommand::Next,
+                    Transport::Previous => ZoneCommand::Previous,
+                },
+            ),
             Route::ZonePlaylist => {
-                let playlist: usize = payload.parse()?;
-                self.send_zone(index, ZoneCommand::SetPlaylist(playlist, 0))?;
+                self.send_zone(index, ZoneCommand::SetPlaylist(parse_count(payload)?, 0))
             }
-            Route::ZoneTrack => {
-                let track: usize = payload.parse()?;
-                self.send_zone(index, ZoneCommand::SetTrack(track))?;
-            }
+            Route::ZoneTrack => self.send_zone(index, ZoneCommand::SetTrack(parse_count(payload)?)),
             Route::ZonePosition => {
-                let pos_secs: f64 = payload.parse()?;
-                let pos_ms = (pos_secs * 1000.0) as i64;
-                self.send_zone(index, ZoneCommand::Seek(pos_ms))?;
+                self.send_zone(index, ZoneCommand::Seek(parse_seek_ms(payload)?))
             }
             Route::ZoneShuffle => {
-                let shuffle = matches!(payload.trim(), "true" | "1" | "on");
-                self.send_zone(index, ZoneCommand::SetShuffle(shuffle))?;
+                self.send_zone(index, ZoneCommand::SetShuffle(parse_bool(payload)?))
             }
             Route::ZoneRepeat => {
-                let mode = match payload.trim() {
-                    "one" | "track" => snapdog_common::RepeatMode::Track,
-                    "all" | "playlist" => snapdog_common::RepeatMode::Playlist,
-                    _ => snapdog_common::RepeatMode::Off,
-                };
-                self.send_zone(index, ZoneCommand::SetRepeat(mode))?;
+                self.send_zone(index, ZoneCommand::SetRepeat(parse_repeat(payload)?))
             }
             Route::ZonePresence => {
-                let present: bool = payload.parse()?;
-                self.send_zone(index, ZoneCommand::SetPresence(present))?;
+                self.send_zone(index, ZoneCommand::SetPresence(parse_bool(payload)?))
             }
             Route::ZonePresenceEnable => {
-                let enabled: bool = payload.parse()?;
-                self.send_zone(index, ZoneCommand::SetPresenceEnabled(enabled))?;
+                self.send_zone(index, ZoneCommand::SetPresenceEnabled(parse_bool(payload)?))
             }
             Route::ZonePresenceTimeout => {
-                let delay: u16 = payload.parse()?;
-                self.send_zone(index, ZoneCommand::SetAutoOffDelay(delay))?;
+                self.send_zone(index, ZoneCommand::SetAutoOffDelay(parse_seconds(payload)?))
             }
 
             // Client commands → Snapcast commands or direct state mutation
             Route::ClientVolume => {
-                let volume: i32 = payload.parse()?;
-                self.send_client(index, ClientAction::Volume(volume.clamp(0, 100)))
-                    .await?;
+                let volume = parse_client_volume(payload)?;
+                self.send_client(index, ClientAction::Volume(volume)).await
             }
             Route::ClientMute => {
-                let muted: bool = payload.parse()?;
-                self.send_client(index, ClientAction::Mute(muted)).await?;
+                let muted = parse_bool(payload)?;
+                self.send_client(index, ClientAction::Mute(muted)).await
             }
             Route::ClientLatency => {
-                let latency: i32 = payload.parse()?;
+                let latency = parse_latency_ms(payload)?;
                 self.send_client(index, ClientAction::Latency(latency))
-                    .await?;
+                    .await
             }
-            Route::ClientZone => {
-                let zone: usize = payload.parse()?;
-                let mut store = self.state.write().await;
-                if zone == 0 || !store.zones.contains_key(&zone) {
-                    tracing::warn!(
-                        client = index,
-                        zone,
-                        "Ignoring MQTT client zone change to unknown zone"
-                    );
-                    return Ok(());
-                }
-                let Some(client) = store.clients.get_mut(&index) else {
-                    tracing::warn!(
-                        client = index,
-                        "Ignoring MQTT zone change for unknown client"
-                    );
-                    return Ok(());
-                };
-                client.zone_index = zone;
-                store.dirty = true;
-                drop(store);
-                self.snap_tx.try_send(SnapcastCmd::ReconcileZones)?;
-            }
+            Route::ClientZone => self.move_client(index, parse_count(payload)?).await,
         }
-
-        Ok(())
     }
 
     /// Queue a command for zone `index`'s player without waiting.
-    fn send_zone(&self, index: usize, cmd: ZoneCommand) -> Result<()> {
-        let Some(tx) = self.zone_commands.get(&index) else {
-            anyhow::bail!("no zone {index} to send the command to");
-        };
-        tx.try_send(cmd)
-            .map_err(|e| anyhow::anyhow!("zone {index} command channel: {e}"))
+    fn send_zone(&self, index: usize, cmd: ZoneCommand) -> Result<Handled, Rejected> {
+        let tx = self
+            .zone_commands
+            .get(&index)
+            .ok_or(Rejected::NoSuchTarget)?;
+        tx.try_send(cmd).map_err(|_| Rejected::NotDelivered)?;
+        Ok(Handled::Dispatched)
     }
 
-    /// Queue `action` for client `index` if it is known to Snapcast. A client
-    /// that is not connected (no Snapcast id yet) has nothing to receive it.
-    async fn send_client(&self, index: usize, action: ClientAction) -> Result<()> {
-        let snap_id = {
-            let store = self.state.read().await;
-            store
-                .clients
-                .get(&index)
-                .and_then(|c| c.snapcast_id.clone())
-        };
+    /// Queue `action` for client `index`.
+    async fn send_client(&self, index: usize, action: ClientAction) -> Result<Handled, Rejected> {
+        let snap_id = self
+            .state
+            .read()
+            .await
+            .clients
+            .get(&index)
+            .map(|client| client.snapcast_id.clone())
+            .ok_or(Rejected::NoSuchTarget)?;
         let Some(client_id) = snap_id else {
-            tracing::debug!(
-                client = index,
-                "MQTT client command for a client without Snapcast id"
-            );
-            return Ok(());
+            return Ok(Handled::ClientOffline);
         };
         self.snap_tx
             .try_send(SnapcastCmd::Client { client_id, action })
-            .map_err(|e| anyhow::anyhow!("Snapcast command channel: {e}"))
+            .map_err(|_| Rejected::NotDelivered)?;
+        Ok(Handled::Dispatched)
+    }
+
+    /// Move client `index` to zone `zone` and have Snapcast reconcile the groups.
+    async fn move_client(&self, index: usize, zone: usize) -> Result<Handled, Rejected> {
+        let mut store = self.state.write().await;
+        if zone == 0 || !store.zones.contains_key(&zone) {
+            return Err(Rejected::NoSuchTarget);
+        }
+        let client = store
+            .clients
+            .get_mut(&index)
+            .ok_or(Rejected::NoSuchTarget)?;
+        client.zone_index = zone;
+        store.dirty = true;
+        drop(store);
+        self.snap_tx
+            .try_send(SnapcastCmd::ReconcileZones)
+            .map_err(|_| Rejected::NotDelivered)?;
+        Ok(Handled::Dispatched)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mqtt::test_support::{snap_channel, test_state_with_client, zone_channels};
+    use crate::mqtt::test_support::{
+        snap_channel, test_state_with_client, zone_channels, zone_channels_with,
+    };
+    use std::time::Duration;
 
     /// A handler on `base` plus the receivers of its channels.
     fn handler(
@@ -231,31 +303,126 @@ mod tests {
         )
     }
 
+    /// Deliver a live (not retained) message.
+    async fn send(h: &mut CommandHandler, topic: &str, payload: &str) -> Result<Handled, Rejected> {
+        h.handle(topic, payload.as_bytes(), false).await
+    }
+
     #[tokio::test]
     async fn routes_zone_volume() {
-        let (h, mut rx, _snap, _state) = handler("snapdog/");
-        h.handle("snapdog/zones/1/volume/set", "75").await.unwrap();
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        let r = send(&mut h, "snapdog/zones/1/volume/set", "75").await;
+        assert_eq!(r, Ok(Handled::Dispatched));
         assert!(matches!(rx.recv().await, Some(ZoneCommand::SetVolume(75))));
     }
 
     #[tokio::test]
+    async fn zone_volume_takes_both_scales() {
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        for (payload, expected) in [("0.5", 50), ("50", 50), ("1", 100), ("0.01", 1), ("1.5", 1)] {
+            send(&mut h, "snapdog/zones/1/volume/set", payload)
+                .await
+                .unwrap();
+            assert!(
+                matches!(rx.recv().await, Some(ZoneCommand::SetVolume(v)) if v == expected),
+                "{payload}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn routes_zone_mute() {
-        let (h, mut rx, _snap, _state) = handler("snapdog/");
-        h.handle("snapdog/zones/1/mute/set", "true").await.unwrap();
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        send(&mut h, "snapdog/zones/1/mute/set", "true")
+            .await
+            .unwrap();
+        assert!(matches!(rx.recv().await, Some(ZoneCommand::SetMute(true))));
+        send(&mut h, "snapdog/zones/1/mute/set", "OFF")
+            .await
+            .unwrap();
+        assert!(matches!(rx.recv().await, Some(ZoneCommand::SetMute(false))));
+    }
+
+    #[tokio::test]
+    async fn on_means_mute_in_any_case() {
+        // Home Assistant's switch sends "ON"; it used to be read as "unmute".
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        send(&mut h, "snapdog/zones/1/mute/set", "ON")
+            .await
+            .unwrap();
         assert!(matches!(rx.recv().await, Some(ZoneCommand::SetMute(true))));
     }
 
     #[tokio::test]
+    async fn every_command_family_is_strict_about_booleans() {
+        // Zone mute and shuffle were lenient (anything but true/1/on meant off),
+        // client mute and presence strict. All of them are strict now.
+        let (mut h, mut rx, mut snap_rx, _state) = handler("snapdog/");
+        for topic in [
+            "snapdog/zones/1/mute/set",
+            "snapdog/zones/1/shuffle/set",
+            "snapdog/zones/1/presence/set",
+            "snapdog/zones/1/presence/enable/set",
+            "snapdog/clients/1/mute/set",
+        ] {
+            for bad in ["", "maybe", "unmute", "2"] {
+                assert!(
+                    matches!(send(&mut h, topic, bad).await, Err(Rejected::Payload(_))),
+                    "{topic} {bad:?}"
+                );
+            }
+            // Understood spellings pass on every one of them. The limiter is not
+            // what this test is about, so give each spelling its own time.
+            for (i, good) in ["true", "ON", "1", "false", "off", "0"].iter().enumerate() {
+                let now = Instant::now() + Duration::from_secs(i as u64 + 1);
+                assert_eq!(
+                    h.handle_at(topic, good.as_bytes(), false, now).await,
+                    Ok(Handled::Dispatched),
+                    "{topic} {good}"
+                );
+            }
+            while rx.try_recv().is_ok() {}
+            while snap_rx.try_recv().is_ok() {}
+        }
+    }
+
+    #[tokio::test]
+    async fn a_rejected_payload_changes_nothing() {
+        let (mut h, mut rx, mut snap_rx, state) = handler("snapdog/");
+        for (topic, payload) in [
+            ("snapdog/zones/1/volume/set", "NaN"),
+            ("snapdog/zones/1/volume/set", "loud"),
+            ("snapdog/zones/1/repeat/set", "sideways"),
+            ("snapdog/zones/1/control/set", "explode"),
+            ("snapdog/zones/1/position/set", "-5"),
+            ("snapdog/zones/1/track/set", "-1"),
+            ("snapdog/clients/1/latency/set", "99999"),
+            ("snapdog/clients/1/volume/set", "0.5"),
+            ("snapdog/clients/1/zone/set", "x"),
+        ] {
+            assert!(
+                matches!(
+                    send(&mut h, topic, payload).await,
+                    Err(Rejected::Payload(_))
+                ),
+                "{topic} {payload}"
+            );
+        }
+        assert!(rx.try_recv().is_err() && snap_rx.try_recv().is_err());
+        assert_eq!(state.read().await.clients[&1].zone_index, 1);
+    }
+
+    #[tokio::test]
     async fn routes_zone_control_commands() {
-        let (h, mut rx, _snap, _state) = handler("snapdog/");
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
         for (payload, expected) in [
             ("play", ZoneCommand::Play),
             ("pause", ZoneCommand::Pause),
-            ("stop", ZoneCommand::Stop),
-            ("next", ZoneCommand::Next),
+            ("STOP", ZoneCommand::Stop),
+            ("next\n", ZoneCommand::Next),
             ("previous", ZoneCommand::Previous),
         ] {
-            h.handle("snapdog/zones/1/control/set", payload)
+            send(&mut h, "snapdog/zones/1/control/set", payload)
                 .await
                 .unwrap();
             let cmd = rx.recv().await.unwrap();
@@ -267,79 +434,312 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn routes_zone_playlist() {
-        let (h, mut rx, _snap, _state) = handler("snapdog/");
-        h.handle("snapdog/zones/1/playlist/set", "3").await.unwrap();
+    async fn routes_zone_playlist_and_track() {
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        send(&mut h, "snapdog/zones/1/playlist/set", "3")
+            .await
+            .unwrap();
         assert!(matches!(
             rx.recv().await,
             Some(ZoneCommand::SetPlaylist(3, 0))
         ));
+        send(&mut h, "snapdog/zones/1/track/set", "7")
+            .await
+            .unwrap();
+        assert!(matches!(rx.recv().await, Some(ZoneCommand::SetTrack(7))));
     }
 
     #[tokio::test]
-    async fn routes_zone_seek() {
-        let (h, mut rx, _snap, _state) = handler("snapdog/");
-        h.handle("snapdog/zones/1/track/position/set", "30")
-            .await
-            .unwrap();
-        assert!(matches!(rx.recv().await, Some(ZoneCommand::Seek(30000))));
+    async fn routes_zone_seek_on_both_topics() {
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        for topic in [
+            "snapdog/zones/1/track/position/set",
+            "snapdog/zones/1/position/set",
+        ] {
+            send(&mut h, topic, "30").await.unwrap();
+            assert!(matches!(rx.recv().await, Some(ZoneCommand::Seek(30000))));
+        }
     }
 
     #[tokio::test]
-    async fn routes_client_volume() {
-        let (h, _rx, mut snap_rx, _state) = handler("snapdog/");
-        h.handle("snapdog/clients/1/volume/set", "80")
+    async fn routes_zone_repeat_and_presence() {
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        send(&mut h, "snapdog/zones/1/repeat/set", "all")
             .await
             .unwrap();
-        let cmd = snap_rx.recv().await.unwrap();
-        assert!(
-            matches!(cmd, SnapcastCmd::Client { client_id, action: ClientAction::Volume(80) } if client_id == "snap-1")
-        );
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::SetRepeat(snapdog_common::RepeatMode::Playlist))
+        ));
+        send(&mut h, "snapdog/zones/1/presence/timeout/set", "90")
+            .await
+            .unwrap();
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::SetAutoOffDelay(90))
+        ));
     }
 
     #[tokio::test]
-    async fn routes_client_mute() {
-        let (h, _rx, mut snap_rx, _state) = handler("snapdog/");
-        h.handle("snapdog/clients/1/mute/set", "true")
+    async fn routes_client_volume_mute_and_latency() {
+        let (mut h, _rx, mut snap_rx, _state) = handler("snapdog/");
+        send(&mut h, "snapdog/clients/1/volume/set", "80")
             .await
             .unwrap();
-        let cmd = snap_rx.recv().await.unwrap();
-        assert!(
-            matches!(cmd, SnapcastCmd::Client { client_id, action: ClientAction::Mute(true) } if client_id == "snap-1")
-        );
+        assert!(matches!(
+            snap_rx.recv().await,
+            Some(SnapcastCmd::Client { client_id, action: ClientAction::Volume(80) }) if client_id == "snap-1"
+        ));
+        send(&mut h, "snapdog/clients/1/mute/set", "true")
+            .await
+            .unwrap();
+        assert!(matches!(
+            snap_rx.recv().await,
+            Some(SnapcastCmd::Client { client_id, action: ClientAction::Mute(true) }) if client_id == "snap-1"
+        ));
+        send(&mut h, "snapdog/clients/1/latency/set", "-20")
+            .await
+            .unwrap();
+        assert!(matches!(
+            snap_rx.recv().await,
+            Some(SnapcastCmd::Client {
+                action: ClientAction::Latency(-20),
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn clamps_client_volume() {
+        let (mut h, _rx, mut snap_rx, _state) = handler("snapdog/");
+        send(&mut h, "snapdog/clients/1/volume/set", "200")
+            .await
+            .unwrap();
+        assert!(matches!(
+            snap_rx.recv().await,
+            Some(SnapcastCmd::Client {
+                action: ClientAction::Volume(100),
+                ..
+            })
+        ));
     }
 
     #[tokio::test]
     async fn routes_client_zone_change() {
-        let (h, _rx, mut snap_rx, state) = handler("snapdog/");
-        h.handle("snapdog/clients/1/zone/set", "2").await.unwrap();
+        let (mut h, _rx, mut snap_rx, state) = handler("snapdog/");
+        send(&mut h, "snapdog/clients/1/zone/set", "2")
+            .await
+            .unwrap();
         assert_eq!(state.read().await.clients[&1].zone_index, 2);
-        let cmd = snap_rx.recv().await.unwrap();
-        assert!(matches!(cmd, SnapcastCmd::ReconcileZones));
+        assert!(matches!(
+            snap_rx.recv().await,
+            Some(SnapcastCmd::ReconcileZones)
+        ));
     }
 
     #[tokio::test]
-    async fn rejects_client_zone_change_to_unknown_zone() {
-        let (h, _rx, mut snap_rx, state) = handler("snapdog/");
-        h.handle("snapdog/clients/1/zone/set", "99").await.unwrap();
+    async fn client_zone_change_to_an_unknown_zone_or_client_is_refused() {
+        let (mut h, _rx, mut snap_rx, state) = handler("snapdog/");
+        for (topic, payload) in [
+            ("snapdog/clients/1/zone/set", "99"),
+            ("snapdog/clients/1/zone/set", "0"),
+            ("snapdog/clients/9/zone/set", "2"),
+        ] {
+            assert_eq!(
+                send(&mut h, topic, payload).await,
+                Err(Rejected::NoSuchTarget),
+                "{topic} {payload}"
+            );
+        }
         assert_eq!(state.read().await.clients[&1].zone_index, 1);
         assert!(snap_rx.try_recv().is_err());
     }
 
     #[tokio::test]
-    async fn clamps_client_volume() {
-        let (h, _rx, mut snap_rx, _state) = handler("snapdog/");
-        h.handle("snapdog/clients/1/volume/set", "200")
+    async fn a_command_for_an_unknown_target_is_an_error_not_a_silent_drop() {
+        let (mut h, _rx, _snap, _state) = handler("snapdog/");
+        assert_eq!(
+            send(&mut h, "snapdog/zones/2/volume/set", "10").await,
+            Err(Rejected::NoSuchTarget),
+            "zone 2 has no player in this fixture"
+        );
+        assert_eq!(
+            send(&mut h, "snapdog/clients/5/volume/set", "10").await,
+            Err(Rejected::NoSuchTarget)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_client_without_snapcast_id_is_offline_not_an_error() {
+        let (mut h, _rx, mut snap_rx, state) = handler("snapdog/");
+        state.write().await.clients.get_mut(&1).unwrap().snapcast_id = None;
+        assert_eq!(
+            send(&mut h, "snapdog/clients/1/volume/set", "10").await,
+            Ok(Handled::ClientOffline)
+        );
+        assert!(snap_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn ignores_unknown_topic_below_the_base() {
+        let (mut h, mut rx, mut snap_rx, _state) = handler("snapdog/");
+        assert_eq!(
+            send(&mut h, "snapdog/unknown/topic", "x").await,
+            Ok(Handled::NotACommand)
+        );
+        assert!(rx.try_recv().is_err() && snap_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn rejects_topic_outside_the_base() {
+        let (mut h, _rx, _snap, _state) = handler("snapdog/");
+        for topic in ["other/zones/1/volume/set", "snapdogs/zones/1/volume/set"] {
+            assert_eq!(
+                send(&mut h, topic, "50").await,
+                Err(Rejected::Topic(TopicError::OutsideBase)),
+                "{topic}"
+            );
+        }
+    }
+
+    // ── Gates ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn retained_commands_are_never_executed() {
+        // A retained message on a `/set` topic is replayed by the broker on every
+        // subscribe, i.e. on every restart and every reconnect.
+        let (mut h, mut rx, mut snap_rx, _state) = handler("snapdog/");
+        for topic in [
+            "snapdog/zones/1/volume/set",
+            "snapdog/zones/1/control/set",
+            "snapdog/clients/1/mute/set",
+        ] {
+            assert_eq!(
+                h.handle(topic, b"1", true).await,
+                Ok(Handled::IgnoredRetained),
+                "{topic}"
+            );
+        }
+        // Not even a rejected payload or a foreign topic is looked at.
+        assert_eq!(
+            h.handle("snapdog/zones/1/volume/set", b"\xff", true).await,
+            Ok(Handled::IgnoredRetained)
+        );
+        assert!(rx.try_recv().is_err() && snap_rx.try_recv().is_err());
+        // The same message, live, is executed.
+        assert_eq!(
+            h.handle("snapdog/zones/1/control/set", b"play", false)
+                .await,
+            Ok(Handled::Dispatched)
+        );
+        assert!(matches!(rx.try_recv(), Ok(ZoneCommand::Play)));
+    }
+
+    #[tokio::test]
+    async fn oversized_and_non_utf8_payloads_are_refused() {
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        let topic = "snapdog/zones/1/volume/set";
+        let big = vec![b'5'; MAX_PAYLOAD_BYTES + 1];
+        assert_eq!(
+            h.handle(topic, &big, false).await,
+            Err(Rejected::PayloadTooLarge)
+        );
+        let mut at_limit = vec![b' '; MAX_PAYLOAD_BYTES - 2];
+        at_limit.extend_from_slice(b"50");
+        assert_eq!(
+            h.handle(topic, &at_limit, false).await,
+            Ok(Handled::Dispatched),
+            "exactly at the limit still works"
+        );
+        assert_eq!(
+            h.handle(topic, b"5\xff0", false).await,
+            Err(Rejected::PayloadNotUtf8)
+        );
+        assert!(matches!(rx.try_recv(), Ok(ZoneCommand::SetVolume(50))));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn a_flood_on_one_zone_is_cut_off_and_other_targets_are_unaffected() {
+        let (mut h, mut rx, _snap, _state) = handler("snapdog/");
+        let t0 = Instant::now();
+        let mut dispatched = 0;
+        let mut limited = 0;
+        for _ in 0..1000 {
+            match h
+                .handle_at("snapdog/zones/1/volume/set", b"50", false, t0)
+                .await
+            {
+                // The zone channel holds 16: past that the command is dropped, not queued.
+                Ok(Handled::Dispatched) | Err(Rejected::NotDelivered) => dispatched += 1,
+                Ok(Handled::RateLimited) => limited += 1,
+                other => panic!("{other:?}"),
+            }
+        }
+        assert_eq!(dispatched, 30, "one burst gets through the limiter");
+        assert_eq!(limited, 970);
+        let mut queued = 0;
+        while rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, 16, "the zone channel is full, not flooded");
+
+        // Later the budget has refilled, and a client is not the zone.
+        assert_eq!(
+            h.handle_at(
+                "snapdog/zones/1/volume/set",
+                b"50",
+                false,
+                t0 + Duration::from_secs(1)
+            )
+            .await,
+            Ok(Handled::Dispatched)
+        );
+        assert_eq!(
+            h.handle_at("snapdog/clients/1/mute/set", b"on", false, t0)
+                .await,
+            Ok(Handled::Dispatched)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_full_zone_channel_drops_the_command_instead_of_blocking() {
+        let (snap_tx, _snap_rx) = snap_channel();
+        let (cmds, mut rx) = zone_channels_with(1);
+        let mut h = CommandHandler::new(
+            Topics::new("snapdog/"),
+            cmds,
+            test_state_with_client(),
+            snap_tx,
+        );
+        send(&mut h, "snapdog/zones/1/volume/set", "10")
             .await
             .unwrap();
-        let cmd = snap_rx.recv().await.unwrap();
-        assert!(matches!(
-            cmd,
-            SnapcastCmd::Client {
-                action: ClientAction::Volume(100),
-                ..
-            }
-        ));
+        // The channel holds one command and nobody receives: this must return, not hang.
+        let second = tokio::time::timeout(
+            Duration::from_secs(1),
+            send(&mut h, "snapdog/zones/1/volume/set", "20"),
+        )
+        .await
+        .expect("handle must not block on a full channel");
+        assert_eq!(second, Err(Rejected::NotDelivered));
+        assert!(matches!(rx.try_recv(), Ok(ZoneCommand::SetVolume(10))));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn rejection_messages_never_contain_a_payload() {
+        for rejected in [
+            Rejected::PayloadTooLarge,
+            Rejected::PayloadNotUtf8,
+            Rejected::Payload(PayloadError("volume is not a number")),
+            Rejected::NoSuchTarget,
+            Rejected::NotDelivered,
+            Rejected::Topic(TopicError::InvalidIndex),
+        ] {
+            assert_ne!(rejected.to_string(), "");
+            assert_ne!(rejected.category(), "");
+        }
     }
 
     // ── Regression: command topics under the real, normalised base topic ──
@@ -396,8 +796,10 @@ mod tests {
         // The exact topic from the bug report, with the base the config really produces.
         let mqtt = mqtt_config(None);
         assert_eq!(mqtt.base_topic, "snapdog/");
-        let (h, mut rx, _snap, _state) = handler(&mqtt.base_topic);
-        h.handle("snapdog/zones/1/volume/set", "75").await.unwrap();
+        let (mut h, mut rx, _snap, _state) = handler(&mqtt.base_topic);
+        send(&mut h, "snapdog/zones/1/volume/set", "75")
+            .await
+            .unwrap();
         assert!(matches!(rx.recv().await, Some(ZoneCommand::SetVolume(75))));
     }
 
@@ -430,8 +832,8 @@ mod tests {
                     .map(|(_, tail)| tail)
                     .expect("scope/1/tail");
 
-                let (h, mut zone_rx, mut snap_rx, _state) = handler(&mqtt.base_topic);
-                h.handle(&topic, valid_payload(tail))
+                let (mut h, mut zone_rx, mut snap_rx, _state) = handler(&mqtt.base_topic);
+                send(&mut h, &topic, valid_payload(tail))
                     .await
                     .unwrap_or_else(|e| panic!("{topic} was rejected: {e}"));
                 assert!(
@@ -440,49 +842,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[tokio::test]
-    async fn ignores_unknown_topic_below_the_base() {
-        let (h, mut rx, mut snap_rx, _state) = handler("snapdog/");
-        h.handle("snapdog/unknown/topic", "x").await.unwrap();
-        assert!(rx.try_recv().is_err() && snap_rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn rejects_topic_outside_the_base() {
-        let (h, _rx, _snap, _state) = handler("snapdog/");
-        for topic in ["other/zones/1/volume/set", "snapdogs/zones/1/volume/set"] {
-            assert!(h.handle(topic, "50").await.is_err(), "{topic}");
-        }
-    }
-
-    #[tokio::test]
-    async fn a_full_zone_channel_drops_the_command_instead_of_blocking() {
-        let (snap_tx, _snap_rx) = snap_channel();
-        let (cmds, mut rx) = crate::mqtt::test_support::zone_channels_with(1);
-        let h = CommandHandler::new(
-            Topics::new("snapdog/"),
-            cmds,
-            test_state_with_client(),
-            snap_tx,
-        );
-        h.handle("snapdog/zones/1/volume/set", "10").await.unwrap();
-        // The channel holds one command and nobody receives: this must return, not hang.
-        let second = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            h.handle("snapdog/zones/1/volume/set", "20"),
-        )
-        .await
-        .expect("handle must not block on a full channel");
-        assert!(second.is_err());
-        assert!(matches!(rx.try_recv(), Ok(ZoneCommand::SetVolume(10))));
-        assert!(rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn unknown_zone_is_an_error() {
-        let (h, _rx, _snap, _state) = handler("snapdog/");
-        assert!(h.handle("snapdog/zones/2/volume/set", "10").await.is_err());
     }
 }

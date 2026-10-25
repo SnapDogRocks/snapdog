@@ -25,7 +25,8 @@ use std::time::{Duration, Instant};
 use rumqttc::{ConnectReturnCode, ConnectionError, Event, EventLoop, Outgoing, Packet, QoS};
 use tokio::sync::{broadcast, watch};
 
-use super::commands::CommandHandler;
+use super::commands::{CommandHandler, Handled};
+use super::limits::LogThrottle;
 use super::publisher::Publisher;
 use crate::api::ws::Notification;
 use crate::state;
@@ -99,6 +100,8 @@ pub struct Session {
     /// Set while a connection is established.
     pub connected: watch::Sender<bool>,
     pub shutdown: watch::Receiver<bool>,
+    /// Keeps a flood of bad messages from flooding the log.
+    pub log_throttle: LogThrottle,
 }
 
 /// Poll the broker until shutdown.
@@ -185,11 +188,40 @@ impl Session {
         tracing::info!(subscribed, states, "MQTT subscribed and announced");
     }
 
-    async fn on_message(&self, msg: &rumqttc::Publish) {
-        let payload = String::from_utf8_lossy(&msg.payload);
-        tracing::debug!(topic = ?msg.topic, payload = ?payload, "MQTT message received");
-        if let Err(e) = self.handler.handle(&msg.topic, &payload).await {
-            tracing::warn!(error = %e, topic = ?msg.topic, "Failed to handle MQTT command");
+    async fn on_message(&mut self, msg: &rumqttc::Publish) {
+        // The payload is logged here and nowhere else, and only at debug level, in
+        // part and escaped (`?`): it is whatever somebody on the network sent.
+        tracing::debug!(
+            topic = ?msg.topic,
+            retain = msg.retain,
+            bytes = msg.payload.len(),
+            payload = ?String::from_utf8_lossy(&msg.payload[..msg.payload.len().min(64)]),
+            "MQTT message received"
+        );
+        let result = self
+            .handler
+            .handle(&msg.topic, &msg.payload, msg.retain)
+            .await;
+        let (category, outcome) = match result {
+            Ok(Handled::Dispatched | Handled::NotACommand | Handled::ClientOffline) => return,
+            Ok(Handled::IgnoredRetained) => (
+                "ignored: retained",
+                "Ignoring a retained message on a command topic: retained commands are never \
+                 executed (clear it with an empty retained publish)"
+                    .to_string(),
+            ),
+            Ok(Handled::RateLimited) => (
+                "ignored: rate limited",
+                "Dropping MQTT commands: too many for one zone or client".to_string(),
+            ),
+            Err(rejected) => (
+                rejected.category(),
+                format!("Rejected MQTT command: {rejected}"),
+            ),
+        };
+        if let Some(held_back) = self.log_throttle.check(category, Instant::now()) {
+            // The topic is whatever a client published to: escaped (`?`), never raw.
+            tracing::warn!(topic = ?msg.topic, held_back, "{outcome}");
         }
     }
 }

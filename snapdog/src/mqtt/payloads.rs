@@ -4,8 +4,30 @@
 //! Retained state payloads (zone and client JSON).
 //!
 //! Pure functions, so the wire schema is unit-testable without a broker.
+//!
+//! Free text from track tags is cut to a fixed length. rumqttc treats a packet
+//! over its size limit (10 KiB by default) as a *connection* error: the packet is
+//! consumed, the connection is torn down and re-established. One track with an
+//! absurd title would make the bridge reconnect on every state change.
 
 use crate::state;
+
+/// Longest title, artist or album in the retained state, in bytes.
+const MAX_TEXT_BYTES: usize = 512;
+/// Longest cover URL in the retained state, in bytes.
+const MAX_URL_BYTES: usize = 1024;
+
+/// `s` cut to at most `max` bytes, on a character boundary.
+fn truncate_utf8(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
 
 /// Build the retained zone-state JSON (Home Assistant `media_player` schema).
 ///
@@ -37,9 +59,10 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
     });
 
     if let Some(track) = &zone.track {
-        payload["media_title"] = serde_json::json!(track.title);
-        payload["media_artist"] = serde_json::json!(track.artist);
-        payload["media_album_name"] = serde_json::json!(track.album);
+        payload["media_title"] = serde_json::json!(truncate_utf8(&track.title, MAX_TEXT_BYTES));
+        payload["media_artist"] = serde_json::json!(truncate_utf8(&track.artist, MAX_TEXT_BYTES));
+        payload["media_album_name"] =
+            serde_json::json!(truncate_utf8(&track.album, MAX_TEXT_BYTES));
         payload["media_duration"] = serde_json::json!(track.duration_ms / 1000);
         payload["media_position"] = serde_json::json!(track.position_ms / 1000);
         payload["media_content_type"] = serde_json::json!("music");
@@ -51,7 +74,7 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
         } else {
             cover_url.clone()
         };
-        payload["media_image_url"] = serde_json::json!(absolute);
+        payload["media_image_url"] = serde_json::json!(truncate_utf8(&absolute, MAX_URL_BYTES));
     }
 
     payload
@@ -150,5 +173,40 @@ mod tests {
         assert_eq!(p["connected"], true);
         assert_eq!(p["zone"], 1);
         assert_eq!(p["latency"], 0);
+    }
+
+    #[test]
+    fn truncation_respects_character_boundaries() {
+        assert_eq!(truncate_utf8("abc", 5), "abc");
+        assert_eq!(truncate_utf8("abcdef", 3), "abc");
+        // "ä" is two bytes: a cut in the middle backs off to the boundary before it.
+        assert_eq!(truncate_utf8("aä", 2), "a");
+        assert_eq!(truncate_utf8("aä", 3), "aä");
+        assert_eq!(truncate_utf8("日本語", 4), "日");
+        assert_eq!(truncate_utf8("", 0), "");
+    }
+
+    #[tokio::test]
+    async fn an_absurd_track_tag_cannot_exceed_the_packet_size_limit() {
+        let state = test_state_with_client();
+        let mut z = state.read().await.zones[&1].clone();
+        z.cover_url = Some(format!("/cover/{}", "x".repeat(100_000)));
+        z.track = Some(
+            serde_json::from_value(serde_json::json!({
+                "title": "ä".repeat(500_000), "artist": "A".repeat(200_000), "album": "日".repeat(100_000),
+                "album_artist": null, "genre": null, "year": null,
+                "track_number": null, "disc_number": null,
+                "duration_ms": 200_000, "position_ms": 5_000, "seekable": true,
+                "source": "subsonicplaylist", "bitrate_kbps": null,
+                "content_type": null, "sample_rate": null
+            }))
+            .unwrap(),
+        );
+        let json = zone_state_payload("http://host:8000", &z).to_string();
+        // rumqttc's default limit is 10 KiB, topic and header included.
+        assert!(json.len() < 4096, "{} bytes", json.len());
+        let back: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(back["media_title"].as_str().unwrap().starts_with("ää"));
+        assert!(back["media_title"].as_str().unwrap().len() <= MAX_TEXT_BYTES);
     }
 }
