@@ -27,6 +27,18 @@ use snapcast_client::ClientCommand;
 /// Bus name prefix for the client.
 const BUS_NAME_PREFIX: &str = "org.mpris.MediaPlayer2.snapdog_client";
 
+/// Highest `.instanceN` suffix tried when the plain name is taken.
+const MAX_INSTANCE: u32 = 10;
+
+/// Bus names to request in order: the plain name, then `.instance2` to `.instance10`.
+///
+/// `dbus/snapdog-client.conf` has to allow sending to every one of these, name by name
+/// (see the test `policy_file_lists_every_bus_name`).
+fn bus_names() -> impl Iterator<Item = String> {
+    std::iter::once(BUS_NAME_PREFIX.to_owned())
+        .chain((2..=MAX_INSTANCE).map(|i| format!("{BUS_NAME_PREFIX}.instance{i}")))
+}
+
 /// Shared state between the D-Bus interface and the event loop.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
@@ -408,20 +420,13 @@ pub async fn start(
 
     // Take the name only now that the interfaces answer calls to it; retry with an
     // instance suffix if another client holds it.
-    let base = BUS_NAME_PREFIX;
-    let acquired = if conn.request_name(base).await.is_ok() {
-        true
-    } else {
-        let mut ok = false;
-        for i in 2..=10 {
-            let name = format!("{base}.instance{i}");
-            if conn.request_name(name.as_str()).await.is_ok() {
-                ok = true;
-                break;
-            }
+    let mut acquired = false;
+    for name in bus_names() {
+        if conn.request_name(name.as_str()).await.is_ok() {
+            acquired = true;
+            break;
         }
-        ok
-    };
+    }
     if !acquired {
         anyhow::bail!("Could not acquire D-Bus bus name");
     }
@@ -434,6 +439,57 @@ pub async fn start(
     tracing::info!("MPRIS2 D-Bus interface registered");
 
     Ok((conn, state, iface_ref))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Values of the `<allow ATTR="...">` rules in a policy file.
+    fn allow_rules(policy: &str, attr: &str) -> Vec<String> {
+        let open = format!("<allow {attr}=\"");
+        policy
+            .lines()
+            .filter_map(|line| {
+                line.trim()
+                    .strip_prefix(open.as_str())?
+                    .strip_suffix("\"/>")
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
+    /// The bus policy has to allow sending to every name `start` can end up owning.
+    ///
+    /// It lists them one by one. A `send_destination_prefix` rule would be shorter, but
+    /// dbus-broker ignores it ("Unknown attribute", so every non-root caller is denied) and
+    /// dbus-daemon 1.12 rejects the whole file.
+    #[test]
+    fn policy_file_lists_every_bus_name() {
+        let policy = include_str!("../dbus/snapdog-client.conf");
+        let expected: Vec<String> = bus_names().collect();
+        let allowed = allow_rules(policy, "send_destination");
+        let missing: Vec<_> = expected
+            .iter()
+            .filter(|n| !allowed.contains(n))
+            .take(5)
+            .collect();
+        let unused: Vec<_> = allowed
+            .iter()
+            .filter(|n| !expected.contains(n))
+            .take(5)
+            .collect();
+        assert!(
+            missing.is_empty() && unused.is_empty(),
+            "dbus/snapdog-client.conf and bus_names() disagree. Not in the file (first 5): \
+             {missing:?}. In the file but never requested (first 5): {unused:?}"
+        );
+        assert_eq!(allow_rules(policy, "own_prefix"), [BUS_NAME_PREFIX]);
+        assert!(
+            !policy.contains("send_destination_prefix=\""),
+            "send_destination_prefix is not understood by dbus-broker or dbus-daemon 1.12"
+        );
+    }
 }
 
 /// The interface served over a peer-to-peer connection needs a Unix socket pair.

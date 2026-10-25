@@ -405,7 +405,9 @@ $ playerctl -p snapdog.zone1 play
 $ playerctl -p snapdog.zone1 volume 0.8
 ```
 
-Each zone appears as `org.mpris.MediaPlayer2.snapdog.zone{N}`. SnapDog uses the session bus when `DBUS_SESSION_BUS_ADDRESS` is set and the system bus otherwise, which is the case for the systemd service. The system bus only lets a process own a name that a policy allows, so the `.deb`, AUR and SnapDog OS packages install one to `/usr/share/dbus-1/system.d/` (`snapdog.conf` for the server, `snapdog-client.conf` for the client). If you install the binaries by hand, copy the files from `packaging/` in the release archive there as well. Disable with:
+Each zone appears as `org.mpris.MediaPlayer2.snapdog.zone{N}`. SnapDog uses the session bus when `DBUS_SESSION_BUS_ADDRESS` is set and the system bus otherwise, which is the case for the systemd service. The system bus only lets a process own a name that a policy allows, so the `.deb`, AUR and SnapDog OS packages install one to `/usr/share/dbus-1/system.d/` (`snapdog.conf` for the server, `snapdog-client.conf` for the client). If you install the binaries by hand, copy the files from `packaging/` in the release archive there as well.
+
+The policy lets every local user read the players and control them, which is what `playerctl` and media keys do. It allows sending to each bus name one by one instead of by prefix, because `dbus-broker` ignores prefix rules for sending and would deny every caller. The server's file covers zones 1 to 16 (the plain name and `.instance2` to `.instance10` for each). For a zone above 16 the server logs a warning, and nobody can call its player on the system bus until you add its names to `snapdog.conf`. Disable with:
 
 ```toml
 [dbus]
