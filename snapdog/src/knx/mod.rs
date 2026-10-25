@@ -649,12 +649,21 @@ where
     L: KnxListener,
     S: BuildHasher + Send + Sync,
 {
-    tracing::info!(
-        zone_gas = bridge.zone_ga_map.len(),
-        client_gas = bridge.client_ga_map.len(),
-        global_gas = bridge.global_ga_map.len(),
-        "KNX listener started"
-    );
+    if bridge
+        .config
+        .knx
+        .as_ref()
+        .is_some_and(|k| k.role == crate::config::KnxRole::Client)
+    {
+        tracing::info!(
+            zone_gas = bridge.zone_ga_map.len(),
+            client_gas = bridge.client_ga_map.len(),
+            global_gas = bridge.global_ga_map.len(),
+            "KNX listener started"
+        );
+    } else {
+        tracing::info!("KNX listener started (group objects)");
+    }
 
     while let Some(incoming) = transport.recv().await {
         match incoming {

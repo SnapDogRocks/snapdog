@@ -960,7 +960,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     );
                 }
 
-                let before = TableSummary::of(bau);
+                let before = is_tunnel.then(|| TableSummary::of(bau));
                 let ia_before = bau.individual_address();
                 bau.process_frame(&frame, now_ms());
                 bau.poll(now_ms());
@@ -981,10 +981,12 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                 }
 
                 // Log (and re-publish) when a download changed what is associated.
-                let after = TableSummary::of(bau);
-                if after != before {
-                    after.log("ETS download");
-                    resync.notify_one();
+                if let Some(before) = before {
+                    let after = TableSummary::of(bau);
+                    if after != before {
+                        after.log("ETS download");
+                        resync.notify_one();
+                    }
                 }
 
                 // An A_Restart / master reset from ETS ends the programming session
