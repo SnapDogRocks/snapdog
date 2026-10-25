@@ -230,12 +230,6 @@ export type WsNotification =
   | WsZoneEqChanged
   | WsPlaybackError;
 
-export interface WsCommand {
-  zone: number;
-  action: string;
-  value?: string | number | boolean;
-}
-
 // ── Volume ────────────────────────────────────────────────────
 
 export type VolumeValue = number | string; // absolute (75) or relative ("+5")

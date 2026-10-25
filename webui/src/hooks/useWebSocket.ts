@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import type { WsNotification, WsCommand } from "@/lib/types";
+import type { WsNotification } from "@/lib/types";
 import { getApiKey } from "@/lib/auth";
 
 const BACKOFF_STEPS = [1_000, 2_500, 5_000, 10_000, 15_000];
@@ -82,12 +82,5 @@ export function useWebSocket(onNotification: (n: WsNotification) => void, onReco
     };
   }, [connect]);
 
-  const sendCommand = useCallback((zone: number, action: string, value?: WsCommand["value"]) => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ zone, action, value }));
-    }
-  }, []);
-
-  return { isConnected, serverGoingAway, retryIn, sendCommand };
+  return { isConnected, serverGoingAway, retryIn };
 }
