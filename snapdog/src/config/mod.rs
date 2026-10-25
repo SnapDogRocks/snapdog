@@ -7,6 +7,7 @@
 //! Convention over configuration: sensible defaults, auto-generated where possible.
 
 mod convention;
+mod notices;
 mod types;
 
 pub use types::*;
@@ -23,9 +24,64 @@ use anyhow::{Context, Result};
 pub fn load(path: &Path) -> Result<AppConfig> {
     let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
         .with_context(|| format!("Failed to read {}", path.display()))?;
+    load_str(&content).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
+/// Like [`load`], but takes the TOML text. Keys that no config struct knows
+/// (typos, removed keys) are accepted, so existing files keep loading, but are
+/// reported through [`AppConfig::notices`].
+///
+/// # Errors
+///
+/// Returns an error if the text is not valid TOML or the configuration is invalid.
+pub fn load_str(content: &str) -> Result<AppConfig> {
+    let mut unknown = Vec::new();
     let raw: FileConfig =
-        toml::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
-    load_raw(raw)
+        serde_ignored::deserialize(toml::Deserializer::parse(content)?, |path| {
+            unknown.push(path.to_string());
+        })?;
+    let mut config = load_raw(raw)?;
+    for key in unknown {
+        config.warn(format!(
+            "Unknown configuration key `{}` is ignored. Check the spelling against snapdog.example.toml.",
+            display_key_path(&key)
+        ));
+    }
+    Ok(config)
+}
+
+/// Unknown-key list for a TOML text, in the form used in log messages.
+/// Mainly for tests that need to assert a file contains no stale keys.
+///
+/// # Errors
+///
+/// Returns an error if the text cannot be parsed into the config structure.
+pub fn unknown_keys(content: &str) -> Result<Vec<String>> {
+    let mut unknown = Vec::new();
+    let _: FileConfig = serde_ignored::deserialize(toml::Deserializer::parse(content)?, |path| {
+        unknown.push(display_key_path(&path.to_string()));
+    })?;
+    Ok(unknown)
+}
+
+/// Make a `serde_ignored` path readable: `zone.0.knx.foo` becomes `zone[0].knx.foo`
+/// and the `?` that marks an `Option` is dropped (`spotify.?.name` becomes `spotify.name`).
+#[must_use]
+pub fn display_key_path(path: &str) -> String {
+    let mut out = String::new();
+    for segment in path.split('.').filter(|s| !s.is_empty() && *s != "?") {
+        if segment.bytes().all(|b| b.is_ascii_digit()) {
+            out.push('[');
+            out.push_str(segment);
+            out.push(']');
+        } else {
+            if !out.is_empty() {
+                out.push('.');
+            }
+            out.push_str(segment);
+        }
+    }
+    out
 }
 
 /// Resolve raw TOML config into fully populated `AppConfig` with conventions applied.
@@ -144,10 +200,12 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
         zones,
         clients,
         radios,
+        notices: Vec::new(),
     };
 
     apply_env_overrides(&mut config);
     validate(&mut config)?;
+    notices::collect(&mut config);
 
     Ok(config)
 }
@@ -173,10 +231,10 @@ fn validate(config: &mut AppConfig) -> Result<()> {
 
     // FLAC supports max 24-bit
     if config.snapcast.codec == AudioCodec::Flac && config.audio.bit_depth > 24 {
-        tracing::warn!(
-            bit_depth = config.audio.bit_depth,
-            "FLAC supports max 24-bit, clamping"
-        );
+        config.warn(format!(
+            "bit_depth {} is not supported by FLAC (maximum 24), using 24",
+            config.audio.bit_depth
+        ));
         config.audio.bit_depth = 24;
     }
 
@@ -186,11 +244,10 @@ fn validate(config: &mut AppConfig) -> Result<()> {
         AudioCodec::F32lz4 | AudioCodec::F32lz4e
     ) && config.audio.bit_depth != 32
     {
-        tracing::info!(
-            codec = %config.snapcast.codec,
-            configured_bit_depth = config.audio.bit_depth,
-            "f32lz4 uses native 32-bit float — bit_depth setting is ignored"
-        );
+        config.info(format!(
+            "codec {} uses native 32-bit float, the configured bit_depth {} is ignored",
+            config.snapcast.codec, config.audio.bit_depth
+        ));
     }
 
     // ── Port collision ────────────────────────────────────────
@@ -203,22 +260,24 @@ fn validate(config: &mut AppConfig) -> Result<()> {
     }
 
     // ── Client max_volume ─────────────────────────────────────
+    let mut clamped = Vec::new();
     for client in &mut config.clients {
         if client.max_volume > 100 {
-            tracing::warn!(
-                client = %client.name,
-                value = client.max_volume,
-                "max_volume exceeds 100, clamping"
-            );
+            clamped.push(format!(
+                "Client '{}': max_volume {} exceeds 100, using 100",
+                client.name, client.max_volume
+            ));
             client.max_volume = 100;
         } else if client.max_volume < 0 {
-            tracing::warn!(
-                client = %client.name,
-                value = client.max_volume,
-                "max_volume below 0, clamping"
-            );
+            clamped.push(format!(
+                "Client '{}': max_volume {} is below 0, using 0",
+                client.name, client.max_volume
+            ));
             client.max_volume = 0;
         }
+    }
+    for message in clamped {
+        config.warn(message);
     }
 
     Ok(())
@@ -329,11 +388,7 @@ fn validate_presence(zone: &ZoneConfig, num_radios: usize) -> Result<()> {
 
 /// Apply environment variable overrides to the resolved configuration.
 fn apply_env_overrides(config: &mut AppConfig) {
-    if let Ok(val) = std::env::var("SNAPDOG_HTTP_PORT")
-        && let Ok(port) = val.parse()
-    {
-        config.http.port = port;
-    }
+    override_http_port(config, std::env::var("SNAPDOG_HTTP_PORT").ok());
     if let Ok(val) = std::env::var("SNAPDOG_HTTP_API_KEYS") {
         config.http.api_keys = val
             .split(',')
@@ -352,7 +407,27 @@ fn apply_env_overrides(config: &mut AppConfig) {
     {
         mqtt.password = SecretString::from(val);
     }
-    if let Ok(val) = std::env::var("SNAPDOG_SNAPCAST_ENCRYPTION_PSK") {
+    override_psk(
+        config,
+        std::env::var("SNAPDOG_SNAPCAST_ENCRYPTION_PSK").ok(),
+    );
+}
+
+fn override_http_port(config: &mut AppConfig, value: Option<String>) {
+    let Some(val) = value else { return };
+    match val.trim().parse() {
+        Ok(port) => config.http.port = port,
+        Err(_) => config.warn(format!(
+            "SNAPDOG_HTTP_PORT={val:?} is not a port number and is ignored, using http.port {}",
+            config.http.port
+        )),
+    }
+}
+
+/// An empty variable (for example `${PSK:-}` in a compose file) means "not set".
+/// Treating it as a key would encrypt with an empty, publicly known secret.
+fn override_psk(config: &mut AppConfig, value: Option<String>) {
+    if let Some(val) = value.filter(|v| !v.is_empty()) {
         config.snapcast.encryption_psk = Some(SecretString::from(val));
     }
 }
@@ -965,5 +1040,52 @@ mod tests {
         )
         .unwrap();
         assert!(load_raw(raw).is_ok());
+    }
+
+    // ── environment overrides, re-validation ──────
+    #[test]
+    fn unparsable_http_port_variable_is_reported() {
+        let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
+        let before = config.http.port;
+        override_http_port(&mut config, Some("not-a-port".into()));
+        assert_eq!(config.http.port, before);
+        assert!(
+            config
+                .notices
+                .iter()
+                .any(|n| n.message.contains("SNAPDOG_HTTP_PORT"))
+        );
+        override_http_port(&mut config, Some(" 8080 ".into()));
+        assert_eq!(config.http.port, 8080);
+        override_http_port(&mut config, None);
+        assert_eq!(config.http.port, 8080);
+    }
+
+    #[test]
+    fn revalidation_does_not_repeat_notices() {
+        let mut config = load_str(
+            "[audio]\nbit_depth = 32\n[snapcast]\ncodec = \"flac\"\n[[zone]]\nname = \"A\"",
+        )
+        .unwrap();
+        let before = config.notices.clone();
+        validate(&mut config).unwrap();
+        assert_eq!(config.notices, before);
+    }
+
+    #[test]
+    fn flac_clamp_is_reported_as_a_notice() {
+        let config = load_str(
+            "[audio]\nbit_depth = 32\n[snapcast]\ncodec = \"flac\"\n[[zone]]\nname = \"A\"",
+        )
+        .unwrap();
+        assert_eq!(config.audio.bit_depth, 24);
+        assert!(config.notices.iter().any(|n| n.message.contains("FLAC")));
+    }
+
+    #[test]
+    fn unknown_keys_helper_lists_stale_keys() {
+        let keys =
+            unknown_keys("[snapcast]\nbogus = 1\n[[zone]]\nname = \"A\"\nnope = true").unwrap();
+        assert_eq!(keys, ["snapcast.bogus", "zone[0].nope"]);
     }
 }

@@ -24,6 +24,8 @@ toml = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+# Reports configuration keys no struct recognises (typos, removed keys).
+serde_ignored = "0.1"
 # snapcast-control removed — using own JSON-RPC client (ADR-018)
 symphonia = { workspace = true }
 rubato = { workspace = true }

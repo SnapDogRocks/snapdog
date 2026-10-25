@@ -97,10 +97,16 @@ impl EmbeddedBackend {
         // Resolve f32lz4e → f32lz4 + encryption
         let (codec, encryption_psk) = if config.snapcast.codec == crate::config::AudioCodec::F32lz4e
         {
-            let psk = config.snapcast.encryption_psk.as_ref().map_or_else(
-                || snapcast_server::DEFAULT_ENCRYPTION_PSK.into(),
-                |s| s.to_string(),
-            );
+            // An empty key counts as "no key" (the config layer warns about it).
+            let psk = config
+                .snapcast
+                .encryption_psk
+                .as_ref()
+                .filter(|s| !s.is_empty())
+                .map_or_else(
+                    || snapcast_server::DEFAULT_ENCRYPTION_PSK.into(),
+                    |s| s.to_string(),
+                );
             ("f32lz4".into(), Some(psk))
         } else {
             (
@@ -109,6 +115,7 @@ impl EmbeddedBackend {
                     .snapcast
                     .encryption_psk
                     .as_ref()
+                    .filter(|s| !s.is_empty())
                     .map(|s| s.to_string()),
             )
         };

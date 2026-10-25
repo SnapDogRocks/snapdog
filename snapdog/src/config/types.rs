@@ -174,7 +174,8 @@ impl SubsonicFormat {
 /// Root of the TOML config file. Optional fields use defaults.
 #[derive(Debug, Default, Deserialize)]
 pub struct FileConfig {
-    /// Server display name. Used for `mDNS`, MQTT discovery, KNX device name.
+    /// Server display name. Used as the `mDNS` service instance name, the Home
+    /// Assistant device name and the `name` in `GET /api/v1/system/version`.
     /// Default: "`SnapDog`".
     #[serde(default = "default_server_name")]
     pub name: String,
@@ -615,19 +616,29 @@ impl Default for DbusConfig {
 /// Snapcast server connection and management.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SnapcastConfig {
-    /// Snapcast server address (hostname or IP).
+    /// Address of an external `snapserver`. Only used by builds with the
+    /// `snapcast-process` feature. The default embedded server always listens
+    /// on all interfaces, so any other value is ignored there (with a warning).
     #[serde(default = "default_snapcast_address")]
     pub address: String,
-    /// TCP JSON-RPC control port (default: 1705).
+    /// JSON-RPC control port of an external `snapserver` (default: 1705, alias
+    /// `jsonrpc_port`). Only used by builds with the `snapcast-process`
+    /// feature. The embedded server has no JSON-RPC listener, so any other
+    /// value is ignored there (with a warning).
     #[serde(default = "default_jsonrpc_port", alias = "jsonrpc_port")]
     pub jsonrpc_tcp_port: u16,
-    /// Audio streaming port (default: 1704).
+    /// Audio streaming port (default: 1704). Snapcast clients connect here.
     #[serde(default = "default_streaming_port")]
     pub streaming_port: u16,
-    /// Start snapserver as a managed child process.
+    /// Start an external `snapserver` binary as a child process (default:
+    /// true). Only used by builds with the `snapcast-process` feature. The
+    /// embedded Rust server in the default build always runs, so `false` is
+    /// ignored there (with a warning).
     #[serde(default = "default_true")]
     pub managed: bool,
-    /// Show snapserver console output.
+    /// Show the console output of the external `snapserver` child process.
+    /// Only used by builds with the `snapcast-process` feature; ignored (with a
+    /// warning) by the embedded server.
     #[serde(default)]
     pub verbose: bool,
     /// Policy for clients not in the config. Default: `accept`.
@@ -639,7 +650,10 @@ pub struct SnapcastConfig {
     /// Streaming codec: pcm, flac, f32lz4, f32lz4e.
     #[serde(default)]
     pub codec: AudioCodec,
-    /// Pre-shared key for f32lz4e encryption (default: built-in key).
+    /// Pre-shared key for `f32lz4e` encryption. Without a key the built-in
+    /// default key is used, which is public and protects nothing, so set one
+    /// when you use `f32lz4e` (`SnapDog` logs a warning otherwise). Can also be
+    /// set with `SNAPDOG_SNAPCAST_ENCRYPTION_PSK`.
     #[serde(default)]
     pub encryption_psk: Option<SecretString>,
     /// Default group volume mode for all zones.
@@ -680,17 +694,24 @@ pub enum AirplayMode {
 pub struct AirplayConfig {
     /// Optional password for `AirPlay` connections.
     pub password: Option<String>,
-    /// `AirPlay` protocol mode: `"airplay1"` or `"airplay2"` (default).
+    /// `AirPlay` protocol mode: `"airplay1"` or `"airplay2"` (default). Only
+    /// takes effect in builds with the `ap2` feature; other builds always speak
+    /// `AirPlay` 1.
     #[serde(default)]
     pub mode: AirplayMode,
-    /// Bind to specific addresses (default: all interfaces).
+    /// IP addresses (not interface names) to listen on, for example
+    /// `["192.168.1.10"]`. Default: all interfaces. Only takes effect in
+    /// builds with the `ap2` feature (ignored with a warning otherwise).
     pub bind: Option<Vec<std::net::IpAddr>>,
 }
 
 /// Spotify Connect receiver settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SpotifyConfig {
-    /// Device name shown in Spotify app (e.g., "`SnapDog` Ground Floor").
+    /// Deprecated and ignored. The name shown in the Spotify app is set per
+    /// zone with `[[zone]].spotify_name` (default: the zone name). Setting this
+    /// key only produces a warning at startup.
+    #[serde(default)]
     pub name: String,
     /// Audio bitrate: 96, 160, or 320 kbps. Default: 320.
     #[serde(default = "default_spotify_bitrate")]
@@ -1086,6 +1107,28 @@ pub struct AppConfig {
     pub clients: Vec<ClientConfig>,
     /// Radio station list.
     pub radios: Vec<RadioConfig>,
+    /// Messages collected while loading and validating the configuration.
+    /// Logging is not set up yet at that point, so the caller emits them with
+    /// [`AppConfig::log_notices`] once it is.
+    pub notices: Vec<ConfigNotice>,
+}
+
+/// Severity of a [`ConfigNotice`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeLevel {
+    /// Informational, logged at `info`.
+    Info,
+    /// Something in the configuration is ignored, deprecated or unsafe.
+    Warn,
+}
+
+/// A message about the loaded configuration, produced before logging exists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigNotice {
+    /// How serious the message is.
+    pub level: NoticeLevel,
+    /// Human-readable text. Names the key and says what to do instead.
+    pub message: String,
 }
 
 /// Result of resolving a unified playlist index.
@@ -1098,6 +1141,37 @@ pub enum ResolvedPlaylist {
 }
 
 impl AppConfig {
+    /// Record a warning to be logged once logging is set up. Duplicates are dropped.
+    pub fn warn(&mut self, message: impl Into<String>) {
+        self.push_notice(NoticeLevel::Warn, message.into());
+    }
+
+    /// Record an informational message to be logged once logging is set up.
+    pub fn info(&mut self, message: impl Into<String>) {
+        self.push_notice(NoticeLevel::Info, message.into());
+    }
+
+    fn push_notice(&mut self, level: NoticeLevel, message: String) {
+        let notice = ConfigNotice { level, message };
+        if !self.notices.contains(&notice) {
+            self.notices.push(notice);
+        }
+    }
+
+    /// Log every collected [`ConfigNotice`]. Call after the tracing subscriber is installed.
+    pub fn log_notices(&self) {
+        for notice in &self.notices {
+            match notice.level {
+                NoticeLevel::Info => {
+                    tracing::info!(target: "snapdog::config", "{}", notice.message);
+                }
+                NoticeLevel::Warn => {
+                    tracing::warn!(target: "snapdog::config", "{}", notice.message);
+                }
+            }
+        }
+    }
+
     /// Whether the radio "playlist" occupies index 0.
     #[must_use]
     pub const fn has_radio_playlist(&self) -> bool {

@@ -278,6 +278,13 @@ pub async fn run_app() -> Result<()> {
     }
 
     if cli.check_config {
+        for notice in &app_config.notices {
+            let label = match notice.level {
+                config::NoticeLevel::Info => "note",
+                config::NoticeLevel::Warn => "warning",
+            };
+            eprintln!("{label}: {}", notice.message);
+        }
         println!("Configuration is valid");
         return Ok(());
     }
@@ -296,6 +303,7 @@ pub async fn run_app() -> Result<()> {
                 .add_directive(format!("snapdog={}", config.system.log_level).parse()?),
         )
         .init();
+    config.log_notices();
 
     tracing::info!(
         zones = config.zones.len(),
@@ -325,10 +333,9 @@ pub async fn run_app() -> Result<()> {
     // embedded server can bind it a moment later.  Catches conflicts early.
     #[cfg(feature = "snapcast-embedded")]
     {
-        let snap_addr = format!(
-            "{}:{}",
-            config.snapcast.address, config.snapcast.streaming_port
-        );
+        // The embedded server listens on all interfaces whatever `address` says,
+        // so probe the same address it will bind.
+        let snap_addr = format!("0.0.0.0:{}", config.snapcast.streaming_port);
         tokio::net::TcpListener::bind(&snap_addr)
             .await
             .with_context(|| {
