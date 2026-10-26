@@ -409,3 +409,16 @@ fn the_example_documents_the_streaming_port_and_its_bind_setting() {
         "the example does not say that port 1704 has no authentication"
     );
 }
+
+#[test]
+fn the_readme_names_the_zone_of_the_packaged_config() {
+    // The zone name is what AirPlay and Spotify show, so a wrong name in the upgrade
+    // note sends people looking for a receiver that is not there.
+    let config = config::load_str(PACKAGED).unwrap();
+    let name = &config.zones[0].name;
+    let readme = include_str!("../../README.md");
+    assert!(
+        readme.contains(&format!("one zone named \"{name}\"")),
+        "README does not say the packaged config has one zone named \"{name}\""
+    );
+}

@@ -232,8 +232,8 @@ yay -S snapdog          # or: yay -S snapdog-client
 
 #### Default configuration of the packages
 
-The Debian and AUR packages install a small starter configuration as `/etc/snapdog/snapdog.toml`: one zone
-("Ground Floor"), Spotify and AirPlay with their defaults, the web UI on port 5555. Earlier packages installed the
+The Debian and AUR packages install a small starter configuration as `/etc/snapdog/snapdog.toml`: one zone named "Living Room" (the name AirPlay and
+Spotify show), Spotify and AirPlay with their defaults, the web UI on port 5555. Earlier packages installed the
 full example instead (two zones, three speakers, an MQTT broker, a Subsonic server), which started services that
 were not yours. The full reference stays in `snapdog.example.toml` and at https://snapdog.cc/docs/configuration.
 
