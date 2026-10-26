@@ -348,6 +348,33 @@ url = "https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac"
 
 Snapcast sink paths, stream names, and AirPlay names are auto-generated from zone/client definitions. KNX addresses are explicit in client mode (fits into existing installations). In device mode, ETS assigns group addresses via the `.knxprod` product database.
 
+### Upgrading: changes that can stop a start or move data
+
+These changes came with the configuration and command-line fixes. Each one is a deliberate choice; the
+alternative is named.
+
+- **Command-line overrides are validated like file values.** `--sample-rate` accepts 44100, 48000, 88200,
+  96000, 176400 and 192000, `--bit-depth` 16, 24 and 32, and the ports must differ, exactly as the same keys in the
+  file always did. Before, a value only given on the command line (`--sample-rate 32000`, `--sample-rate 8000`)
+  was not checked. It now stops the start with the message that names the value. A systemd unit with
+  `SNAPDOG_ARGS="--sample-rate 32000"` restarts in a loop until the argument is changed. The other choice,
+  accepting more rates on the command line than in the file, would have made the same setting valid in one place
+  and invalid in the other.
+- **A leading `~` in a path means your home directory.** `state_dir`, `log_file`, the Subsonic cache path and the
+  TLS paths used to take `~` literally, as a directory named `~` under the working directory. State written there
+  (`zones.json`, `eq.json`, `server_id`, `airplay-pairing`) is no longer read. If such a directory still exists,
+  SnapDog says so at startup and in `--check-config`; move its contents to the real path. Writing the old
+  literal path was never what anybody meant, so the literal reading was not kept.
+- **An empty encryption key is never a key.** `SNAPDOG_SNAPCAST_ENCRYPTION_PSK` set to nothing (for example
+  `${PSK:-}` in a compose file whose secret did not arrive) used to be used as the key. It is now ignored with a
+  warning, a key from the file stays, and with `codec = "f32lz4e"` and no other key SnapDog refuses to start
+  instead of falling back to the public built-in key. An empty `encryption_psk` in the file is treated the same.
+  Clients that were configured with an empty key need the real key, or the setting has to be removed.
+- **A WebSocket client that falls behind is closed with code 1013 (try again later)**, not 1001 (going away),
+  which is for a server that shuts down. The web UI reconnects on any close and is not affected. A client that
+  treated 1001 as "stop reconnecting" will now reconnect, which is what it should do for a lagging connection;
+  one that expects 1001 for lag has to accept 1013.
+
 <details>
 <summary><strong>Home Assistant Integration</strong></summary>
 

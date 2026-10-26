@@ -444,3 +444,55 @@ fn the_readme_port_table_lists_every_port_the_server_opens() {
     assert!(row("[http].port").contains("api_keys"));
     assert!(row("KNX/IP device mode").contains("3671"));
 }
+
+// ── Upgrade notes in the README ─────────────────────────────────────────────
+
+#[test]
+fn the_readme_documents_every_change_that_can_stop_a_start_or_move_data() {
+    let readme = include_str!("../../README.md");
+    let start = readme
+        .find("### Upgrading: changes that can stop a start or move data")
+        .expect("README has the upgrade section");
+    let section = &readme[start..];
+    let section = &section[..section.find("<details>").unwrap_or(section.len())];
+    for (topic, needles) in [
+        (
+            "sample rate on the command line",
+            &["--sample-rate 32000", "44100", "restarts in a loop"][..],
+        ),
+        (
+            "tilde expansion",
+            &["leading `~`", "zones.json", "move its contents"][..],
+        ),
+        (
+            "empty encryption key",
+            &[
+                "SNAPDOG_SNAPCAST_ENCRYPTION_PSK",
+                "refuses to start",
+                "f32lz4e",
+            ][..],
+        ),
+        ("websocket close code", &["1013", "1001"][..]),
+    ] {
+        for needle in needles {
+            assert!(
+                section.contains(needle),
+                "{topic}: the upgrade section lacks {needle:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_documented_command_line_values_are_the_ones_the_code_accepts() {
+    let accepts = |rate: u32| {
+        let toml = format!("[audio]\nsample_rate = {rate}\n[[zone]]\nname = \"A\"");
+        config::load_str(&toml).is_ok()
+    };
+    for rate in [44100, 48000, 88200, 96000, 176_400, 192_000] {
+        assert!(accepts(rate), "{rate}");
+    }
+    for rate in [32000, 8000] {
+        assert!(!accepts(rate), "{rate}");
+    }
+}
