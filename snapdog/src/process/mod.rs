@@ -146,13 +146,18 @@ fn render_config(config: &AppConfig) -> String {
         config.snapcast.jsonrpc_tcp_port
     )
     .unwrap();
-    // Streaming server
+    // Streaming server. Without `streaming_bind` snapserver keeps its own default
+    // (all interfaces, dual stack).
     write!(
         out,
-        "[tcp-streaming]\nport = {}\n\n",
+        "[tcp-streaming]\nport = {}\n",
         config.snapcast.streaming_port
     )
     .unwrap();
+    if let Some(bind) = config.snapcast.streaming_bind {
+        writeln!(out, "bind_to_address = {bind}").unwrap();
+    }
+    out.push('\n');
 
     // TCP sources — one per zone
     out.push_str("[stream]\n");
@@ -220,5 +225,21 @@ mod tests {
         let conf = render_config(&test_config());
         // No bind_to_address — snapserver uses default dual-stack (::)
         assert!(!conf.contains("bind_to_address"));
+    }
+
+    #[test]
+    fn streaming_bind_goes_into_the_streaming_section_only() {
+        for bind in ["192.168.10.5", "127.0.0.1", "::1"] {
+            let mut config = test_config();
+            config.snapcast.streaming_bind = Some(bind.parse().unwrap());
+            let conf = render_config(&config);
+            assert!(
+                conf.contains(&format!(
+                    "[tcp-streaming]\nport = 1704\nbind_to_address = {bind}\n\n"
+                )),
+                "{conf}"
+            );
+            assert_eq!(conf.matches("bind_to_address").count(), 1, "{conf}");
+        }
     }
 }

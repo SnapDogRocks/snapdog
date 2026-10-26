@@ -314,3 +314,98 @@ fn the_example_log_path_is_writable_under_the_packaged_unit() {
         "{example_path}: unit makes only {writable:?} writable"
     );
 }
+
+// ── Snapcast streaming port (1704): no authentication, bindable ────────────
+
+fn streaming_notes(config: &config::AppConfig) -> Vec<&str> {
+    config
+        .notices
+        .iter()
+        .filter(|n| n.message.contains("streaming port"))
+        .map(|n| n.message.as_str())
+        .collect()
+}
+
+#[test]
+fn streaming_bind_defaults_to_all_interfaces_and_says_the_port_is_open() {
+    let config = config::load_str("[[zone]]\nname = \"A\"\n").unwrap();
+    assert_eq!(config.snapcast.streaming_bind, None);
+    assert_eq!(
+        config.snapcast.streaming_socket_addr().to_string(),
+        "0.0.0.0:1704"
+    );
+    let notes = streaming_notes(&config);
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].contains("no authentication"), "{notes:?}");
+    assert!(notes[0].contains("[snapcast].streaming_bind"), "{notes:?}");
+    // Information, not a warning: the default must not make every start noisy.
+    assert!(
+        config
+            .notices
+            .iter()
+            .filter(|n| n.message.contains("streaming port"))
+            .all(|n| n.level == config::NoticeLevel::Info)
+    );
+}
+
+#[test]
+fn streaming_bind_takes_one_address_and_silences_the_note() {
+    for (bind, expected) in [
+        ("192.168.10.5", "192.168.10.5:1704"),
+        ("127.0.0.1", "127.0.0.1:1704"),
+        ("::1", "[::1]:1704"),
+    ] {
+        let config = config::load_str(&format!(
+            "[snapcast]\nstreaming_bind = \"{bind}\"\n[[zone]]\nname = \"A\"\n"
+        ))
+        .unwrap();
+        assert_eq!(
+            config.snapcast.streaming_socket_addr().to_string(),
+            expected
+        );
+        assert_eq!(streaming_notes(&config), Vec::<&str>::new(), "{bind}");
+    }
+}
+
+#[test]
+fn streaming_bind_follows_streaming_port() {
+    let config = config::load_str(
+        "[snapcast]\nstreaming_port = 1800\nstreaming_bind = \"10.0.0.2\"\n[[zone]]\nname = \"A\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        config.snapcast.streaming_socket_addr().to_string(),
+        "10.0.0.2:1800"
+    );
+}
+
+#[test]
+fn an_unusable_streaming_bind_is_an_error_not_a_silent_default() {
+    for bad in [
+        "localhost",
+        "192.168.10",
+        "0.0.0.0/0",
+        "",
+        "10.0.0.2, 10.0.0.3",
+    ] {
+        let result = config::load_str(&format!(
+            "[snapcast]\nstreaming_bind = \"{bad}\"\n[[zone]]\nname = \"A\"\n"
+        ));
+        assert!(result.is_err(), "{bad:?} must be refused");
+    }
+}
+
+#[test]
+fn the_example_documents_the_streaming_port_and_its_bind_setting() {
+    // Commented examples are already checked for unknown keys, so `streaming_bind`
+    // below is a real key. These make sure the warning about the open port is there.
+    assert!(
+        EXAMPLE.contains("# streaming_bind = "),
+        "streaming_bind is not shown in the example"
+    );
+    let lower = EXAMPLE.to_lowercase();
+    assert!(
+        lower.contains("no authentication"),
+        "the example does not say that port 1704 has no authentication"
+    );
+}

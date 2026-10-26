@@ -185,3 +185,33 @@ fn codec_override_gets_the_same_key_warnings_as_the_file() {
         String::from_utf8_lossy(&run_check(&keyed, &["--codec", "flac"]).stderr).into_owned();
     assert!(stderr.contains("does not encrypt"), "{stderr}");
 }
+
+#[test]
+fn check_config_notes_the_open_streaming_port_and_stops_when_it_is_bound() {
+    let zone = "[[zone]]\nname = \"Living\"\n";
+
+    let output = run_check(zone, &[]);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("note: Snapcast streaming port 1704 listens on all interfaces"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("no authentication"), "{stderr}");
+
+    let bound = format!("[snapcast]\nstreaming_bind = \"127.0.0.1\"\n{zone}");
+    let output = run_check(&bound, &[]);
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("streaming port"));
+}
+
+#[test]
+fn check_config_rejects_a_streaming_bind_that_is_not_an_address() {
+    let output = run_check(
+        "[snapcast]\nstreaming_bind = \"not-an-address\"\n[[zone]]\nname = \"Living\"\n",
+        &[],
+    );
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("streaming_bind"), "{stderr}");
+}

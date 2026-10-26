@@ -79,8 +79,15 @@ base_url = "http://192.168.1.10:5555"
 
 # ── Snapcast ───────────────────────────────────────────────────────────────
 [snapcast]
-# Audio streaming port (clients connect here)
+# Audio streaming port (clients connect here). It carries the audio stream and has
+# no authentication: whoever can reach it can connect as a client and receive the audio.
+# Restrict it with streaming_bind below and the firewall; use codec "f32lz4e" with your
+# own encryption_psk if the stream must not be readable on the network.
 streaming_port = 1704
+# Local address the streaming port listens on, one address: "192.168.10.5" for one
+# interface, "127.0.0.1" for this host only. Unset: all interfaces. Clients that find the
+# server with mDNS connect to the address mDNS resolves, so keep it reachable for them.
+# streaming_bind = "192.168.10.5"
 # Streaming codec: "pcm", "flac", "f32lz4", "f32lz4e" (encrypted)
 codec = "flac"
 # Pre-shared key for f32lz4e encryption (both server and client must match).

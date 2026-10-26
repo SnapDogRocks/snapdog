@@ -230,6 +230,19 @@ brew install snapdog-client
 yay -S snapdog          # or: yay -S snapdog-client
 ```
 
+#### Default configuration of the packages
+
+The Debian and AUR packages install a small starter configuration as `/etc/snapdog/snapdog.toml`: one zone
+("Ground Floor"), Spotify and AirPlay with their defaults, the web UI on port 5555. Earlier packages installed the
+full example instead (two zones, three speakers, an MQTT broker, a Subsonic server), which started services that
+were not yours. The full reference stays in `snapdog.example.toml` and at https://snapdog.cc/docs/configuration.
+
+The file is a package configuration file. If you edited it, `dpkg` asks before replacing it and `pacman` leaves your
+file and writes the new one next to it as `snapdog.toml.pacnew`. A copy you never edited is replaced by the starter
+configuration on upgrade, so the zone names, and with them the AirPlay and Spotify names, the MQTT entities and the
+KNX bindings of the old example, change. Copy the sections you want from the example before you upgrade, or restore
+them afterwards.
+
 The AUR recipes install the same measured Linux binaries used by the release
 tarballs, Debian packages and container images; they do not rebuild from source.
 
@@ -281,6 +294,7 @@ source_switch_fade_ms = 300          # Source change fade within a zone (0 to di
 
 [snapcast]
 streaming_port = 1704
+# streaming_bind = "192.168.10.5"    # One address for the audio port (default: all interfaces)
 unknown_clients = "accept"           # accept | ignore | reject
 default_zone = "Living Room"         # Zone for unknown clients (accept only)
 
@@ -350,6 +364,69 @@ If `api_keys` is set in `[http]`, all `/api/v1/*` and `/ws` endpoints require au
 - REST: `Authorization: Bearer <key>` header
 - WebSocket: `ws://host:port/ws?token=<key>` query parameter; query tokens are accepted only on `/ws`
 - Health endpoints and the WebUI are always accessible
+
+Without `api_keys` every endpoint is open, and SnapDog warns at startup when it listens on all interfaces.
+
+</details>
+
+<details>
+<summary><strong>API documentation (OpenAPI)</strong></summary>
+
+Builds with the `api-docs` feature, which the released binaries have, serve the OpenAPI document at
+`GET /api/v1/openapi.json`. It is part of `/api/v1`: with `api_keys` set it needs the Bearer key, without keys
+it is open like the rest of the API. Set `[http].api_docs = false` to switch it off. Builds without the
+feature serve no API documentation at all.
+
+The interactive console (Scalar) at `/docs` is off by default. `[http].api_console = true` turns it on. A
+browser cannot send the `Authorization` header when it opens a page, so the console is not behind the API key,
+and the page contains the whole OpenAPI document. SnapDog logs a warning at startup when the console is on
+while keys are configured. Enable it only on a network you trust.
+
+```bash
+curl -H "Authorization: Bearer $SNAPDOG_KEY" http://localhost:5555/api/v1/openapi.json
+```
+
+Before this change `/docs` was on by default and embedded the document without any key.
+
+</details>
+
+<details>
+<summary><strong>Network ports and what they expose</strong></summary>
+
+| Port | Protocol | Carries | Protection |
+|------|----------|---------|------------|
+| 5555 (`[http].port`) | TCP | WebUI, REST API, WebSocket | `[http].api_keys`, optional TLS; `[http].bind` limits the address |
+| 1704 (`[snapcast].streaming_port`) | TCP | The audio stream for Snapcast clients | None. Whoever can reach the port can connect as a client and receive the audio |
+| 3671 | UDP | KNX/IP device mode | KNX/IP has no authentication of its own |
+
+Port 1704 has no authentication, in SnapDog as in Snapcast. To limit it:
+
+- `[snapcast].streaming_bind = "192.168.10.5"` makes SnapDog listen on that one address instead of all
+  interfaces (one address, IPv4 or IPv6; `127.0.0.1` for clients on the same host only). It is also written
+  to the generated `snapserver.conf` in builds that drive an external `snapserver`.
+- Block the port in the firewall for every network that is not yours. In Docker, publish it on one
+  address (`-p 192.168.10.5:1704:1704`) and leave `streaming_bind` unset, because inside the container
+  the address is the container's.
+- If the stream must not be readable on the network, use `codec = "f32lz4e"` with your own `encryption_psk`
+  and pass the same key to every client (`--encryption-psk`). SnapDog warns when `f32lz4e` runs with
+  the built-in default key, which is public.
+- Clients that find the server with mDNS connect to the address mDNS resolves, so the bound address must be
+  reachable for them.
+
+`snapdog --config snapdog.toml --check-config` prints a note while the port listens on all interfaces, and
+refuses an unusable `streaming_bind`. It does not try to bind the port.
+
+</details>
+
+<details>
+<summary><strong>Log file</strong></summary>
+
+`[system].log_file` writes the log to a file in addition to stdout, one file per day (`snapdog.log` becomes
+`snapdog.2026-10-26.log`). SnapDog keeps 14 daily files, the current one and 13 more, and deletes older ones when a
+new day's file is created. The retention matches file names by prefix and suffix, so give SnapDog a directory of
+its own; SnapDog warns at startup when it finds other files there that the rule would also delete. Days change at
+midnight UTC, whatever the local time zone. An error while writing (disk full) is not reported; stdout keeps working.
+The packaged systemd unit creates `/var/log/snapdog` for this (`LogsDirectory=`).
 
 </details>
 

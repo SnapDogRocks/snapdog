@@ -31,6 +31,7 @@ fn derive(config: &mut AppConfig) {
     embedded_snapcast(config);
     spotify_name(config);
     api_console(config);
+    streaming_port(config);
     #[cfg(not(feature = "ap2"))]
     airplay(config);
 }
@@ -89,8 +90,22 @@ fn embedded_snapcast(config: &mut AppConfig) {
     if snapcast.address != default.address {
         config.warn(format!(
             "[snapcast].address = {:?} has no effect: the embedded Snapcast server listens on \
-             all interfaces on streaming_port. {hint}",
+             all interfaces on streaming_port unless [snapcast].streaming_bind is set. {hint}",
             snapcast.address
+        ));
+    }
+}
+
+/// The audio streaming port has no authentication. Say so while it listens on every
+/// interface, which is the default, and point at the setting that narrows it.
+fn streaming_port(config: &mut AppConfig) {
+    let snapcast = &config.snapcast;
+    if snapcast.streaming_bind.is_none() {
+        let port = snapcast.streaming_port;
+        config.info(format!(
+            "Snapcast streaming port {port} listens on all interfaces and has no authentication: \
+             anyone who can reach it can connect as a client and receive the audio. Set \
+             [snapcast].streaming_bind to one address, and restrict the port in the firewall."
         ));
     }
 }

@@ -76,6 +76,50 @@ pub struct EmbeddedBackend {
     store: state::SharedState,
     volume_modes: HashMap<usize, crate::config::GroupVolumeMode>,
     echoes: SharedEchoFilter,
+    streaming_addr: std::net::SocketAddr,
+}
+
+/// Codec name and encryption key for the embedded server: `f32lz4e` is `f32lz4` plus
+/// encryption with the configured key, or with the built-in public default key. An
+/// empty key counts as no key (the config layer warns about it), so it never encrypts
+/// with an empty secret.
+fn codec_and_key(snapcast: &crate::config::SnapcastConfig) -> (String, Option<String>) {
+    let key = snapcast
+        .encryption_psk
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.as_str().to_string());
+    if snapcast.codec == crate::config::AudioCodec::F32lz4e {
+        let key = key.unwrap_or_else(|| snapcast_server::DEFAULT_ENCRYPTION_PSK.into());
+        ("f32lz4".into(), Some(key))
+    } else {
+        (snapcast.codec.as_str().to_string(), key)
+    }
+}
+
+/// Bind the audio streaming port on `[snapcast].streaming_bind` (all IPv4 interfaces
+/// when unset). Synchronous (std bind, then non-blocking) so `start` stays sync.
+fn bind_streaming_listener(
+    snapcast: &crate::config::SnapcastConfig,
+) -> Result<std::net::TcpListener> {
+    let addr = snapcast.streaming_socket_addr();
+    let listener = std::net::TcpListener::bind(addr)
+        .with_context(|| format!("bind embedded Snapcast streaming port {addr}"))?;
+    listener
+        .set_nonblocking(true)
+        .context("set embedded Snapcast listener non-blocking")?;
+    Ok(listener)
+}
+
+/// Check that the streaming port can be bound, then release it. `main` calls this
+/// before starting anything, so a port clash fails fast with a clear message; the
+/// server binds the port itself a moment later.
+///
+/// # Errors
+///
+/// Returns an error if the address cannot be bound, for example because the port is in use.
+pub fn check_streaming_port(snapcast: &crate::config::SnapcastConfig) -> Result<()> {
+    bind_streaming_listener(snapcast).map(drop)
 }
 
 /// Event receiver from the embedded server.
@@ -85,6 +129,12 @@ pub struct EmbeddedEventReceiver {
 }
 
 impl EmbeddedBackend {
+    /// Address the audio streaming port is bound to (the real port when configured as 0).
+    #[must_use]
+    pub const fn streaming_addr(&self) -> std::net::SocketAddr {
+        self.streaming_addr
+    }
+
     /// Start the embedded server. Returns the backend + event receiver.
     ///
     /// # Errors
@@ -94,31 +144,7 @@ impl EmbeddedBackend {
         config: &AppConfig,
         store: state::SharedState,
     ) -> Result<(Self, EmbeddedEventReceiver)> {
-        // Resolve f32lz4e → f32lz4 + encryption
-        let (codec, encryption_psk) = if config.snapcast.codec == crate::config::AudioCodec::F32lz4e
-        {
-            // An empty key counts as "no key" (the config layer warns about it).
-            let psk = config
-                .snapcast
-                .encryption_psk
-                .as_ref()
-                .filter(|s| !s.is_empty())
-                .map_or_else(
-                    || snapcast_server::DEFAULT_ENCRYPTION_PSK.into(),
-                    |s| s.to_string(),
-                );
-            ("f32lz4".into(), Some(psk))
-        } else {
-            (
-                config.snapcast.codec.as_str().to_string(),
-                config
-                    .snapcast
-                    .encryption_psk
-                    .as_ref()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string()),
-            )
-        };
+        let (codec, encryption_psk) = codec_and_key(&config.snapcast);
 
         // Build client filter based on unknown_clients policy
         let client_filter: Option<std::sync::Arc<dyn snapcast_server::auth::ClientFilter>> =
@@ -167,20 +193,12 @@ impl EmbeddedBackend {
         let cmd_tx = server.command_sender();
 
         // 0.17: the library no longer binds the port — the embedder owns the
-        // TcpListener and hands it to serve(). Bind synchronously (std +
-        // set_nonblocking + from_std) so start() stays sync; bind all interfaces
-        // so LAN receivers can connect. A port clash fails boot here (fail-fast)
-        // rather than logging inside the server task and limping on.
-        let std_listener = std::net::TcpListener::bind(("0.0.0.0", config.snapcast.streaming_port))
-            .with_context(|| {
-                format!(
-                    "bind embedded Snapcast streaming port {}",
-                    config.snapcast.streaming_port
-                )
-            })?;
-        std_listener
-            .set_nonblocking(true)
-            .context("set embedded Snapcast listener non-blocking")?;
+        // TcpListener and hands it to serve(). A port clash fails boot here
+        // (fail-fast) rather than logging inside the server task and limping on.
+        let std_listener = bind_streaming_listener(&config.snapcast)?;
+        let streaming_addr = std_listener
+            .local_addr()
+            .context("read the embedded Snapcast listener address")?;
         let listener = tokio::net::TcpListener::from_std(std_listener)
             .context("adopt embedded Snapcast listener into the tokio reactor")?;
 
@@ -191,7 +209,7 @@ impl EmbeddedBackend {
         });
 
         tracing::info!(
-            port = config.snapcast.streaming_port,
+            address = %streaming_addr,
             zones = audio_txs.len(),
             "Embedded Snapcast server started"
         );
@@ -208,6 +226,7 @@ impl EmbeddedBackend {
                     .map(|z| (z.index, z.group_volume_mode))
                     .collect(),
                 echoes: Arc::clone(&echoes),
+                streaming_addr,
             },
             EmbeddedEventReceiver { event_rx, echoes },
         ))
@@ -562,6 +581,111 @@ impl SnapcastBackend for EmbeddedBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config;
+
+    fn snapcast_config(extra: &str) -> config::AppConfig {
+        config::load_str(&format!(
+            "[snapcast]\n{extra}\n[[zone]]\nname = \"Living\"\n"
+        ))
+        .expect("test config loads")
+    }
+
+    // ── codec and key at the use site ────────────────────────────
+
+    #[test]
+    fn f32lz4e_encrypts_with_the_configured_key_or_the_public_default() {
+        let keyed = snapcast_config("codec = \"f32lz4e\"\nencryption_psk = \"s3cret\"");
+        assert_eq!(
+            codec_and_key(&keyed.snapcast),
+            ("f32lz4".to_string(), Some("s3cret".to_string()))
+        );
+        let unkeyed = snapcast_config("codec = \"f32lz4e\"");
+        assert_eq!(
+            codec_and_key(&unkeyed.snapcast),
+            (
+                "f32lz4".to_string(),
+                Some(snapcast_server::DEFAULT_ENCRYPTION_PSK.to_string())
+            )
+        );
+    }
+
+    #[test]
+    fn an_empty_key_is_never_used_as_a_secret() {
+        let empty = snapcast_config("codec = \"f32lz4e\"\nencryption_psk = \"\"");
+        assert_eq!(
+            codec_and_key(&empty.snapcast).1.as_deref(),
+            Some(snapcast_server::DEFAULT_ENCRYPTION_PSK)
+        );
+        let empty_plain = snapcast_config("codec = \"flac\"\nencryption_psk = \"\"");
+        assert_eq!(
+            codec_and_key(&empty_plain.snapcast),
+            ("flac".to_string(), None)
+        );
+        let keyed_plain = snapcast_config("codec = \"flac\"\nencryption_psk = \"k\"");
+        assert_eq!(
+            codec_and_key(&keyed_plain.snapcast),
+            ("flac".to_string(), Some("k".to_string()))
+        );
+    }
+
+    // ── the streaming port (1704) ────────────────────────────────
+
+    #[test]
+    fn the_streaming_port_listens_on_all_interfaces_unless_told_otherwise() {
+        let config = snapcast_config("streaming_port = 0");
+        let listener = bind_streaming_listener(&config.snapcast).unwrap();
+        assert_eq!(
+            listener.local_addr().unwrap().ip(),
+            std::net::Ipv4Addr::UNSPECIFIED
+        );
+    }
+
+    #[test]
+    fn streaming_bind_restricts_the_listener_to_one_address() {
+        let config = snapcast_config("streaming_port = 0\nstreaming_bind = \"127.0.0.1\"");
+        let listener = bind_streaming_listener(&config.snapcast).unwrap();
+        assert_eq!(
+            listener.local_addr().unwrap().ip(),
+            std::net::Ipv4Addr::LOCALHOST
+        );
+    }
+
+    #[test]
+    fn the_port_check_binds_the_configured_address_not_the_external_server_address() {
+        // `address` belongs to an external snapserver. It names a host that is not this
+        // machine, so using it for the bind would fail.
+        let config = snapcast_config("streaming_port = 0\naddress = \"192.0.2.1\"");
+        check_streaming_port(&config.snapcast).expect("the port is free");
+    }
+
+    #[test]
+    fn the_port_check_reports_a_taken_port_on_the_configured_address() {
+        let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = taken.local_addr().unwrap().port();
+        let config = snapcast_config(&format!(
+            "streaming_port = {port}\nstreaming_bind = \"127.0.0.1\""
+        ));
+        let error = check_streaming_port(&config.snapcast).unwrap_err();
+        assert!(
+            format!("{error:#}").contains(&format!("127.0.0.1:{port}")),
+            "{error:#}"
+        );
+        drop(taken);
+        check_streaming_port(&config.snapcast).expect("free again");
+    }
+
+    #[tokio::test]
+    async fn the_started_server_accepts_connections_on_the_configured_address() {
+        let config = snapcast_config("streaming_port = 0\nstreaming_bind = \"127.0.0.1\"");
+        let store = crate::state::init(&config, None).unwrap();
+        let (backend, _events) = EmbeddedBackend::start(&config, store).unwrap();
+        let addr = backend.streaming_addr();
+        assert_eq!(addr.ip(), std::net::Ipv4Addr::LOCALHOST);
+        assert_ne!(addr.port(), 0, "the real port is reported");
+        tokio::net::TcpStream::connect(addr)
+            .await
+            .expect("the server listens there");
+    }
 
     #[test]
     fn map_command_group_stream() {

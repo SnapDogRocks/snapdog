@@ -644,8 +644,19 @@ pub struct SnapcastConfig {
     #[serde(default = "default_jsonrpc_port", alias = "jsonrpc_port")]
     pub jsonrpc_tcp_port: u16,
     /// Audio streaming port (default: 1704). Snapcast clients connect here.
+    ///
+    /// This port carries the audio stream and has no authentication: whoever can reach
+    /// it can connect as a client and receive the audio. Restrict it with
+    /// `streaming_bind` and the firewall, and use codec `f32lz4e` with your own
+    /// `encryption_psk` if the stream must not be readable on the network.
     #[serde(default = "default_streaming_port")]
     pub streaming_port: u16,
+    /// Local address the streaming port listens on, for example `192.168.10.5` for one
+    /// interface or `127.0.0.1` for this host only. Unset: all interfaces (`0.0.0.0` in
+    /// the embedded server, what an external `snapserver` does by default otherwise).
+    /// A single address, not a list.
+    #[serde(default)]
+    pub streaming_bind: Option<std::net::IpAddr>,
     /// Start an external `snapserver` binary as a child process (default:
     /// true). Only used by builds with the `snapcast-process` feature. The
     /// embedded Rust server in the default build always runs, so `false` is
@@ -677,12 +688,24 @@ pub struct SnapcastConfig {
     pub group_volume_mode: GroupVolumeMode,
 }
 
+impl SnapcastConfig {
+    /// Socket address the embedded server listens on for the audio stream.
+    #[must_use]
+    pub fn streaming_socket_addr(&self) -> std::net::SocketAddr {
+        let ip = self
+            .streaming_bind
+            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+        std::net::SocketAddr::new(ip, self.streaming_port)
+    }
+}
+
 impl Default for SnapcastConfig {
     fn default() -> Self {
         Self {
             address: default_snapcast_address(),
             jsonrpc_tcp_port: default_jsonrpc_port(),
             streaming_port: default_streaming_port(),
+            streaming_bind: None,
             managed: true,
             verbose: false,
             unknown_clients: UnknownClientPolicy::default(),

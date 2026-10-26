@@ -372,20 +372,12 @@ pub async fn run_app() -> Result<()> {
     // Snapcast streaming port — probe-bind then immediately release so the
     // embedded server can bind it a moment later.  Catches conflicts early.
     #[cfg(feature = "snapcast-embedded")]
-    {
-        // The embedded server listens on all interfaces whatever `address` says,
-        // so probe the same address it will bind.
-        let snap_addr = format!("0.0.0.0:{}", config.snapcast.streaming_port);
-        tokio::net::TcpListener::bind(&snap_addr)
-            .await
-            .with_context(|| {
-                format!(
-                    "Snapcast streaming port {} is already in use — is snapdog already running?",
-                    config.snapcast.streaming_port
-                )
-            })?;
-        // listener dropped here — embedded server will bind it below
-    }
+    snapcast::embedded::check_streaming_port(&config.snapcast).with_context(|| {
+        format!(
+            "Snapcast streaming port {} cannot be bound — is snapdog already running?",
+            config.snapcast.streaming_socket_addr()
+        )
+    })?;
 
     // ── Initialize subsystems ─────────────────────────────────
     let state_dir = PathBuf::from(&config.system.state_dir);
