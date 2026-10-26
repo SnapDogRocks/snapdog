@@ -130,15 +130,18 @@ pub struct ClientTarget {
 /// (`256.1.1.1` is no host name, it is a typo), and a user name (`user@host`) is no part of a
 /// KNXnet/IP address.
 fn check_host_name(host: &str) -> Result<()> {
+    // A fully qualified name may end in the root dot (`gateway.example.org.`).
+    let name = host.strip_suffix('.').unwrap_or(host);
     anyhow::ensure!(
-        host.len() <= 253
-            && host.split('.').all(|label| !label.is_empty()
+        !name.is_empty()
+            && name.len() <= 253
+            && name.split('.').all(|label| !label.is_empty()
                 && label
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')),
         "Invalid KNX URL: invalid host '{host}'"
     );
-    if host.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+    if name.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
         anyhow::ensure!(
             host.parse::<std::net::Ipv4Addr>().is_ok(),
             "Invalid KNX URL: invalid IPv4 address '{host}'"
@@ -454,6 +457,7 @@ mod tests {
             "tunnel://[::1]:3671",
             "udp://gateway.local:3671",
             "tunnel://localhost:13671",
+            "udp://gateway.example.org.:3671",
         ] {
             assert!(ClientTarget::parse(ok).is_ok(), "{ok}");
         }
@@ -472,6 +476,10 @@ mod tests {
             ("udp://192.168.1:3671", "invalid IPv4 address"),
             ("udp://gate way:3671", "invalid host"),
             ("udp://gateway..local:3671", "invalid host"),
+            ("udp://.:3671", "invalid host"),
+            ("udp://gateway.example.org..:3671", "invalid host"),
+            ("udp://192.168.1.50.:3671", "invalid IPv4 address"),
+            ("udp://[fe80::1%eth0]:3671", "invalid host"),
             ("udp://192.168.1.50:3671/path", "invalid port"),
         ] {
             let err = ClientTarget::parse(bad).unwrap_err().to_string();
