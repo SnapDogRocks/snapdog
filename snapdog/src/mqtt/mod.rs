@@ -786,6 +786,17 @@ mod tests {
         assert_eq!(messages.len(), 2);
         let latest: serde_json::Value = serde_json::from_slice(&messages[1].payload).unwrap();
         assert!(latest["components"]["client_2_volume"].is_object());
+        // A notification for a client that is already announced changes nothing: the
+        // message is sent again only when the zones or clients differ.
+        ends.notify_tx
+            .send(notification.to_string().into())
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(
+            device_messages(&broker).len(),
+            2,
+            "announced again without a change"
+        );
         drop(bridge);
     }
 

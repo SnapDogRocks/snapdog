@@ -27,6 +27,12 @@ trait TlsSetup {
     fn identity(&mut self, identity: Identity);
 }
 
+// The delegation to the real builder: one line per call, and not covered by a test. The
+// builder cannot be inspected, and a handshake cannot tell the mutants apart: a client that
+// keeps the system trust store next to `ca_file` still verifies the test broker, and the
+// macOS (Secure Transport), where it was tried, does not complete a TLS 1.1 handshake
+// whatever the client asks for (OpenSSL 3 is expected to behave the same, not tried), so a
+// missing minimum version changes nothing observable. Keep these lines trivial.
 impl TlsSetup for TlsConnectorBuilder {
     fn min_protocol_version(&mut self, protocol: Protocol) {
         Self::min_protocol_version(self, Some(protocol));
