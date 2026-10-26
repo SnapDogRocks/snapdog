@@ -1097,9 +1097,26 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     );
                 }
 
-                let before = is_tunnel.then(|| TableSummary::of(bau));
+                // ETS programs through management services addressed to this device, over a
+                // tunnel or through a router.
+                let programming = frame.address_type() == knx_rs_core::types::AddressType::Individual
+                    && frame.destination_address_raw() == bau.individual_address().raw();
+                let before = programming.then(|| TableSummary::of(bau));
                 let ia_before = bau.individual_address();
-                bau.process_frame(&frame, now_ms());
+                match classify_group_frame(bau, &frame) {
+                    GroupPolicy::Pass => bau.process_frame(&frame, now_ms()),
+                    GroupPolicy::Drop => {}
+                    GroupPolicy::Correct(asaps) => {
+                        // A foreign write on a status address: say what the value really is.
+                        for asap in asaps {
+                            if let Some(go) = bau.group_objects_mut().get_mut(asap)
+                                && go.initialized()
+                            {
+                                go.object_written();
+                            }
+                        }
+                    }
+                }
                 bau.poll(now_ms());
 
                 while let Some(out) = bau.next_outgoing_frame() {
@@ -1109,7 +1126,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                 // ETS programs via tunnel — mark dirty for persistence. So does an individual
                 // address assignment, which can come before the download.
                 if persist_path.is_some()
-                    && ((is_tunnel && !bau.memory_area().is_empty())
+                    && ((programming && !bau.memory_area().is_empty())
                         || bau.individual_address() != ia_before)
                 {
                     memory_dirty = true;
@@ -1244,6 +1261,11 @@ fn build_bau(ia: IndividualAddress) -> Bau {
     );
     let mut bau = Bau::new(device, TOTAL_GO_COUNT as u16, DEFAULT_GO_SIZE);
     device_object::set_individual_address(bau.device_mut(), ia.raw());
+
+    // The group object table (flags and sizes) is compiled in. Without it the stack skips every
+    // flag check: responses would execute commands, command objects would answer reads, and a
+    // foreign write would stick on a status object.
+    bau.load_group_object_table(&group_objects::descriptor_table());
 
     // Configure zone GOs with DPTs
     for zone in 1..=MAX_ZONES {
@@ -1516,12 +1538,9 @@ fn install_tables(bau: &mut Bau, addr: &[u8], assoc: &[u8]) {
 }
 
 /// Write a value to a group object. The associations decide the address; an object that is
-/// not associated with any address has nowhere to go and is skipped.
+/// not associated with any address keeps the value (a read of it is answered once it has one)
+/// and sends nothing.
 async fn write_object(bau: &mut Bau, server: &DeviceServer, asap: u16, value: &DptValue) {
-    if bau.association_table().translate_asap(asap).is_none() {
-        tracing::trace!(asap, "group object has no group address, skipping write");
-        return;
-    }
     let Some(go) = bau.group_objects_mut().get_mut(asap) else {
         return;
     };
@@ -1539,6 +1558,10 @@ async fn write_object(bau: &mut Bau, server: &DeviceServer, asap: u16, value: &D
 
 /// Forward every group object the bus updated to the listener channel.
 async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(u16, Vec<u8>)>) {
+    // While ETS reloads a table the tables disagree: a new address table against the old
+    // associations would hand a telegram to another object. Nothing is dispatched until the
+    // device is configured again.
+    let configured = bau.configured();
     while let Some(asap) = bau.group_objects().next_updated() {
         let data = bau
             .group_objects()
@@ -1548,9 +1571,80 @@ async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(u16, Vec<
         if let Some(go) = bau.group_objects_mut().get_mut(asap) {
             go.set_comm_flag(knx_rs_device::group_object::ComFlag::Ok);
         }
-        if let Some(data) = data {
+        if let Some(data) = data
+            && configured
+        {
             let _ = update_tx.send((asap, data)).await;
         }
+    }
+}
+
+/// What the BAU task does with a telegram before the device stack sees it.
+#[derive(Debug, PartialEq, Eq)]
+enum GroupPolicy {
+    /// Hand it to the device stack (which applies the object flags).
+    Pass,
+    /// Ignore it.
+    Drop,
+    /// A foreign write on a status address: send these objects' actual values again.
+    Correct(Vec<u16>),
+}
+
+/// Decide what to do with a group telegram.
+///
+/// - While the device is not configured (ETS is reloading a table) group telegrams are dropped.
+/// - Group value responses are dropped. snapdog never reads, so a response answers somebody
+///   else's read, and it must not execute a command.
+/// - A write to an address that only status objects listen to is not applied (the objects are
+///   not writable) but corrected: the status object sends its actual value, so the bus does
+///   not keep a value snapdog does not have. An address that also has a writable object is
+///   that object's business: its command changes the state, and the new status follows.
+fn classify_group_frame(bau: &Bau, frame: &CemiFrame) -> GroupPolicy {
+    use knx_rs_core::message::ApduType;
+    use knx_rs_core::types::AddressType;
+
+    let dst = frame.destination_address_raw();
+    if frame.address_type() != AddressType::Group || dst == 0 {
+        return GroupPolicy::Pass;
+    }
+    let Some(apdu) = frame.tpdu().and_then(|t| t.apdu().cloned()) else {
+        return GroupPolicy::Pass;
+    };
+    if !matches!(
+        apdu.apdu_type,
+        ApduType::GroupValueWrite | ApduType::GroupValueResponse | ApduType::GroupValueRead
+    ) {
+        return GroupPolicy::Pass;
+    }
+    if !bau.configured() || apdu.apdu_type == ApduType::GroupValueResponse {
+        return GroupPolicy::Drop;
+    }
+    if apdu.apdu_type == ApduType::GroupValueRead {
+        return GroupPolicy::Pass;
+    }
+    let Some(tsap) = bau.address_table().get_tsap(dst) else {
+        return GroupPolicy::Pass;
+    };
+    let asaps = bau.association_table().asaps_for_tsap(tsap);
+    let flags = |asap: u16| group_objects::definition_of(asap).map(|d| &d.flags);
+    if asaps.iter().any(|a| flags(*a).is_some_and(|f| f.write)) {
+        return GroupPolicy::Pass;
+    }
+    // Only objects that send to this very address can correct it.
+    let senders: Vec<u16> = asaps
+        .into_iter()
+        .filter(|a| flags(*a).is_some_and(|f| f.transmit))
+        .filter(|a| {
+            bau.association_table()
+                .translate_asap(*a)
+                .and_then(|t| bau.address_table().get_group_address(t))
+                == Some(dst)
+        })
+        .collect();
+    if senders.is_empty() {
+        GroupPolicy::Pass
+    } else {
+        GroupPolicy::Correct(senders)
     }
 }
 
@@ -2239,5 +2333,162 @@ mod tests {
             "nothing to install"
         );
         assert_eq!(TableSummary::of(&bau).associations, 0);
+    }
+
+    // ── Group telegram policy ───────────────────────────────────────
+
+    #[derive(Clone, Copy)]
+    enum Kind {
+        Write,
+        Response,
+        Read,
+    }
+
+    fn group_frame(dst: &str, kind: Kind, value: u8) -> CemiFrame {
+        use knx_rs_core::address::DestinationAddress;
+        use knx_rs_core::message::MessageCode;
+        use knx_rs_core::types::Priority;
+        let payload = match kind {
+            Kind::Write => [0x00, 0x80 | (value & 0x3F)],
+            Kind::Response => [0x00, 0x40 | (value & 0x3F)],
+            Kind::Read => [0x00, 0x00],
+        };
+        CemiFrame::new_l_data(
+            MessageCode::LDataInd,
+            IndividualAddress::from_raw(0x1101),
+            DestinationAddress::Group(GroupAddress::from_str(dst).unwrap()),
+            Priority::Low,
+            &payload,
+        )
+    }
+
+    /// 1/0/1 zone 1 Play, 1/0/2 Volume (command), 1/0/3 Volume Status, 1/0/4 presence enable
+    /// status and 1/0/5 presence enable command, plus a command and a status object that share
+    /// 1/0/9.
+    fn policy_bau() -> Bau {
+        let raw: crate::config::FileConfig = toml::from_str(
+            r#"
+            [[zone]]
+            name = "Test"
+            [zone.knx]
+            play = "1/0/1"
+            volume = "1/0/9"
+            volume_status = "1/0/9"
+            mute_status = "1/0/3"
+            [[client]]
+            name = "Speaker"
+            mac = "00:00:00:00:00:00"
+            zone = "Test"
+        "#,
+        )
+        .unwrap();
+        bau_from_toml(&crate::config::load_raw(raw).unwrap())
+    }
+
+    #[test]
+    fn responses_never_reach_the_objects() {
+        let bau = policy_bau();
+        for dst in ["1/0/1", "1/0/9", "1/0/3"] {
+            assert_eq!(
+                classify_group_frame(&bau, &group_frame(dst, Kind::Response, 1)),
+                GroupPolicy::Drop,
+                "{dst}"
+            );
+        }
+    }
+
+    #[test]
+    fn writes_to_command_addresses_pass() {
+        let bau = policy_bau();
+        assert_eq!(
+            classify_group_frame(&bau, &group_frame("1/0/1", Kind::Write, 1)),
+            GroupPolicy::Pass
+        );
+        // A command and a status object share 1/0/9: the command decides.
+        assert_eq!(
+            classify_group_frame(&bau, &group_frame("1/0/9", Kind::Write, 1)),
+            GroupPolicy::Pass
+        );
+    }
+
+    #[test]
+    fn a_foreign_write_on_a_status_address_is_corrected() {
+        let bau = policy_bau();
+        let mute_status = zone_asap(1, ZGO_MUTE_STATUS);
+        assert_eq!(
+            classify_group_frame(&bau, &group_frame("1/0/3", Kind::Write, 1)),
+            GroupPolicy::Correct(vec![mute_status])
+        );
+    }
+
+    #[test]
+    fn reads_unknown_addresses_and_management_pass_to_the_stack() {
+        let bau = policy_bau();
+        assert_eq!(
+            classify_group_frame(&bau, &group_frame("1/0/3", Kind::Read, 0)),
+            GroupPolicy::Pass
+        );
+        assert_eq!(
+            classify_group_frame(&bau, &group_frame("7/7/7", Kind::Write, 1)),
+            GroupPolicy::Pass
+        );
+        let mgmt = management_frame(&bau, &[0x03, 0x00]).unwrap();
+        assert_eq!(classify_group_frame(&bau, &mgmt), GroupPolicy::Pass);
+    }
+
+    #[test]
+    fn group_telegrams_are_dropped_while_a_table_is_being_loaded() {
+        let mut bau = policy_bau();
+        assert_eq!(
+            classify_group_frame(&bau, &group_frame("1/0/1", Kind::Write, 1)),
+            GroupPolicy::Pass
+        );
+        // ETS starts reloading the association table: the runtime tables disagree from now on.
+        send_management(&mut bau, &[0x03, 0xD7, 2, 5, 0x10, 0x01, 1]);
+        assert!(!bau.configured());
+        for kind in [Kind::Write, Kind::Read, Kind::Response] {
+            assert_eq!(
+                classify_group_frame(&bau, &group_frame("1/0/1", kind, 1)),
+                GroupPolicy::Drop
+            );
+        }
+    }
+
+    #[test]
+    fn the_table_makes_the_stack_enforce_the_flags() {
+        let mut bau = policy_bau();
+        let play = zone_asap(1, ZGO_PLAY);
+        // Responses update only objects with the A flag: Play is a plain command object.
+        bau.process_frame(&group_frame("1/0/1", Kind::Response, 1), 0);
+        assert!(bau.group_objects().next_updated().is_none());
+        // Writes update writable objects only.
+        bau.process_frame(&group_frame("1/0/3", Kind::Write, 1), 0);
+        assert!(
+            bau.group_objects().next_updated().is_none(),
+            "status object"
+        );
+        bau.process_frame(&group_frame("1/0/1", Kind::Write, 1), 0);
+        assert_eq!(bau.group_objects().next_updated(), Some(play));
+    }
+
+    #[test]
+    fn dispatch_waits_for_the_device_to_be_configured() {
+        let mut bau = policy_bau();
+        bau.process_frame(&group_frame("1/0/1", Kind::Write, 1), 0);
+        send_management(&mut bau, &[0x03, 0xD7, 2, 5, 0x10, 0x01, 1]);
+        assert!(!bau.configured());
+        let (tx, mut rx) = mpsc::channel(4);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        rt.block_on(dispatch_updated_gos(&mut bau, &tx));
+        assert!(
+            rx.try_recv().is_err(),
+            "nothing is dispatched while unconfigured"
+        );
+        assert!(
+            bau.group_objects().next_updated().is_none(),
+            "but it is acknowledged"
+        );
     }
 }

@@ -419,9 +419,18 @@ fn ets_links() -> Programming {
             ("0/0/2", global_asap(GGO_ALL_MUTE)),
             ("0/0/3", global_asap(GGO_KNX_TIME)),
             ("0/0/4", global_asap(GGO_SERVER_ONLINE)),
+            // One address for a command and a status object, as installations often do.
+            ("1/1/9", zone_asap(1, ZGO_VOLUME)),
+            ("1/1/9", zone_asap(1, ZGO_VOLUME_STATUS)),
         ],
         params: ets_params(),
     }
+}
+
+/// No zone command within a short window.
+async fn expect_no_command(rx: &mut mpsc::Receiver<ZoneCommand>) {
+    let r = timeout(Duration::from_millis(600), rx.recv()).await;
+    assert!(r.is_err(), "unexpected zone command: {r:?}");
 }
 
 // ── Tests ─────────────────────────────────────────────────────
@@ -661,6 +670,126 @@ async fn status_is_sent_on_change_only() {
 
     set_zone_volume(&dev, 1, 31, false).await;
     expect_group_write(&mut ets, "1/1/3").await;
+}
+
+/// A group value response answers somebody else's read; it never executes a command. Reads of
+/// command objects are not answered, reads of status objects are, with the actual value, also
+/// when that value was never sent on the bus (the device was not programmed yet when the status
+/// was first published).
+#[tokio::test]
+async fn responses_and_reads_follow_the_object_flags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let mut dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    ets.group_respond_value(ga("1/1/2"), DPT_SCALING, &DptValue::Float(66.0))
+        .await
+        .unwrap();
+    expect_no_command(dev.zone_rx.get_mut(&1).unwrap()).await;
+    ets.group_write_value(ga("1/1/2"), DPT_SCALING, &DptValue::Float(66.0))
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(
+        matches!(cmd, Ok(Some(ZoneCommand::SetVolume(66)))),
+        "a write does: {cmd:?}"
+    );
+
+    // The volume command address is not readable.
+    ets.group_read(ga("1/1/2")).await.unwrap();
+    expect_no_group_write(&mut ets, "1/1/2").await;
+
+    // The status address is, and says what the zone's volume is (50 by default).
+    ets.group_read(ga("1/1/3")).await.unwrap();
+    let vol = expect_group_write(&mut ets, "1/1/3").await;
+    assert_eq!(
+        dpt::decode(DPT_SCALING, &vol)
+            .unwrap()
+            .as_f64()
+            .map(f64::round),
+        Some(50.0)
+    );
+
+    // After a change the answer follows.
+    set_zone_volume(&dev, 1, 30, false).await;
+    expect_group_write(&mut ets, "1/1/3").await;
+    ets.group_read(ga("1/1/3")).await.unwrap();
+    let vol = expect_group_write(&mut ets, "1/1/3").await;
+    assert_eq!(
+        dpt::decode(DPT_SCALING, &vol)
+            .unwrap()
+            .as_f64()
+            .map(f64::round),
+        Some(30.0)
+    );
+}
+
+/// A visualisation that writes onto a status address does not change the zone and does not stay
+/// on the bus: the device says what the value is. An address that a command object listens to
+/// as well is the command's business.
+#[tokio::test]
+async fn a_foreign_write_on_a_status_address_is_corrected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let mut dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    ets.group_write_value(ga("1/1/3"), DPT_SCALING, &DptValue::Float(90.0))
+        .await
+        .unwrap();
+    let vol = expect_group_write(&mut ets, "1/1/3").await;
+    assert_eq!(
+        dpt::decode(DPT_SCALING, &vol)
+            .unwrap()
+            .as_f64()
+            .map(f64::round),
+        Some(50.0),
+        "the actual volume is sent again"
+    );
+    expect_no_command(dev.zone_rx.get_mut(&1).unwrap()).await;
+
+    // 1/1/9 is a command and a status address at once: the command runs, nothing is "corrected".
+    ets.group_write_value(ga("1/1/9"), DPT_SCALING, &DptValue::Float(70.0))
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(
+        matches!(cmd, Ok(Some(ZoneCommand::SetVolume(70)))),
+        "{cmd:?}"
+    );
+    expect_no_group_write(&mut ets, "1/1/9").await;
+}
+
+/// While ETS reloads a table the address and association tables disagree. A telegram in that
+/// window is not dispatched, and dispatch works again once the device is programmed.
+#[tokio::test]
+async fn no_telegram_is_dispatched_while_a_table_is_reloaded() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let mut dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    // ETS starts to reload the association table (object 2): start loading, no data yet.
+    property_write(&mut ets, 2, 5, vec![1]).await;
+    ets.group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    expect_no_command(dev.zone_rx.get_mut(&1).unwrap()).await;
+
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+    ets.group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
+    assert!(matches!(cmd, Ok(Some(ZoneCommand::Play))), "{cmd:?}");
 }
 
 // ── Controls: TOML-configured addresses ───────────────────────

@@ -881,6 +881,59 @@ pub const fn client_asap(client_index: usize, go_index: usize) -> u16 {
     (MAX_ZONES * ZONE_GO_COUNT + (client_index - 1) * CLIENT_GO_COUNT + go_index + 1) as u16
 }
 
+/// The definition of the object with this ASAP number, `None` outside `1..=TOTAL_GO_COUNT`.
+#[must_use]
+pub fn definition_of(asap: u16) -> Option<&'static GoDefinition> {
+    let n = usize::from(asap).checked_sub(1)?;
+    let zones_end = MAX_ZONES * ZONE_GO_COUNT;
+    let clients_end = zones_end + MAX_CLIENTS * CLIENT_GO_COUNT;
+    if n < zones_end {
+        ZONE_GOS.get(n % ZONE_GO_COUNT)
+    } else if n < clients_end {
+        CLIENT_GOS.get((n - zones_end) % CLIENT_GO_COUNT)
+    } else {
+        GLOBAL_GOS.get(n - clients_end)
+    }
+}
+
+/// The descriptor size code for a value of `len` bytes (the inverse of the stack's
+/// `value_size_bytes`; codes 0 to 6 are the sub-byte types, which this product does not use).
+const fn size_code(len: usize) -> u8 {
+    match len {
+        0 | 1 => 7,
+        5 => 15,
+        6 => 11,
+        7 => 16,
+        8 => 12,
+        9 => 17,
+        10 => 13,
+        11 => 18,
+        12 => 19,
+        13 => 20,
+        14 => 14,
+        n => (n + 6) as u8,
+    }
+}
+
+/// The group object table of this product, one descriptor per object in ASAP order.
+///
+/// Flags and sizes are the ones the `.knxprod` declares. The table is compiled in (ETS never
+/// downloads it), and the device stack needs it to enforce the flags: without it every object
+/// accepts writes and responses and answers reads.
+#[must_use]
+pub fn descriptor_table() -> Vec<u8> {
+    let mut table = Vec::with_capacity(2 + TOTAL_GO_COUNT * 2);
+    table.extend_from_slice(&(TOTAL_GO_COUNT as u16).to_be_bytes());
+    for asap in 1..=TOTAL_GO_COUNT as u16 {
+        let bits = definition_of(asap).map_or(0, |d| {
+            d.flags
+                .to_descriptor_bits(size_code(usize::from(d.dpt.data_length())))
+        });
+        table.extend_from_slice(&bits.to_be_bytes());
+    }
+    table
+}
+
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
 mod tests {
@@ -952,6 +1005,65 @@ mod tests {
         assert!(SEND.transmit);
         assert!(SEND.communicate);
         assert!(!SEND.write);
+    }
+
+    #[test]
+    fn definition_of_finds_the_object_by_asap() {
+        assert_eq!(definition_of(0).map(|d| d.name), None);
+        assert_eq!(definition_of(1).map(|d| d.name), Some("Play"));
+        assert_eq!(
+            definition_of(zone_asap(MAX_ZONES, ZGO_VOLUME_STATUS)).map(|d| d.name),
+            Some("Volume Status")
+        );
+        assert_eq!(
+            definition_of(client_asap(1, CGO_VOLUME)).map(|d| d.name),
+            Some("Volume")
+        );
+        assert_eq!(
+            definition_of(global_asap(4)).map(|d| d.name),
+            Some("KNX Time")
+        );
+        assert_eq!(definition_of(666).map(|d| d.name), None);
+    }
+
+    #[test]
+    fn descriptor_table_declares_flags_and_sizes_of_every_object() {
+        let t = descriptor_table();
+        assert_eq!(t.len(), 2 + TOTAL_GO_COUNT * 2);
+        assert_eq!(
+            usize::from(u16::from_be_bytes([t[0], t[1]])),
+            TOTAL_GO_COUNT
+        );
+        let desc = |asap: u16| {
+            let at = usize::from(asap) * 2;
+            u16::from_be_bytes([t[at], t[at + 1]])
+        };
+        // Play: communicate + write, one byte. Volume status: communicate + read + transmit.
+        assert_eq!(desc(zone_asap(1, ZGO_PLAY)), RECV.to_descriptor_bits(7));
+        assert_eq!(
+            desc(zone_asap(1, ZGO_VOLUME_STATUS)),
+            SEND.to_descriptor_bits(7)
+        );
+        // The 14-byte strings and the 3-byte time keep their sizes.
+        assert_eq!(desc(zone_asap(1, ZGO_TRACK_TITLE)) & 0xFF, 14);
+        assert_eq!(desc(global_asap(GGO_KNX_TIME)) & 0xFF, 9);
+        // Every descriptor is one of the three flag sets with a plausible size.
+        for asap in 1..=TOTAL_GO_COUNT as u16 {
+            assert_ne!(desc(asap) & (1 << 10), 0, "communication enabled on {asap}");
+        }
+    }
+
+    #[test]
+    fn size_codes_follow_the_descriptor_format() {
+        // value_size_bytes: 7 -> 1, 8..=10 -> 2..=4, 11 -> 6, 14 -> 14, 15 -> 5.
+        assert_eq!(size_code(1), 7);
+        assert_eq!(size_code(2), 8);
+        assert_eq!(size_code(3), 9);
+        assert_eq!(size_code(4), 10);
+        assert_eq!(size_code(5), 15);
+        assert_eq!(size_code(6), 11);
+        assert_eq!(size_code(14), 14);
+        assert_eq!(size_code(15), 21);
     }
 
     #[test]
