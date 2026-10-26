@@ -313,7 +313,9 @@ from the broker when `clear_legacy_topics = true` is set (and `snapdog//status` 
 start). Discovery for the entities MQTT can
 express is new and off by default (see [Home Assistant](#home-assistant)). The zone
 state gained three keys for it (`presence_enabled`, `auto_off_delay`, `playlist_index`);
-no key was removed or changed.
+no key was removed or changed. A cover URL that needs more than 1024 bytes as JSON
+text is now left out of the state; before it was cut, which gave a URL that points
+nowhere.
 
 **Configuration.** A wrong `[mqtt]` section switches MQTT off and logs why, where an
 earlier build of this branch stopped the server and releases before it disabled MQTT
