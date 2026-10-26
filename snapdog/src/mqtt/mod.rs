@@ -41,7 +41,10 @@ mod transport;
 use commands::CommandHandler;
 use limits::LogThrottle;
 use publisher::{Publisher, request_capacity};
-use runner::{Session, run_backlog_flusher, run_connection, run_state_publisher};
+use runner::{
+    Session, StateFeed, supervised_backlog_flusher, supervised_connection,
+    supervised_state_publisher,
+};
 use topics::Topics;
 use transport::mqtt_options;
 
@@ -125,16 +128,17 @@ impl MqttBridge {
             shutdown: shutdown_rx.clone(),
             log_throttle: LogThrottle::new(Duration::from_secs(10)),
         };
+        let feed = StateFeed {
+            publisher: publisher.clone(),
+            store: runtime.state,
+            notifications: runtime.notifications,
+            connected: connected_rx.clone(),
+            shutdown: shutdown_rx.clone(),
+        };
         let tasks = vec![
-            tokio::spawn(run_connection(eventloop, session)),
-            tokio::spawn(run_backlog_flusher(handler, shutdown_rx.clone())),
-            tokio::spawn(run_state_publisher(
-                publisher.clone(),
-                runtime.state,
-                runtime.notifications,
-                connected_rx.clone(),
-                shutdown_rx,
-            )),
+            tokio::spawn(supervised_connection(eventloop, session)),
+            tokio::spawn(supervised_backlog_flusher(handler, shutdown_rx)),
+            tokio::spawn(supervised_state_publisher(feed)),
         ];
         tracing::info!(capacity, "MQTT bridge started");
 

@@ -114,3 +114,16 @@ then `password`. `SNAPDOG_MQTT_USERNAME`, `SNAPDOG_MQTT_CA_FILE`,
   `0444` or `0644` inside the container: the warning is harmless there if nothing
   else runs in it.)
 - Certificates and credentials are read once, at start. Rotation needs a restart.
+
+## What happens when something breaks
+
+- **The broker is away or refuses us.** The connection is retried with a jittered
+  backoff (1 to 60 seconds; it starts over only after a connection held for 30
+  seconds). After every reconnect SnapDog subscribes again, announces `online` and
+  republishes the state of every zone and client.
+- **A bug panics one of the MQTT tasks.** The panic is logged (`MQTT task panicked,
+  restarting it`, with its message), the task starts again after the same backoff on
+  the connection it had, and `is_connected` is false in between. Audio and the rest of
+  the server are not affected either way.
+- **Shutdown.** SnapDog publishes `offline` itself and sends DISCONNECT, because a
+  clean DISCONNECT suppresses the last will. It waits at most one second for that.

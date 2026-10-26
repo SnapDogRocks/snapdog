@@ -14,13 +14,22 @@
 //! loop used to, whenever any other branch fired) can cancel an in-flight
 //! CONNECT, which makes the broker publish the last will.
 //!
+//! Each task runs under [`supervise`]: a panic is logged and the task starts again
+//! after a backoff, so a bug in one message cannot end MQTT for the rest of the
+//! process. A caught panic also clears the connected flag, so that
+//! [`super::MqttBridge::is_connected`] does not claim a connection nobody serves.
+//!
 //! The session is a clean one on purpose: the broker keeps no subscriptions for
 //! us and queues nothing while we are away. A persistent session would replay
 //! commands that were issued while `SnapDog` was down, long after they made sense.
 //! The price is that every connect has to subscribe and announce again.
 
+use std::any::Any;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use futures_util::FutureExt;
 
 use rumqttc::mqttbytes::Error as MqttBytesError;
 use rumqttc::{
@@ -94,6 +103,100 @@ async fn shutdown_requested(rx: &mut watch::Receiver<bool>) {
     }
 }
 
+/// The text of a caught panic, for the log.
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "(no message)".to_string())
+}
+
+/// Run `run(&mut state)` until it returns. If it panics, log that, let `on_panic`
+/// repair what the panic left behind, wait a jittered backoff (so that a panic on
+/// every message does not spin) and run it again on the same state. A shutdown
+/// request ends the wait and the loop.
+///
+/// The state lives outside the future on purpose: it survives the panic, so the
+/// broker connection is not thrown away with the task.
+pub async fn supervise<S>(
+    name: &'static str,
+    mut backoff: Backoff,
+    mut state: S,
+    mut shutdown: watch::Receiver<bool>,
+    mut on_panic: impl FnMut(&mut S),
+    mut run: impl AsyncFnMut(&mut S),
+) {
+    loop {
+        let started = Instant::now();
+        let Err(payload) = AssertUnwindSafe(run(&mut state)).catch_unwind().await else {
+            return;
+        };
+        on_panic(&mut state);
+        if started.elapsed() >= STABLE_AFTER {
+            backoff.reset();
+        }
+        let delay = backoff.next_delay();
+        tracing::error!(
+            task = name,
+            panic = %panic_message(&*payload),
+            retry_in_secs = delay.as_secs_f32(),
+            "MQTT task panicked, restarting it"
+        );
+        tokio::select! {
+            () = tokio::time::sleep(delay) => {}
+            () = shutdown_requested(&mut shutdown) => return,
+        }
+    }
+}
+
+/// What a panic of the connection task leaves behind: the flag still says
+/// connected, but nobody serves the connection any more.
+fn after_connection_panic((_, session): &mut (EventLoop, Session)) {
+    session.connected.send_replace(false);
+}
+
+/// [`run_connection`] under [`supervise`].
+pub async fn supervised_connection(eventloop: EventLoop, session: Session) {
+    let shutdown = session.shutdown.clone();
+    supervise(
+        "connection",
+        Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
+        (eventloop, session),
+        shutdown,
+        after_connection_panic,
+        async |(eventloop, session)| run_connection(eventloop, session).await,
+    )
+    .await;
+}
+
+/// [`run_state_publisher`] under [`supervise`].
+pub async fn supervised_state_publisher(feed: StateFeed) {
+    let shutdown = feed.shutdown.clone();
+    supervise(
+        "state publisher",
+        Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
+        feed,
+        shutdown,
+        |_| {},
+        run_state_publisher,
+    )
+    .await;
+}
+
+/// [`run_backlog_flusher`] under [`supervise`].
+pub async fn supervised_backlog_flusher(handler: CommandHandler, shutdown: watch::Receiver<bool>) {
+    supervise(
+        "command backlog",
+        Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
+        (handler, shutdown.clone()),
+        shutdown,
+        |_| {},
+        async |(handler, shutdown)| run_backlog_flusher(handler, shutdown).await,
+    )
+    .await;
+}
+
 /// Everything the connection task uses apart from the event loop. Kept apart
 /// from it because the event loop is not `Sync`: a `&self` that covered it could
 /// not be held across an `.await` in a spawned task.
@@ -109,7 +212,7 @@ pub struct Session {
 }
 
 /// Poll the broker until shutdown.
-pub async fn run_connection(mut eventloop: EventLoop, mut this: Session) {
+pub async fn run_connection(eventloop: &mut EventLoop, this: &mut Session) {
     let mut backoff = Backoff::new(RECONNECT_MIN, RECONNECT_MAX);
     let mut up_since: Option<Instant> = None;
     let mut first_connect = true;
@@ -317,15 +420,15 @@ const BACKLOG_TICK: Duration = Duration::from_millis(50);
 /// Deliver the values that could not be delivered at once (see
 /// [`CommandHandler::flush_backlog`]) until shutdown. Sleeps while there is
 /// nothing to deliver.
-pub async fn run_backlog_flusher(handler: CommandHandler, mut shutdown: watch::Receiver<bool>) {
+pub async fn run_backlog_flusher(handler: &CommandHandler, shutdown: &mut watch::Receiver<bool>) {
     loop {
         tokio::select! {
-            () = shutdown_requested(&mut shutdown) => return,
+            () = shutdown_requested(shutdown) => return,
             () = handler.backlog_added() => {}
         }
         while handler.has_backlog() {
             tokio::select! {
-                () = shutdown_requested(&mut shutdown) => return,
+                () = shutdown_requested(shutdown) => return,
                 () = tokio::time::sleep(BACKLOG_TICK) => {}
             }
             handler.flush_backlog(Instant::now()).await;
@@ -333,21 +436,32 @@ pub async fn run_backlog_flusher(handler: CommandHandler, mut shutdown: watch::R
     }
 }
 
+/// What the state publisher works with. Kept apart from the task so that it
+/// survives a panic of the task.
+pub struct StateFeed {
+    pub publisher: Publisher,
+    pub store: state::SharedState,
+    pub notifications: broadcast::Receiver<Arc<str>>,
+    pub connected: watch::Receiver<bool>,
+    pub shutdown: watch::Receiver<bool>,
+}
+
 /// Publish retained state when zones or clients change.
 ///
 /// While the broker is away nothing is queued: the snapshot after the next
 /// connect replaces it. If this task falls behind the notification channel and
 /// notifications are dropped, it re-publishes everything.
-pub async fn run_state_publisher(
-    publisher: Publisher,
-    store: state::SharedState,
-    mut notifications: broadcast::Receiver<Arc<str>>,
-    connected: watch::Receiver<bool>,
-    mut shutdown: watch::Receiver<bool>,
-) {
+pub async fn run_state_publisher(feed: &mut StateFeed) {
+    let StateFeed {
+        publisher,
+        store,
+        notifications,
+        connected,
+        shutdown,
+    } = feed;
     loop {
         let received = tokio::select! {
-            () = shutdown_requested(&mut shutdown) => break,
+            () = shutdown_requested(shutdown) => break,
             received = notifications.recv() => received,
         };
         match received {
@@ -430,7 +544,7 @@ mod tests {
             snap_tx,
         );
         let (stop, shutdown) = watch::channel(false);
-        let task = tokio::spawn(run_backlog_flusher(handler.clone(), shutdown));
+        let task = tokio::spawn(supervised_backlog_flusher(handler.clone(), shutdown));
 
         handler
             .handle("snapdog/zones/1/volume/set", b"10", false)
@@ -452,6 +566,117 @@ mod tests {
             .await
             .expect("the flusher stops on shutdown")
             .unwrap();
+    }
+
+    fn quick_backoff() -> Backoff {
+        Backoff::new(Duration::from_millis(1), Duration::from_millis(5))
+    }
+
+    /// Review finding F6: the tasks were spawned bare, so one panic ended MQTT for
+    /// the rest of the process, silently.
+    #[tokio::test]
+    async fn a_panicking_task_is_restarted_on_the_state_it_left() {
+        let (_stop, shutdown) = watch::channel(false);
+        let mut panics = 0;
+        let state = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let seen = state.clone();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            supervise(
+                "test",
+                quick_backoff(),
+                state,
+                shutdown,
+                |_| panics += 1,
+                async |runs| {
+                    let n = runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    assert!(n >= 3, "first two runs panic");
+                },
+            ),
+        )
+        .await
+        .expect("restarts until the task returns");
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert_eq!(panics, 2, "repair ran after each panic");
+    }
+
+    #[tokio::test]
+    async fn a_task_that_returns_is_not_restarted() {
+        let (_stop, shutdown) = watch::channel(false);
+        let mut runs = 0;
+        supervise(
+            "test",
+            quick_backoff(),
+            (),
+            shutdown,
+            |()| panic!("no panic happened"),
+            async |()| runs += 1,
+        )
+        .await;
+        assert_eq!(runs, 1);
+    }
+
+    #[tokio::test]
+    async fn shutdown_ends_the_wait_between_restarts() {
+        let (stop, shutdown) = watch::channel(false);
+        let slow = Backoff::new(Duration::from_secs(60), Duration::from_secs(60));
+        let task = tokio::spawn(supervise(
+            "test",
+            slow,
+            (),
+            shutdown,
+            |()| {},
+            async |()| panic!("always"),
+        ));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        stop.send_replace(true);
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("supervise returns on shutdown, not after the backoff")
+            .unwrap();
+    }
+
+    #[test]
+    fn panic_messages_are_read_from_both_payload_kinds() {
+        assert_eq!(panic_message(&"literal"), "literal");
+        assert_eq!(panic_message(&String::from("formatted")), "formatted");
+        assert_eq!(panic_message(&42_u8), "(no message)");
+    }
+
+    #[tokio::test]
+    async fn after_a_connection_panic_the_bridge_no_longer_claims_to_be_connected() {
+        use crate::mqtt::test_support::test_runtime;
+        use rumqttc::{AsyncClient, MqttOptions};
+
+        let (runtime, _ends) = test_runtime();
+        let (client, eventloop) = AsyncClient::new(MqttOptions::new("t", "127.0.0.1", 1), 8);
+        let (connected, connected_rx) = watch::channel(true);
+        let (_stop, shutdown) = watch::channel(false);
+        let publisher = Publisher::new(
+            client,
+            super::super::topics::Topics::new("snapdog"),
+            "http://h",
+        );
+        let session = Session {
+            publisher,
+            handler: CommandHandler::new(
+                super::super::topics::Topics::new("snapdog"),
+                runtime.zone_commands,
+                runtime.state.clone(),
+                runtime.snap_tx,
+            ),
+            store: runtime.state,
+            connected,
+            shutdown,
+            log_throttle: LogThrottle::new(Duration::from_secs(10)),
+        };
+        let mut state = (eventloop, session);
+        assert!(*connected_rx.borrow());
+        after_connection_panic(&mut state);
+        assert!(
+            !*connected_rx.borrow(),
+            "the flag must not outlive the task"
+        );
     }
 
     #[test]
