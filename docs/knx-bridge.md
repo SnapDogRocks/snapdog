@@ -30,7 +30,8 @@ global keys in `[knx]`.
 - The URL is `udp://`, `tunnel://` or `router://` plus `host:port`; the syntax is checked
   when the configuration loads (`--check-config`). `udp://` selects routing for a
   multicast address and tunnelling otherwise. A host name is resolved on every connection
-  attempt (IPv4 preferred), an IPv6 literal is written in brackets. Port 0, a user name
+  attempt (IPv4 preferred; a trailing root dot is fine), an IPv6 literal is written in brackets
+  and has no zone id (`[fe80::1%eth0]` is rejected: use an IPv4 address or a host name). Port 0, a user name
   (`user@host`), a host name with characters DNS does not have and a dotted number that is
   no IPv4 address (`256.1.1.1`) are rejected when the configuration loads. KNXnet/IP over
   TCP and KNX IP Secure are not supported.
@@ -111,18 +112,40 @@ A value for an object without an association, or handed over while the device is
 configured, is not stored in the group object; the burst after the download delivers it.
 
 **Device mode, outbound path.** The BAU task never waits for the KNXnet/IP server. Frames
-go through a queue (`outbound.rs`) that sends one frame per 25 ms, replaces a queued group
-telegram for the same destination and service by the newer one (the latest value per
-group address wins), keeps management frames (answers to ETS) in order, and holds at most
-512 group and 256 management frames (the oldest are dropped, counted and logged). The
-server waits up to three seconds per telegram for a tunnel client that does not
-acknowledge, so it takes frames slowly. A server whose command channel stays full for 10 s
-while it takes fewer than ten frames is considered stuck and restarted (which drops its
-tunnel clients); a slow one is left alone. Frames leave as `L_Data.ind` (0x29), as a server tells its clients about a
-telegram; the stack builds them as `L_Data.req` and they are rewritten before they are sent.
-Telegrams that go to a zone or client channel that is full are dropped, not waited for.
-Corrections of foreign writes use the same queue, so a device that writes a wrong value in
-a loop gets a correction per 25 ms at most, and a pending one is replaced.
+go through a queue (`outbound.rs`):
+
+- Group telegrams leave one per 25 ms. A queued group telegram for the same destination and
+  service is replaced by the newer one (the latest value per group address wins). A newer
+  write for an address also retires the responses queued for it, and a response queues behind
+  a write for its address, so the order on the bus is the order of events.
+- Management frames (answers to ETS), all point-to-point frames and frames for destination 0
+  (broadcasts such as the answer to an individual address read) keep their order and are not
+  paced.
+- At most 512 group and 256 management frames wait; the oldest are dropped, counted and
+  logged.
+- Frames leave as `L_Data.ind` (0x29), as a server tells its clients about a telegram; the
+  stack builds them as `L_Data.req` and they are rewritten before they are sent.
+- Commands for a zone or client channel that is full are dropped, not waited for (one
+  warning per five seconds, with the number dropped since the last).
+- Corrections of foreign writes use the same queue, so a device that writes a wrong value in
+  a loop gets a correction per 25 ms at most, and a pending one is replaced.
+
+The server waits up to three seconds per telegram for a tunnel client that does not
+acknowledge, and knx-rs never drops such a client, so it takes frames slowly. When the queue
+has not drained for ten seconds and the server takes fewer than a frame a second, the bridge
+logs an ERROR with the counters (seconds behind, frames waiting, dropped, coalesced), again
+every minute while it lasts, and a warning when it is over. The same numbers are in
+`DevicePublisher::outbound_stats()`. **The server is not restarted:** a `DeviceServer` that is
+dropped keeps running in knx-rs until it has sent what is queued and holds the port for
+minutes, so a restart would lock ETS out instead of freeing the device. Until knx-rs drops
+dead tunnels itself, the remedy is to disconnect the client that does not acknowledge, or to
+restart snapdog.
+
+**Slow zones (not changed here).** A zone or client command channel that is full makes the
+listener wait for it, and the listener serves all zones: telegrams for the other zones wait
+behind it until the channel has room. In device mode the device task is not held up: the
+channel between it and the listener holds 64 updates and what does not fit is dropped and
+counted (the warning above).
 
 ## Supervision
 
@@ -185,9 +208,10 @@ has to program the device again. Keep a copy of the file before a downgrade.
 ## Not verified
 
 Everything here ran on loopback only; nothing was tried against ETS, a real gateway or a
-router. The `L_Data.ind` code of device-mode telegrams is asserted on the wire of the test
-tunnel and routing socket, but whether a given router or client treats `0x11` and `0x29`
-differently is not known, and neither is how a real gateway paces its acknowledgements
+router. The `L_Data.ind` code of device-mode telegrams is asserted on the tunnel of the tests. The
+routing multicast cannot be observed on that loopback seam: it carries the same frame, wrapped
+by the same `send_to_all` of knx-rs, and only that code path was read, not seen on the wire.
+Whether a given router or client treats `0x11` and `0x29` differently is not known, and neither is how a real gateway paces its acknowledgements
 against the 25 ms spacing. The master reset repair is tested against the device stack
 (connected and unnumbered form) and an ETS-style frame over the tunnel, not against ETS.
 
