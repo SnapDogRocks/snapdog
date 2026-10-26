@@ -21,6 +21,7 @@ mod client;
 mod device;
 mod ets_config;
 pub mod group_objects;
+mod outbound;
 mod sink;
 mod supervisor;
 mod transport;
@@ -97,12 +98,13 @@ impl KnxBridge {
     /// Stop reconnecting, close the transport and wait briefly for the tasks to end.
     pub async fn shutdown(self) {
         let _ = self.shutdown.send(true);
-        for task in self.tasks {
-            if tokio::time::timeout(std::time::Duration::from_secs(2), task)
+        for mut task in self.tasks {
+            if tokio::time::timeout(std::time::Duration::from_secs(2), &mut task)
                 .await
                 .is_err()
             {
-                tracing::warn!("KNX task did not stop in time");
+                tracing::warn!("KNX task did not stop in time, aborting it");
+                task.abort();
             }
         }
     }

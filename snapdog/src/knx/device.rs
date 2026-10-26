@@ -21,10 +21,11 @@ use knx_rs_ip::tunnel_server::{DeviceServer, ServerEvent};
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 use super::group_objects::mem;
+use super::outbound::{Outbound, Throttle};
 use super::supervisor::{
     BACKOFF_BASE, BACKOFF_CAP, Backoff, delay_after_session, stop_requested, warn_on_failure,
 };
-use super::transport::{Incoming, Target};
+use super::transport::{DeviceUnavailable, Incoming, Target};
 
 /// Current monotonic time in milliseconds (for transport layer timeouts).
 fn now_ms() -> u64 {
@@ -703,6 +704,9 @@ pub struct DevicePublisher {
     resync: Arc<Notify>,
 }
 
+/// How long a management call (programming mode) and a status write wait for the device task.
+const DEVICE_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl DevicePublisher {
     /// UDP address the KNXnet/IP device server is bound to, `None` while it is not up.
     #[must_use]
@@ -710,20 +714,33 @@ impl DevicePublisher {
         *self.local_addr.borrow()
     }
 
-    async fn send_cmd(&self, cmd: BauCmd) {
-        let _ = self.cmd_tx.send(cmd).await;
+    /// Queue a command for the device task; `false` when it does not take it in time.
+    async fn send_cmd(&self, cmd: BauCmd) -> bool {
+        matches!(
+            tokio::time::timeout(DEVICE_CALL_TIMEOUT, self.cmd_tx.send(cmd)).await,
+            Ok(Ok(()))
+        )
     }
 }
 
 impl super::transport::KnxDeviceControl for DevicePublisher {
-    async fn set_prog_mode(&self, enabled: bool) {
-        self.send_cmd(BauCmd::SetProgMode { enabled }).await;
+    async fn set_prog_mode(&self, enabled: bool) -> Result<(), DeviceUnavailable> {
+        if self.send_cmd(BauCmd::SetProgMode { enabled }).await {
+            Ok(())
+        } else {
+            Err(DeviceUnavailable)
+        }
     }
 
-    async fn get_prog_mode(&self) -> bool {
+    async fn get_prog_mode(&self) -> Result<bool, DeviceUnavailable> {
         let (tx, rx) = oneshot::channel();
-        self.send_cmd(BauCmd::GetProgMode { reply: tx }).await;
-        rx.await.unwrap_or(false)
+        if !self.send_cmd(BauCmd::GetProgMode { reply: tx }).await {
+            return Err(DeviceUnavailable);
+        }
+        match tokio::time::timeout(DEVICE_CALL_TIMEOUT, rx).await {
+            Ok(Ok(enabled)) => Ok(enabled),
+            _ => Err(DeviceUnavailable),
+        }
     }
 }
 
@@ -992,13 +1009,13 @@ impl super::transport::KnxPublisher for DevicePublisher {
         let Target::Object(asap) = target else {
             return false;
         };
-        self.cmd_tx
-            .send(BauCmd::WriteObject {
-                asap,
-                value: value.clone(),
-            })
-            .await
-            .is_ok()
+        // A device task that does not take commands must not stop the publisher: a value that is
+        // not taken is offered again with the next change.
+        self.send_cmd(BauCmd::WriteObject {
+            asap,
+            value: value.clone(),
+        })
+        .await
     }
 
     async fn resync(&self) {
@@ -1173,13 +1190,20 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
     let mut persist_armed = false;
     let mut tunnel_active = false;
 
+    // Frames for the server wait here and are handed over without ever waiting for it (see
+    // `outbound`): a device task that waits for the server can deadlock with it.
+    let mut outbound = Outbound::new();
+    let mut drops = Throttle::default();
+
     // Values written while there was no server wait in their group objects.
     bau.poll(now_ms());
-    while let Some(out) = bau.next_outgoing_frame() {
-        let _ = server.send_frame(to_indication(out)).await;
+    drain_outbox(bau, &mut outbound);
+    if outbound.flush(&server, tokio::time::Instant::now()) {
+        return finish_loop(server, LoopEnd::ServerClosed).await;
     }
 
     let end = loop {
+        let outbound_wake = outbound.next_wake();
         tokio::select! {
             event = server.recv() => {
                 let Some(event) = event else { break LoopEnd::ServerClosed };
@@ -1217,9 +1241,9 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     }
                 }
                 bau.poll(now_ms());
-
-                while let Some(out) = bau.next_outgoing_frame() {
-                    let _ = server.send_frame(to_indication(out)).await;
+                drain_outbox(bau, &mut outbound);
+                if outbound.flush(&server, tokio::time::Instant::now()) {
+                    break LoopEnd::ServerClosed;
                 }
 
                 // ETS programs via tunnel — mark dirty for persistence. So does an individual
@@ -1276,14 +1300,18 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     }
                 }
 
-                dispatch_updated_gos(bau, update_tx).await;
+                dispatch_updated_gos(bau, update_tx, &mut drops);
             }
 
             cmd = cmd_rx.recv() => {
                 let Some(cmd) = cmd else { break LoopEnd::Stopped };
                 match cmd {
                     BauCmd::WriteObject { asap, value } => {
-                        write_object(bau, &server, asap, &value).await;
+                        write_object(bau, asap, &value);
+                        drain_outbox(bau, &mut outbound);
+                        if outbound.flush(&server, tokio::time::Instant::now()) {
+                            break LoopEnd::ServerClosed;
+                        }
                     }
                     #[cfg(test)]
                     BauCmd::RestartServer => break LoopEnd::ServerClosed,
@@ -1303,6 +1331,28 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     ));
                 }
             }
+            () = async {
+                match outbound_wake {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                let now = tokio::time::Instant::now();
+                if outbound.stalled(now) {
+                    tracing::warn!(
+                        waiting = outbound.len(),
+                        "KNX device server takes no frames (a tunnel client that does not acknowledge?) — restarting it"
+                    );
+                    break LoopEnd::ServerClosed;
+                }
+                if outbound.flush(&server, now) {
+                    break LoopEnd::ServerClosed;
+                }
+                let dropped = outbound.take_dropped();
+                if dropped > 0 && drops.allow(std::time::Duration::from_secs(5)) {
+                    tracing::warn!(dropped, "KNX device server cannot keep up, oldest frames dropped");
+                }
+            }
             () = stop_requested(shutdown) => break LoopEnd::Stopped,
         }
     };
@@ -1316,8 +1366,21 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
             tracing::info!(path = %path.display(), "ETS state persisted on shutdown");
         }
     }
-    server.stop().await;
+    finish_loop(server, end).await
+}
+
+/// Stop the server. It may be busy with a tunnel client that does not acknowledge, so only
+/// try for a moment: dropping it ends its task in any case.
+async fn finish_loop(server: DeviceServer, end: LoopEnd) -> LoopEnd {
+    let _ = tokio::time::timeout(std::time::Duration::from_millis(500), server.stop()).await;
     end
+}
+
+/// Move what the device stack wants to send into the outbound queue, as indications.
+fn drain_outbox(bau: &mut Bau, outbound: &mut Outbound) {
+    while let Some(out) = bau.next_outgoing_frame() {
+        outbound.push(to_indication(out));
+    }
 }
 
 /// The individual address record to save next to the BAU state.
@@ -1658,8 +1721,8 @@ fn install_tables(bau: &mut Bau, addr: &[u8], assoc: &[u8]) {
 
 /// Write a value to a group object. The associations decide the address; an object that is
 /// not associated with any address keeps the value (a read of it is answered once it has one)
-/// and sends nothing.
-async fn write_object(bau: &mut Bau, server: &DeviceServer, asap: u16, value: &DptValue) {
+/// and sends nothing. The frame the poll produces is the caller's to queue.
+fn write_object(bau: &mut Bau, asap: u16, value: &DptValue) {
     let Some(go) = bau.group_objects_mut().get_mut(asap) else {
         return;
     };
@@ -1667,16 +1730,17 @@ async fn write_object(bau: &mut Bau, server: &DeviceServer, asap: u16, value: &D
         tracing::warn!(asap, error = %e, "KNX group object write failed");
         return;
     }
-
-    // Poll to send pending writes
     bau.poll(now_ms());
-    while let Some(out) = bau.next_outgoing_frame() {
-        let _ = server.send_frame(to_indication(out)).await;
-    }
 }
 
-/// Forward every group object the bus updated to the listener channel.
-async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(u16, Vec<u8>)>) {
+/// Forward every group object the bus updated to the listener channel, without waiting: a
+/// listener that is slow (a zone that does not take commands) must not stop the device task.
+/// What does not fit is dropped, and said once in a while.
+fn dispatch_updated_gos(
+    bau: &mut Bau,
+    update_tx: &mpsc::Sender<(u16, Vec<u8>)>,
+    drops: &mut Throttle,
+) {
     // While ETS reloads a table the tables disagree: a new address table against the old
     // associations would hand a telegram to another object. Nothing is dispatched until the
     // device is configured again.
@@ -1692,8 +1756,13 @@ async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(u16, Vec<
         }
         if let Some(data) = data
             && configured
+            && update_tx.try_send((asap, data)).is_err()
+            && drops.allow(std::time::Duration::from_secs(5))
         {
-            let _ = update_tx.send((asap, data)).await;
+            tracing::warn!(
+                asap,
+                "KNX command queue is full or closed, telegram dropped"
+            );
         }
     }
 }
@@ -2621,10 +2690,7 @@ mod tests {
         send_management(&mut bau, &[0x03, 0xD7, 2, 5, 0x10, 0x01, 1]);
         assert!(!bau.configured());
         let (tx, mut rx) = mpsc::channel(4);
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
-        rt.block_on(dispatch_updated_gos(&mut bau, &tx));
+        dispatch_updated_gos(&mut bau, &tx, &mut Throttle::default());
         assert!(
             rx.try_recv().is_err(),
             "nothing is dispatched while unconfigured"

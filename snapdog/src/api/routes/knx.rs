@@ -99,7 +99,11 @@ async fn get_programming_mode(State(state): State<SharedState>) -> impl IntoResp
     let Some(ref ctl) = state.knx_device_control else {
         return Err(ApiError::Conflict("KNX device mode not active"));
     };
-    Ok(Json(ctl.get_prog_mode().await))
+    let enabled = ctl
+        .get_prog_mode()
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable("KNX device"))?;
+    Ok(Json(enabled))
 }
 
 /// Set KNX programming mode status
@@ -123,6 +127,8 @@ async fn set_programming_mode(
     let Some(ref ctl) = state.knx_device_control else {
         return Err(ApiError::Conflict("KNX device mode not active"));
     };
-    ctl.set_prog_mode(enabled).await;
+    ctl.set_prog_mode(enabled)
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable("KNX device"))?;
     Ok(Json(enabled))
 }

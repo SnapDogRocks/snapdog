@@ -86,13 +86,31 @@ pub trait KnxListener: Send + 'static {
     fn recv(&mut self) -> impl std::future::Future<Output = Option<Incoming>> + Send;
 }
 
+/// The device task did not answer in time (it is stuck or gone).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeviceUnavailable;
+
+impl std::fmt::Display for DeviceUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the KNX device task did not answer")
+    }
+}
+
+impl std::error::Error for DeviceUnavailable {}
+
 /// Device management interface — ETS programming mode, device info.
 ///
-/// Only available in device mode. Client mode has no device to manage.
+/// Only available in device mode. Client mode has no device to manage. A call returns an error
+/// after a couple of seconds instead of waiting for a device task that does not answer.
 pub trait KnxDeviceControl: Send + Sync + 'static {
     /// Enable or disable KNX programming mode.
-    fn set_prog_mode(&self, enabled: bool) -> impl std::future::Future<Output = ()> + Send;
+    fn set_prog_mode(
+        &self,
+        enabled: bool,
+    ) -> impl std::future::Future<Output = Result<(), DeviceUnavailable>> + Send;
 
     /// Get current programming mode state.
-    fn get_prog_mode(&self) -> impl std::future::Future<Output = bool> + Send;
+    fn get_prog_mode(
+        &self,
+    ) -> impl std::future::Future<Output = Result<bool, DeviceUnavailable>> + Send;
 }

@@ -1008,6 +1008,171 @@ volume_status = "1/1/3"
 
 // ── Server supervision ────────────────────────────────────────
 
+/// Open a tunnel by hand and then read and acknowledge nothing.
+async fn connect_and_go_silent(server: SocketAddr) -> tokio::net::UdpSocket {
+    use knx_rs_core::knxip::{Hpai, KnxIpFrame, ServiceType};
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let port = socket.local_addr().unwrap().port();
+    let request = KnxIpFrame::connect_request(
+        Hpai::nat_udp(port),
+        Hpai::nat_udp(port),
+        &[0x04, 0x04, 0x02, 0x00],
+    );
+    socket.send_to(&request.to_bytes(), server).await.unwrap();
+    let mut buf = [0u8; 512];
+    let (n, _) = timeout(T, socket.recv_from(&mut buf))
+        .await
+        .expect("connect response")
+        .unwrap();
+    assert_eq!(
+        KnxIpFrame::parse(&buf[..n]).unwrap().service_type,
+        ServiceType::ConnectResponse
+    );
+    socket
+}
+
+/// From now on the silent client acknowledges every tunnelling request it receives.
+fn spawn_acker(socket: std::sync::Arc<tokio::net::UdpSocket>) -> tokio::task::JoinHandle<()> {
+    use knx_rs_core::knxip::{KnxIpFrame, ServiceType};
+    tokio::spawn(async move {
+        let mut buf = [0u8; 512];
+        while let Ok(Ok((n, from))) =
+            timeout(Duration::from_secs(60), socket.recv_from(&mut buf)).await
+        {
+            if let Ok(f) = KnxIpFrame::parse(&buf[..n])
+                && f.service_type == ServiceType::TunnelingRequest
+            {
+                let ack = KnxIpFrame::tunneling_ack(f.body[1], f.body[2], 0);
+                let _ = socket.send_to(&ack.to_bytes(), from).await;
+            }
+        }
+    })
+}
+
+/// A tunnel client that stops acknowledging (a hung visualisation, a half-open NAT mapping), a burst
+/// of status changes and a flood of incoming telegrams used to wedge the device for good: the
+/// KNXnet/IP server waited for the device task to take events while the device task waited for the
+/// server to take frames. Now the device task never waits for the server, so the management calls
+/// answer and shutdown returns while the client is still dead, and the device is alive again soon
+/// after the client acknowledges.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_dead_tunnel_client_does_not_wedge_the_device() {
+    use knx_rs_core::knxip::KnxIpFrame;
+    use tokio::net::UdpSocket;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let mut dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    {
+        let mut ets = connect(&dev).await;
+        ets_download(&mut ets, &ets_links()).await;
+        drain(&mut ets).await;
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Count what reaches zone 1.
+    let plays = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    {
+        let mut rx1 = dev.zone_rx.remove(&1).unwrap();
+        let plays = plays.clone();
+        tokio::spawn(async move {
+            while rx1.recv().await.is_some() {
+                plays.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+    }
+
+    // The dead client: it connects and then reads and acknowledges nothing.
+    let server = dev.handle.local_addr().expect("server up");
+    let dead = std::sync::Arc::new(connect_and_go_silent(server).await);
+
+    // A burst of status changes, every one of them a telegram for the dead client...
+    for v in 0..90 {
+        set_zone_volume(&dev, 1, 10 + v, v % 2 == 0).await;
+    }
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    // ... and a flood of group writes through a router, 300 datagrams.
+    let router = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let play = CemiFrame::new_l_data(
+        knx_rs_core::message::MessageCode::LDataInd,
+        knx_rs_core::address::IndividualAddress::from_raw(0x1101),
+        knx_rs_core::address::DestinationAddress::Group(ga("1/1/1")),
+        knx_rs_core::types::Priority::Low,
+        &[0x00, 0x81],
+    );
+    let routing = KnxIpFrame::routing_indication(play.as_bytes()).to_bytes();
+    for _ in 0..300 {
+        router.send_to(&routing, server).await.unwrap();
+    }
+
+    // The client is still dead. The device task is not stuck with it: the management call answers
+    // and the zone gets the commands the router sent.
+    let t = std::time::Instant::now();
+    let prog = timeout(Duration::from_secs(4), dev.handle.get_prog_mode())
+        .await
+        .expect("the programming-mode call returns");
+    assert!(prog.is_ok(), "and answers: {prog:?}");
+    assert!(
+        t.elapsed() < Duration::from_secs(3),
+        "took {:?}",
+        t.elapsed()
+    );
+
+    // After a while the client acknowledges again, as in the case that wedged the server.
+    tokio::time::sleep(Duration::from_secs(8)).await;
+    let acker = spawn_acker(dead.clone());
+
+    // The device is alive: a fresh client connects, and its command arrives.
+    let started = std::time::Instant::now();
+    let mut fresh = timeout(Duration::from_secs(40), async {
+        loop {
+            if let Some(addr) = dev.handle.local_addr()
+                && let Ok(Ok(c)) =
+                    timeout(Duration::from_secs(3), TunnelConnection::connect(addr)).await
+            {
+                return c;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    })
+    .await
+    .expect("a new client can connect after the old one acknowledges again");
+    eprintln!(
+        "alive again {:?} after the client recovered",
+        started.elapsed()
+    );
+    // A knx-rs client acknowledges the server's frames only while it is receiving.
+    drain(&mut fresh).await;
+    let before = plays.load(std::sync::atomic::Ordering::SeqCst);
+    timeout(Duration::from_secs(20), async {
+        loop {
+            fresh
+                .group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+                .await
+                .ok();
+            if plays.load(std::sync::atomic::Ordering::SeqCst) > before {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    })
+    .await
+    .expect("commands are dispatched again");
+    assert!(
+        plays.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "the router's commands were not all lost"
+    );
+
+    let t = std::time::Instant::now();
+    dev.bridge.shutdown().await;
+    assert!(
+        t.elapsed() < Duration::from_secs(3),
+        "shutdown took {:?}",
+        t.elapsed()
+    );
+    acker.abort();
+}
+
 /// A port that is taken when the device starts (knxd on the host, a second instance, no
 /// multicast route yet at boot) must not disable KNX for good: the device keeps trying, answers
 /// the programming-mode API meanwhile, and works once the server is up.
@@ -1026,9 +1191,9 @@ async fn device_starts_serving_once_its_port_frees_up() {
     );
 
     // The management API does not wait for the server.
-    assert!(!dev.handle.get_prog_mode().await);
-    dev.handle.set_prog_mode(true).await;
-    assert!(dev.handle.get_prog_mode().await);
+    assert!(!dev.handle.get_prog_mode().await.unwrap());
+    dev.handle.set_prog_mode(true).await.unwrap();
+    assert!(dev.handle.get_prog_mode().await.unwrap());
 
     drop(blocker);
     timeout(T, async {
@@ -1054,7 +1219,7 @@ async fn device_starts_serving_once_its_port_frees_up() {
 /// The individual address of the device, as it answers `A_IndividualAddress_Read` in
 /// programming mode (the source of the response).
 async fn individual_address_of(dev: &Device, ets: &mut TunnelConnection) -> u16 {
-    dev.handle.set_prog_mode(true).await;
+    dev.handle.set_prog_mode(true).await.unwrap();
     let [hi, lo] = apci_hdr(ApduType::IndividualAddressRead);
     ets.send(broadcast_frame(&[hi, lo])).await.unwrap();
     timeout(T, async {
@@ -1083,7 +1248,7 @@ async fn individual_address_assigned_by_ets_survives_a_restart() {
         let mut ets = connect(&dev).await;
         assert_eq!(individual_address_of(&dev, &mut ets).await, DEVICE_IA);
 
-        dev.handle.set_prog_mode(true).await;
+        dev.handle.set_prog_mode(true).await.unwrap();
         let [hi, lo] = apci_hdr(ApduType::IndividualAddressWrite);
         ets.send(broadcast_frame(&[hi, lo, 0x12, 0x01]))
             .await
