@@ -83,12 +83,13 @@ pub struct MqttConfig {
     #[serde(default)]
     pub client_key: Option<PathBuf>,
     /// Clear the retained messages that earlier releases left on the broker, once at
-    /// every start: `{base}/status` (double slash) and the `media_player` discovery
-    /// topics under `homeassistant/`. A migration aid: set it to `false` once it has
-    /// done its work, or if the broker's ACL refuses writes outside the base topic
-    /// (some brokers then drop the connection).
-    #[serde(default = "default_true")]
-    pub clear_legacy_topics: bool,
+    /// every start. Not set: only `{base}/status` (double slash, inside the base
+    /// topic), so that a broker ACL that confines `SnapDog` to its base topic is not
+    /// asked for anything else. `true`: also the `media_player` discovery topics
+    /// `homeassistant/media_player/snapdog_zone_<n>/config` of earlier releases (set it
+    /// for one start, they never did anything in Home Assistant). `false`: nothing.
+    #[serde(default)]
+    pub clear_legacy_topics: Option<bool>,
     /// Home Assistant MQTT discovery (`[mqtt.homeassistant]`). Absent: `SnapDog`
     /// announces nothing and touches nothing.
     #[serde(default)]
@@ -140,6 +141,17 @@ fn default_discovery_prefix() -> String {
 
 fn default_ha_status_topic() -> String {
     "homeassistant/status".into()
+}
+
+/// Which retained messages of earlier releases `SnapDog` deletes at start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegacyCleanup {
+    /// `clear_legacy_topics = false`.
+    Off,
+    /// Not set: `{base}/status` (double slash) only, which is inside the base topic.
+    BaseOnly,
+    /// `clear_legacy_topics = true`: also the old `media_player` discovery topics.
+    All,
 }
 
 /// What `SnapDog` does about Home Assistant discovery.
@@ -211,16 +223,12 @@ impl Default for MqttConfig {
             ca_file: None,
             client_cert: None,
             client_key: None,
-            clear_legacy_topics: true,
+            clear_legacy_topics: None,
             homeassistant: None,
             unknown_keys: UnknownKeys::default(),
             warnings: Vec::new(),
         }
     }
-}
-
-const fn default_true() -> bool {
-    true
 }
 
 fn default_mqtt_client_id() -> String {
@@ -525,6 +533,16 @@ impl MqttConfig {
             crate::mqtt::tls::check_material(self)?;
         }
         Ok(())
+    }
+
+    /// Which retained messages of earlier releases to delete at start.
+    #[must_use]
+    pub const fn legacy_cleanup(&self) -> LegacyCleanup {
+        match self.clear_legacy_topics {
+            None => LegacyCleanup::BaseOnly,
+            Some(false) => LegacyCleanup::Off,
+            Some(true) => LegacyCleanup::All,
+        }
     }
 
     /// What to do about Home Assistant discovery.
@@ -1288,6 +1306,14 @@ mod tests {
         assert!(e.contains("client_key"), "{e}");
         let e = section(&format!("ca_file = {fake_ca:?}")).unwrap_err();
         assert!(e.contains("ca_file"), "{e}");
+    }
+
+    #[test]
+    fn the_legacy_cleanup_stays_inside_the_base_topic_unless_asked_for_more() {
+        let cleanup = |line: &str| parse(&format!("broker = \"b:1883\"\n{line}")).legacy_cleanup();
+        assert_eq!(cleanup(""), LegacyCleanup::BaseOnly);
+        assert_eq!(cleanup("clear_legacy_topics = true"), LegacyCleanup::All);
+        assert_eq!(cleanup("clear_legacy_topics = false"), LegacyCleanup::Off);
     }
 
     #[test]

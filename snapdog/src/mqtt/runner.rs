@@ -43,6 +43,7 @@ use super::limits::LogThrottle;
 use super::publisher::Publisher;
 use super::transport::MAX_INCOMING_PACKET_BYTES;
 use crate::api::ws::Notification;
+use crate::config::LegacyCleanup;
 use crate::state;
 
 /// Shortest wait before a reconnect attempt.
@@ -271,9 +272,9 @@ pub struct Session {
     pub client_id: String,
     /// Home Assistant discovery, if `[mqtt.homeassistant]` configures it.
     pub discovery: Option<Discovery>,
-    /// Whether to clear what earlier releases left on the broker (`[mqtt]
+    /// What to clear of what earlier releases left on the broker (`[mqtt]
     /// clear_legacy_topics`).
-    pub clear_legacy_topics: bool,
+    pub clear_legacy: LegacyCleanup,
     /// The reconnect delays this session starts from.
     pub backoff: Backoff,
     pub handler: CommandHandler,
@@ -354,16 +355,17 @@ impl Session {
             tracing::warn!(error = %e, "MQTT online announcement could not be queued");
         }
         let store = self.store.read().await;
-        if first_connect && self.clear_legacy_topics {
-            let cleared = self.publisher.clear_legacy_retained(store.zones.len());
+        if first_connect && self.clear_legacy != LegacyCleanup::Off {
+            let cleared = self
+                .publisher
+                .clear_legacy_retained(store.zones.len(), self.clear_legacy);
             tracing::info!(
                 topics = cleared.len(),
                 first = ?cleared.first(),
                 last = ?cleared.last(),
                 "Asked the broker to delete retained messages that earlier releases left behind \
-                 (`{}`, `homeassistant/media_player/snapdog_zone_<n>/config`). Set \
-                 `clear_legacy_topics = false` in [mqtt] once they are gone",
-                self.publisher.topics().legacy_double_slash_status()
+                 (`clear_legacy_topics`; `false` stops this, `true` also covers the old \
+                 `homeassistant/media_player/snapdog_zone_<n>/config` topics)"
             );
         }
         let states = self.publisher.snapshot(&store);
@@ -778,7 +780,7 @@ mod tests {
             publisher: Publisher::new(client, topics.clone(), "http://h"),
             client_id: config.client_id,
             discovery: None,
-            clear_legacy_topics: true,
+            clear_legacy: LegacyCleanup::All,
             backoff,
             handler: CommandHandler::new(
                 topics,

@@ -136,7 +136,7 @@ impl MqttBridge {
             publisher: publisher.clone(),
             client_id: config.client_id.clone(),
             discovery: discovery.clone(),
-            clear_legacy_topics: config.clear_legacy_topics,
+            clear_legacy: config.legacy_cleanup(),
             backoff: Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
             handler: handler.clone(),
             store: runtime.state.clone(),
@@ -430,23 +430,35 @@ mod tests {
             found
         }
 
-        let on = publishes("").await;
-        // A retained empty payload clears: the double-slash status and the discovery
-        // topics of the old `media_player` messages.
-        assert!(on.contains(&("snapdog//status".to_string(), 0)), "{on:?}");
+        // Default: only what is inside the base topic (`snapdog//status`). A broker ACL
+        // that confines SnapDog to its base topic is not asked for anything else.
+        let default = publishes("").await;
         assert!(
-            on.contains(&(
+            default.contains(&("snapdog//status".to_string(), 0)),
+            "{default:?}"
+        );
+        assert!(
+            default
+                .iter()
+                .all(|(topic, _)| topic.starts_with("snapdog/")),
+            "by default nothing is written outside the base topic: {default:?}"
+        );
+        // `true` also clears the old media_player discovery topics.
+        let all = publishes("clear_legacy_topics = true").await;
+        assert!(all.contains(&("snapdog//status".to_string(), 0)), "{all:?}");
+        assert!(
+            all.contains(&(
                 "homeassistant/media_player/snapdog_zone_1/config".to_string(),
                 0
             )),
-            "{on:?}"
+            "{all:?}"
         );
         let off = publishes("clear_legacy_topics = false").await;
         assert!(
             off.iter().all(
                 |(topic, _)| !topic.starts_with("homeassistant/") && topic != "snapdog//status"
             ),
-            "nothing outside the base topic may be written: {off:?}"
+            "nothing may be cleared: {off:?}"
         );
         assert!(off.iter().any(|(topic, _)| topic == "snapdog/status"));
     }

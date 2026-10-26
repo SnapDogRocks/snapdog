@@ -413,7 +413,7 @@ the integration should offer a repair if both are active.
 **From the dead `media_player` discovery (stage 0, done).** SnapDog publishes an empty
 retained message to `homeassistant/media_player/snapdog_zone_{n}/config` for `n` from 1 to
 the larger of the zone count and 16, once per process start, and clears `{base}/status`
-(double slash). `[mqtt] clear_legacy_topics = false` switches this off. HA never created entities from those messages, so there are no registry
+(double slash). `[mqtt] clear_legacy_topics` controls this (unset: only `snapdog//status`; `true`: also the `media_player` topics; `false`: none). HA never created entities from those messages, so there are no registry
 entries to clean. Orphans for zone numbers above 16 (or from another discovery prefix) stay
 on the broker; remove them by hand:
 

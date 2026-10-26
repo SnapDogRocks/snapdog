@@ -185,10 +185,11 @@ broker = "192.168.1.10:1883"
 # Base topic prefix. All topics are published/subscribed under this prefix.
 base_topic = "snapdog"
 
-# Earlier releases left retained messages outside the base topic (`snapdog//status`,
-# `homeassistant/media_player/snapdog_zone_<n>/config`). SnapDog asks the broker to delete
-# them at every start. Set this to false once they are gone, or if your ACL refuses writes
-# outside the base topic (some brokers then close the connection).
+# Earlier releases left retained messages behind: `snapdog//status` (inside the base topic)
+# and `homeassistant/media_player/snapdog_zone_<n>/config` (outside it; Home Assistant never
+# did anything with them). Not set: SnapDog deletes only `snapdog//status` at every start, so
+# that an ACL confining it to the base topic is not asked for anything else. true: also the
+# media_player topics (set it for one start). false: nothing.
 # clear_legacy_topics = true
 
 # Home Assistant MQTT discovery. Off unless you set it. SnapDog then sends ONE retained device
@@ -223,12 +224,12 @@ base_topic = "snapdog"
 #        topic write snapdog/clients/+/state
 #        topic read  snapdog/zones/#
 #        topic read  snapdog/clients/#
-#        # Optional (clear_legacy_topics), only to let SnapDog delete messages that old
-#        # releases left behind; set clear_legacy_topics = false and leave these out otherwise:
+#        # Optional, to let SnapDog delete messages that old releases left behind
+#        # (clear_legacy_topics; the second line only with clear_legacy_topics = true):
 #        topic write snapdog//status
 #        topic write homeassistant/media_player/+/config
 #        # Only with [mqtt.homeassistant] (discovery true, or false to delete):
-#        topic write homeassistant/device/snapdog_+/config
+#        topic write homeassistant/device/+/config      # '+' must fill a whole level
 #        topic read  homeassistant/status
 #      and give whatever controls SnapDog (Home Assistant, a script) `topic write` on the
 #      command topics and `topic read snapdog/#`. Commands have two and three levels below

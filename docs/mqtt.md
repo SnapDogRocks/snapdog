@@ -248,19 +248,23 @@ double slash (`snapdog//status`, `online`), and `media_player` discovery message
 under `homeassistant/media_player/snapdog_zone_<n>/config` (Home Assistant's MQTT
 integration has no such platform, so they never did anything).
 
-At every start SnapDog asks the broker to delete both (an empty retained publish to
-each of them; it cannot know which hold anything) and logs that at info level. This is
-a migration aid. It writes outside the base topic, which a strict ACL refuses; most
-brokers drop that silently, some (EMQX with `deny_action = disconnect`, AWS IoT)
-close the connection, once per start. Set
+At every start SnapDog asks the broker to delete `snapdog//status` (an empty retained
+publish; it cannot know whether it holds anything) and logs that at info level. That
+topic is inside the base topic, so an ACL that confines SnapDog to it is not asked for
+more. The `media_player` topics are outside the base topic, which a strict ACL refuses
+(most brokers drop that silently, some, such as EMQX with `deny_action = disconnect` or
+AWS IoT, close the connection, once per start), so they are only cleared on request:
 
 ```toml
 [mqtt]
-clear_legacy_topics = false
+clear_legacy_topics = true     # set for one start, then remove it
 ```
 
-once the old messages are gone, or if the ACL refuses them. The default is `true`, so
-that an upgrade cleans up by itself.
+`clear_legacy_topics = false` switches the cleanup off completely. Unset is the
+default: only `snapdog//status`. By default SnapDog therefore writes nothing outside
+the base topic (a test pins this), and a retained `media_player` message of an earlier
+release stays on the broker until you ask for it. It is harmless: Home Assistant never
+did anything with it.
 
 ## Migration notes
 
@@ -284,7 +288,8 @@ follows.
 
 **Discovery.** The `media_player` discovery messages are no longer published (Home
 Assistant has no such MQTT platform, they never produced an entity) and are deleted
-from the broker at start (`clear_legacy_topics`). Discovery for the entities MQTT can
+from the broker when `clear_legacy_topics = true` is set (and `snapdog//status` at every
+start). Discovery for the entities MQTT can
 express is new and off by default (see [Home Assistant](#home-assistant)). The zone
 state gained three keys for it (`presence_enabled`, `auto_off_delay`, `playlist_index`);
 no key was removed or changed.

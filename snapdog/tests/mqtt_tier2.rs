@@ -7,8 +7,9 @@
 //! after a broker restart, a graceful shutdown, and the cleanup of retained
 //! messages that older releases left behind.
 //!
-//! The tests LOUD-SKIP (no panic) when Docker is unavailable, so a green run
-//! without a Docker socket proves nothing: look for `SKIP` in the output. On macOS
+//! The tests LOUD-SKIP (no panic) when no Docker daemon is reachable, so a green run
+//! without a Docker socket proves nothing: look for `SKIP` in the output. A container
+//! that fails to start although Docker is there fails the test. On macOS
 //! with colima: `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`.
 //!
 //! Run: `cargo test -p snapdog --test mqtt_tier2 -- --nocapture --test-threads=1`
@@ -52,16 +53,47 @@ fn mosquitto() -> GenericImage {
     ))
 }
 
+/// Whether a Docker daemon can be reached at all: the socket named by `DOCKER_HOST`
+/// (or the default one) exists, or a TCP `DOCKER_HOST` accepts a connection.
+fn docker_reachable() -> bool {
+    let host =
+        std::env::var("DOCKER_HOST").unwrap_or_else(|_| "unix:///var/run/docker.sock".into());
+    if let Some(path) = host.strip_prefix("unix://") {
+        return std::path::Path::new(path).exists();
+    }
+    host.strip_prefix("tcp://")
+        .and_then(|addr| {
+            std::net::TcpStream::connect_timeout(
+                &addr.parse().ok()?,
+                std::time::Duration::from_secs(2),
+            )
+            .ok()
+        })
+        .is_some()
+}
+
+/// Start `image`. `None` (after a loud SKIP line) **only** when no Docker daemon is
+/// reachable. A container that fails to start on a Docker that is there (a broken
+/// broker configuration, an image that is missing) fails the test: a skip would turn
+/// exactly the failure the test exists to find into a green run.
+async fn start_container(
+    test: &str,
+    image: impl testcontainers::core::ImageExt<GenericImage> + AsyncRunner<GenericImage>,
+) -> Option<ContainerAsync<GenericImage>> {
+    if !docker_reachable() {
+        eprintln!("SKIP {test}: no Docker daemon reachable (set DOCKER_HOST)");
+        return None;
+    }
+    match image.start().await {
+        Ok(container) => Some(container),
+        Err(e) => panic!("{test}: the container did not start although Docker is reachable: {e}"),
+    }
+}
+
 /// Start mosquitto, or `None` (after a loud SKIP line) when Docker is unavailable.
 async fn start_broker(test: &str) -> Option<Broker> {
     let image = mosquitto().with_cmd(["mosquitto", "-c", "/mosquitto-no-auth.conf"]);
-    let container = match image.start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("SKIP {test}: Docker/mosquitto unavailable: {e}");
-            return None;
-        }
-    };
+    let container = start_container(test, image).await?;
     let host = container.get_host().await.expect("host").to_string();
     let port = container
         .get_host_port_ipv4(1883)
@@ -85,13 +117,7 @@ async fn start_broker_on_fixed_port(test: &str) -> Option<Broker> {
     let image = mosquitto()
         .with_cmd(["mosquitto", "-c", "/mosquitto-no-auth.conf"])
         .with_mapped_port(port, ContainerPort::Tcp(1883));
-    let container = match image.start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("SKIP {test}: Docker/mosquitto unavailable: {e}");
-            return None;
-        }
-    };
+    let container = start_container(test, image).await?;
     let host = container.get_host().await.expect("host").to_string();
     Some(Broker {
         container,
@@ -577,9 +603,9 @@ async fn mqtt_tier2_the_last_value_of_a_burst_arrives() {
 }
 
 /// SnapDog used to publish `media_player` discovery configs, a platform that Home
-/// Assistant's MQTT integration does not have. Those retained messages (and the
-/// stale double-slash status) must be cleared, and nothing under `homeassistant/`
-/// may be published any more.
+/// Assistant's MQTT integration does not have. With `clear_legacy_topics = true`
+/// those retained messages (and the stale double-slash status) are cleared; nothing
+/// under `homeassistant/` is published any more.
 #[tokio::test(flavor = "multi_thread")]
 async fn mqtt_tier2_legacy_retained_messages_are_cleared() {
     let Some(broker) = start_broker("IT-T32 legacy").await else {
@@ -608,7 +634,11 @@ async fn mqtt_tier2_legacy_retained_messages_are_cleared() {
         "the seeded legacy discovery messages are retained before SnapDog starts"
     );
 
-    let rig = start_bridge(&host, port).await;
+    let rig = try_start_bridge(&config_with_mqtt(&format!(
+        "broker = \"{host}:{port}\"\nclear_legacy_topics = true"
+    )))
+    .await
+    .expect("bridge starts");
     assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
     tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -811,6 +841,39 @@ async fn mqtt_tier2_the_home_assistant_birth_message_triggers_a_new_announcement
     );
 }
 
+/// Without `clear_legacy_topics` only the double-slash status (inside the base topic)
+/// is cleared: what is under `homeassistant/` is left alone, and a broker ACL that
+/// confines SnapDog to its base topic is not asked for anything else.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_by_default_the_cleanup_stays_inside_the_base_topic() {
+    let Some(broker) = start_broker("IT-T32 legacy default").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    seed_retained(
+        &host,
+        port,
+        &[
+            (
+                "homeassistant/media_player/snapdog_zone_1/config",
+                r#"{"name":"old"}"#,
+            ),
+            ("snapdog//status", "online"),
+        ],
+    )
+    .await;
+    let rig = start_bridge(&host, port).await;
+    assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(
+        retained_under(&host, port, "homeassistant/#").await.len(),
+        1,
+        "the legacy discovery message is left alone by default"
+    );
+    let own = retained_under(&host, port, "snapdog/#").await;
+    assert!(own.iter().all(|m| m.topic != "snapdog//status"), "{own:?}");
+}
+
 /// `clear_legacy_topics = false` leaves what is outside the base topic alone.
 #[tokio::test(flavor = "multi_thread")]
 async fn mqtt_tier2_legacy_cleanup_can_be_switched_off() {
@@ -979,7 +1042,10 @@ fn documented_acl() -> String {
 /// `track/position`), which the first version of that ACL left out.
 #[tokio::test(flavor = "multi_thread")]
 async fn mqtt_tier2_the_documented_acl_lets_every_command_through() {
-    let acl = documented_acl();
+    // What Home Assistant itself may do is its own business: it reads the device
+    // message and writes its birth message. SnapDog's side is the documented lines.
+    let acl =
+        documented_acl() + "topic read homeassistant/device/#\ntopic write homeassistant/status\n";
     assert!(
         acl.lines().count() >= 8,
         "the ACL was not found in the example config: {acl}"
@@ -995,18 +1061,24 @@ async fn mqtt_tier2_the_documented_acl_lets_every_command_through() {
                 .to_vec(),
         )
         .with_cmd(["mosquitto", "-c", "/mosquitto/config/acl-test.conf"]);
-    let container = match image.start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("SKIP IT-T32 ACL: Docker/mosquitto unavailable: {e}");
-            return;
-        }
+    let Some(container) = start_container("IT-T32 ACL", image).await else {
+        return;
     };
     let host = container.get_host().await.expect("host").to_string();
     let port = container.get_host_port_ipv4(1883).await.expect("port");
 
-    let mut rig = start_bridge(&host, port).await;
+    let ha_observer = Observer::start("it-t32-acl-ha", &host, port, "homeassistant/device/#");
+    let mut rig = try_start_bridge(&config_with_mqtt(&format!(
+        "broker = \"{host}:{port}\"\nhomeassistant = {{ discovery = true }}"
+    )))
+    .await
+    .expect("bridge starts");
     assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+    // The documented `homeassistant/device/+/config` line lets the device message through.
+    assert!(
+        ha_observer.wait_for(20, |seen| !seen.is_empty()).await,
+        "the device message did not get through the documented ACL"
+    );
 
     let zone_topics = [
         ("volume", "40", "SetVolume(40)"),
@@ -1138,13 +1210,7 @@ async fn start_tls_broker(test: &str, server_names: &[&str]) -> Option<TlsBroker
             pki.server_key.clone().into_bytes(),
         )
         .with_cmd(["mosquitto", "-c", "/mosquitto/config/tls.conf"]);
-    let container = match image.start().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("SKIP {test}: Docker/mosquitto unavailable: {e}");
-            return None;
-        }
-    };
+    let container = start_container(test, image).await?;
     let dir = tempfile::tempdir().expect("tempdir");
     for (name, content) in [
         ("ca.pem", pki.ca.as_str()),

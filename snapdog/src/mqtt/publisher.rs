@@ -19,6 +19,7 @@ use rumqttc::{AsyncClient, QoS};
 use super::payloads::{client_state_payload, zone_state_json};
 use super::topics::{COMMAND_ROUTES, Topics};
 use super::transport::MAX_OUTGOING_PACKET_BYTES;
+use crate::config::LegacyCleanup;
 use crate::state;
 
 /// Zone indices whose legacy discovery topic is cleared, at least.
@@ -156,11 +157,16 @@ impl Publisher {
     ///
     /// Returns the topics it asked the broker to clear (it cannot know which of them
     /// held anything).
-    pub fn clear_legacy_retained(&self, zones: usize) -> Vec<String> {
-        let mut topics = vec![self.topics.legacy_double_slash_status()];
-        topics.extend(
-            (1..=zones.max(LEGACY_DISCOVERY_ZONES)).map(legacy_media_player_discovery_topic),
-        );
+    pub fn clear_legacy_retained(&self, zones: usize, cleanup: LegacyCleanup) -> Vec<String> {
+        let mut topics = Vec::new();
+        if cleanup != LegacyCleanup::Off {
+            topics.push(self.topics.legacy_double_slash_status());
+        }
+        if cleanup == LegacyCleanup::All {
+            topics.extend(
+                (1..=zones.max(LEGACY_DISCOVERY_ZONES)).map(legacy_media_player_discovery_topic),
+            );
+        }
         topics.retain(|topic| {
             // A zero-length retained publish deletes a retained message (MQTT-3.3.1-10).
             self.retained(topic, Vec::<u8>::new()).is_ok()
