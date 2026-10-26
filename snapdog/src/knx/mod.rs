@@ -1131,6 +1131,7 @@ async fn execute<S: BuildHasher + Sync>(
         },
         Command::Zone(zone_idx, action) => {
             let Some(tx) = zone_commands.get(&zone_idx) else {
+                tracing::debug!(zone = zone_idx, %source, "KNX telegram for a zone that is not running, ignored");
                 return;
             };
             let cmd = match action {
@@ -2295,5 +2296,139 @@ mute = "2/0/1"
         // A zone and a client may share an address: both run.
         let ok = cfg_with_knx();
         assert_eq!(duplicate_addresses(&ok).len(), 0);
+    }
+
+    /// A recording publisher whose `resync` fires when the test says so (a device whose server
+    /// restarted, or whose associations a download changed).
+    struct Resyncing {
+        rec: Rec,
+        resync: Arc<tokio::sync::Notify>,
+    }
+
+    impl KnxPublisher for Resyncing {
+        const ADDRESSED: bool = true;
+
+        fn write(
+            &self,
+            target: transport::Target,
+            dpt: Dpt,
+            value: &DptValue,
+        ) -> impl std::future::Future<Output = bool> + Send {
+            self.rec.write(target, dpt, value)
+        }
+
+        async fn resync(&self) {
+            self.resync.notified().await;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_resync_sends_every_status_value_again() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let publisher = Resyncing {
+            rec: Rec::default(),
+            resync: Arc::new(tokio::sync::Notify::new()),
+        };
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::unbounded_channel();
+        let fut = publisher_loop(&publisher, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+
+        settle(&mut fut).await;
+        assert_eq!(publisher.rec.count(), 8);
+        // Nothing changed, but the peers lost what they had: all eight go out again, not none
+        // (the change filter must forget what it sent).
+        publisher.resync.notify_one();
+        settle(&mut fut).await;
+        assert_eq!(publisher.rec.count(), 16);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_server_online_heartbeat_is_sent_every_period_although_nothing_changes() {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+server_online = "0/0/1"
+heartbeat_minutes = 5
+
+[[zone]]
+name = "Z1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let rec = Rec::default();
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::unbounded_channel();
+        let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+
+        // 11 minutes: the first tick at once, then at 5 and at 10 minutes.
+        tokio::select! {
+            () = &mut fut => unreachable!(),
+            () = tokio::time::sleep(std::time::Duration::from_mins(11)) => {}
+        }
+        let beats = written(&rec)
+            .iter()
+            .filter(|(g, _, _)| g == "0/0/1")
+            .count();
+        assert_eq!(
+            beats, 3,
+            "a heartbeat that is sent on change only is not a heartbeat"
+        );
+    }
+
+    /// The device task writes the state on its way out, so shutdown has to wait for it as well as
+    /// for the bridge task. (Whether the file is complete when `shutdown` returns is a race
+    /// the integration test cannot always lose; the wiring is checked here.)
+    #[tokio::test]
+    async fn a_device_bridge_waits_for_the_device_task_on_shutdown() {
+        let toml = r#"
+[knx]
+role = "device"
+individual_address = "1.1.100"
+restart_after_ets = false
+
+[[zone]]
+name = "Z1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        let (_notify_tx, notify_rx) = tokio::sync::broadcast::channel(8);
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let dir = std::env::temp_dir().join(format!("snapdog_bridge_tasks_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let options = DeviceOptions {
+            bind: Some("127.0.0.1:0".parse().unwrap()),
+            memory_path: Some(dir.join("knx-memory.bin")),
+        };
+        let bridge = start_with_options(
+            &cfg,
+            store,
+            notify_rx,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+            &options,
+        )
+        .await
+        .unwrap();
+        assert_eq!(bridge.tasks.len(), 2, "bridge task and device task");
+        bridge.shutdown().await;
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

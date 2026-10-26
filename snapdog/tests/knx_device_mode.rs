@@ -142,6 +142,8 @@ struct Programming {
     links: Vec<(&'static str, u16)>,
     /// Parameter memory image (what ETS writes into the application program segment).
     params: Vec<u8>,
+    /// Sort the association table by address, then object, instead of writing it in link order.
+    sorted_associations: bool,
 }
 
 /// ETS reads where the device placed a segment (`PID_TABLE_REFERENCE`) before it writes there.
@@ -204,13 +206,29 @@ async fn ets_download(ets: &mut TunnelConnection, p: &Programming) {
     for g in &gas {
         addr.extend_from_slice(&g.to_be_bytes());
     }
-    let mut assoc = u16::try_from(p.links.len()).unwrap().to_be_bytes().to_vec();
-    for (g, asap) in &p.links {
-        let tsap = gas.iter().position(|x| *x == ga(g).raw()).unwrap() + 1;
+    let mut entries: Vec<(usize, u16)> = p
+        .links
+        .iter()
+        .map(|(g, asap)| {
+            (
+                gas.iter().position(|x| *x == ga(g).raw()).unwrap() + 1,
+                *asap,
+            )
+        })
+        .collect();
+    if p.sorted_associations {
+        entries.sort_unstable();
+    }
+    let mut assoc = u16::try_from(entries.len()).unwrap().to_be_bytes().to_vec();
+    for (tsap, asap) in entries {
         assoc.extend_from_slice(&u16::try_from(tsap).unwrap().to_be_bytes());
         assoc.extend_from_slice(&asap.to_be_bytes());
     }
 
+    // ETS unloads what it is about to load before it starts.
+    for obj in [APP_PROGRAM, ADDR_TABLE, ASSOC_TABLE] {
+        property_write(ets, obj, LSC, vec![4]).await;
+    }
     let app_at = allocate(ets, APP_PROGRAM, p.params.len()).await;
     for (obj, data) in [(ADDR_TABLE, &addr), (ASSOC_TABLE, &assoc)] {
         let at = allocate(ets, obj, data.len()).await;
@@ -424,6 +442,7 @@ fn ets_links() -> Programming {
             ("1/1/9", zone_asap(1, ZGO_VOLUME_STATUS)),
         ],
         params: ets_params(),
+        sorted_associations: false,
     }
 }
 
@@ -645,6 +664,83 @@ async fn repeated_downloads_do_not_grow_the_memory_file() {
         .unwrap();
     let cmd = timeout(T, dev.zone_rx.get_mut(&1).unwrap().recv()).await;
     assert!(matches!(cmd, Ok(Some(ZoneCommand::Play))), "{cmd:?}");
+}
+
+/// A download that adds an address for an object that had none: the status the object holds goes
+/// out on it, without any state change. (The publisher offered it when the device was started,
+/// when there was no address to send it to.)
+#[tokio::test]
+async fn a_download_that_adds_an_address_publishes_its_status() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+
+    let mut links = ets_links();
+    links.links.retain(|(g, _)| *g != "1/1/4");
+    ets_download(&mut ets, &links).await;
+    drain(&mut ets).await;
+
+    ets_download(&mut ets, &ets_links()).await;
+    let muted = expect_group_write(&mut ets, "1/1/4").await;
+    assert!(!dpt::decode(DPT_SWITCH, &muted).unwrap().as_bool().unwrap());
+}
+
+/// The stack sends an object's value to the first association of the object in the table, so
+/// the order in which ETS writes the table decides the sending address. Pinned for both
+/// orders (the real order of ETS is not verified).
+#[tokio::test]
+async fn an_object_sends_to_the_first_of_its_associations_in_table_order() {
+    for sorted in [false, true] {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = ets_style_config("", "");
+        let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+        let mut ets = connect(&dev).await;
+        let mut programming = ets_links();
+        // The zone volume status is linked to 1/1/9 first and 1/1/3 second.
+        programming
+            .links
+            .retain(|(_, asap)| *asap != zone_asap(1, ZGO_VOLUME_STATUS));
+        programming
+            .links
+            .push(("1/1/9", zone_asap(1, ZGO_VOLUME_STATUS)));
+        programming
+            .links
+            .push(("1/1/3", zone_asap(1, ZGO_VOLUME_STATUS)));
+        programming.sorted_associations = sorted;
+        ets_download(&mut ets, &programming).await;
+        drain(&mut ets).await;
+
+        set_zone_volume(&dev, 1, 30, false).await;
+        let send = if sorted { "1/1/3" } else { "1/1/9" };
+        let other = if sorted { "1/1/9" } else { "1/1/3" };
+        expect_group_write(&mut ets, send).await;
+        expect_no_group_write(&mut ets, other).await;
+    }
+}
+
+/// `A_Restart` ends a download: the state is persisted at once, not after the debounce, because
+/// the process may restart (and re-exec) right after it.
+#[tokio::test]
+async fn a_restart_persists_at_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let memory = tmp.path().join("knx-memory.bin");
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, memory.clone()).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await; // the status the device sends once it is configured
+    assert!(!memory.exists(), "inside the debounce");
+
+    let [hi, lo] = apci_hdr(ApduType::Restart);
+    ets.send(mgmt_frame(managed_ia(), &[hi, lo])).await.unwrap();
+    timeout(Duration::from_millis(1200), async {
+        while !memory.exists() {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("persisted by the restart, well before the two-second debounce");
 }
 
 /// Shutdown returns only after the device task has written the state it holds. The debounce for

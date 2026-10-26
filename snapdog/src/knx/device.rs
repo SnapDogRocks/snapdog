@@ -22,7 +22,7 @@ use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 use super::group_objects::mem;
 use super::supervisor::{
-    BACKOFF_BASE, BACKOFF_CAP, Backoff, STABLE_AFTER, stop_requested, warn_on_failure,
+    BACKOFF_BASE, BACKOFF_CAP, Backoff, delay_after_session, stop_requested, warn_on_failure,
 };
 use super::transport::{Incoming, Target};
 
@@ -690,6 +690,9 @@ enum BauCmd {
     SetProgMode { enabled: bool },
     /// Get current programming mode state.
     GetProgMode { reply: oneshot::Sender<bool> },
+    /// Let the KNXnet/IP server end, as if its socket had failed (supervision tests).
+    #[cfg(test)]
+    RestartServer,
 }
 
 /// Device-mode publisher: sends values to the BAU task.
@@ -1091,10 +1094,7 @@ async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
             break;
         }
         restarted = true;
-        if started.elapsed() >= STABLE_AFTER {
-            backoff.reset();
-        }
-        let delay = backoff.failure();
+        let delay = delay_after_session(&mut backoff, started.elapsed());
         tracing::warn!(retry_in = ?delay, "KNX device server stopped — restarting");
         if !idle(&mut task, delay).await {
             break;
@@ -1148,6 +1148,8 @@ fn handle_management_command(bau: &mut Bau, cmd: BauCmd) {
             let _ = reply.send(enabled);
         }
         BauCmd::WriteObject { .. } => {}
+        #[cfg(test)]
+        BauCmd::RestartServer => {}
     }
 }
 
@@ -1283,6 +1285,8 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     BauCmd::WriteObject { asap, value } => {
                         write_object(bau, &server, asap, &value).await;
                     }
+                    #[cfg(test)]
+                    BauCmd::RestartServer => break LoopEnd::ServerClosed,
                     other => handle_management_command(bau, other),
                 }
             }
@@ -2724,5 +2728,77 @@ mod tests {
             &bau,
             &group_frame("1/0/1", Kind::Write, 1)
         ));
+    }
+
+    // ── Supervision ─────────────────────────────────────────────────
+
+    fn supervised_task(
+        bind: std::net::SocketAddr,
+    ) -> (
+        DeviceTask,
+        mpsc::Sender<BauCmd>,
+        Arc<Notify>,
+        watch::Sender<bool>,
+    ) {
+        let (cmd_tx, cmd_rx) = mpsc::channel(8);
+        let (update_tx, _update_rx) = mpsc::channel(8);
+        let (addr_tx, _addr_rx) = watch::channel(None);
+        let (shutdown_tx, shutdown) = watch::channel(false);
+        let resync = Arc::new(Notify::new());
+        let task = DeviceTask {
+            bau: build_bau(IndividualAddress::from_raw(0x1164)),
+            cmd_rx,
+            update_tx,
+            persist_path: None,
+            restart_after_ets: false,
+            config_ia: 0x1164,
+            bind: Some(bind),
+            addr_tx,
+            resync: Arc::clone(&resync),
+            shutdown,
+            pending_persist: None,
+        };
+        (task, cmd_tx, resync, shutdown_tx)
+    }
+
+    #[tokio::test]
+    async fn the_status_is_published_again_after_the_server_restarted() {
+        let bind = "127.0.0.1:0".parse().unwrap();
+        let (task, cmd_tx, resync, shutdown_tx) = supervised_task(bind);
+        let first = open_server(Some(bind)).await.unwrap();
+        let supervisor = tokio::spawn(device_supervisor(task, Some(first)));
+
+        // The first server is not a restart: nobody has anything to republish yet.
+        let quiet =
+            tokio::time::timeout(std::time::Duration::from_millis(300), resync.notified()).await;
+        assert!(quiet.is_err());
+
+        cmd_tx.send(BauCmd::RestartServer).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), resync.notified())
+            .await
+            .expect("the peers' view is stale after a restart: the publisher is told to send everything");
+
+        shutdown_tx.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), supervisor)
+            .await
+            .expect("the supervisor ends on shutdown")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_server_that_could_not_bind_at_first_publishes_when_it_comes_up() {
+        let blocker = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let bind = blocker.local_addr().unwrap();
+        let (task, _cmd_tx, resync, shutdown_tx) = supervised_task(bind);
+        let supervisor = tokio::spawn(device_supervisor(task, None));
+        let quiet =
+            tokio::time::timeout(std::time::Duration::from_millis(300), resync.notified()).await;
+        assert!(quiet.is_err(), "no server yet");
+        drop(blocker);
+        tokio::time::timeout(std::time::Duration::from_secs(10), resync.notified())
+            .await
+            .expect("everything offered while there was no server goes out once it is up");
+        shutdown_tx.send(true).unwrap();
+        supervisor.await.unwrap();
     }
 }

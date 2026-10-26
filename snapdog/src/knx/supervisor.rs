@@ -79,6 +79,16 @@ impl Backoff {
     }
 }
 
+/// The delay before the next attempt after a connection that lasted `lasted` has ended. A
+/// connection that stayed up for [`STABLE_AFTER`] was healthy, so the backoff starts over; one
+/// that dropped soon after it was made keeps backing off.
+pub fn delay_after_session(backoff: &mut Backoff, lasted: Duration) -> Duration {
+    if lasted >= STABLE_AFTER {
+        backoff.reset();
+    }
+    backoff.failure()
+}
+
 /// Whether the `failures`-th consecutive failure deserves a warning: the first few, then
 /// every tenth. Everything in between is logged at debug level, so a gateway that stays away
 /// for a day produces a line every ten minutes at the capped delay, not one per attempt.
@@ -251,10 +261,7 @@ pub async fn run_client<S>(
         match end {
             None | Some(SessionEnd::NotificationsClosed) => break,
             Some(end) => {
-                if connected_at.elapsed() >= STABLE_AFTER {
-                    backoff.reset();
-                }
-                let delay = backoff.failure();
+                let delay = delay_after_session(&mut backoff, connected_at.elapsed());
                 tracing::warn!(
                     reason = ?end,
                     retry_in = ?delay,
@@ -334,6 +341,22 @@ mod tests {
     fn warnings_are_rate_limited() {
         let warned: Vec<u32> = (1..=40).filter(|n| warn_on_failure(*n)).collect();
         assert_eq!(warned, vec![1, 2, 3, 10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn a_stable_connection_resets_the_backoff_and_a_short_one_does_not() {
+        let mut b = Backoff::new(BACKOFF_BASE, BACKOFF_CAP);
+        for _ in 0..5 {
+            b.failure();
+        }
+        // Dropped soon after it was made: keep backing off (6th failure, nominal 32 s).
+        let short = delay_after_session(&mut b, Duration::from_secs(2));
+        assert!(short >= Duration::from_secs(16), "{short:?}");
+        assert_eq!(b.failures(), 6);
+        // Stayed up for a while: start over (first failure, nominal 1 s).
+        let long = delay_after_session(&mut b, STABLE_AFTER);
+        assert!(long <= BACKOFF_BASE, "{long:?}");
+        assert_eq!(b.failures(), 1);
     }
 
     #[test]
