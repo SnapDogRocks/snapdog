@@ -121,9 +121,39 @@ then `password`. `SNAPDOG_MQTT_USERNAME`, `SNAPDOG_MQTT_CA_FILE`,
   backoff (1 to 60 seconds; it starts over only after a connection held for 30
   seconds). After every reconnect SnapDog subscribes again, announces `online` and
   republishes the state of every zone and client.
+- **Two clients with one client id.** The broker drops the older connection whenever
+  a new one with the same client id arrives, so two such clients take turns,
+  reconnecting and flipping `status` between `online` and `offline`. Backoff does
+  not stop that (each connection is new). After the third connection in a row that
+  closes within 30 seconds of connecting, the log says so (`MQTT connection was
+  closed shortly after it was made, again and again ...`, with the client id), and
+  repeats it every 20th time. The default `client_id` stays `snapdog`, because
+  deriving it from the host name would change what a broker ACL or a persistent
+  session sees; set `client_id` to something unique per instance.
 - **A bug panics one of the MQTT tasks.** The panic is logged (`MQTT task panicked,
   restarting it`, with its message), the task starts again after the same backoff on
   the connection it had, and `is_connected` is false in between. Audio and the rest of
   the server are not affected either way.
 - **Shutdown.** SnapDog publishes `offline` itself and sends DISCONNECT, because a
   clean DISCONNECT suppresses the last will. It waits at most one second for that.
+
+## Retained messages of earlier releases
+
+Earlier releases left two kinds of retained messages behind: `{base}/status` with a
+double slash (`snapdog//status`, `online`), and `media_player` discovery messages
+under `homeassistant/media_player/snapdog_zone_<n>/config` (Home Assistant's MQTT
+integration has no such platform, so they never did anything).
+
+At every start SnapDog asks the broker to delete both (an empty retained publish to
+each of them; it cannot know which hold anything) and logs that at info level. This is
+a migration aid. It writes outside the base topic, which a strict ACL refuses; most
+brokers drop that silently, some (EMQX with `deny_action = disconnect`, AWS IoT)
+close the connection, once per start. Set
+
+```toml
+[mqtt]
+clear_legacy_topics = false
+```
+
+once the old messages are gone, or if the ACL refuses them. The default is `true`, so
+that an upgrade cleans up by itself.

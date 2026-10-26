@@ -148,7 +148,9 @@ password = "admin"
 # switch that off. Without `ca_file` it is checked against the system trust store.
 # Minimum TLS 1.2. Do not put user:password into the address: use the keys below.
 broker = "192.168.1.10:1883"
-# client_id = "snapdog"            # MQTT client ID (must be unique per broker)
+# client_id = "snapdog"            # MQTT client ID. Must be unique per broker: a second client
+#                                  # with the same ID makes the broker drop the first, and the two
+#                                  # then take turns (the log says so after a few rounds).
 
 # A wrong [mqtt] section switches MQTT off (and logs why); the server keeps running.
 # `snapdog --check-config` reports it as an error. Unknown keys count as wrong.
@@ -180,6 +182,12 @@ broker = "192.168.1.10:1883"
 
 # Base topic prefix. All topics are published/subscribed under this prefix.
 base_topic = "snapdog"
+
+# Earlier releases left retained messages outside the base topic (`snapdog//status`,
+# `homeassistant/media_player/snapdog_zone_<n>/config`). SnapDog asks the broker to delete
+# them at every start. Set this to false once they are gone, or if your ACL refuses writes
+# outside the base topic (some brokers then close the connection).
+# clear_legacy_topics = true
 
 # Hardening the broker (Mosquitto shown; other brokers have the same knobs):
 #   1. Listen on TLS only: no `listener 1883`; `listener 8883` with cafile/certfile/keyfile.

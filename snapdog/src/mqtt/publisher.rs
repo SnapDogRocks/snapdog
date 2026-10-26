@@ -151,15 +151,19 @@ impl Publisher {
     /// - `{base}/status` (double slash): `online` published by a past topic bug.
     /// - `homeassistant/media_player/snapdog_zone_{n}/config`: discovery messages
     ///   for a platform Home Assistant's MQTT integration does not have.
-    pub fn clear_legacy_retained(&self, zones: usize) {
+    ///
+    /// Returns the topics it asked the broker to clear (it cannot know which of them
+    /// held anything).
+    pub fn clear_legacy_retained(&self, zones: usize) -> Vec<String> {
         let mut topics = vec![self.topics.legacy_double_slash_status()];
         topics.extend(
             (1..=zones.max(LEGACY_DISCOVERY_ZONES)).map(legacy_media_player_discovery_topic),
         );
-        for topic in topics {
+        topics.retain(|topic| {
             // A zero-length retained publish deletes a retained message (MQTT-3.3.1-10).
-            let _ = self.retained(&topic, Vec::<u8>::new());
-        }
+            self.retained(topic, Vec::<u8>::new()).is_ok()
+        });
+        topics
     }
 }
 

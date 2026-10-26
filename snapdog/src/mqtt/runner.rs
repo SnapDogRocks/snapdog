@@ -45,9 +45,9 @@ use crate::api::ws::Notification;
 use crate::state;
 
 /// Shortest wait before a reconnect attempt.
-const RECONNECT_MIN: Duration = Duration::from_secs(1);
+pub const RECONNECT_MIN: Duration = Duration::from_secs(1);
 /// Longest wait between reconnect attempts.
-const RECONNECT_MAX: Duration = Duration::from_secs(60);
+pub const RECONNECT_MAX: Duration = Duration::from_secs(60);
 /// A connection that held this long counts as healthy: the backoff starts over.
 /// Shorter ones (a broker that accepts and drops us, two instances fighting over
 /// one client id) keep the backoff growing.
@@ -56,7 +56,7 @@ const STABLE_AFTER: Duration = Duration::from_secs(30);
 /// Reconnect delays with decorrelated jitter: each delay is drawn uniformly from
 /// `[min, 3 * previous delay]` and capped at `max`. The spread keeps a fleet of
 /// clients from reconnecting in lockstep after a broker restart.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Backoff {
     min: Duration,
     max: Duration,
@@ -88,6 +88,70 @@ impl Backoff {
     /// Start over at the minimum.
     pub const fn reset(&mut self) {
         self.prev = self.min;
+    }
+}
+
+/// How many connections in a row that closed within [`STABLE_AFTER`] of connecting
+/// make the log point at a duplicate client id.
+const FLAPPING_HINT_AFTER: u32 = 3;
+
+/// What to do about a connection that ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Retry {
+    /// How long to wait before the next attempt.
+    pub delay: Duration,
+    /// Connections keep closing soon after they were made: the log should say what
+    /// usually causes that.
+    pub flapping: bool,
+}
+
+/// Bookkeeping across reconnects: the backoff, and how often a connection held
+/// only briefly. Pure (the clock and the random sample are parameters), so that
+/// the rules are testable.
+#[derive(Debug)]
+pub struct Reconnect {
+    backoff: Backoff,
+    up_since: Option<Instant>,
+    /// Connections in a row that closed within [`STABLE_AFTER`].
+    short_lived: u32,
+}
+
+impl Reconnect {
+    pub const fn new(backoff: Backoff) -> Self {
+        Self {
+            backoff,
+            up_since: None,
+            short_lived: 0,
+        }
+    }
+
+    /// The broker accepted the connection at `now`.
+    pub const fn connected(&mut self, now: Instant) {
+        self.up_since = Some(now);
+    }
+
+    /// The connection ended, or an attempt failed, at `now`; `unit` is a uniform
+    /// sample in `[0, 1]` for the jitter.
+    ///
+    /// A connection that held for [`STABLE_AFTER`] counts as healthy and the backoff
+    /// starts over. A shorter one (a broker that accepts and drops us, two
+    /// instances fighting over one client id) keeps it growing.
+    pub fn failed(&mut self, now: Instant, unit: f64) -> Retry {
+        match self.up_since.take() {
+            Some(since) if now.saturating_duration_since(since) >= STABLE_AFTER => {
+                self.backoff.reset();
+                self.short_lived = 0;
+            }
+            Some(_) => self.short_lived += 1,
+            // The attempt never got a connection: a refusal, not a flap.
+            None => {}
+        }
+        let flapping = self.short_lived >= FLAPPING_HINT_AFTER
+            && (self.short_lived == FLAPPING_HINT_AFTER || self.short_lived.is_multiple_of(20));
+        Retry {
+            delay: self.backoff.next_with(unit),
+            flapping,
+        }
     }
 }
 
@@ -202,6 +266,13 @@ pub async fn supervised_backlog_flusher(handler: CommandHandler, shutdown: watch
 /// not be held across an `.await` in a spawned task.
 pub struct Session {
     pub publisher: Publisher,
+    /// The MQTT client id, for the hint about a duplicate one.
+    pub client_id: String,
+    /// Whether to clear what earlier releases left on the broker (`[mqtt]
+    /// clear_legacy_topics`).
+    pub clear_legacy_topics: bool,
+    /// The reconnect delays this session starts from.
+    pub backoff: Backoff,
     pub handler: CommandHandler,
     pub store: state::SharedState,
     /// Set while a connection is established.
@@ -213,14 +284,13 @@ pub struct Session {
 
 /// Poll the broker until shutdown.
 pub async fn run_connection(eventloop: &mut EventLoop, this: &mut Session) {
-    let mut backoff = Backoff::new(RECONNECT_MIN, RECONNECT_MAX);
-    let mut up_since: Option<Instant> = None;
+    let mut reconnect = Reconnect::new(this.backoff.clone());
     let mut first_connect = true;
     loop {
         match eventloop.poll().await {
             Ok(Event::Incoming(Packet::ConnAck(_))) => {
                 tracing::info!("MQTT connected");
-                up_since = Some(Instant::now());
+                reconnect.connected(Instant::now());
                 // The flag first: a notification that arrives while the snapshot
                 // is queued is then published rather than skipped.
                 this.connected.send_replace(true);
@@ -250,16 +320,10 @@ pub async fn run_connection(eventloop: &mut EventLoop, this: &mut Session) {
                 if *this.shutdown.borrow() {
                     break;
                 }
-                if up_since
-                    .take()
-                    .is_some_and(|since| since.elapsed() >= STABLE_AFTER)
-                {
-                    backoff.reset();
-                }
-                let delay = backoff.next_delay();
-                this.report_connection_error(&e, delay);
+                let retry = reconnect.failed(Instant::now(), fastrand::f64());
+                this.report_connection_error(&e, retry);
                 tokio::select! {
-                    () = tokio::time::sleep(delay) => {}
+                    () = tokio::time::sleep(retry.delay) => {}
                     () = shutdown_requested(&mut this.shutdown) => break,
                 }
             }
@@ -287,8 +351,17 @@ impl Session {
             tracing::warn!(error = %e, "MQTT online announcement could not be queued");
         }
         let store = self.store.read().await;
-        if first_connect {
-            self.publisher.clear_legacy_retained(store.zones.len());
+        if first_connect && self.clear_legacy_topics {
+            let cleared = self.publisher.clear_legacy_retained(store.zones.len());
+            tracing::info!(
+                topics = cleared.len(),
+                first = ?cleared.first(),
+                last = ?cleared.last(),
+                "Asked the broker to delete retained messages that earlier releases left behind \
+                 (`{}`, `homeassistant/media_player/snapdog_zone_<n>/config`). Set \
+                 `clear_legacy_topics = false` in [mqtt] once they are gone",
+                self.publisher.topics().legacy_double_slash_status()
+            );
         }
         let states = self.publisher.snapshot(&store);
         drop(store);
@@ -370,7 +443,17 @@ fn oversized_packet_hint(size: usize, base: &str) -> String {
 impl Session {
     /// Log why a connection attempt failed, with a hint where the cause is typical.
     /// A cause that repeats on every retry is logged once per throttle interval.
-    fn report_connection_error(&mut self, error: &ConnectionError, retry_in: Duration) {
+    fn report_connection_error(&mut self, error: &ConnectionError, retry: Retry) {
+        let retry_in = retry.delay;
+        if retry.flapping {
+            tracing::warn!(
+                client_id = %self.client_id,
+                "MQTT connection was closed shortly after it was made, again and again. A common \
+                 cause is another client with the same client id: the broker drops the older \
+                 connection whenever a new one arrives, and the two take turns. Give every \
+                 SnapDog instance (and every other MQTT client) its own client_id in [mqtt]"
+            );
+        }
         if let Some(size) = oversized_packet(error) {
             if let Some(held_back) = self
                 .log_throttle
@@ -643,24 +726,37 @@ mod tests {
         assert_eq!(panic_message(&42_u8), "(no message)");
     }
 
-    #[tokio::test]
-    async fn after_a_connection_panic_the_bridge_no_longer_claims_to_be_connected() {
+    /// An event loop and a session wired to a broker on `127.0.0.1:port`, the way
+    /// [`MqttBridge::start`](super::super::MqttBridge::start) wires them.
+    fn rig(
+        port: u16,
+        backoff: Backoff,
+    ) -> (
+        EventLoop,
+        Session,
+        watch::Receiver<bool>,
+        watch::Sender<bool>,
+        crate::mqtt::test_support::RuntimeEnds,
+    ) {
         use crate::mqtt::test_support::test_runtime;
-        use rumqttc::{AsyncClient, MqttOptions};
+        use crate::mqtt::topics::Topics;
+        use crate::mqtt::transport::mqtt_options;
+        use rumqttc::AsyncClient;
 
-        let (runtime, _ends) = test_runtime();
-        let (client, eventloop) = AsyncClient::new(MqttOptions::new("t", "127.0.0.1", 1), 8);
-        let (connected, connected_rx) = watch::channel(true);
-        let (_stop, shutdown) = watch::channel(false);
-        let publisher = Publisher::new(
-            client,
-            super::super::topics::Topics::new("snapdog"),
-            "http://h",
-        );
+        let config: crate::config::MqttConfig =
+            toml::from_str(&format!("broker = \"127.0.0.1:{port}\"")).unwrap();
+        let topics = Topics::new(&config.base_topic);
+        let (client, eventloop) = AsyncClient::new(mqtt_options(&config, &topics).unwrap(), 64);
+        let (runtime, ends) = test_runtime();
+        let (connected, connected_rx) = watch::channel(false);
+        let (stop, shutdown) = watch::channel(false);
         let session = Session {
-            publisher,
+            publisher: Publisher::new(client, topics.clone(), "http://h"),
+            client_id: config.client_id,
+            clear_legacy_topics: true,
+            backoff,
             handler: CommandHandler::new(
-                super::super::topics::Topics::new("snapdog"),
+                topics,
                 runtime.zone_commands,
                 runtime.state.clone(),
                 runtime.snap_tx,
@@ -670,6 +766,13 @@ mod tests {
             shutdown,
             log_throttle: LogThrottle::new(Duration::from_secs(10)),
         };
+        (eventloop, session, connected_rx, stop, ends)
+    }
+
+    #[tokio::test]
+    async fn after_a_connection_panic_the_bridge_no_longer_claims_to_be_connected() {
+        let (eventloop, session, connected_rx, _stop, _ends) = rig(1, quick_backoff());
+        session.connected.send_replace(true);
         let mut state = (eventloop, session);
         assert!(*connected_rx.borrow());
         after_connection_panic(&mut state);
@@ -677,6 +780,150 @@ mod tests {
             !*connected_rx.borrow(),
             "the flag must not outlive the task"
         );
+    }
+
+    /// Review finding F9: two instances with one client id kick each other off the
+    /// broker, over and over, and the log only said "connection error".
+    #[tokio::test]
+    async fn connections_that_keep_closing_soon_get_a_hint_about_the_client_id() {
+        use crate::mqtt::test_support::{FakeBroker, Script, capture_logs};
+        let (_guard, logs) = capture_logs();
+        let broker = FakeBroker::start(Script::DropAfterConnack).await;
+        let (mut eventloop, mut session, _connected, stop, _ends) =
+            rig(broker.port, quick_backoff());
+        let task = tokio::spawn(async move { run_connection(&mut eventloop, &mut session).await });
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !logs.text().contains("same client id") && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        stop.send_replace(true);
+        let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
+        let text = logs.text();
+        assert!(
+            text.contains("same client id"),
+            "no hint in the log: {text}"
+        );
+        assert!(text.contains("client_id"), "{text}");
+        assert!(
+            broker.connections.load(std::sync::atomic::Ordering::SeqCst) >= 3,
+            "the hint comes after repeated short connections, not the first"
+        );
+    }
+
+    /// Review finding F1: the connection ended on a packet over the limit, and the
+    /// log said "connection error, retrying".
+    #[tokio::test]
+    async fn an_oversized_packet_from_the_broker_is_explained_in_the_log() {
+        use crate::mqtt::test_support::{FakeBroker, Script, capture_logs};
+        let (_guard, logs) = capture_logs();
+        let broker = FakeBroker::start(Script::SendOversized(2 << 20)).await;
+        let (mut eventloop, mut session, _connected, stop, _ends) =
+            rig(broker.port, quick_backoff());
+        let task = tokio::spawn(async move { run_connection(&mut eventloop, &mut session).await });
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !logs.text().contains("somebody published below") && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        stop.send_replace(true);
+        let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
+        let text = logs.text();
+        assert!(
+            text.contains("somebody published below"),
+            "no hint in the log: {text}"
+        );
+        assert!(text.contains("snapdog/"), "names the base topic: {text}");
+        assert!(text.contains("ERROR"), "{text}");
+        // It repeats on every retry, so it is throttled: one line, not one per attempt.
+        assert_eq!(
+            text.matches("somebody published below").count(),
+            1,
+            "{text}"
+        );
+    }
+
+    // ── Reconnect bookkeeping ─────────────────────────────────
+
+    fn reconnect() -> Reconnect {
+        Reconnect::new(Backoff::new(RECONNECT_MIN, RECONNECT_MAX))
+    }
+
+    /// The delay in whole seconds for the worst-case jitter sample (1.0).
+    fn worst_secs(retry: Retry) -> u64 {
+        retry.delay.as_secs()
+    }
+
+    #[test]
+    fn failed_attempts_without_a_connection_back_off_and_never_look_like_flapping() {
+        let t0 = Instant::now();
+        let mut r = reconnect();
+        let delays: Vec<u64> = (0..5)
+            .map(|i| {
+                let retry = r.failed(t0 + Duration::from_secs(i), 1.0);
+                assert!(!retry.flapping, "a refused connection is not a flap");
+                worst_secs(retry)
+            })
+            .collect();
+        assert_eq!(delays, [3, 9, 27, 60, 60]);
+    }
+
+    /// Mutation M10 of the review: resetting the backoff after every connection
+    /// made two clients with one client id reconnect once per second, for ever.
+    #[test]
+    fn a_connection_that_closes_soon_does_not_reset_the_backoff() {
+        let t0 = Instant::now();
+        let mut r = reconnect();
+        let mut delays = Vec::new();
+        for round in 0..4 {
+            let up = t0 + Duration::from_secs(round * 100);
+            r.connected(up);
+            delays.push(worst_secs(r.failed(up + Duration::from_secs(1), 1.0)));
+        }
+        assert_eq!(delays, [3, 9, 27, 60], "the backoff keeps growing");
+    }
+
+    #[test]
+    fn a_connection_that_held_for_a_while_starts_the_backoff_over() {
+        let t0 = Instant::now();
+        let mut r = reconnect();
+        for i in 0..4 {
+            r.failed(t0 + Duration::from_secs(i), 1.0);
+        }
+        r.connected(t0 + Duration::from_secs(10));
+        let retry = r.failed(t0 + Duration::from_secs(10) + STABLE_AFTER, 1.0);
+        assert_eq!(worst_secs(retry), 3, "healthy for 30 s: start over");
+        // Just under the threshold is still a short connection.
+        let up = t0 + Duration::from_secs(1000);
+        r.connected(up);
+        let retry = r.failed(
+            up + STABLE_AFTER.checked_sub(Duration::from_millis(1)).unwrap(),
+            1.0,
+        );
+        assert_eq!(worst_secs(retry), 9);
+    }
+
+    #[test]
+    fn the_flapping_hint_comes_after_three_short_connections_then_rarely() {
+        let t0 = Instant::now();
+        let mut r = reconnect();
+        let mut hints = Vec::new();
+        for round in 1..=41_u64 {
+            let up = t0 + Duration::from_secs(round * 100);
+            r.connected(up);
+            if r.failed(up + Duration::from_secs(1), 0.0).flapping {
+                hints.push(round);
+            }
+        }
+        assert_eq!(hints, [3, 20, 40]);
+        // A healthy connection ends the series.
+        let up = t0 + Duration::from_secs(10_000);
+        r.connected(up);
+        assert!(!r.failed(up + STABLE_AFTER, 0.0).flapping);
+        for _ in 0..2 {
+            r.connected(up);
+            assert!(!r.failed(up + Duration::from_secs(1), 0.0).flapping);
+        }
     }
 
     #[test]

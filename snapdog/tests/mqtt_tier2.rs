@@ -615,6 +615,45 @@ async fn mqtt_tier2_legacy_retained_messages_are_cleared() {
     assert_eq!(last_on(&own, "snapdog/status"), Some("online"));
 }
 
+/// `clear_legacy_topics = false` leaves what is outside the base topic alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_legacy_cleanup_can_be_switched_off() {
+    let Some(broker) = start_broker("IT-T32 legacy off").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    seed_retained(
+        &host,
+        port,
+        &[
+            (
+                "homeassistant/media_player/snapdog_zone_1/config",
+                r#"{"name":"old"}"#,
+            ),
+            ("snapdog//status", "online"),
+        ],
+    )
+    .await;
+    let cfg = config_with_mqtt(&format!(
+        "broker = \"{host}:{port}\"\nclear_legacy_topics = false"
+    ));
+    let rig = try_start_bridge(&cfg).await.expect("bridge starts");
+    assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let ha = retained_under(&host, port, "homeassistant/#").await;
+    assert_eq!(
+        ha.len(),
+        1,
+        "the legacy discovery message stays; saw: {ha:?}"
+    );
+    let own = retained_under(&host, port, "snapdog/#").await;
+    assert!(
+        own.iter().any(|m| m.topic == "snapdog//status"),
+        "the double-slash status stays; saw: {own:?}"
+    );
+}
+
 /// After the broker restarted (it forgets sessions, subscriptions and retained
 /// messages) the bridge reconnects by itself, subscribes again, and publishes
 /// availability and state again. Before, it stayed silent until the process was

@@ -42,8 +42,8 @@ use commands::CommandHandler;
 use limits::LogThrottle;
 use publisher::{Publisher, request_capacity};
 use runner::{
-    Session, StateFeed, supervised_backlog_flusher, supervised_connection,
-    supervised_state_publisher,
+    Backoff, RECONNECT_MAX, RECONNECT_MIN, Session, StateFeed, supervised_backlog_flusher,
+    supervised_connection, supervised_state_publisher,
 };
 use topics::Topics;
 use transport::mqtt_options;
@@ -122,6 +122,9 @@ impl MqttBridge {
         );
         let session = Session {
             publisher: publisher.clone(),
+            client_id: config.client_id.clone(),
+            clear_legacy_topics: config.clear_legacy_topics,
+            backoff: Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
             handler: handler.clone(),
             store: runtime.state.clone(),
             connected: connected_tx,
@@ -288,6 +291,147 @@ mod tests {
             "password from the file in CONNECT"
         );
         drop(bridge);
+    }
+
+    /// What `SnapDog` puts on the wire: every subscription and every publish is
+    /// `QoS` 1, state and availability are retained, the last will is a retained
+    /// `offline`. (Review mutation M3: `QoS` 1 became `QoS` 0 and nothing noticed.)
+    #[tokio::test]
+    async fn the_wire_carries_qos_1_retained_state_and_a_retained_last_will() {
+        use crate::mqtt::test_support::{FakeBroker, Script};
+        use rumqttc::Packet;
+
+        let broker = FakeBroker::start(Script::Serve).await;
+        let config: MqttConfig =
+            toml::from_str(&format!("broker = \"127.0.0.1:{}\"", broker.port)).unwrap();
+        let (runtime, _ends) = crate::mqtt::test_support::test_runtime();
+        let bridge = MqttBridge::start(&config, "http://h", runtime)
+            .await
+            .unwrap();
+        assert!(bridge.wait_connected(Duration::from_secs(5)).await);
+        // One CONNECT, 16 subscription filters, `online` and the state of 2 zones
+        // and 1 client (plus the clearing of legacy topics).
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline
+            && !broker
+                .packets()
+                .iter()
+                .any(|p| matches!(p, Packet::Publish(x) if x.topic == "snapdog/clients/1/state"))
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let packets = broker.packets();
+
+        let connect = packets
+            .iter()
+            .find_map(|p| {
+                if let Packet::Connect(c) = p {
+                    Some(c)
+                } else {
+                    None
+                }
+            })
+            .expect("CONNECT");
+        let will = connect.last_will.as_ref().expect("last will");
+        assert_eq!(will.topic, "snapdog/status");
+        assert_eq!(&will.message[..], b"offline");
+        assert_eq!(will.qos, rumqttc::QoS::AtLeastOnce);
+        assert!(will.retain);
+
+        let filters: Vec<_> = packets
+            .iter()
+            .filter_map(|p| {
+                if let Packet::Subscribe(s) = p {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .flat_map(|s| s.filters.iter())
+            .collect();
+        assert_eq!(filters.len(), super::topics::COMMAND_ROUTES.len());
+        assert!(
+            filters.iter().all(|f| f.qos == rumqttc::QoS::AtLeastOnce),
+            "commands are subscribed at QoS 1: {filters:?}"
+        );
+
+        let state_topics = [
+            "snapdog/status",
+            "snapdog/zones/1/state",
+            "snapdog/zones/2/state",
+            "snapdog/clients/1/state",
+        ];
+        for topic in state_topics {
+            let publish = packets
+                .iter()
+                .find_map(|p| match p {
+                    Packet::Publish(x) if x.topic == topic => Some(x),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{topic} was not published"));
+            assert_eq!(publish.qos, rumqttc::QoS::AtLeastOnce, "{topic}");
+            assert!(publish.retain, "{topic} is retained");
+        }
+        drop(bridge);
+    }
+
+    /// Review finding F11: the clean-up of what earlier releases left behind ran at
+    /// every start, whatever the ACL, with no way to stop it.
+    #[tokio::test]
+    async fn the_legacy_cleanup_can_be_switched_off() {
+        use crate::mqtt::test_support::{FakeBroker, Script};
+        use rumqttc::Packet;
+
+        async fn publishes(extra: &str) -> Vec<(String, usize)> {
+            let broker = FakeBroker::start(Script::Serve).await;
+            let config: MqttConfig =
+                toml::from_str(&format!("broker = \"127.0.0.1:{}\"\n{extra}", broker.port))
+                    .unwrap();
+            let (runtime, _ends) = crate::mqtt::test_support::test_runtime();
+            let bridge = MqttBridge::start(&config, "http://h", runtime)
+                .await
+                .unwrap();
+            assert!(bridge.wait_connected(Duration::from_secs(5)).await);
+            // The client state is queued last: when it is there, the rest is.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            while tokio::time::Instant::now() < deadline
+                && !broker.packets().iter().any(
+                    |p| matches!(p, Packet::Publish(x) if x.topic == "snapdog/clients/1/state"),
+                )
+            {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let found = broker
+                .packets()
+                .iter()
+                .filter_map(|p| match p {
+                    Packet::Publish(x) => Some((x.topic.clone(), x.payload.len())),
+                    _ => None,
+                })
+                .collect();
+            drop(bridge);
+            found
+        }
+
+        let on = publishes("").await;
+        // A retained empty payload clears: the double-slash status and the discovery
+        // topics of the old `media_player` messages.
+        assert!(on.contains(&("snapdog//status".to_string(), 0)), "{on:?}");
+        assert!(
+            on.contains(&(
+                "homeassistant/media_player/snapdog_zone_1/config".to_string(),
+                0
+            )),
+            "{on:?}"
+        );
+        let off = publishes("clear_legacy_topics = false").await;
+        assert!(
+            off.iter().all(
+                |(topic, _)| !topic.starts_with("homeassistant/") && topic != "snapdog//status"
+            ),
+            "nothing outside the base topic may be written: {off:?}"
+        );
+        assert!(off.iter().any(|(topic, _)| topic == "snapdog/status"));
     }
 
     fn resolved_err(config: &MqttConfig) -> String {

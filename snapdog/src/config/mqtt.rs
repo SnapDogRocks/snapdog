@@ -82,6 +82,13 @@ pub struct MqttConfig {
     /// `openssl pkey -in old.key -out client.key`.
     #[serde(default)]
     pub client_key: Option<PathBuf>,
+    /// Clear the retained messages that earlier releases left on the broker, once at
+    /// every start: `{base}/status` (double slash) and the `media_player` discovery
+    /// topics under `homeassistant/`. A migration aid: set it to `false` once it has
+    /// done its work, or if the broker's ACL refuses writes outside the base topic
+    /// (some brokers then drop the connection).
+    #[serde(default = "default_true")]
+    pub clear_legacy_topics: bool,
     /// Keys the section has that `SnapDog` does not know (a typo such as `ca_flie`).
     /// Only the names are kept, never the values. [`Self::resolve`] refuses them:
     /// a misspelt TLS or credential key must not silently fall back to a default.
@@ -152,10 +159,15 @@ impl Default for MqttConfig {
             ca_file: None,
             client_cert: None,
             client_key: None,
+            clear_legacy_topics: true,
             unknown_keys: UnknownKeys::default(),
             warnings: Vec::new(),
         }
     }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 fn default_mqtt_client_id() -> String {
