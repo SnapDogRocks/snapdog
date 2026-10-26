@@ -16,8 +16,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Result, anyhow};
 use rumqttc::{AsyncClient, QoS};
 
-use super::payloads::{client_state_payload, zone_state_payload};
+use super::payloads::{client_state_payload, zone_state_json};
 use super::topics::{COMMAND_ROUTES, Topics};
+use super::transport::MAX_OUTGOING_PACKET_BYTES;
 use crate::state;
 
 /// Zone indices whose legacy discovery topic is cleared, at least.
@@ -72,9 +73,20 @@ impl Publisher {
     ///
     /// Returns an error if the request channel is full or the event loop is gone.
     pub fn retained(&self, topic: &str, payload: impl Into<Vec<u8>>) -> Result<()> {
+        let payload = payload.into();
+        // A packet over the limit does not just fail: it ends the connection, and
+        // the snapshot after the reconnect would send it again.
+        if !fits_in_a_packet(topic, payload.len()) {
+            tracing::warn!(
+                topic = ?topic,
+                bytes = payload.len(),
+                "MQTT message is larger than the packet limit, not published"
+            );
+            return Err(anyhow!("MQTT message for {topic} is too large"));
+        }
         match self
             .client
-            .try_publish(topic, QoS::AtLeastOnce, true, payload.into())
+            .try_publish(topic, QoS::AtLeastOnce, true, payload)
         {
             Ok(()) => {
                 self.outbox_full.store(false, Ordering::Relaxed);
@@ -107,7 +119,7 @@ impl Publisher {
     pub fn zone_state(&self, index: usize, zone: &state::ZoneState) -> Result<()> {
         self.retained(
             &self.topics.zone_state(index),
-            zone_state_payload(&self.base_url, zone).to_string(),
+            zone_state_json(&self.base_url, zone),
         )
     }
 
@@ -151,6 +163,12 @@ impl Publisher {
     }
 }
 
+/// Whether a publish of `payload_len` bytes to `topic` stays within the outgoing
+/// packet limit (fixed header, topic length and packet id take up to 8 bytes).
+const fn fits_in_a_packet(topic: &str, payload_len: usize) -> bool {
+    payload_len.saturating_add(topic.len()) <= MAX_OUTGOING_PACKET_BYTES - 8
+}
+
 /// The discovery topic old releases published a `media_player` config to.
 fn legacy_media_player_discovery_topic(zone: usize) -> String {
     format!("homeassistant/media_player/snapdog_zone_{zone}/config")
@@ -187,6 +205,22 @@ mod tests {
         let queued = 16 + 10 + 1 + 1 + 10 + 30;
         assert!(queued > old_capacity);
         assert!(request_capacity(10, 30) > queued);
+    }
+
+    #[tokio::test]
+    async fn a_message_over_the_packet_limit_is_refused_instead_of_dropping_the_connection() {
+        // Room for two requests: if the oversized message were queued, the second
+        // small one would find the channel full.
+        let (client, _eventloop) =
+            AsyncClient::new(rumqttc::MqttOptions::new("t", "localhost", 1883), 2);
+        let publisher = Publisher::new(client, Topics::new("snapdog"), "http://h");
+        assert!(publisher.retained("snapdog/x", vec![0_u8; 1000]).is_ok());
+        assert!(
+            publisher
+                .retained("snapdog/x", vec![0_u8; MAX_OUTGOING_PACKET_BYTES])
+                .is_err()
+        );
+        assert!(publisher.retained("snapdog/x", vec![0_u8; 1000]).is_ok());
     }
 
     #[test]

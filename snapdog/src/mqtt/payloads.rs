@@ -6,27 +6,50 @@
 //! Pure functions, so the wire schema is unit-testable without a broker.
 //!
 //! Free text from track tags is cut to a fixed length. rumqttc treats a packet
-//! over its size limit (10 KiB by default) as a *connection* error: the packet is
-//! consumed, the connection is torn down and re-established. One track with an
-//! absurd title would make the bridge reconnect on every state change.
+//! over its size limit as a *connection* error: the packet is consumed, the
+//! connection is torn down and re-established, and the snapshot after the
+//! reconnect sends the same payload again. One track with an absurd title would
+//! make the bridge reconnect on every state change. The limits count **escaped**
+//! bytes (what the JSON text costs), not raw ones: a control character becomes
+//! `\u0001` (6 bytes) and a quote `\"` (2 bytes). [`zone_state_json`] checks the
+//! finished text once more, as the last line of defence.
 
 use crate::state;
 
-/// Longest title, artist or album in the retained state, in bytes.
+/// Longest title, artist or album in the retained state, in bytes of JSON text.
 const MAX_TEXT_BYTES: usize = 512;
-/// Longest cover URL in the retained state, in bytes.
+/// Longest cover URL in the retained state, in bytes of JSON text. A longer one is
+/// left out: a cut URL points nowhere.
 const MAX_URL_BYTES: usize = 1024;
+/// Largest retained state message, in bytes. The real maximum is about 3 KB; this
+/// is what the text fields are dropped for if it is ever exceeded.
+pub const MAX_STATE_PAYLOAD_BYTES: usize = 16 * 1024;
 
-/// `s` cut to at most `max` bytes, on a character boundary.
-fn truncate_utf8(s: &str, max: usize) -> &str {
-    if s.len() <= max {
-        return s;
+/// What `c` costs inside a JSON string, in bytes (`serde_json`'s escaping).
+const fn json_len(c: char) -> usize {
+    match c {
+        '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
+        c if (c as u32) < 0x20 => 6,
+        c => c.len_utf8(),
     }
-    let mut end = max;
-    while !s.is_char_boundary(end) {
-        end -= 1;
+}
+
+/// `s` cut so that its JSON-escaped form takes at most `max` bytes, on a
+/// character boundary.
+fn truncate_json(s: &str, max: usize) -> &str {
+    let mut used = 0;
+    for (index, c) in s.char_indices() {
+        used += json_len(c);
+        if used > max {
+            return &s[..index];
+        }
     }
-    &s[..end]
+    s
+}
+
+/// The JSON-escaped size of `s` in bytes, without the surrounding quotes.
+fn json_size(s: &str) -> usize {
+    s.chars().map(json_len).sum()
 }
 
 /// Build the retained zone-state JSON (Home Assistant `media_player` schema).
@@ -59,10 +82,10 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
     });
 
     if let Some(track) = &zone.track {
-        payload["media_title"] = serde_json::json!(truncate_utf8(&track.title, MAX_TEXT_BYTES));
-        payload["media_artist"] = serde_json::json!(truncate_utf8(&track.artist, MAX_TEXT_BYTES));
+        payload["media_title"] = serde_json::json!(truncate_json(&track.title, MAX_TEXT_BYTES));
+        payload["media_artist"] = serde_json::json!(truncate_json(&track.artist, MAX_TEXT_BYTES));
         payload["media_album_name"] =
-            serde_json::json!(truncate_utf8(&track.album, MAX_TEXT_BYTES));
+            serde_json::json!(truncate_json(&track.album, MAX_TEXT_BYTES));
         payload["media_duration"] = serde_json::json!(track.duration_ms / 1000);
         payload["media_position"] = serde_json::json!(track.position_ms / 1000);
         payload["media_content_type"] = serde_json::json!("music");
@@ -74,10 +97,41 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
         } else {
             cover_url.clone()
         };
-        payload["media_image_url"] = serde_json::json!(truncate_utf8(&absolute, MAX_URL_BYTES));
+        if json_size(&absolute) <= MAX_URL_BYTES {
+            payload["media_image_url"] = serde_json::json!(absolute);
+        }
     }
 
     payload
+}
+
+/// The retained zone-state message: [`zone_state_payload`] as JSON text, at most
+/// [`MAX_STATE_PAYLOAD_BYTES`] long.
+pub fn zone_state_json(base_url: &str, zone: &state::ZoneState) -> String {
+    bounded_json(zone_state_payload(base_url, zone), MAX_STATE_PAYLOAD_BYTES)
+}
+
+/// The keys that carry free text, the only unbounded part of a state payload.
+const FREE_TEXT_KEYS: [&str; 4] = [
+    "media_title",
+    "media_artist",
+    "media_album_name",
+    "media_image_url",
+];
+
+/// `payload` as JSON text of at most `max` bytes: if it is longer, the free-text
+/// keys are dropped (the rest of the state is a few hundred bytes).
+fn bounded_json(mut payload: serde_json::Value, max: usize) -> String {
+    let text = payload.to_string();
+    if text.len() <= max {
+        return text;
+    }
+    if let Some(map) = payload.as_object_mut() {
+        for key in FREE_TEXT_KEYS {
+            map.remove(key);
+        }
+    }
+    payload.to_string()
 }
 
 /// Build the retained client-state JSON. Pure (see [`zone_state_payload`]).
@@ -177,23 +231,43 @@ mod tests {
 
     #[test]
     fn truncation_respects_character_boundaries() {
-        assert_eq!(truncate_utf8("abc", 5), "abc");
-        assert_eq!(truncate_utf8("abcdef", 3), "abc");
+        assert_eq!(truncate_json("abc", 5), "abc");
+        assert_eq!(truncate_json("abcdef", 3), "abc");
         // "ä" is two bytes: a cut in the middle backs off to the boundary before it.
-        assert_eq!(truncate_utf8("aä", 2), "a");
-        assert_eq!(truncate_utf8("aä", 3), "aä");
-        assert_eq!(truncate_utf8("日本語", 4), "日");
-        assert_eq!(truncate_utf8("", 0), "");
+        assert_eq!(truncate_json("aä", 2), "a");
+        assert_eq!(truncate_json("aä", 3), "aä");
+        assert_eq!(truncate_json("日本語", 4), "日");
+        assert_eq!(truncate_json("", 0), "");
     }
 
-    #[tokio::test]
-    async fn an_absurd_track_tag_cannot_exceed_the_packet_size_limit() {
-        let state = test_state_with_client();
-        let mut z = state.read().await.zones[&1].clone();
-        z.cover_url = Some(format!("/cover/{}", "x".repeat(100_000)));
+    #[test]
+    fn truncation_counts_the_escaped_size() {
+        // A control character is 6 bytes in JSON (`\u0001`), a quote and a
+        // backslash 2, the common whitespace escapes 2.
+        assert_eq!(json_size("\u{1}"), 6);
+        assert_eq!(json_size("\""), 2);
+        assert_eq!(json_size("\\"), 2);
+        assert_eq!(json_size("\n\t"), 4);
+        assert_eq!(truncate_json("\u{1}\u{1}\u{1}", 12), "\u{1}\u{1}");
+        assert_eq!(truncate_json("\"\"\"", 5), "\"\"");
+        // What the size function says is what serde_json writes.
+        for s in ["plain", "q\"b\\", "\u{1}\u{1f}\u{8}\u{c}", "日本ä\u{7f}"] {
+            let quoted = serde_json::Value::from(s).to_string();
+            assert_eq!(quoted.len(), json_size(s) + 2, "{s:?}");
+        }
+    }
+
+    async fn zone_with_text(
+        title: &str,
+        artist: &str,
+        album: &str,
+        cover: &str,
+    ) -> state::ZoneState {
+        let mut z = test_state_with_client().read().await.zones[&1].clone();
+        z.cover_url = Some(cover.to_string());
         z.track = Some(
             serde_json::from_value(serde_json::json!({
-                "title": "ä".repeat(500_000), "artist": "A".repeat(200_000), "album": "日".repeat(100_000),
+                "title": title, "artist": artist, "album": album,
                 "album_artist": null, "genre": null, "year": null,
                 "track_number": null, "disc_number": null,
                 "duration_ms": 200_000, "position_ms": 5_000, "seekable": true,
@@ -202,11 +276,70 @@ mod tests {
             }))
             .unwrap(),
         );
-        let json = zone_state_payload("http://host:8000", &z).to_string();
-        // rumqttc's default limit is 10 KiB, topic and header included.
+        z
+    }
+
+    #[tokio::test]
+    async fn an_absurd_track_tag_cannot_exceed_the_packet_size_limit() {
+        let z = zone_with_text(
+            &"ä".repeat(500_000),
+            &"A".repeat(200_000),
+            &"日".repeat(100_000),
+            &format!("/cover/{}", "x".repeat(100_000)),
+        )
+        .await;
+        let json = zone_state_json("http://host:8000", &z);
+        // rumqttc's default limit was 10 KiB, topic and header included.
         assert!(json.len() < 4096, "{} bytes", json.len());
         let back: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(back["media_title"].as_str().unwrap().starts_with("ää"));
         assert!(back["media_title"].as_str().unwrap().len() <= MAX_TEXT_BYTES);
+        // A cover URL that does not fit is left out, not cut into a broken one.
+        assert!(back.get("media_image_url").is_none());
+    }
+
+    /// Review finding F2: control characters and quotes grow six- and twofold in
+    /// JSON, so cutting by raw bytes let the message through at 11.5 KB.
+    #[tokio::test]
+    async fn escaping_cannot_blow_up_a_truncated_tag() {
+        let z = zone_with_text(
+            &"\u{1}".repeat(5000),
+            &"\u{1}".repeat(5000),
+            &"\u{1}".repeat(5000),
+            &format!("http://x/{}", "\"".repeat(500)),
+        )
+        .await;
+        let json = zone_state_json("http://host:8000", &z);
+        assert!(json.len() < 4096, "{} bytes", json.len());
+        let back: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let title = back["media_title"].as_str().unwrap();
+        assert!(!title.is_empty(), "the tag is cut, not dropped");
+        assert!(json_size(title) <= MAX_TEXT_BYTES);
+        // 500 quotes cost 1000 bytes of JSON: still within the URL limit, kept whole.
+        assert_eq!(
+            back["media_image_url"]
+                .as_str()
+                .unwrap()
+                .matches('"')
+                .count(),
+            500
+        );
+    }
+
+    #[test]
+    fn the_last_line_of_defence_drops_free_text_when_the_message_is_still_too_long() {
+        let payload = serde_json::json!({
+            "state": "playing",
+            "media_title": "x".repeat(40_000),
+            "media_image_url": "y",
+        });
+        let text = bounded_json(payload, MAX_STATE_PAYLOAD_BYTES);
+        assert!(text.len() <= MAX_STATE_PAYLOAD_BYTES);
+        let back: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(back["state"], "playing");
+        assert!(back.get("media_title").is_none());
+        // A message within the limit is left alone.
+        let small = serde_json::json!({"state": "idle", "media_title": "t"});
+        assert_eq!(bounded_json(small.clone(), 1000), small.to_string());
     }
 }

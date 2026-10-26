@@ -12,6 +12,7 @@ SnapDog speaks MQTT 3.1.1 (rumqttc). The sizes below are fixed in the code.
 |---|---|---|
 | Packet from the broker | 1 MiB | A larger packet ends the connection. See below. |
 | Packet to the broker | 1 MiB | Backstop for what SnapDog publishes. |
+| Retained zone or client state | 16 KiB | Normally about 3 KB. Title, artist and album are cut at 512 bytes each (counted as JSON text: a control character costs 6, a quote 2), a cover URL that needs more than 1024 is left out. |
 | Command payload | 256 bytes | Anything longer is rejected (and logged, throttled). |
 
 ### One oversized retained message can keep MQTT down
