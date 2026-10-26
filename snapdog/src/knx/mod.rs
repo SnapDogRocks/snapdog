@@ -2661,6 +2661,39 @@ name = "Z1"
         );
     }
 
+    /// A task that never ends must not hold shutdown for ever: `shutdown` waits two seconds for
+    /// each task and then aborts it.
+    #[tokio::test(start_paused = true)]
+    async fn shutdown_aborts_a_task_that_does_not_stop() {
+        struct Flag(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for Flag {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let guard = Flag(Arc::clone(&dropped));
+        let (shutdown, _rx) = watch::channel(false);
+        let bridge = KnxBridge {
+            device: None,
+            shutdown,
+            tasks: vec![tokio::spawn(async move {
+                let _guard = guard;
+                std::future::pending::<()>().await;
+            })],
+        };
+        let started = tokio::time::Instant::now();
+        bridge.shutdown().await;
+        assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+        // The abort has run by the time the runtime gets to the task again.
+        tokio::task::yield_now().await;
+        assert!(
+            dropped.load(std::sync::atomic::Ordering::SeqCst),
+            "the task is still alive: shutdown did not abort it"
+        );
+    }
+
     /// The device task writes the state on its way out, so shutdown has to wait for it as well as
     /// for the bridge task. (Whether the file is complete when `shutdown` returns is a race
     /// the integration test cannot always lose; the wiring is checked here.)
