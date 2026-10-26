@@ -329,18 +329,6 @@ pub fn validate(config: &mut AppConfig) -> Result<()> {
         config.audio.bit_depth = 24;
     }
 
-    // f32lz4 always uses 32-bit float internally — bit_depth is ignored
-    if matches!(
-        config.snapcast.codec,
-        AudioCodec::F32lz4 | AudioCodec::F32lz4e
-    ) && config.audio.bit_depth != 32
-    {
-        config.info(format!(
-            "codec {} uses native 32-bit float, the configured bit_depth {} is ignored",
-            config.snapcast.codec, config.audio.bit_depth
-        ));
-    }
-
     // ── Port collision ────────────────────────────────────────
     if config.http.port == config.snapcast.streaming_port {
         anyhow::bail!(

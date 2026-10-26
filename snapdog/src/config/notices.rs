@@ -27,6 +27,7 @@ pub(super) fn collect(config: &mut AppConfig) {
 
 fn derive(config: &mut AppConfig) {
     encryption(config);
+    float_codec(config);
     #[cfg(feature = "snapcast-embedded")]
     embedded_snapcast(config);
     spotify_name(config);
@@ -34,6 +35,20 @@ fn derive(config: &mut AppConfig) {
     streaming_port(config);
     #[cfg(not(feature = "ap2"))]
     airplay(config);
+}
+
+/// `f32lz4` and `f32lz4e` always use 32-bit float, so a different `bit_depth` is not used.
+fn float_codec(config: &mut AppConfig) {
+    if matches!(
+        config.snapcast.codec,
+        AudioCodec::F32lz4 | AudioCodec::F32lz4e
+    ) && config.audio.bit_depth != 32
+    {
+        config.info(format!(
+            "codec {} uses native 32-bit float, the configured bit_depth {} is ignored",
+            config.snapcast.codec, config.audio.bit_depth
+        ));
+    }
 }
 
 /// `f32lz4e` without a key uses the built-in default, which is public.
@@ -268,6 +283,30 @@ mod tests {
     fn api_console_without_the_feature_says_it_does_nothing() {
         let config = load("[http]\napi_console = true");
         assert!(mentions(&config, "compiled without the api-docs feature"));
+    }
+
+    #[test]
+    fn the_float_codec_note_follows_the_codec() {
+        let mut config = load("[snapcast]\ncodec = \"f32lz4e\"");
+        let note = |config: &config::AppConfig| {
+            config
+                .notices
+                .iter()
+                .any(|n| n.message.contains("native 32-bit float"))
+        };
+        assert!(note(&config));
+        // A command-line override to a codec that is not float: the note no longer applies.
+        for codec in [config::AudioCodec::Flac, config::AudioCodec::Pcm] {
+            config.snapcast.codec = codec;
+            super::collect(&mut config);
+            assert!(!note(&config), "{codec}");
+        }
+        config.snapcast.codec = config::AudioCodec::F32lz4;
+        super::collect(&mut config);
+        assert!(note(&config));
+        config.audio.bit_depth = 32;
+        super::collect(&mut config);
+        assert!(!note(&config), "nothing is ignored at 32 bit");
     }
 
     #[test]

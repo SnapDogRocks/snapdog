@@ -215,3 +215,16 @@ fn check_config_rejects_a_streaming_bind_that_is_not_an_address() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("streaming_bind"), "{stderr}");
 }
+
+#[test]
+fn check_config_drops_the_float_codec_note_when_the_command_line_changes_the_codec() {
+    let file =
+        "[snapcast]\ncodec = \"f32lz4e\"\nencryption_psk = \"k\"\n[[zone]]\nname = \"Living\"\n";
+    let stderr = String::from_utf8_lossy(&run_check(file, &[]).stderr).into_owned();
+    assert!(stderr.contains("native 32-bit float"), "{stderr}");
+    for codec in ["flac", "pcm"] {
+        let stderr =
+            String::from_utf8_lossy(&run_check(file, &["--codec", codec]).stderr).into_owned();
+        assert!(!stderr.contains("native 32-bit float"), "{codec}: {stderr}");
+    }
+}
