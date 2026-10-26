@@ -134,19 +134,43 @@ pub fn expand_tilde(path: &str) -> String {
 }
 
 /// Apply `~` expansion to every path-valued key a user writes by hand.
-fn expand_paths(raw: &mut FileConfig) {
-    raw.system.state_dir = expand_tilde(&raw.system.state_dir);
-    raw.system.log_file = raw.system.log_file.take().map(|p| expand_tilde(&p));
-    if let Some(subsonic) = raw.subsonic.as_mut() {
-        subsonic.cache.path = expand_tilde(&subsonic.cache.path);
-    }
-    let expand = |p: &mut Option<std::path::PathBuf>| {
-        if let Some(path) = p.as_ref().and_then(|p| p.to_str()) {
-            *p = Some(std::path::PathBuf::from(expand_tilde(path)));
+///
+/// Before the expansion existed a leading `~` was taken literally, as a directory named
+/// `~` under the working directory, so state and files written there are no longer read.
+/// For every key whose value changes and whose old literal path (`exists`) is still there,
+/// a notice says so and where the setting points now.
+fn expand_paths(raw: &mut FileConfig, exists: &dyn Fn(&str) -> bool) -> Vec<String> {
+    let mut notices = Vec::new();
+    let mut expand = |key: &str, value: &str| -> String {
+        let expanded = expand_tilde(value);
+        if expanded != value && exists(value) {
+            notices.push(format!(
+                "[{key} = {value:?} now means {expanded}. A path named {value:?} relative to the \
+                 working directory still exists and is no longer used. If it holds your data \
+                 (state, pairing, logs, cache), move it to {expanded}."
+            ));
         }
+        expanded
     };
-    expand(&mut raw.http.tls_cert);
-    expand(&mut raw.http.tls_key);
+
+    raw.system.state_dir = expand("system].state_dir", &raw.system.state_dir.clone());
+    raw.system.log_file = raw
+        .system
+        .log_file
+        .take()
+        .map(|p| expand("system].log_file", &p));
+    if let Some(subsonic) = raw.subsonic.as_mut() {
+        subsonic.cache.path = expand("subsonic.cache].path", &subsonic.cache.path.clone());
+    }
+    for (key, slot) in [
+        ("http].tls_cert", &mut raw.http.tls_cert),
+        ("http].tls_key", &mut raw.http.tls_key),
+    ] {
+        if let Some(path) = slot.as_ref().and_then(|p| p.to_str()) {
+            *slot = Some(std::path::PathBuf::from(expand(key, path)));
+        }
+    }
+    notices
 }
 
 /// Resolve raw TOML config into fully populated `AppConfig` with conventions applied.
@@ -168,7 +192,7 @@ pub fn load_raw_no_validate(raw: FileConfig) -> Result<AppConfig> {
 }
 
 fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<AppConfig> {
-    expand_paths(&mut raw);
+    let path_notices = expand_paths(&mut raw, &|p| Path::new(p).exists());
     if !skip_zone_validation {
         anyhow::ensure!(
             !raw.zone.is_empty(),
@@ -272,7 +296,7 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         notices: Vec::new(),
     };
 
-    for message in volume_notices {
+    for message in volume_notices.into_iter().chain(path_notices) {
         config.warn(message);
     }
     apply_env_overrides(&mut config);
@@ -1173,6 +1197,31 @@ mod tests {
         assert_eq!(expand_tilde("/var/~/x"), "/var/~/x");
         assert_eq!(expand_tilde("~other/x"), "~other/x");
         assert_eq!(expand_tilde("relative/path"), "relative/path");
+    }
+
+    #[test]
+    fn a_leftover_literal_tilde_path_is_reported() {
+        let Some(home) = home() else { return };
+        let toml = "[system]\nstate_dir = \"~/state\"\nlog_file = \"/var/log/x.log\"\n\
+                    [[zone]]\nname = \"A\"";
+        let mut raw: FileConfig = toml::from_str(toml).unwrap();
+        // The old literal directory exists: say what changed.
+        let notices = expand_paths(&mut raw, &|p| p == "~/state");
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(
+            notices[0].starts_with("[system].state_dir = \"~/state\" now means"),
+            "{notices:?}"
+        );
+        assert!(
+            notices[0].contains(&format!("{}/state", home.trim_end_matches('/'))),
+            "{notices:?}"
+        );
+        assert!(notices[0].contains("move it"), "{notices:?}");
+        // Nothing left behind, or no tilde at all: nothing to say.
+        let mut raw: FileConfig = toml::from_str(toml).unwrap();
+        assert_eq!(expand_paths(&mut raw, &|_| false), Vec::<String>::new());
+        let mut raw: FileConfig = toml::from_str("[[zone]]\nname = \"A\"").unwrap();
+        assert_eq!(expand_paths(&mut raw, &|_| true), Vec::<String>::new());
     }
 
     #[test]

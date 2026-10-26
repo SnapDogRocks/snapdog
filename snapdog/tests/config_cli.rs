@@ -271,3 +271,41 @@ fn an_empty_key_variable_does_not_downgrade_f32lz4e_to_the_public_key() {
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("is set but empty"));
 }
+
+#[test]
+fn check_config_reports_state_left_in_a_literal_tilde_directory() {
+    let work = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    // What a pre-expansion version created under its working directory.
+    std::fs::create_dir_all(work.path().join("~/state")).unwrap();
+    let path = work.path().join("snapdog.toml");
+    std::fs::write(
+        &path,
+        "[system]\nstate_dir = \"~/state\"\n[[zone]]\nname = \"Living\"\n",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_snapdog"))
+        .args(["--config", path.to_str().unwrap(), "--check-config"])
+        .current_dir(work.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("[system].state_dir = \"~/state\" now means"),
+        "{stderr}"
+    );
+    assert!(stderr.contains(home.path().to_str().unwrap()), "{stderr}");
+
+    // Without the leftover directory there is nothing to report.
+    std::fs::remove_dir_all(work.path().join("~")).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_snapdog"))
+        .args(["--config", path.to_str().unwrap(), "--check-config"])
+        .current_dir(work.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("now means"));
+}
