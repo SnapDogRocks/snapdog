@@ -31,9 +31,10 @@ mod payloads;
 mod publisher;
 mod runner;
 #[cfg(test)]
-mod test_pki;
+pub(crate) mod test_pki;
 #[cfg(test)]
 mod test_support;
+pub(crate) mod tls;
 mod topics;
 mod transport;
 
@@ -56,6 +57,20 @@ pub struct MqttRuntime {
     pub notifications: broadcast::Receiver<Arc<str>>,
 }
 
+/// `config`, checked and with its file-based secrets loaded.
+///
+/// The config loader has done this already (it is idempotent), but a caller may
+/// hand over a section it built by hand, and a `password_file` in it would
+/// otherwise be silently ignored. Warnings that only this pass finds are logged.
+fn resolved(config: &MqttConfig) -> Result<MqttConfig> {
+    let mut resolved = config.clone();
+    resolved.resolve()?;
+    for warning in &resolved.warnings[config.warnings.len()..] {
+        tracing::warn!("{warning}");
+    }
+    Ok(resolved)
+}
+
 /// Handle to the running MQTT bridge. Dropping it aborts the tasks without a
 /// DISCONNECT, so the broker publishes the last will; use [`Self::shutdown`] for
 /// a clean exit.
@@ -74,10 +89,12 @@ impl MqttBridge {
     ///
     /// # Errors
     ///
-    /// Returns an error if the broker address is invalid or the TLS material cannot
-    /// be used. The bridge then does not start; it never falls back to plaintext.
+    /// Returns an error if the section is invalid (see [`MqttConfig::resolve`]) or the
+    /// TLS material cannot be used. The bridge then does not start; it never falls
+    /// back to plaintext.
     #[tracing::instrument(skip_all, fields(broker = %config.broker))]
     pub async fn start(config: &MqttConfig, base_url: &str, runtime: MqttRuntime) -> Result<Self> {
+        let config = &resolved(config)?;
         let topics = Topics::new(&config.base_topic);
         let options = mqtt_options(config, &topics)?;
         if let Some(warning) = config.plaintext_credentials_warning() {
@@ -194,5 +211,80 @@ impl Drop for MqttBridge {
         for task in &self.tasks {
             task.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Review finding F13: `start` took a section as it was handed over, so a
+    /// `password_file` in a hand-built one was silently ignored.
+    #[test]
+    fn a_section_that_skipped_the_config_loader_is_resolved_before_it_is_used() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pw");
+        std::fs::write(&file, "from-file\n").unwrap();
+        let config: MqttConfig = toml::from_str(&format!(
+            "broker = \"b:1883\"\nusername = \"u\"\npassword_file = {:?}",
+            file.display().to_string()
+        ))
+        .unwrap();
+        let resolved = resolved(&config).unwrap();
+        assert_eq!(resolved.password.as_str(), "from-file");
+        let options = mqtt_options(&resolved, &Topics::new(&resolved.base_topic)).unwrap();
+        assert_eq!(options.credentials().unwrap().password, "from-file");
+
+        // And a section that is wrong is refused, not started.
+        let bad: MqttConfig = toml::from_str("broker = \"b:1883\"\npassword = \"p\"").unwrap();
+        assert!(resolved_err(&bad).contains("username"));
+        // Resolving twice is harmless: what the loader did is not undone.
+        assert_eq!(
+            super::resolved(&resolved).unwrap().password.as_str(),
+            "from-file"
+        );
+    }
+
+    /// The same through `start`: the password of an unresolved `password_file` is
+    /// what reaches the broker in the CONNECT packet.
+    #[tokio::test]
+    async fn start_sends_the_password_from_a_password_file_it_resolved_itself() {
+        use tokio::io::AsyncReadExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pw");
+        std::fs::write(&file, "from-file-secret\n").unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let config: MqttConfig = toml::from_str(&format!(
+            "broker = \"127.0.0.1:{port}\"\nusername = \"the-user\"\npassword_file = {:?}",
+            file.display().to_string()
+        ))
+        .unwrap();
+        let (runtime, _ends) = crate::mqtt::test_support::test_runtime();
+        let bridge = MqttBridge::start(&config, "http://h", runtime)
+            .await
+            .unwrap();
+
+        let (mut socket, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+            .await
+            .expect("the bridge dials")
+            .unwrap();
+        let mut connect = vec![0_u8; 512];
+        let n = tokio::time::timeout(Duration::from_secs(5), socket.read(&mut connect))
+            .await
+            .expect("CONNECT arrives")
+            .unwrap();
+        let connect = &connect[..n];
+        let has = |needle: &[u8]| connect.windows(needle.len()).any(|w| w == needle);
+        assert!(has(b"the-user"), "username in CONNECT");
+        assert!(
+            has(b"from-file-secret"),
+            "password from the file in CONNECT"
+        );
+        drop(bridge);
+    }
+
+    fn resolved_err(config: &MqttConfig) -> String {
+        format!("{:#}", resolved(config).unwrap_err())
     }
 }

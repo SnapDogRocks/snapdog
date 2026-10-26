@@ -909,35 +909,33 @@ async fn mqtt_tier2_unusable_tls_material_stops_the_bridge() {
         "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n",
     )
     .expect("write");
-    // The config check passes (it looks like PEM), starting the bridge does not.
-    let cfg = config_with_mqtt(&format!(
+    let section = format!(
         "broker = \"mqtts://localhost:8883\"\nca_file = {:?}",
         bogus.display().to_string()
-    ));
+    );
+
+    // The config loader sees it (it looks like PEM, but the TLS library refuses it):
+    // MQTT is switched off, with the reason, and the rest of the config loads.
+    let cfg = config_with_mqtt(&section);
+    assert!(cfg.mqtt.is_none(), "MQTT is off");
+    let problem = cfg.mqtt_problem.expect("and says why");
+    assert!(problem.contains("ca_file"), "{problem}");
+
+    // A caller that skips the loader gets the same refusal from the bridge.
+    let mut cfg = config_with_mqtt("broker = \"localhost:1883\"");
+    cfg.mqtt = Some(toml::from_str(&section).expect("parses"));
     let Err(err) = try_start_bridge(&cfg).await else {
         panic!("a bridge must not start with unusable TLS material");
     };
     let msg = format!("{err:#}");
     assert!(msg.contains("ca_file"), "{msg}");
 
-    // The config loader refuses most mistakes before anything starts.
-    let raw: config::FileConfig = toml::from_str(
-        r#"
-[mqtt]
-broker = "localhost:1883"
-ca_file = "/nonexistent/ca.pem"
-[[zone]]
-name = "Z1"
-[[client]]
-name = "C1"
-mac = "02:42:ac:11:00:10"
-zone = "Z1"
-"#,
-    )
-    .expect("parses");
-    let err = config::load_raw(raw).expect_err("rejected at load");
+    // TLS options on a plaintext address are refused at load, too.
+    let cfg = config_with_mqtt("broker = \"localhost:1883\"\nca_file = \"/nonexistent/ca.pem\"");
+    assert!(cfg.mqtt.is_none());
+    let problem = cfg.mqtt_problem.expect("and says why");
     assert!(
-        err.to_string().contains("plaintext"),
-        "TLS options on a plaintext address: {err:#}"
+        problem.contains("plaintext"),
+        "TLS options on a plaintext address: {problem}"
     );
 }

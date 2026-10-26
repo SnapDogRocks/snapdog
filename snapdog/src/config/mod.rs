@@ -142,6 +142,7 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
         subsonic: raw.subsonic,
         spotify: raw.spotify,
         mqtt: raw.mqtt,
+        mqtt_problem: None,
         knx: raw.knx,
         zones,
         clients,
@@ -149,7 +150,7 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
     };
 
     apply_env_overrides(&mut config);
-    resolve_mqtt(&mut config, skip_zone_validation)?;
+    resolve_mqtt(&mut config);
     validate(&mut config)?;
 
     Ok(config)
@@ -157,22 +158,18 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
 
 /// Check the `[mqtt]` section and load its file-based secrets.
 ///
-/// A broken section stops the start-up, like any other config error. KNX device
-/// mode (`lenient`) is the exception: its MQTT settings come from ETS, and a
-/// device that refuses to boot cannot be reprogrammed, so MQTT is switched off
-/// (loudly) instead. Either way there is no fallback to a weaker setting.
-fn resolve_mqtt(config: &mut AppConfig, lenient: bool) -> Result<()> {
+/// A wrong `[mqtt]` setting switches MQTT off, it does not stop the server: the
+/// audio keeps playing, which matters more than the smart-home link. The reason is
+/// kept in [`AppConfig::mqtt_problem`] (this runs before logging is set up, so it
+/// cannot be logged here). Nothing falls back to a weaker setting: there is no MQTT
+/// at all until the section is fixed.
+fn resolve_mqtt(config: &mut AppConfig) {
     let Some(mqtt) = config.mqtt.as_mut() else {
-        return Ok(());
+        return;
     };
-    match mqtt.resolve() {
-        Ok(()) => Ok(()),
-        Err(e) if lenient => {
-            tracing::error!(error = %format!("{e:#}"), "Invalid MQTT settings (ETS), MQTT is disabled");
-            config.mqtt = None;
-            Ok(())
-        }
-        Err(e) => Err(e),
+    if let Err(e) = mqtt.resolve() {
+        config.mqtt_problem = Some(format!("{e:#}"));
+        config.mqtt = None;
     }
 }
 
@@ -372,24 +369,7 @@ fn apply_env_overrides(config: &mut AppConfig) {
         subsonic.password = SecretString::from(val);
     }
     if let Some(ref mut mqtt) = config.mqtt {
-        if let Ok(val) = std::env::var("SNAPDOG_MQTT_PASSWORD") {
-            mqtt.password = SecretString::from(val);
-            // The environment wins over the file, so a password_file next to it is moot.
-            mqtt.password_file = None;
-        }
-        if let Ok(val) = std::env::var("SNAPDOG_MQTT_USERNAME") {
-            mqtt.username = val;
-        }
-        // Paths: what KNX device mode needs, as ETS has no field for them.
-        for (var, slot) in [
-            ("SNAPDOG_MQTT_CA_FILE", &mut mqtt.ca_file),
-            ("SNAPDOG_MQTT_CLIENT_CERT", &mut mqtt.client_cert),
-            ("SNAPDOG_MQTT_CLIENT_KEY", &mut mqtt.client_key),
-        ] {
-            if let Some(path) = std::env::var_os(var).filter(|v| !v.is_empty()) {
-                *slot = Some(path.into());
-            }
-        }
+        mqtt.apply_env(|name| std::env::var_os(name));
     }
     if let Ok(val) = std::env::var("SNAPDOG_SNAPCAST_ENCRYPTION_PSK") {
         config.snapcast.encryption_psk = Some(SecretString::from(val));
@@ -507,6 +487,55 @@ mod tests {
             mac = "02:42:ac:11:00:10"
             zone = "Ground Floor"
         "#
+    }
+
+    /// A5: a wrong `[mqtt]` section switches MQTT off and leaves the server (and with
+    /// it the audio) alone. The reason is kept for the start-up log and for
+    /// `--check-config`.
+    fn config_with_mqtt(section: &str) -> AppConfig {
+        let raw: FileConfig =
+            toml::from_str(&format!("{}\n[mqtt]\n{section}", minimal_toml())).unwrap();
+        load_raw(raw).expect("a wrong [mqtt] section must not stop the server")
+    }
+
+    #[test]
+    fn a_valid_mqtt_section_is_kept() {
+        let c = config_with_mqtt("broker = \"192.168.1.10:1883\"");
+        assert!(c.mqtt.is_some());
+        assert!(c.mqtt_problem.is_none());
+    }
+
+    #[test]
+    fn a_wrong_mqtt_section_switches_mqtt_off_and_says_why() {
+        for (section, needle) in [
+            // A password nobody would ever send.
+            ("broker = \"b:1883\"\npassword = \"hunter2\"", "username"),
+            ("broker = \"ws://b:9001\"", "WebSocket"),
+            ("broker = \"b:1883\"\nbase_topic = \"a/#\"", "wildcards"),
+            (
+                "broker = \"b:1883\"\nca_file = \"/nonexistent/ca.pem\"",
+                "plaintext",
+            ),
+        ] {
+            let c = config_with_mqtt(section);
+            assert!(c.mqtt.is_none(), "{section}");
+            let problem = c.mqtt_problem.expect(section);
+            assert!(problem.contains(needle), "{section}: {problem}");
+            assert!(
+                !problem.contains("hunter2"),
+                "a secret in the message: {problem}"
+            );
+            // The rest of the configuration is untouched.
+            assert_eq!(c.zones.len(), 1);
+        }
+    }
+
+    #[test]
+    fn a_wrong_section_elsewhere_still_stops_the_start() {
+        // Only [mqtt] is soft: the rest of the file is as strict as ever.
+        let raw: FileConfig =
+            toml::from_str(&format!("{}\n[audio]\nsample_rate = 12345", minimal_toml())).unwrap();
+        assert!(load_raw(raw).is_err());
     }
 
     #[test]

@@ -278,6 +278,16 @@ pub async fn run_app() -> Result<()> {
     }
 
     if cli.check_config {
+        // A wrong [mqtt] section does not stop the server (MQTT is switched off), but
+        // it must not pass a configuration check either.
+        if let Some(problem) = &app_config.mqtt_problem {
+            anyhow::bail!("Invalid [mqtt] section, the server would start without MQTT: {problem}");
+        }
+        if let Some(mqtt) = &app_config.mqtt {
+            for warning in &mqtt.warnings {
+                eprintln!("warning: {warning}");
+            }
+        }
         println!("Configuration is valid");
         return Ok(());
     }
@@ -499,6 +509,9 @@ pub async fn run_app() -> Result<()> {
     // publishes state. A configuration error disables MQTT, it never falls back
     // to a different transport.
     let mqtt_bridge = if let Some(mqtt_config) = &config.mqtt {
+        for warning in &mqtt_config.warnings {
+            tracing::warn!("{warning}");
+        }
         match mqtt::MqttBridge::start(
             mqtt_config,
             &config.http.base_url,
@@ -513,11 +526,18 @@ pub async fn run_app() -> Result<()> {
         {
             Ok(bridge) => Some(bridge),
             Err(e) => {
-                tracing::error!(error = %e, "MQTT configuration is invalid, running without MQTT");
+                tracing::error!(error = %format!("{e:#}"), "MQTT cannot start, running without MQTT");
                 None
             }
         }
     } else {
+        if let Some(problem) = &config.mqtt_problem {
+            tracing::error!(
+                problem = %problem,
+                "MQTT is switched off: the [mqtt] section is invalid. The server keeps running \
+                 without MQTT; fix the section and restart (snapdog --check-config reports it)"
+            );
+        }
         None
     };
 

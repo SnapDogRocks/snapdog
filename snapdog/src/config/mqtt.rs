@@ -7,6 +7,7 @@
 //! the configuration is loaded, and the messages say which key is wrong and why.
 //! A secret never appears in an error message or in `Debug` output.
 
+use std::io::Read;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
@@ -20,7 +21,8 @@ const DEFAULT_PORT: u16 = 1883;
 /// Port of a TLS broker listener when the address names none.
 const DEFAULT_TLS_PORT: u16 = 8883;
 /// Largest certificate or key file read (PEM, a few kilobytes in practice).
-const MAX_PEM_BYTES: u64 = 1 << 20;
+#[doc(hidden)]
+pub const MAX_PEM_BYTES: u64 = 1 << 20;
 /// Largest password file read.
 const MAX_SECRET_FILE_BYTES: u64 = 4096;
 /// Longest base topic, in bytes. MQTT allows 65535; this is far beyond sensible.
@@ -80,6 +82,62 @@ pub struct MqttConfig {
     /// `openssl pkey -in old.key -out client.key`.
     #[serde(default)]
     pub client_key: Option<PathBuf>,
+    /// Keys the section has that `SnapDog` does not know (a typo such as `ca_flie`).
+    /// Only the names are kept, never the values. [`Self::resolve`] refuses them:
+    /// a misspelt TLS or credential key must not silently fall back to a default.
+    #[serde(flatten)]
+    pub unknown_keys: UnknownKeys,
+    /// Things worth a warning that [`Self::resolve`] found (a password file that
+    /// everybody can read). Filled by `resolve`, which runs before logging is set
+    /// up, and logged by the caller.
+    #[serde(skip)]
+    pub warnings: Vec<String>,
+}
+
+/// The names of the keys a section has beyond the known ones. The values are
+/// dropped on purpose: a mistyped `passwrd = "..."` is a secret, and this type is
+/// part of `Debug` output.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct UnknownKeys(Vec<String>);
+
+impl UnknownKeys {
+    /// The key names, in file order.
+    #[must_use]
+    pub fn names(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for UnknownKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(&self.0).finish()
+    }
+}
+
+impl<'de> Deserialize<'de> for UnknownKeys {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Keys;
+        impl<'de> serde::de::Visitor<'de> for Keys {
+            type Value = UnknownKeys;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a table")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut names = Vec::new();
+                while let Some(name) = map.next_key::<String>()? {
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                    names.push(name);
+                }
+                Ok(UnknownKeys(names))
+            }
+        }
+        deserializer.deserialize_map(Keys)
+    }
 }
 
 impl Default for MqttConfig {
@@ -94,6 +152,8 @@ impl Default for MqttConfig {
             ca_file: None,
             client_cert: None,
             client_key: None,
+            unknown_keys: UnknownKeys::default(),
+            warnings: Vec::new(),
         }
     }
 }
@@ -259,6 +319,34 @@ impl MqttConfig {
         BrokerEndpoint::parse(&self.broker)
     }
 
+    /// Apply the `SNAPDOG_MQTT_*` environment variables (`var` looks one up).
+    ///
+    /// A variable that is set but empty counts as unset: a `VAR=` left behind in a
+    /// compose file must not wipe out the configured credentials. (There is
+    /// therefore no way to override a configured password with an empty one, which
+    /// would be an anonymous login with a leftover password in the file.)
+    pub(super) fn apply_env(&mut self, var: impl Fn(&str) -> Option<std::ffi::OsString>) {
+        let non_empty = |name: &str| var(name).filter(|v| !v.is_empty());
+        if let Some(val) = non_empty("SNAPDOG_MQTT_PASSWORD") {
+            self.password = SecretString::from(val.to_string_lossy().into_owned());
+            // The environment wins over the file, so a password_file next to it is moot.
+            self.password_file = None;
+        }
+        if let Some(val) = non_empty("SNAPDOG_MQTT_USERNAME") {
+            self.username = val.to_string_lossy().into_owned();
+        }
+        // Paths: what KNX device mode needs, as ETS has no field for them.
+        for (name, slot) in [
+            ("SNAPDOG_MQTT_CA_FILE", &mut self.ca_file),
+            ("SNAPDOG_MQTT_CLIENT_CERT", &mut self.client_cert),
+            ("SNAPDOG_MQTT_CLIENT_KEY", &mut self.client_key),
+        ] {
+            if let Some(path) = non_empty(name) {
+                *slot = Some(path.into());
+            }
+        }
+    }
+
     /// Check the section and load file-based secrets.
     ///
     /// Run once after the environment overrides. Reads `password_file` into
@@ -269,6 +357,11 @@ impl MqttConfig {
     ///
     /// Returns an error that names the key and what is wrong with it.
     pub fn resolve(&mut self) -> Result<()> {
+        ensure!(
+            self.unknown_keys.names().is_empty(),
+            "[mqtt] unknown key(s): {}. Check the spelling against snapdog.example.toml",
+            self.unknown_keys.names().join(", ")
+        );
         let endpoint = self.endpoint()?;
 
         ensure!(
@@ -289,12 +382,19 @@ impl MqttConfig {
                 self.password.is_empty(),
                 "[mqtt] password and password_file are both set: use only one"
             );
-            let secret = read_secret_file(&path, "password_file")?;
+            let (secret, shared) = read_secret_file(&path, "password_file")?;
             ensure!(
                 !secret.is_empty(),
                 "[mqtt] password_file {} is empty",
                 path.display()
             );
+            if let Some(mode) = shared {
+                self.warnings.push(format!(
+                    "[mqtt] password_file {} can be read by every user on this machine \
+                     (mode {mode:04o}): restrict it, for example with chmod 600",
+                    path.display()
+                ));
+            }
             self.password = SecretString::from(secret);
         }
         ensure!(
@@ -343,6 +443,12 @@ impl MqttConfig {
             let pem = read_pem(path, "client_key")?;
             check_client_key(&pem, path)?;
         }
+        if endpoint.tls {
+            // What the format checks above cannot see: a CA file without a usable
+            // certificate, a key that does not belong to the certificate. Without
+            // this, `--check-config` passes material the bridge then refuses.
+            crate::mqtt::tls::check_material(self)?;
+        }
         Ok(())
     }
 
@@ -383,21 +489,55 @@ fn validate_base_topic(base: &str) -> Result<()> {
     Ok(())
 }
 
-/// Read a small text file, with a size limit and an error that names the key.
-fn read_limited(path: &Path, key: &str, limit: u64) -> Result<String> {
-    let meta = std::fs::metadata(path)
-        .with_context(|| format!("[mqtt] {key}: cannot read {}", path.display()))?;
+/// Read a small file: at most `limit` bytes (the size is checked on the opened file
+/// and the read itself is bounded, so a file that grows or is swapped meanwhile
+/// cannot make this read more), regular files only, with an error that names the key.
+#[doc(hidden)]
+pub fn read_bounded(path: &Path, key: &str, limit: u64) -> Result<Vec<u8>> {
+    Ok(open_bounded(path, key, limit)?.0)
+}
+
+/// [`read_bounded`], plus the file's permission bits.
+fn open_bounded(path: &Path, key: &str, limit: u64) -> Result<(Vec<u8>, std::fs::Metadata)> {
+    let unreadable = || format!("[mqtt] {key}: cannot read {}", path.display());
+    // Before opening: opening a FIFO or a device would block or misbehave.
+    let before = std::fs::metadata(path).with_context(unreadable)?;
+    ensure!(
+        before.is_file(),
+        "[mqtt] {key}: {} is not a regular file",
+        path.display()
+    );
+    let file = std::fs::File::open(path).with_context(unreadable)?;
+    let meta = file.metadata().with_context(unreadable)?;
     ensure!(
         meta.is_file(),
         "[mqtt] {key}: {} is not a regular file",
         path.display()
     );
-    ensure!(
-        meta.len() <= limit,
-        "[mqtt] {key}: {} is larger than {limit} bytes",
-        path.display()
-    );
-    std::fs::read_to_string(path)
+    let too_large = || {
+        format!(
+            "[mqtt] {key}: {} is larger than {limit} bytes",
+            path.display()
+        )
+    };
+    ensure!(meta.len() <= limit, too_large());
+    let bytes = read_at_most(file, limit)
+        .with_context(unreadable)?
+        .with_context(too_large)?;
+    Ok((bytes, meta))
+}
+
+/// Everything `reader` yields if that is at most `limit` bytes, `None` if there is
+/// more. Never reads beyond `limit + 1` bytes, whatever the reader is.
+fn read_at_most(reader: impl Read, limit: u64) -> std::io::Result<Option<Vec<u8>>> {
+    let mut bytes = Vec::new();
+    reader.take(limit + 1).read_to_end(&mut bytes)?;
+    Ok((bytes.len() as u64 <= limit).then_some(bytes))
+}
+
+fn read_limited(path: &Path, key: &str, limit: u64) -> Result<String> {
+    String::from_utf8(read_bounded(path, key, limit)?)
+        .ok()
         .with_context(|| format!("[mqtt] {key}: cannot read {} as UTF-8 text", path.display()))
 }
 
@@ -405,13 +545,39 @@ fn read_pem(path: &Path, key: &str) -> Result<String> {
     read_limited(path, key, MAX_PEM_BYTES)
 }
 
-fn read_secret_file(path: &Path, key: &str) -> Result<String> {
-    let mut text = read_limited(path, key, MAX_SECRET_FILE_BYTES)?;
-    // Secret files end in a newline more often than not; a password does not.
+/// The password in `path`, and the file's mode if other users can read it.
+///
+/// One line: a trailing newline is dropped (secret files end in one more often than
+/// not, a password does not), anything after another line break is an error
+/// instead of a password with a line break in it.
+fn read_secret_file(path: &Path, key: &str) -> Result<(String, Option<u32>)> {
+    let (bytes, meta) = open_bounded(path, key, MAX_SECRET_FILE_BYTES)?;
+    let mut text = String::from_utf8(bytes)
+        .ok()
+        .with_context(|| format!("[mqtt] {key}: cannot read {} as UTF-8 text", path.display()))?;
     while text.ends_with(['\n', '\r']) {
         text.pop();
     }
-    Ok(text)
+    ensure!(
+        !text.contains(['\n', '\r']),
+        "[mqtt] {key} {} has more than one line: it must hold the password alone",
+        path.display()
+    );
+    Ok((text, readable_by_others(&meta)))
+}
+
+/// The mode of a file that users other than its owner and group can read.
+#[cfg(unix)]
+fn readable_by_others(meta: &std::fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = meta.permissions().mode() & 0o777;
+    (mode & 0o004 != 0).then_some(mode)
+}
+
+/// File modes are a Unix concept; elsewhere there is nothing to check.
+#[cfg(not(unix))]
+fn readable_by_others(_meta: &std::fs::Metadata) -> Option<u32> {
+    None
 }
 
 /// The `-----BEGIN <label>-----` line of a PEM block.
@@ -615,6 +781,70 @@ mod tests {
         c.resolve().unwrap();
     }
 
+    fn env<'a>(
+        pairs: &'a [(&'a str, &'a str)],
+    ) -> impl Fn(&str) -> Option<std::ffi::OsString> + 'a {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| (*v).into())
+        }
+    }
+
+    #[test]
+    fn environment_variables_override_the_file() {
+        let mut c = parse("broker = \"b:1883\"\nusername = \"file-user\"\npassword = \"file-pw\"");
+        c.apply_env(env(&[
+            ("SNAPDOG_MQTT_USERNAME", "env-user"),
+            ("SNAPDOG_MQTT_PASSWORD", "env-pw"),
+            ("SNAPDOG_MQTT_CA_FILE", "/ca.pem"),
+        ]));
+        assert_eq!(c.username, "env-user");
+        assert_eq!(c.password.as_str(), "env-pw");
+        assert_eq!(c.ca_file.as_deref(), Some(Path::new("/ca.pem")));
+    }
+
+    /// Review finding F3: `SNAPDOG_MQTT_USERNAME=` (a leftover in a compose file)
+    /// overwrote the configured username, and the resulting password without a
+    /// username then stopped the start-up.
+    #[test]
+    fn an_empty_environment_variable_counts_as_unset() {
+        let mut c = parse(
+            "broker = \"b:1883\"\nusername = \"file-user\"\npassword = \"file-pw\"\nca_file = \"/ca.pem\"",
+        );
+        c.apply_env(env(&[
+            ("SNAPDOG_MQTT_USERNAME", ""),
+            ("SNAPDOG_MQTT_PASSWORD", ""),
+            ("SNAPDOG_MQTT_CA_FILE", ""),
+        ]));
+        assert_eq!(c.username, "file-user");
+        assert_eq!(c.password.as_str(), "file-pw");
+        assert_eq!(c.ca_file.as_deref(), Some(Path::new("/ca.pem")));
+    }
+
+    #[test]
+    fn an_empty_password_variable_does_not_disable_the_password_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pw");
+        std::fs::write(&file, "from-file\n").unwrap();
+        let mut c = parse(&format!(
+            "broker = \"b:1883\"\nusername = \"u\"\npassword_file = {:?}",
+            file.display().to_string()
+        ));
+        c.apply_env(env(&[("SNAPDOG_MQTT_PASSWORD", "")]));
+        c.resolve().unwrap();
+        assert_eq!(c.password.as_str(), "from-file");
+        // A non-empty one wins over the file, as documented.
+        let mut c = parse(&format!(
+            "broker = \"b:1883\"\nusername = \"u\"\npassword_file = {:?}",
+            file.display().to_string()
+        ));
+        c.apply_env(env(&[("SNAPDOG_MQTT_PASSWORD", "from-env")]));
+        c.resolve().unwrap();
+        assert_eq!(c.password.as_str(), "from-env");
+    }
+
     #[test]
     fn debug_output_never_shows_the_password() {
         let c = parse("broker = \"b:1883\"\nusername = \"u\"\npassword = \"hunter2-secret\"");
@@ -646,7 +876,6 @@ mod tests {
             ("s3cret\r\n", "s3cret"),
             ("s3cret", "s3cret"),
             ("with space \n", "with space "),
-            ("a\nb\n", "a\nb"),
         ] {
             std::fs::write(&file, content).unwrap();
             let mut c = parse(&format!(
@@ -657,6 +886,62 @@ mod tests {
             assert_eq!(c.password.as_str(), expected, "{content:?}");
             assert!(c.password_file.is_none(), "resolved once, then forgotten");
         }
+    }
+
+    #[test]
+    fn a_password_file_with_several_lines_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pw");
+        for content in ["first\nsecond\n", "first\r\nsecond", "\nsecret", "a\n\nb\n"] {
+            std::fs::write(&file, content).unwrap();
+            let mut c = parse(&format!(
+                "broker = \"b:1883\"\nusername = \"u\"\npassword_file = {:?}",
+                file.display().to_string()
+            ));
+            let err = format!("{:#}", c.resolve().unwrap_err());
+            assert!(err.contains("more than one line"), "{content:?}: {err}");
+            assert!(!err.contains("second") && !err.contains("secret"), "{err}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_password_file_that_everybody_can_read_is_warned_about() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pw");
+        std::fs::write(&file, "s3cret\n").unwrap();
+        let resolve = |mode: u32| {
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(mode)).unwrap();
+            let mut c = parse(&format!(
+                "broker = \"b:1883\"\nusername = \"u\"\npassword_file = {:?}",
+                file.display().to_string()
+            ));
+            c.resolve().unwrap();
+            assert_eq!(c.password.as_str(), "s3cret", "a warning, not a refusal");
+            c.warnings
+        };
+        for mode in [0o600, 0o640, 0o400] {
+            assert!(resolve(mode).is_empty(), "{mode:o}");
+        }
+        for mode in [0o644, 0o604, 0o444, 0o666] {
+            let warnings = resolve(mode);
+            assert_eq!(warnings.len(), 1, "{mode:o}");
+            assert!(warnings[0].contains("password_file"), "{}", warnings[0]);
+            assert!(warnings[0].contains("chmod 600"), "{}", warnings[0]);
+            assert!(!warnings[0].contains("s3cret"));
+        }
+    }
+
+    #[test]
+    fn reading_is_bounded_whatever_the_source_yields() {
+        // An endless reader: only limit + 1 bytes are ever taken from it.
+        assert_eq!(read_at_most(std::io::repeat(b'x'), 10).unwrap(), None);
+        assert_eq!(
+            read_at_most(&b"0123456789"[..], 10).unwrap().as_deref(),
+            Some(&b"0123456789"[..])
+        );
+        assert_eq!(read_at_most(&b"01234567890"[..], 10).unwrap(), None);
     }
 
     #[test]
@@ -736,7 +1021,12 @@ mod tests {
                 "{line}: {err}"
             );
         }
-        let mut c = parse(&format!("broker = \"mqtts://b\"\nca_file = {ca:?}"));
+        let real = dir.path().join("real-ca.pem");
+        std::fs::write(&real, crate::mqtt::test_pki::generate().ca).unwrap();
+        let mut c = parse(&format!(
+            "broker = \"mqtts://b\"\nca_file = {:?}",
+            real.display().to_string()
+        ));
         c.resolve().unwrap();
     }
 
@@ -769,6 +1059,12 @@ mod tests {
             std::fs::write(&p, content).unwrap();
             p.display().to_string()
         };
+        let pki = crate::mqtt::test_pki::generate();
+        // Real material where the test expects it to be accepted, ...
+        let ca_ok = write("ca-ok.pem", &pki.ca);
+        let cert_ok = write("cert-ok.pem", &pki.client_cert);
+        let key_ok = write("key-ok.pem", &pki.client_key);
+        // ... and PEM-shaped placeholders where the format check must refuse it first.
         let cert = write(
             "cert.pem",
             "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
@@ -791,8 +1087,11 @@ mod tests {
             let mut c = parse(&format!("broker = \"mqtts://b\"\n{lines}"));
             c.resolve().map_err(|e| e.to_string())
         };
-        try_section(&format!("ca_file = {cert:?}")).unwrap();
-        try_section(&format!("client_cert = {cert:?}\nclient_key = {key:?}")).unwrap();
+        try_section(&format!("ca_file = {ca_ok:?}")).unwrap();
+        try_section(&format!(
+            "client_cert = {cert_ok:?}\nclient_key = {key_ok:?}"
+        ))
+        .unwrap();
 
         let e = try_section(&format!("ca_file = {junk:?}")).unwrap_err();
         assert!(
@@ -825,6 +1124,66 @@ mod tests {
             e.contains("ca_file") && e.contains("/nonexistent/ca.pem"),
             "{e}"
         );
+    }
+
+    #[test]
+    fn a_misspelt_key_is_an_error_that_names_the_key_but_not_its_value() {
+        let mut c =
+            parse("broker = \"mqtts://b\"\nca_flie = \"/etc/ca.pem\"\npasswrd = \"hunter2\"");
+        let shown = format!("{c:?}");
+        assert!(
+            !shown.contains("hunter2") && !shown.contains("/etc/ca.pem"),
+            "{shown}"
+        );
+        let err = c.resolve().unwrap_err().to_string();
+        assert!(err.contains("ca_flie") && err.contains("passwrd"), "{err}");
+        assert!(!err.contains("hunter2"), "{err}");
+        // Every key of the documented section is known.
+        let mut c = parse(
+            "broker = \"b:1883\"\nclient_id = \"x\"\nusername = \"u\"\npassword = \"p\"\nbase_topic = \"t\"",
+        );
+        c.resolve().unwrap();
+        assert_eq!(c.unknown_keys.names(), &[] as &[String]);
+    }
+
+    /// Review finding F7: a client key that does not belong to its certificate, and
+    /// a CA file without a usable certificate, passed `--check-config` and were then
+    /// refused when the bridge started.
+    #[test]
+    fn tls_material_that_the_tls_library_refuses_is_caught_at_load_time() {
+        use crate::mqtt::test_pki;
+        let pki = test_pki::generate();
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, content: &str| {
+            let p = dir.path().join(name);
+            std::fs::write(&p, content).unwrap();
+            p.display().to_string()
+        };
+        let ca = write("ca.pem", &pki.ca);
+        let cert = write("client.pem", &pki.client_cert);
+        let key = write("client.key", &pki.client_key);
+        let other_key = write("other.key", &test_pki::generate().client_key);
+        let fake_ca = write(
+            "fake-ca.pem",
+            "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n",
+        );
+        let section = |lines: &str| {
+            let mut c = parse(&format!("broker = \"mqtts://localhost\"\n{lines}"));
+            c.resolve().map_err(|e| format!("{e:#}"))
+        };
+        section(&format!("ca_file = {ca:?}")).unwrap();
+        section(&format!(
+            "ca_file = {ca:?}\nclient_cert = {cert:?}\nclient_key = {key:?}"
+        ))
+        .unwrap();
+
+        let e = section(&format!(
+            "client_cert = {cert:?}\nclient_key = {other_key:?}"
+        ))
+        .unwrap_err();
+        assert!(e.contains("client_key"), "{e}");
+        let e = section(&format!("ca_file = {fake_ca:?}")).unwrap_err();
+        assert!(e.contains("ca_file"), "{e}");
     }
 
     #[test]

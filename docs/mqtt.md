@@ -50,3 +50,50 @@ message_size_limit 262144     # bytes; 0 (the default) means no limit
 
 and restrict who may publish to the `.../set` topics with an ACL (see
 `snapdog.example.toml`). Other brokers have an equivalent setting under another name.
+
+## Configuration errors
+
+A wrong `[mqtt]` section switches MQTT off. It does not stop the server: audio and
+everything else keep running, because the smart-home link matters less than the
+music. At start-up the log says
+
+```text
+ERROR MQTT is switched off: the [mqtt] section is invalid. The server keeps running
+without MQTT; fix the section and restart (snapdog --check-config reports it) problem=...
+```
+
+with the reason. `snapdog --config snapdog.toml --check-config` reports the same
+problem as an error (`Invalid [mqtt] section, the server would start without MQTT: ...`)
+and exits with a non-zero status, so a deployment script or a CI job catches it before
+the restart. A section that is not valid TOML (a value of the wrong type, say), or a wrong value elsewhere in the file,
+still stops the start as before.
+
+What counts as wrong (the message names the key):
+
+- an unknown key (a misspelt `ca_flie` would otherwise silently fall back to the
+  system trust store);
+- a password without a username, `password` together with `password_file`;
+- a broker address with credentials, a path, an unknown scheme or a WebSocket scheme;
+- a base topic with `+`, `#`, NUL, control characters or a leading `$`;
+- `ca_file`, `client_cert` or `client_key` with a plaintext address, `client_cert`
+  without `client_key`, or TLS material the TLS library refuses: a CA file without a
+  usable certificate, a client key that does not belong to the certificate.
+
+There is no fallback to a weaker setting: no MQTT at all until the section is fixed.
+
+## Credentials
+
+Order of precedence: the `SNAPDOG_MQTT_PASSWORD` variable, then `password_file`,
+then `password`. `SNAPDOG_MQTT_USERNAME`, `SNAPDOG_MQTT_CA_FILE`,
+`SNAPDOG_MQTT_CLIENT_CERT` and `SNAPDOG_MQTT_CLIENT_KEY` override their keys.
+
+- **An empty variable counts as unset.** A `SNAPDOG_MQTT_USERNAME=` left behind in a
+  compose file does not wipe out the configured username. The price: you cannot
+  override a configured password with an empty one.
+- **`password_file` holds the password alone.** One trailing line break is dropped; a
+  second line is an error. At most 4 KiB are read. A file that other users can read
+  (mode `0644`, `0666`) gives a warning at start-up and in `--check-config`; use
+  `chmod 600`, or `640` with a group. (Docker and Kubernetes secrets are often
+  `0444` or `0644` inside the container: the warning is harmless there if nothing
+  else runs in it.)
+- Certificates and credentials are read once, at start. Rotation needs a restart.

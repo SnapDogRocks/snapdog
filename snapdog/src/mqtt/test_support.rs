@@ -6,7 +6,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, broadcast, mpsc};
+
+use super::MqttRuntime;
 
 use crate::player::{SnapcastCmd, ZoneCommand, ZoneCommandSender};
 use crate::state;
@@ -54,4 +56,31 @@ pub fn zone_channels() -> (
 /// A Snapcast command channel with room for 16 commands.
 pub fn snap_channel() -> (mpsc::Sender<SnapcastCmd>, mpsc::Receiver<SnapcastCmd>) {
     mpsc::channel(16)
+}
+
+/// The receiving ends of a [`test_runtime`], kept alive by the test.
+pub struct RuntimeEnds {
+    pub _zone_rx: mpsc::Receiver<ZoneCommand>,
+    pub _snap_rx: mpsc::Receiver<SnapcastCmd>,
+    pub _notify_tx: broadcast::Sender<Arc<str>>,
+}
+
+/// What a bridge needs from the server, wired to channels the test owns.
+pub fn test_runtime() -> (MqttRuntime, RuntimeEnds) {
+    let (zone_commands, zone_rx) = zone_channels();
+    let (snap_tx, snap_rx) = snap_channel();
+    let (notify_tx, notifications) = broadcast::channel(16);
+    (
+        MqttRuntime {
+            zone_commands,
+            state: test_state_with_client(),
+            snap_tx,
+            notifications,
+        },
+        RuntimeEnds {
+            _zone_rx: zone_rx,
+            _snap_rx: snap_rx,
+            _notify_tx: notify_tx,
+        },
+    )
 }

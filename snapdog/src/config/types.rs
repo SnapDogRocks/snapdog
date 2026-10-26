@@ -1042,8 +1042,12 @@ pub struct AppConfig {
     pub subsonic: Option<SubsonicConfig>,
     /// Spotify Connect receiver settings (if configured).
     pub spotify: Option<SpotifyConfig>,
-    /// MQTT bridge (if configured).
+    /// MQTT bridge (if configured and valid).
     pub mqtt: Option<MqttConfig>,
+    /// Why MQTT is off although a `[mqtt]` section exists: the section is invalid.
+    /// The server runs without MQTT, logs this at start-up as an error, and
+    /// `--check-config` reports it as a failure.
+    pub mqtt_problem: Option<String>,
     /// KNX settings.
     pub knx: Option<KnxConfig>,
     /// Resolved zone configurations (1-indexed).

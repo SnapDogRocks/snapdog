@@ -18,12 +18,10 @@
 //! that fails is a connection error that is retried: the connection is never
 //! downgraded to plaintext.
 
-use std::path::Path;
-
-use anyhow::{Context, Result};
-use rumqttc::tokio_native_tls::native_tls::{Certificate, Identity, Protocol, TlsConnector};
+use anyhow::Result;
 use rumqttc::{LastWill, MqttOptions, QoS, TlsConfiguration, Transport};
 
+use super::tls::tls_connector;
 use super::topics::Topics;
 use crate::config::MqttConfig;
 
@@ -73,56 +71,6 @@ pub fn mqtt_options(config: &MqttConfig, topics: &Topics) -> Result<MqttOptions>
     Ok(opts)
 }
 
-/// The TLS client for `config`: TLS 1.2 or newer, verification on, optional private
-/// CA (replacing the system roots) and optional client certificate.
-fn tls_connector(config: &MqttConfig) -> Result<TlsConnector> {
-    let mut builder = TlsConnector::builder();
-    builder.min_protocol_version(Some(Protocol::Tlsv12));
-    // Deliberately never called: danger_accept_invalid_certs and
-    // danger_accept_invalid_hostnames.
-
-    if let Some(path) = &config.ca_file {
-        let pem = read(path, "ca_file")?;
-        let roots = Certificate::stack_from_pem(&pem).with_context(|| {
-            format!(
-                "[mqtt] ca_file {}: not a PEM certificate bundle",
-                path.display()
-            )
-        })?;
-        anyhow::ensure!(
-            !roots.is_empty(),
-            "[mqtt] ca_file {} contains no certificate",
-            path.display()
-        );
-        // A private CA is the only CA that may vouch for this broker.
-        builder.disable_built_in_roots(true);
-        for root in roots {
-            builder.add_root_certificate(root);
-        }
-    }
-
-    if let (Some(cert), Some(key)) = (&config.client_cert, &config.client_key) {
-        let identity = Identity::from_pkcs8(&read(cert, "client_cert")?, &read(key, "client_key")?)
-            .with_context(|| {
-                format!(
-                    "[mqtt] client_cert {} and client_key {} do not make a TLS identity (does the \
-                     key belong to the certificate, is it unencrypted PKCS#8?)",
-                    cert.display(),
-                    key.display()
-                )
-            })?;
-        builder.identity(identity);
-    }
-
-    builder
-        .build()
-        .context("[mqtt] cannot set up the TLS client")
-}
-
-fn read(path: &Path, key: &str) -> Result<Vec<u8>> {
-    std::fs::read(path).with_context(|| format!("[mqtt] {key}: cannot read {}", path.display()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +81,12 @@ mod tests {
         let mut c: MqttConfig = toml::from_str(toml).unwrap();
         c.resolve().unwrap();
         c
+    }
+
+    /// The section as written, not resolved: what a caller that skipped the config
+    /// loader would hand to the bridge.
+    fn unresolved(toml: &str) -> MqttConfig {
+        toml::from_str(toml).unwrap()
     }
 
     fn options(c: &MqttConfig) -> Result<MqttOptions> {
@@ -240,7 +194,7 @@ mod tests {
             "bogus-ca.pem",
             "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n",
         );
-        let c = config(&format!(
+        let c = unresolved(&format!(
             "broker = \"mqtts://localhost\"\nca_file = {bogus_ca:?}"
         ));
         let err = format!("{:#}", options(&c).unwrap_err());
@@ -249,7 +203,7 @@ mod tests {
         // A key that does not belong to the certificate (a key of another pair).
         let cert = write("client.pem", &pki.client_cert);
         let other_key = write("other.key", &test_pki::generate().client_key);
-        let c = config(&format!(
+        let c = unresolved(&format!(
             "broker = \"mqtts://localhost\"\nclient_cert = {cert:?}\nclient_key = {other_key:?}"
         ));
         let err = format!("{:#}", options(&c).unwrap_err());

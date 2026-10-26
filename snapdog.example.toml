@@ -150,9 +150,14 @@ password = "admin"
 broker = "192.168.1.10:1883"
 # client_id = "snapdog"            # MQTT client ID (must be unique per broker)
 
+# A wrong [mqtt] section switches MQTT off (and logs why); the server keeps running.
+# `snapdog --check-config` reports it as an error. Unknown keys count as wrong.
+#
 # Credentials. A password needs a username. In order of preference:
-#   - password_file: a file holding the password (Docker/Kubernetes secrets, systemd credentials)
-#   - the SNAPDOG_MQTT_PASSWORD environment variable (wins over password_file and password)
+#   - password_file: a file holding the password alone, one line (Docker/Kubernetes
+#     secrets, systemd credentials). A file others can read gives a warning: chmod 600.
+#   - the SNAPDOG_MQTT_PASSWORD environment variable (wins over password_file and password;
+#     an empty variable counts as unset)
 #   - password: in this file
 # username = "snapdog"             # or SNAPDOG_MQTT_USERNAME
 # password_file = "/run/secrets/snapdog_mqtt_password"

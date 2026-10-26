@@ -56,3 +56,77 @@ fn check_config_rejects_invalid_configuration() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Unsupported sample rate"));
 }
+
+/// A wrong `[mqtt]` section does not stop the server (MQTT is switched off), but it
+/// must not pass `--check-config`: the check exists to find exactly this.
+#[test]
+fn check_config_flags_an_invalid_mqtt_section_and_names_the_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("snapdog.toml");
+    std::fs::write(
+        &path,
+        r#"
+            [mqtt]
+            broker = "192.168.1.10:1883"
+            password = "hunter2-secret"
+
+            [[zone]]
+            name = "Living"
+        "#,
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_snapdog"))
+        .args(["--config", path.to_str().unwrap(), "--check-config"])
+        .env_remove("SNAPDOG_MQTT_USERNAME")
+        .env_remove("SNAPDOG_MQTT_PASSWORD")
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "an invalid [mqtt] must be flagged"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("[mqtt]") && stderr.contains("username"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("without MQTT"), "{stderr}");
+    assert!(
+        !stderr.contains("hunter2"),
+        "the password must not appear: {stderr}"
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("Configuration is valid"));
+}
+
+#[test]
+fn check_config_accepts_a_valid_mqtt_section() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("snapdog.toml");
+    std::fs::write(
+        &path,
+        r#"
+            [mqtt]
+            broker = "192.168.1.10:1883"
+            username = "snapdog"
+            password = "pw"
+
+            [[zone]]
+            name = "Living"
+        "#,
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_snapdog"))
+        .args(["--config", path.to_str().unwrap(), "--check-config"])
+        .env_remove("SNAPDOG_MQTT_USERNAME")
+        .env_remove("SNAPDOG_MQTT_PASSWORD")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
