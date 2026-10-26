@@ -64,6 +64,8 @@ impl TokenBucket {
 pub struct RateLimiter {
     objects: HashMap<(Scope, usize), TokenBucket>,
     global: TokenBucket,
+    /// Capacity and refill rate of a new per-object bucket.
+    object: (f64, f64),
 }
 
 impl RateLimiter {
@@ -71,6 +73,17 @@ impl RateLimiter {
         Self {
             objects: HashMap::new(),
             global: TokenBucket::new(GLOBAL_BURST, GLOBAL_RATE, now),
+            object: (OBJECT_BURST, OBJECT_RATE),
+        }
+    }
+
+    /// A limiter that never refuses, for the tests that are about something else.
+    #[cfg(test)]
+    pub fn unlimited(now: Instant) -> Self {
+        Self {
+            objects: HashMap::new(),
+            global: TokenBucket::new(1e12, 1e12, now),
+            object: (1e12, 1e12),
         }
     }
 
@@ -84,7 +97,7 @@ impl RateLimiter {
         let object = self
             .objects
             .entry((scope, index))
-            .or_insert_with(|| TokenBucket::new(OBJECT_BURST, OBJECT_RATE, now));
+            .or_insert_with(|| TokenBucket::new(self.object.0, self.object.1, now));
         if !object.has_token(now) || !self.global.has_token(now) {
             return false;
         }

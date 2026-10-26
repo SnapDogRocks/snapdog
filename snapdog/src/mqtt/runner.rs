@@ -432,7 +432,7 @@ impl Session {
             .handle(&msg.topic, &msg.payload, msg.retain)
             .await;
         let (category, outcome) = match result {
-            Ok(Handled::Dispatched | Handled::NotACommand) => return,
+            Ok(Handled::Dispatched | Handled::Superseded | Handled::NotACommand) => return,
             Ok(Handled::ClientOffline) => {
                 tracing::debug!(topic = ?msg.topic, "MQTT command for a client that is not connected, ignored");
                 return;

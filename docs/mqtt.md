@@ -167,7 +167,9 @@ player's channel is full, waits in a backlog that keeps the **latest** value per
 or client and setting. It is delivered as soon as there is room (checked every 50 ms),
 so the last position of a dragged slider is the one that arrives. A value that waited
 longer than 5 seconds is dropped as stale: it is not what anybody wants applied
-any more. The log says "Delaying MQTT commands" (at most once every 10 seconds).
+any more. A value is never delivered after a newer one for the same setting, however
+many arrive at once. Values of different settings (say `playlist` and `track`) are
+independent: if only one of them has to wait, the other may arrive first. The log says "Delaying MQTT commands" (at most once every 10 seconds).
 
 Transport commands (`play`, `pause`, `stop`, `next`, `previous` on `control/set`) are
 events: two `next` are not one. Beyond the budget they are dropped, as before.

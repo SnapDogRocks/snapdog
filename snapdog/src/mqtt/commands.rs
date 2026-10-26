@@ -51,6 +51,8 @@ pub const BACKLOG_TTL: Duration = Duration::from_secs(5);
 pub enum Handled {
     /// A command was queued.
     Dispatched,
+    /// A newer value for the same setting arrived first, so this one was dropped.
+    Superseded,
     /// A value could not be delivered yet (budget used up, channel full): the latest
     /// one per zone or client and command waits in the backlog.
     Deferred,
@@ -122,6 +124,9 @@ enum Delivery {
 struct Job {
     target: ParsedCommand,
     delivery: Delivery,
+    /// Arrival number: a later command for the same slot has a higher one, and an
+    /// older one is never delivered after it ([`Gate::superseded`]).
+    seq: u64,
 }
 
 impl Job {
@@ -143,8 +148,6 @@ enum Attempt {
 struct Waiting {
     job: Job,
     since: Instant,
-    /// Arrival order, so that the backlog is delivered the way it came in.
-    seq: u64,
 }
 
 /// The rate limiter and the backlog. One lock, held only for bookkeeping and never
@@ -153,13 +156,34 @@ struct Gate {
     limiter: RateLimiter,
     backlog: HashMap<(Scope, usize, Route), Waiting>,
     next_seq: u64,
+    /// The arrival number of the newest value of every slot (zone or client, and
+    /// setting). Bounded by the number of slots.
+    latest: HashMap<(Scope, usize, Route), u64>,
+    /// Test only: the arrival numbers in the order they were really delivered.
+    #[cfg(test)]
+    delivered: Vec<((Scope, usize, Route), u64)>,
 }
 
 impl Gate {
+    /// Test only: note that `seq` was really delivered, in delivery order.
+    #[cfg(test)]
+    fn record_delivery(&mut self, target: &ParsedCommand, seq: u64) {
+        self.delivered
+            .push(((target.scope, target.index, target.route), seq));
+    }
+
+    /// Whether a newer value for the slot of `job` has arrived since it did. Only
+    /// values (not events) are ever superseded.
+    fn superseded(&self, target: &ParsedCommand, seq: u64) -> bool {
+        target.route.is_level()
+            && self.latest.get(&(target.scope, target.index, target.route)) != Some(&seq)
+    }
+
+    /// Keep `job` for later, unless a newer value has overtaken it.
     fn defer(&mut self, job: Job, since: Instant) {
-        self.next_seq += 1;
-        let seq = self.next_seq;
-        self.backlog.insert(job.key(), Waiting { job, since, seq });
+        if !self.superseded(&job.target, job.seq) {
+            self.backlog.insert(job.key(), Waiting { job, since });
+        }
     }
 }
 
@@ -172,6 +196,9 @@ pub struct CommandHandler {
     state: state::SharedState,
     snap_tx: mpsc::Sender<SnapcastCmd>,
     gate: Arc<Mutex<Gate>>,
+    /// One zone change at a time: it writes the shared state before it queues the
+    /// reconcile, so two of them must not interleave.
+    move_serial: Arc<tokio::sync::Mutex<()>>,
     /// Wakes the task that flushes the backlog.
     wake: Arc<Notify>,
 }
@@ -193,7 +220,11 @@ impl CommandHandler {
                 limiter: RateLimiter::new(Instant::now()),
                 backlog: HashMap::new(),
                 next_seq: 0,
+                latest: HashMap::new(),
+                #[cfg(test)]
+                delivered: Vec::new(),
             })),
+            move_serial: Arc::new(tokio::sync::Mutex::new(())),
             wake: Arc::new(Notify::new()),
         }
     }
@@ -254,13 +285,19 @@ impl CommandHandler {
             Err(TopicError::UnknownRoute) => return Ok(Handled::NotACommand),
             Err(e) => return Err(Rejected::Topic(e)),
         };
-        let job = Job {
+        let mut job = Job {
             delivery: plan(target.route, payload)?,
             target,
+            seq: 0,
         };
 
         {
             let mut gate = self.gate();
+            gate.next_seq += 1;
+            job.seq = gate.next_seq;
+            if target.route.is_level() {
+                gate.latest.insert(job.key(), job.seq);
+            }
             // This value replaces whatever older one still waits for the same slot,
             // whether or not it can be delivered right now: the old one must never
             // arrive after the new one.
@@ -278,6 +315,7 @@ impl CommandHandler {
         match self.deliver(job).await? {
             Attempt::Done(handled) => Ok(handled),
             Attempt::Full(job) if job.target.route.is_level() => {
+                // (`defer` drops it if a newer value has overtaken it meanwhile.)
                 self.gate().defer(job, now);
                 self.wake.notify_one();
                 Ok(Handled::Deferred)
@@ -296,7 +334,7 @@ impl CommandHandler {
             let mut keys: Vec<_> = gate
                 .backlog
                 .iter()
-                .map(|(key, waiting)| (waiting.seq, *key))
+                .map(|(key, waiting)| (waiting.job.seq, *key))
                 .collect();
             keys.sort_unstable_by_key(|(seq, _)| *seq);
             let mut ready = Vec::new();
@@ -310,14 +348,16 @@ impl CommandHandler {
             ready
         };
         for waiting in ready {
-            let Waiting { job, since, seq } = waiting;
+            let Waiting { job, since } = waiting;
             match self.deliver(job).await {
                 Ok(Attempt::Full(job)) => {
-                    // Still no room. A newer value that arrived meanwhile stays.
-                    self.gate()
-                        .backlog
-                        .entry(job.key())
-                        .or_insert(Waiting { job, since, seq });
+                    // Still no room. A newer value that arrived meanwhile stays (and
+                    // `defer` drops this one if it has been overtaken).
+                    #[cfg_attr(not(test), allow(unused_mut, unused_variables))]
+                    let mut gate = self.gate();
+                    if !gate.backlog.contains_key(&job.key()) {
+                        gate.defer(job, since);
+                    }
                 }
                 // Delivered, or the target is gone: nothing left to do.
                 Ok(Attempt::Done(_)) | Err(_) => {}
@@ -326,6 +366,13 @@ impl CommandHandler {
     }
 
     /// Try to deliver `job` without waiting.
+    ///
+    /// A value is delivered only if no newer one has arrived for its slot, and that is
+    /// checked under the same lock as the send, so that an older value can never
+    /// slip in behind a newer one (two deliveries for one slot cannot interleave).
+    // The lock is held across the send on purpose: that is what makes the check and the
+    // send one step.
+    #[allow(clippy::significant_drop_tightening)]
     async fn deliver(&self, job: Job) -> Result<Attempt, Rejected> {
         let index = job.target.index;
         match job.delivery {
@@ -334,8 +381,17 @@ impl CommandHandler {
                     .zone_commands
                     .get(&index)
                     .ok_or(Rejected::NoSuchTarget)?;
+                #[cfg_attr(not(test), allow(unused_mut, unused_variables))]
+                let mut gate = self.gate();
+                if gate.superseded(&job.target, job.seq) {
+                    return Ok(Attempt::Done(Handled::Superseded));
+                }
                 match tx.try_send(cmd) {
-                    Ok(()) => Ok(Attempt::Done(Handled::Dispatched)),
+                    Ok(()) => {
+                        #[cfg(test)]
+                        gate.record_delivery(&job.target, job.seq);
+                        Ok(Attempt::Done(Handled::Dispatched))
+                    }
                     Err(mpsc::error::TrySendError::Full(cmd)) => Ok(Attempt::Full(Job {
                         delivery: Delivery::Zone(cmd),
                         ..job
@@ -355,11 +411,20 @@ impl CommandHandler {
                 let Some(client_id) = snap_id else {
                     return Ok(Attempt::Done(Handled::ClientOffline));
                 };
+                #[cfg_attr(not(test), allow(unused_mut, unused_variables))]
+                let mut gate = self.gate();
+                if gate.superseded(&job.target, job.seq) {
+                    return Ok(Attempt::Done(Handled::Superseded));
+                }
                 match self
                     .snap_tx
                     .try_send(SnapcastCmd::Client { client_id, action })
                 {
-                    Ok(()) => Ok(Attempt::Done(Handled::Dispatched)),
+                    Ok(()) => {
+                        #[cfg(test)]
+                        gate.record_delivery(&job.target, job.seq);
+                        Ok(Attempt::Done(Handled::Dispatched))
+                    }
                     Err(mpsc::error::TrySendError::Full(SnapcastCmd::Client {
                         action, ..
                     })) => Ok(Attempt::Full(Job {
@@ -370,9 +435,21 @@ impl CommandHandler {
                 }
             }
             Delivery::MoveClient(zone) => {
+                // The state write and the reconcile of one move are not interleaved
+                // with another move's.
+                let _serial = self.move_serial.lock().await;
+                if self.gate().superseded(&job.target, job.seq) {
+                    return Ok(Attempt::Done(Handled::Superseded));
+                }
                 self.move_client(index, zone).await?;
+                #[cfg_attr(not(test), allow(unused_mut, unused_variables))]
+                let mut gate = self.gate();
                 match self.snap_tx.try_send(SnapcastCmd::ReconcileZones) {
-                    Ok(()) => Ok(Attempt::Done(Handled::Dispatched)),
+                    Ok(()) => {
+                        #[cfg(test)]
+                        gate.record_delivery(&job.target, job.seq);
+                        Ok(Attempt::Done(Handled::Dispatched))
+                    }
                     Err(mpsc::error::TrySendError::Full(_)) => Ok(Attempt::Full(Job {
                         delivery: Delivery::MoveClient(zone),
                         ..job
@@ -443,6 +520,7 @@ mod tests {
     use crate::mqtt::test_support::{
         snap_channel, test_state_with_client, zone_channels, zone_channels_with,
     };
+    use std::sync::Arc;
     use std::time::Duration;
 
     /// A handler on `base` plus the receivers of its channels.
@@ -978,6 +1056,80 @@ mod tests {
             .await;
         assert!(volumes(&mut rx).is_empty(), "a stale volume is not applied");
         assert!(!h.has_backlog());
+    }
+
+    /// Review finding m1: an older value could be delivered after a newer one, when a
+    /// flush that had taken the old value out of the backlog raced a command that
+    /// delivered the new one, or when a value went back into the backlog after a full
+    /// channel. 4 senders hammer one slot, the channel is tiny, the flusher runs
+    /// meanwhile: the arrival numbers of what was delivered must only go up.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn an_older_value_is_never_delivered_after_a_newer_one_under_concurrency() {
+        let (h, mut rx) = handler_with_zone_capacity(2);
+        h.gate().limiter = RateLimiter::unlimited(Instant::now());
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // The receiving end drains on a thread of its own, so that the channel is
+        // full and has room again at unpredictable moments.
+        let consumer = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    while rx.try_recv().is_ok() {}
+                    std::thread::yield_now();
+                }
+            })
+        };
+        let flusher = {
+            let (h, stop) = (h.clone(), stop.clone());
+            tokio::spawn(async move {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    h.flush_backlog(Instant::now()).await;
+                    tokio::task::yield_now().await;
+                }
+            })
+        };
+        let senders: Vec<_> = (0..4)
+            .map(|worker| {
+                let h = h.clone();
+                tokio::spawn(async move {
+                    for i in 0..150_000 {
+                        let payload = format!("{}", 2 + (worker * 7 + i) % 90);
+                        h.handle("snapdog/zones/1/volume/set", payload.as_bytes(), false)
+                            .await
+                            .unwrap();
+                        if i % 4 == 0 {
+                            tokio::task::yield_now().await;
+                        }
+                    }
+                })
+            })
+            .collect();
+        for sender in senders {
+            sender.await.unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        consumer.join().unwrap();
+        flusher.await.unwrap();
+
+        let (delivered, violations) = {
+            let gate = h.gate();
+            (
+                gate.delivered.len(),
+                gate.delivered
+                    .windows(2)
+                    .filter(|pair| pair[0].1 >= pair[1].1)
+                    .count(),
+            )
+        };
+        assert!(
+            delivered > 1000,
+            "too little was delivered to prove anything: {delivered}"
+        );
+        assert_eq!(
+            violations, 0,
+            "{violations} older values after newer ones in {delivered} deliveries"
+        );
     }
 
     #[tokio::test]
