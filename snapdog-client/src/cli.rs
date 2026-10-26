@@ -56,6 +56,7 @@ pub struct Cli {
     pub test_tone: bool,
 
     /// Audio output device: `default`, an index from --list, or part of a device name
+    /// or id as --list prints it (ignoring case). Snapclient's ALSA names (hw:1) do not work
     #[arg(short, long, default_value = "default")]
     pub soundcard: String,
 
@@ -626,5 +627,42 @@ mod tests {
             !help.contains("<tcp|ws|wss>"),
             "ws/wss must not be advertised"
         );
+    }
+
+    /// The Debian defaults file is what users copy from. Every argument line it shows has
+    /// to parse with the real parser (it once showed a `--mdns-name` that does not exist).
+    #[test]
+    fn the_packaged_defaults_only_show_arguments_the_client_accepts() {
+        const DEFAULTS: &str = include_str!("../debian/snapdog-client.default");
+        let mut checked = 0;
+        for line in DEFAULTS.lines() {
+            let text = line.trim_start_matches('#').trim();
+            let Some(args) = text
+                .strip_prefix("SNAPDOG_CLIENT_ARGS=\"")
+                .and_then(|r| r.strip_suffix('"'))
+            else {
+                continue;
+            };
+            if args.is_empty() {
+                continue;
+            }
+            let command_line = std::iter::once("snapdog-client").chain(args.split_whitespace());
+            Cli::try_parse_from(command_line)
+                .unwrap_or_else(|e| panic!("{args:?} does not parse: {e}"));
+            checked += 1;
+        }
+        assert!(checked >= 3, "only {checked} examples found");
+        assert!(
+            DEFAULTS.contains("--user is refused"),
+            "the defaults file does not say what --user does"
+        );
+    }
+
+    #[test]
+    fn soundcard_help_says_how_it_matches() {
+        use clap::CommandFactory;
+        let help = Cli::command().render_long_help().to_string();
+        assert!(help.contains("ignoring case"), "{help}");
+        assert!(help.contains("hw:1"), "{help}");
     }
 }
