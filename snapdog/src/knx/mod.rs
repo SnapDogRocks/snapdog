@@ -63,6 +63,15 @@ use transport::{Incoming, KnxListener, KnxPublisher};
 
 // ── Start ─────────────────────────────────────────────────────
 
+/// Check the syntax of a client `url` (`--check-config` and config loading use this).
+///
+/// # Errors
+///
+/// Returns an error naming what is wrong with the URL.
+pub fn validate_url(url: &str) -> Result<()> {
+    supervisor::ClientTarget::parse(url).map(|_| ())
+}
+
 /// Handle for KNX device management (programming mode, etc.).
 /// Only available in device mode.
 pub type DeviceControlHandle = Arc<device::DevicePublisher>;
@@ -151,6 +160,9 @@ pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
                 .as_deref()
                 .context("KNX client mode requires 'url'")?;
             let target = supervisor::ClientTarget::parse(url)?;
+            for problem in duplicate_addresses(config) {
+                tracing::warn!("KNX group address configured twice: {problem}");
+            }
             let task = tokio::spawn(supervisor::run_client(
                 target,
                 bridge,
@@ -741,6 +753,14 @@ fn canonical_ga(ga: &str) -> String {
 }
 
 pub(crate) fn build_zone_ga_map(config: &AppConfig) -> HashMap<String, (usize, &'static str)> {
+    zone_ga_map(config, &mut Vec::new())
+}
+
+/// The zone map; an address that two zone actions share is noted in `duplicates`.
+fn zone_ga_map(
+    config: &AppConfig,
+    duplicates: &mut Vec<String>,
+) -> HashMap<String, (usize, &'static str)> {
     let mut map = HashMap::new();
     for zone_cfg in &config.zones {
         let idx = zone_cfg.index;
@@ -768,8 +788,12 @@ pub(crate) fn build_zone_ga_map(config: &AppConfig) -> HashMap<String, (usize, &
             (&knx.presence_enable, "presence_enable"),
         ];
         for (ga_opt, action) in pairs {
-            if let Some(ga) = ga_opt {
-                map.insert(canonical_ga(ga), (idx, *action));
+            if let Some(ga) = ga_opt
+                && let Some((z, a)) = map.insert(canonical_ga(ga), (idx, *action))
+            {
+                duplicates.push(format!(
+                    "{ga} is the address of zone {z} {a} and of zone {idx} {action}: the later one wins"
+                ));
             }
         }
     }
@@ -777,6 +801,14 @@ pub(crate) fn build_zone_ga_map(config: &AppConfig) -> HashMap<String, (usize, &
 }
 
 pub(crate) fn build_client_ga_map(config: &AppConfig) -> HashMap<String, (usize, &'static str)> {
+    client_ga_map(config, &mut Vec::new())
+}
+
+/// The client map; an address that two client actions share is noted in `duplicates`.
+fn client_ga_map(
+    config: &AppConfig,
+    duplicates: &mut Vec<String>,
+) -> HashMap<String, (usize, &'static str)> {
     let mut map = HashMap::new();
     for client_cfg in &config.clients {
         let idx = client_cfg.index;
@@ -790,12 +822,39 @@ pub(crate) fn build_client_ga_map(config: &AppConfig) -> HashMap<String, (usize,
             (&knx.zone, "zone"),
         ];
         for (ga_opt, action) in pairs {
-            if let Some(ga) = ga_opt {
-                map.insert(canonical_ga(ga), (idx, *action));
+            if let Some(ga) = ga_opt
+                && let Some((c, a)) = map.insert(canonical_ga(ga), (idx, *action))
+            {
+                duplicates.push(format!(
+                    "{ga} is the address of client {c} {a} and of client {idx} {action}: the later one wins"
+                ));
             }
         }
     }
     map
+}
+
+/// Configurations that do not do what they say in client mode: an address configured for two
+/// actions of one kind (the later wins) or for a global object and a zone or client action (the
+/// global object takes the telegram, the other action never fires). In device mode the same
+/// address may belong to several objects, so this is a client mode check.
+pub(crate) fn duplicate_addresses(config: &AppConfig) -> Vec<String> {
+    let mut duplicates = Vec::new();
+    let zones = zone_ga_map(config, &mut duplicates);
+    let clients = client_ga_map(config, &mut duplicates);
+    for (ga, action) in build_global_ga_map(config) {
+        if let Some((z, a)) = zones.get(&ga) {
+            duplicates.push(format!(
+                "{ga} is the global {action} address and of zone {z} {a}: the zone action never runs"
+            ));
+        }
+        if let Some((c, a)) = clients.get(&ga) {
+            duplicates.push(format!(
+                "{ga} is the global {action} address and of client {c} {a}: the client action never runs"
+            ));
+        }
+    }
+    duplicates
 }
 
 /// The group addresses of all status objects (canonical form), the ones a group read is
@@ -2191,5 +2250,50 @@ volume = "2/0/20"
             "all status addresses, no command address"
         );
         assert!(!set.contains("1/0/20") && !set.contains("2/0/20") && !set.contains("0/0/4"));
+    }
+
+    #[test]
+    fn duplicate_command_addresses_are_reported() {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+all_stop = "0/0/1"
+
+[[zone]]
+name = "Z1"
+[zone.knx]
+play = "1/0/1"
+pause = "1/0/1"
+stop = "0/0/1"
+[[zone]]
+name = "Z2"
+[zone.knx]
+play = "1/0/2"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+[client.knx]
+volume = "2/0/1"
+mute = "2/0/1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let d = duplicate_addresses(&cfg);
+        assert_eq!(d.len(), 3, "{d:?}");
+        assert!(d.iter().any(|m| m.contains("1/0/1")
+            && m.contains("zone 1 play")
+            && m.contains("zone 1 pause")));
+        assert!(
+            d.iter()
+                .any(|m| m.contains("2/0/1") && m.contains("client 1"))
+        );
+        assert!(d.iter().any(|m| m.contains("0/0/1")
+            && m.contains("global all_stop")
+            && m.contains("never runs")));
+        // A zone and a client may share an address: both run.
+        let ok = cfg_with_knx();
+        assert_eq!(duplicate_addresses(&ok).len(), 0);
     }
 }

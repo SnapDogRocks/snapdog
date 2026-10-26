@@ -100,10 +100,11 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
     if let Some(ref knx) = raw.knx {
         match knx.role {
             KnxRole::Client => {
-                anyhow::ensure!(
-                    knx.url.is_some(),
-                    "KNX client mode requires 'url' (e.g. udp://192.168.1.50:3671)"
-                );
+                let url = knx
+                    .url
+                    .as_deref()
+                    .context("KNX client mode requires 'url' (e.g. udp://192.168.1.50:3671)")?;
+                crate::knx::validate_url(url).context("Invalid [knx] url")?;
             }
             KnxRole::Device => {
                 anyhow::ensure!(
@@ -1061,5 +1062,42 @@ mod tests {
             from_toml.heartbeat_minutes
         );
         assert_eq!(KnxConfig::default().heartbeat_minutes, 5);
+    }
+
+    fn knx_client(url: &str) -> FileConfig {
+        toml::from_str(&format!(
+            r#"
+            [knx]
+            role = "client"
+            url = "{url}"
+            [[zone]]
+            name = "A"
+            [[client]]
+            name = "X"
+            mac = "00:00:00:00:00:00"
+            zone = "A"
+        "#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn knx_client_url_is_checked_when_the_config_loads() {
+        for ok in [
+            "udp://192.168.1.50:3671",
+            "tunnel://gateway.local:3671",
+            "router://224.0.23.12:3671",
+            "tunnel://[::1]:3671",
+        ] {
+            assert!(load_raw(knx_client(ok)).is_ok(), "{ok}");
+        }
+        for (bad, why) in [
+            ("192.168.1.50:3671", "'://'"),
+            ("tcp://192.168.1.50:3671", "unsupported scheme"),
+            ("udp://192.168.1.50", "missing port"),
+        ] {
+            let err = format!("{:#}", load_raw(knx_client(bad)).unwrap_err());
+            assert!(err.contains(why), "{bad}: {err}");
+        }
     }
 }
