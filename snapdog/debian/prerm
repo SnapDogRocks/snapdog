@@ -3,14 +3,20 @@
 # generates from the unit (stop on removal, and so on) where the DEBHELPER marker is.
 set -e
 
-# Removal stops the server. Note that it was running, so that installing the
-# package again brings it back: the generated postinst only restarts a server
-# that is running at that moment, and the package does not start it by default.
-# /run is volatile, so after a reboot the note is gone, and the enabled unit
-# starts with the system anyway.
-if [ "$1" = remove ] && [ -d /run/systemd/system ] \
-    && systemctl is-active --quiet snapdog.service; then
-    touch /run/snapdog.was-active || true
+# Removal stops the server. If it runs now, note that, so that installing the package
+# again brings it back: the generated postinst only restarts a server that is running at
+# that moment, and the package does not start it by default. The note is only a pending
+# one. postrm turns it into the real one when the removal has gone through, so an
+# interrupted removal leaves nothing behind that a later upgrade could act on.
+#
+# The notes live in the state directory of the service, /var/lib/snapdog. It survives
+# removal, also across a reboot, and purge deletes it.
+if [ "$1" = remove ]; then
+    rm -f /var/lib/snapdog/.dpkg-was-running.pending /var/lib/snapdog/.dpkg-was-running || true
+    if [ -d /run/systemd/system ] && [ -d /var/lib/snapdog ] \
+        && systemctl is-active --quiet snapdog.service; then
+        touch /var/lib/snapdog/.dpkg-was-running.pending || true
+    fi
 fi
 
 #DEBHELPER#

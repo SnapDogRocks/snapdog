@@ -6,13 +6,30 @@ set -e
 
 #DEBHELPER#
 
+if [ "$1" = remove ]; then
+    # The removal went through: the server that ran at removal (see prerm) is to be
+    # started again when the package is installed again.
+    if [ -e /var/lib/snapdog/.dpkg-was-running.pending ]; then
+        mv -f /var/lib/snapdog/.dpkg-was-running.pending /var/lib/snapdog/.dpkg-was-running \
+            || true
+    fi
+fi
+
 if [ "$1" = purge ]; then
-    rm -f /run/snapdog.was-active
     # systemd keeps the state of a DynamicUser service (StateDirectory=snapdog) in
-    # /var/lib/private/snapdog and links it as /var/lib/snapdog: pairing keys, ETS
-    # and EQ settings. Purging means it goes too. Remove the target first, then the
-    # link; rm -rf does not follow the link.
-    rm -rf /var/lib/private/snapdog /var/lib/snapdog
+    # /var/lib/private/snapdog and links it as /var/lib/snapdog: pairing keys, ETS and
+    # EQ settings. Purging means it goes too, and the notes of prerm with it. A server that
+    # still runs (a policy-rc.d that forbids stopping services kept prerm from stopping
+    # it) keeps its directory: deleting it under the process would break the server and
+    # lose the data without warning. Remove the target first, then the link; rm -rf does
+    # not follow the link.
+    if [ -d /run/systemd/system ] && systemctl is-active --quiet snapdog.service; then
+        echo "snapdog: snapdog.service is still running, so /var/lib/snapdog is kept." >&2
+        echo "snapdog: Stop the service and delete /var/lib/private/snapdog and" >&2
+        echo "snapdog: /var/lib/snapdog by hand if you want them gone." >&2
+    else
+        rm -rf /var/lib/private/snapdog /var/lib/snapdog
+    fi
 fi
 
 exit 0
