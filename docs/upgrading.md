@@ -94,18 +94,14 @@ tested), so the listener binds, but discovery does not reach your network that w
 AirPlay 2 can keep the keys of paired senders in `airplay-pairing` in the state directory
 (`/var/lib/snapdog` by default). SnapDog configures no PIN, and the shairplay source shows
 that senders then pair transiently and nothing is stored. We have not tested this with a
-real sender. The file is only written when a sender runs a persistent pair-setup. Two
-limits apply to that case (read from the source of SnapDog and shairplay 0.10.0):
+real sender. The file is only written when a sender runs a persistent pair-setup. Include
+it in backups if it exists. All zones share one store, and every change rewrites the file
+through a temporary file, so a key paired through one zone is never dropped by a pairing
+through another.
 
-- Every zone loads its own copy of the file at start and rewrites the whole file on each
-  change. A key stored through zone B is therefore overwritten by the next pairing through
-  zone A, at any time before the next restart, because zone A's copy does not contain it.
-  A restart does not bring the key back. Until this is fixed, pair through one zone only,
-  or restart SnapDog after each pairing so that all zones reload the file before the next
-  sender pairs.
-- SnapDog does not store the server's own identity key. shairplay then generates a new
-  identity at every start, and its documentation says that senders paired persistently
-  have to pair again in that case.
+One limit remains. SnapDog does not store the server's own identity key. shairplay then
+generates a new identity at every start, and its documentation says that senders paired
+persistently have to pair again in that case. This is tracked as a follow-up.
 
 ## API documentation and console (`api-docs`)
 

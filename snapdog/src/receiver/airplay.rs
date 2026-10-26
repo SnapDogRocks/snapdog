@@ -116,8 +116,7 @@ impl ReceiverProvider for AirPlayReceiver {
 
         #[cfg(feature = "ap2")]
         {
-            let path = std::path::PathBuf::from(&self.state_dir).join("airplay-pairing");
-            builder = builder.pairing_store(Arc::new(FilePairingStore::new(path)));
+            builder = builder.pairing_store(pairing_store(&self.state_dir));
         }
 
         let mut server = builder.build(handler)?;
@@ -266,29 +265,79 @@ impl super::RemoteControl for ShairplayRemoteBridge {
 
 // ── FilePairingStore (AP2 key persistence) ────────────────────
 
+/// Pairing keys of `AirPlay` 2 senders, kept in one JSON file.
+///
+/// Every zone has its own receiver, and all of them use the same file. Each zone used to
+/// load a private copy at start and rewrite the whole file on every change, so a key
+/// stored through one zone was overwritten by the next change through another zone.
+/// [`FilePairingStore::shared`] hands every zone the same store per file, so there is one
+/// map and one writer. Writes are serialised by the map's lock and go through a temporary
+/// file and a rename, so a crash never leaves a half-written file.
 #[cfg(feature = "ap2")]
 struct FilePairingStore {
     path: std::path::PathBuf,
     keys: std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>,
 }
 
+/// The pairing store every zone of this process uses (`<state_dir>/airplay-pairing`).
+#[cfg(feature = "ap2")]
+fn pairing_store(state_dir: &str) -> Arc<FilePairingStore> {
+    FilePairingStore::shared(std::path::PathBuf::from(state_dir).join("airplay-pairing"))
+}
+
+#[cfg(feature = "ap2")]
+type PairingKeys = std::collections::HashMap<String, [u8; 32]>;
+
 #[cfg(feature = "ap2")]
 impl FilePairingStore {
-    fn new(path: std::path::PathBuf) -> Self {
-        let keys = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+    /// The store for `path`, shared by every caller in this process.
+    fn shared(path: std::path::PathBuf) -> Arc<Self> {
+        use std::sync::{Mutex, OnceLock, PoisonError};
+        static STORES: OnceLock<
+            Mutex<std::collections::HashMap<std::path::PathBuf, Arc<FilePairingStore>>>,
+        > = OnceLock::new();
+        let mut stores = STORES
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(
+            stores
+                .entry(path.clone())
+                .or_insert_with(|| Arc::new(Self::load(path))),
+        )
+    }
+
+    /// Read the file. A missing file is an empty store. A file that cannot be read or
+    /// parsed is reported and also starts empty, which the next change overwrites.
+    fn load(path: std::path::PathBuf) -> Self {
+        let keys = match std::fs::read_to_string(&path) {
+            Ok(text) => serde_json::from_str::<PairingKeys>(&text).unwrap_or_else(|e| {
+                tracing::warn!(path = %path.display(), error = %e, "AirPlay pairing file is not valid, starting without pairings");
+                PairingKeys::default()
+            }),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => PairingKeys::default(),
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "could not read the AirPlay pairing file, starting without pairings");
+                PairingKeys::default()
+            }
+        };
         Self {
             path,
             keys: std::sync::Mutex::new(keys),
         }
     }
 
-    fn save(&self, keys: &std::collections::HashMap<String, [u8; 32]>) {
-        if let Ok(json) = serde_json::to_string_pretty(keys) {
-            let _ = std::fs::write(&self.path, json);
+    fn save(&self, keys: &PairingKeys) {
+        if let Err(e) = self.try_save(keys) {
+            tracing::warn!(path = %self.path.display(), error = %e, "could not save the AirPlay pairing keys");
         }
+    }
+
+    fn try_save(&self, keys: &PairingKeys) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(keys).map_err(std::io::Error::other)?;
+        let tmp = self.path.with_extension("tmp");
+        std::fs::write(&tmp, json)?;
+        std::fs::rename(&tmp, &self.path)
     }
 }
 
@@ -326,6 +375,117 @@ mod tests {
     use super::*;
     use shairplay::AudioHandler;
     use tokio::sync::mpsc;
+
+    // ── AP2 pairing store shared by all zones ─────────────────────────
+
+    #[cfg(feature = "ap2")]
+    fn key(byte: u8) -> [u8; 32] {
+        [byte; 32]
+    }
+
+    #[cfg(feature = "ap2")]
+    fn on_disk(path: &std::path::Path) -> PairingKeys {
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    /// The bug: zone A and zone B each held a private copy, so the later write of zone A
+    /// dropped the key zone B had stored. All zones must see one store.
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn keys_paired_through_two_zones_both_reach_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let state_dir = dir.path().to_str().unwrap();
+        let zone_a = pairing_store(state_dir);
+        let zone_b = pairing_store(state_dir);
+        zone_b.put("phone-b", key(2));
+        zone_a.put("laptop-a", key(1));
+        let stored = on_disk(&path);
+        assert_eq!(
+            stored.get("phone-b"),
+            Some(&key(2)),
+            "zone B's key was lost"
+        );
+        assert_eq!(stored.get("laptop-a"), Some(&key(1)));
+        // Both zones answer for both senders, also after a restart.
+        assert_eq!(zone_a.get("phone-b"), Some(key(2)));
+        let restarted = FilePairingStore::load(path);
+        assert_eq!(restarted.get("phone-b"), Some(key(2)));
+        assert_eq!(restarted.get("laptop-a"), Some(key(1)));
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn shared_store_is_one_per_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = FilePairingStore::shared(dir.path().join("a"));
+        let again = FilePairingStore::shared(dir.path().join("a"));
+        let other = FilePairingStore::shared(dir.path().join("b"));
+        assert!(Arc::ptr_eq(&first, &again));
+        assert!(!Arc::ptr_eq(&first, &other));
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn concurrent_pairings_are_all_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let handles: Vec<_> = (0..16u8)
+            .map(|n| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    FilePairingStore::shared(path).put(&format!("sender-{n}"), key(n));
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        assert_eq!(on_disk(&path).len(), 16);
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn writes_are_atomic_and_remove_is_persisted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let store = FilePairingStore::shared(path.clone());
+        store.put("one", key(1));
+        store.put("two", key(2));
+        store.remove("one");
+        assert_eq!(on_disk(&path).keys().collect::<Vec<_>>(), ["two"]);
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            leftovers,
+            ["airplay-pairing"],
+            "no temporary file may stay behind"
+        );
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn unreadable_pairing_file_starts_empty_and_is_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        std::fs::write(&path, "{ not json").unwrap();
+        let store = FilePairingStore::load(path.clone());
+        assert_eq!(store.get("x"), None);
+        store.put("x", key(9));
+        assert_eq!(on_disk(&path).get("x"), Some(&key(9)));
+    }
+
+    /// A write error must not lose the key for this run or panic the receiver.
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn failing_write_keeps_the_key_in_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FilePairingStore::load(dir.path().join("missing-dir").join("airplay-pairing"));
+        store.put("x", key(4));
+        assert_eq!(store.get("x"), Some(key(4)));
+    }
 
     /// `[airplay].mode` is compiled out without `ap2`: the default `airplay2` must
     /// then resolve to `AirPlay` 1, and with `ap2` both modes are honoured. This is
