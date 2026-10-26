@@ -463,6 +463,104 @@ mod tests {
         assert!(off.iter().any(|(topic, _)| topic == "snapdog/status"));
     }
 
+    // ── A panic does not leave the bridge half-dead ───────────
+
+    fn zone_state_publishes(broker: &crate::mqtt::test_support::FakeBroker) -> usize {
+        broker
+            .packets()
+            .iter()
+            .filter(
+                |p| matches!(p, rumqttc::Packet::Publish(x) if x.topic == "snapdog/zones/1/state"),
+            )
+            .count()
+    }
+
+    fn volume_changed() -> Arc<str> {
+        serde_json::json!({"type": "zone_volume_changed", "zone": 1, "volume": 20, "muted": false})
+            .to_string()
+            .into()
+    }
+
+    /// A message that makes the handler panic is dropped and logged. The connection,
+    /// the subscriptions and the announcement are untouched, the next message is
+    /// handled at once, and the state publisher still works. (Review finding M2.)
+    #[tokio::test]
+    async fn a_message_that_makes_the_handler_panic_is_dropped_and_the_bridge_carries_on() {
+        let (broker, bridge, mut ends) =
+            bridge_with(crate::mqtt::test_support::Script::Serve, "").await;
+        let before = zone_state_publishes(&broker);
+        broker.publish("snapdog/zones/1/__panic_message__", b"poison");
+        broker.publish("snapdog/zones/1/volume/set", b"42");
+        let cmd = tokio::time::timeout(Duration::from_secs(2), ends.zone_rx.recv())
+            .await
+            .expect("the message behind the poison one is handled at once");
+        assert!(
+            matches!(cmd, Some(crate::player::ZoneCommand::SetVolume(42))),
+            "{cmd:?}"
+        );
+        assert!(bridge.is_connected());
+        assert_eq!(
+            broker.connections.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        // State still flows.
+        ends.notify_tx.send(volume_changed()).unwrap();
+        wait_for(&broker, |_| zone_state_publishes(&broker) > before).await;
+        assert!(
+            zone_state_publishes(&broker) > before,
+            "state publishing stopped"
+        );
+    }
+
+    /// A panic anywhere else in the connection task drops the connection and connects
+    /// afresh: the flag is honest, everything is announced again, state flows. Before,
+    /// the flag stayed false for good, nothing was announced again, and the retained
+    /// state went stale while the entities showed as available. (Review finding M2.)
+    #[tokio::test]
+    async fn a_panic_in_the_connection_task_ends_in_a_clean_reconnect_and_a_full_announcement() {
+        let (broker, bridge, ends) =
+            bridge_with(crate::mqtt::test_support::Script::Serve, "").await;
+        let online = |b: &crate::mqtt::test_support::FakeBroker| {
+            b.packets()
+                .iter()
+                .filter(|p| matches!(p, rumqttc::Packet::Publish(x) if x.topic == "snapdog/status" && &x.payload[..] == b"online"))
+                .count()
+        };
+        assert_eq!(online(&broker), 1);
+        let before = zone_state_publishes(&broker);
+        broker.publish("snapdog/zones/1/__panic_loop__", b"poison");
+        wait_for(&broker, |_| {
+            broker.connections.load(std::sync::atomic::Ordering::SeqCst) >= 2
+        })
+        .await;
+        assert_eq!(
+            broker.connections.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "the connection is dropped and made again"
+        );
+        assert!(
+            bridge.wait_connected(Duration::from_secs(5)).await,
+            "connected again"
+        );
+        wait_for(&broker, |_| {
+            online(&broker) >= 2 && zone_state_publishes(&broker) > before
+        })
+        .await;
+        assert_eq!(online(&broker), 2, "announced again");
+        assert!(
+            zone_state_publishes(&broker) > before,
+            "the state was published again"
+        );
+        // And it keeps working: a notification becomes a state message.
+        let after = zone_state_publishes(&broker);
+        ends.notify_tx.send(volume_changed()).unwrap();
+        wait_for(&broker, |_| zone_state_publishes(&broker) > after).await;
+        assert!(
+            zone_state_publishes(&broker) > after,
+            "state publishing stopped"
+        );
+    }
+
     // ── Home Assistant discovery on the wire ──────────────────
 
     /// A bridge against a scripted broker, with `extra` lines after the broker address.

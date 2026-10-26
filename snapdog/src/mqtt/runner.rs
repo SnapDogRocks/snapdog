@@ -216,18 +216,28 @@ pub async fn supervise<S>(
     }
 }
 
-/// What a panic of the connection task leaves behind: the flag still says
-/// connected, but nobody serves the connection any more.
-fn after_connection_panic((_, session): &mut (EventLoop, Session)) {
+/// What a panic of the connection task leaves behind: a connection whose
+/// announcement may be half done, and a flag that still says connected. Both go: the
+/// connection is dropped (the broker publishes the last will `offline`), so that the
+/// next poll connects afresh and the connection task subscribes and announces
+/// everything again. Without that the bridge would keep a live socket nobody
+/// announced on, with stale retained state.
+fn after_connection_panic((eventloop, session): &mut (EventLoop, Session)) {
+    eventloop.clean();
     session.connected.send_replace(false);
 }
+
+/// The shortest wait before a task is restarted after a panic. The reconnect
+/// backoff (1 s up) is for a broker that is away; a panic is a bug in one message or
+/// step, and the messages that arrive meanwhile are lost with the dropped connection.
+const PANIC_RESTART_MIN: Duration = Duration::from_millis(100);
 
 /// [`run_connection`] under [`supervise`].
 pub async fn supervised_connection(eventloop: EventLoop, session: Session) {
     let shutdown = session.shutdown.clone();
     supervise(
         "connection",
-        Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
+        Backoff::new(PANIC_RESTART_MIN, RECONNECT_MAX),
         (eventloop, session),
         shutdown,
         after_connection_panic,
@@ -241,7 +251,7 @@ pub async fn supervised_state_publisher(feed: StateFeed) {
     let shutdown = feed.shutdown.clone();
     supervise(
         "state publisher",
-        Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
+        Backoff::new(PANIC_RESTART_MIN, RECONNECT_MAX),
         feed,
         shutdown,
         |_| {},
@@ -254,7 +264,7 @@ pub async fn supervised_state_publisher(feed: StateFeed) {
 pub async fn supervised_backlog_flusher(handler: CommandHandler, shutdown: watch::Receiver<bool>) {
     supervise(
         "command backlog",
-        Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
+        Backoff::new(PANIC_RESTART_MIN, RECONNECT_MAX),
         (handler, shutdown.clone()),
         shutdown,
         |_| {},
@@ -301,7 +311,23 @@ pub async fn run_connection(eventloop: &mut EventLoop, this: &mut Session) {
                 this.announce(first_connect).await;
                 first_connect = false;
             }
-            Ok(Event::Incoming(Packet::Publish(msg))) => this.on_message(&msg).await,
+            Ok(Event::Incoming(Packet::Publish(msg))) => {
+                #[cfg(test)]
+                assert!(
+                    !msg.topic.ends_with("/__panic_loop__"),
+                    "injected panic in the connection loop"
+                );
+                // A message that makes the handler panic is dropped and logged: the
+                // connection, the subscriptions and everything announced are fine, and the
+                // messages behind it are handled as usual.
+                if let Err(payload) = AssertUnwindSafe(this.on_message(&msg)).catch_unwind().await {
+                    tracing::error!(
+                        topic = ?msg.topic,
+                        panic = %panic_message(&*payload),
+                        "MQTT message handler panicked, the message is dropped"
+                    );
+                }
+            }
             Ok(Event::Incoming(Packet::SubAck(ack))) => {
                 let refused = ack
                     .return_codes
@@ -377,6 +403,11 @@ impl Session {
     }
 
     async fn on_message(&mut self, msg: &rumqttc::Publish) {
+        #[cfg(test)]
+        assert!(
+            !msg.topic.ends_with("/__panic_message__"),
+            "injected panic in the message handler"
+        );
         // Home Assistant's birth message is not a command: it asks for the discovery
         // message again.
         if let Some(discovery) = &self.discovery
@@ -463,7 +494,11 @@ impl Session {
     /// A cause that repeats on every retry is logged once per throttle interval.
     fn report_connection_error(&mut self, error: &ConnectionError, retry: Retry) {
         let retry_in = retry.delay;
-        if retry.flapping {
+        // An oversized packet closes the connection soon after it was made, too, but the
+        // cause is known and explained below: no hint about client ids then.
+        // An oversized packet closes the connection soon after it was made, too, but the
+        // cause is known and explained below: no hint about client ids then.
+        if retry.flapping && oversized_packet(error).is_none() {
             tracing::warn!(
                 client_id = %self.client_id,
                 "MQTT connection was closed shortly after it was made, again and again. A common \
@@ -850,12 +885,23 @@ mod tests {
         let task = tokio::spawn(async move { run_connection(&mut eventloop, &mut session).await });
 
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !logs.text().contains("somebody published below") && Instant::now() < deadline {
+        while broker.connections.load(std::sync::atomic::Ordering::SeqCst) < 5
+            && Instant::now() < deadline
+        {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         stop.send_replace(true);
         let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
         let text = logs.text();
+        // Enough short connections for the client-id hint to have fired, and it did not.
+        assert!(
+            broker.connections.load(std::sync::atomic::Ordering::SeqCst) >= 4,
+            "too few connections to prove anything"
+        );
+        assert!(
+            !text.contains("same client id"),
+            "misleading client-id hint: {text}"
+        );
         assert!(
             text.contains("somebody published below"),
             "no hint in the log: {text}"

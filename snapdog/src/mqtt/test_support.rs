@@ -69,7 +69,7 @@ pub fn snap_channel() -> (mpsc::Sender<SnapcastCmd>, mpsc::Receiver<SnapcastCmd>
 /// The receiving ends of a [`test_runtime`], kept alive by the test.
 pub struct RuntimeEnds {
     pub store: state::SharedState,
-    pub _zone_rx: mpsc::Receiver<ZoneCommand>,
+    pub zone_rx: mpsc::Receiver<ZoneCommand>,
     pub _snap_rx: mpsc::Receiver<SnapcastCmd>,
     pub notify_tx: broadcast::Sender<Arc<str>>,
 }
@@ -90,7 +90,7 @@ pub fn test_runtime() -> (MqttRuntime, RuntimeEnds) {
         },
         RuntimeEnds {
             store,
-            _zone_rx: zone_rx,
+            zone_rx,
             _snap_rx: snap_rx,
             notify_tx,
         },
@@ -121,6 +121,7 @@ pub enum Script {
 /// A broker on a loopback port that follows a [`Script`].
 pub struct FakeBroker {
     pub port: u16,
+    inject: broadcast::Sender<(String, Vec<u8>)>,
     /// Connections accepted so far.
     pub connections: Arc<AtomicUsize>,
     /// Every packet received, in order, over all connections.
@@ -135,18 +136,31 @@ impl FakeBroker {
         let connections = Arc::new(AtomicUsize::new(0));
         let received = Arc::new(Mutex::new(Vec::new()));
         let (count, log) = (connections.clone(), received.clone());
+        let (inject, _) = broadcast::channel(16);
+        let injected = inject.clone();
         let task = tokio::spawn(async move {
             while let Ok((socket, _)) = listener.accept().await {
                 count.fetch_add(1, Ordering::SeqCst);
-                tokio::spawn(serve_connection(socket, script, log.clone()));
+                tokio::spawn(serve_connection(
+                    socket,
+                    script,
+                    log.clone(),
+                    injected.subscribe(),
+                ));
             }
         });
         Self {
             port,
+            inject,
             connections,
             received,
             task,
         }
+    }
+
+    /// Send a `QoS` 0 `PUBLISH` to every connected client.
+    pub fn publish(&self, topic: &str, payload: &[u8]) {
+        let _ = self.inject.send((topic.to_string(), payload.to_vec()));
     }
 
     /// The packets received so far.
@@ -161,16 +175,33 @@ impl Drop for FakeBroker {
     }
 }
 
-async fn serve_connection(mut socket: TcpStream, script: Script, log: Arc<Mutex<Vec<Packet>>>) {
+async fn serve_connection(
+    mut socket: TcpStream,
+    script: Script,
+    log: Arc<Mutex<Vec<Packet>>>,
+    mut injected: broadcast::Receiver<(String, Vec<u8>)>,
+) {
     let mut input = BytesMut::new();
     let mut oversized_sent = false;
     loop {
         let packet = match Packet::read(&mut input, usize::MAX) {
             Ok(packet) => packet,
-            Err(WireError::InsufficientBytes(_)) => match socket.read_buf(&mut input).await {
-                Ok(0) | Err(_) => return,
-                Ok(_) => continue,
-            },
+            Err(WireError::InsufficientBytes(_)) => {
+                tokio::select! {
+                    read = socket.read_buf(&mut input) => match read {
+                        Ok(0) | Err(_) => return,
+                        Ok(_) => continue,
+                    },
+                    Ok((topic, payload)) = injected.recv() => {
+                        let mut out = BytesMut::new();
+                        Publish::new(topic, QoS::AtMostOnce, payload).write(&mut out).unwrap();
+                        if socket.write_all(&out).await.is_err() {
+                            return;
+                        }
+                        continue;
+                    }
+                }
+            }
             Err(_) => return,
         };
         log.lock().unwrap().push(packet.clone());
