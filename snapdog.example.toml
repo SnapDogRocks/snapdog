@@ -12,9 +12,16 @@
 [system]
 # Logging verbosity: trace, debug, info, warn, error
 log_level = "info"
-# Optional: also log to a file, rotated daily (in addition to stdout). The date goes
-# before the extension: snapdog.log becomes snapdog.2026-10-25.log. Old files are not
-# removed. If the file cannot be opened, SnapDog warns and keeps logging to stdout.
+# Optional: also log to a file (in addition to stdout), one file per day. The date goes
+# before the extension: snapdog.log becomes snapdog.2026-10-25.log. SnapDog keeps 14
+# daily files (the current one and 13 more) and deletes older ones when a new day's
+# file is created, so give it a directory of its own: files whose names start with
+# "snapdog" and end with the same extension count as its logs. The day changes at
+# midnight UTC, whatever the local time zone. If the file cannot be opened, SnapDog warns
+# and keeps logging to stdout. A write error later (disk full) is not reported: the file
+# then misses lines while stdout keeps working.
+# The packaged systemd unit creates /var/log/snapdog for this (LogsDirectory=); with the
+# unit's read-only file system no other directory is writable.
 # log_file = "/var/log/snapdog/snapdog.log"
 # Directory for persistent state files (zones.json, eq.json, server_id, and
 # airplay-pairing with AirPlay 2). A leading ~ is expanded.

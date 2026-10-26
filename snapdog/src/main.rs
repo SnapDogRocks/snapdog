@@ -322,6 +322,7 @@ pub async fn run_app() -> Result<()> {
         subscriber,
         file_guard: log_guard,
         file_error: log_file_error,
+        file_warnings: log_file_warnings,
     } = logging::build(
         &config.system.log_level.to_string(),
         config.system.log_file.as_deref(),
@@ -332,6 +333,9 @@ pub async fn run_app() -> Result<()> {
             path,
             "log_file is not used, logging to stdout only: {error}"
         );
+    }
+    for warning in &log_file_warnings {
+        tracing::warn!("{warning}");
     }
     config.log_notices();
 

@@ -286,3 +286,31 @@ fn deb_and_aur_install_the_packaged_config_not_the_example() {
         "the AUR package must not install the example as the live config"
     );
 }
+
+// ── [system].log_file and the shipped systemd unit ─────────────────────────
+
+#[test]
+fn the_example_log_path_is_writable_under_the_packaged_unit() {
+    // The unit runs as a DynamicUser with a read-only file system (ProtectSystem=strict),
+    // so a log file is only possible in a directory the unit makes writable.
+    let unit = include_str!("../systemd/snapdog.service");
+    let example_path = EXAMPLE
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("# log_file = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("the example shows a log_file");
+    let directory = std::path::Path::new(example_path)
+        .parent()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let writable: Vec<String> = unit
+        .lines()
+        .filter_map(|l| l.strip_prefix("LogsDirectory="))
+        .map(|name| format!("/var/log/{name}"))
+        .collect();
+    assert!(
+        writable.iter().any(|w| w == directory),
+        "{example_path}: unit makes only {writable:?} writable"
+    );
+}
