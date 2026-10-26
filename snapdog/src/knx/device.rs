@@ -1498,6 +1498,16 @@ fn install_tables(bau: &mut Bau, addr: &[u8], assoc: &[u8]) {
         while bau.next_outgoing_frame().is_some() {}
     };
 
+    // Start from nothing: the stack allocates behind whatever the memory holds, and the tables
+    // are written at offset 0. A leftover image (an interrupted download that was persisted)
+    // would put the allocation elsewhere and leave the tables empty but "loaded". An object that
+    // is still loading, or in error, ignores a start-loading event, so unload first.
+    bau.set_memory_area(Vec::new());
+    for obj in [OBJ_ADDR_TABLE, OBJ_ASSOC_TABLE, OBJ_APP_PROGRAM] {
+        let [hi, lo] = header(ApduType::PropertyValueWrite);
+        feed(bau, &[hi, lo, obj, LOAD_STATE_CONTROL, 0x10, 0x01, 4]); // unload
+    }
+
     let mut offset = 0usize;
     for (obj, data) in [
         (OBJ_ADDR_TABLE, addr),
@@ -2490,5 +2500,19 @@ mod tests {
             bau.group_objects().next_updated().is_none(),
             "but it is acknowledged"
         );
+    }
+
+    #[test]
+    fn tables_installed_over_a_leftover_memory_image_hold_the_addresses() {
+        // An interrupted download that was persisted leaves a memory image and an association
+        // table that is still loading.
+        let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
+        bau.set_memory_area(vec![0xAA; 100]);
+        send_management(&mut bau, &[0x03, 0xD7, 2, 5, 0x10, 0x01, 1]);
+        assert!(build_tables_from_config(&mut bau, &toml_config()));
+        let s = TableSummary::of(&bau);
+        assert!(s.configured);
+        assert_eq!((s.group_addresses, s.associations), (11, 11));
+        assert_eq!(bau.memory_area().len(), 0);
     }
 }
