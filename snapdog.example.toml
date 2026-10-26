@@ -191,6 +191,25 @@ base_topic = "snapdog"
 # outside the base topic (some brokers then close the connection).
 # clear_legacy_topics = true
 
+# Home Assistant MQTT discovery. Off unless you set it. SnapDog then sends ONE retained device
+# message (homeassistant/device/snapdog_<server id>/config) that lists, per zone and client,
+# the entities MQTT can express: volume, mute, shuffle, repeat, transport buttons, what plays,
+# presence; per client volume, mute, latency, zone, connected. (Home Assistant's MQTT
+# integration has no media_player, so a zone cannot be announced as one.) It is sent after every
+# connect, when a client is added, and again after Home Assistant's birth message.
+#   discovery = true    announce
+#   discovery = false   announce nothing and DELETE the device message of an earlier run
+#                       (how to take the entities out of Home Assistant again)
+#   not set             off; nothing is written to the discovery topic
+# Entity ids follow the position of the [[zone]] / [[client]] in this file: moving one moves
+# its entities onto another zone. Covers are announced only without [http] api_keys (Home
+# Assistant fetches the picture without a header). Needs, besides the ACL below: write on
+# homeassistant/device/snapdog_+/config and read on homeassistant/status.
+# [mqtt.homeassistant]
+# discovery = true
+# discovery_prefix = "homeassistant"      # Home Assistant's discovery prefix
+# status_topic = "homeassistant/status"   # Home Assistant's birth message
+
 # Hardening the broker (Mosquitto shown; other brokers have the same knobs):
 #   1. Listen on TLS only: no `listener 1883`; `listener 8883` with cafile/certfile/keyfile.
 #      Leave `tls_version` unset, so that TLS 1.2 and 1.3 stay available (SnapDog asks for 1.2
@@ -208,6 +227,9 @@ base_topic = "snapdog"
 #        # releases left behind; set clear_legacy_topics = false and leave these out otherwise:
 #        topic write snapdog//status
 #        topic write homeassistant/media_player/+/config
+#        # Only with [mqtt.homeassistant] (discovery true, or false to delete):
+#        topic write homeassistant/device/snapdog_+/config
+#        topic read  homeassistant/status
 #      and give whatever controls SnapDog (Home Assistant, a script) `topic write` on the
 #      command topics and `topic read snapdog/#`. Commands have two and three levels below
 #      the zone or client, so both patterns are needed:

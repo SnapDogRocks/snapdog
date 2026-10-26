@@ -52,7 +52,12 @@ fn json_size(s: &str) -> usize {
     s.chars().map(json_len).sum()
 }
 
-/// Build the retained zone-state JSON (Home Assistant `media_player` schema).
+/// Build the retained zone-state JSON.
+///
+/// The keys up to `presence` follow Home Assistant's `media_player` names (the
+/// schema earlier releases published). `presence_enabled`, `auto_off_delay` and
+/// `playlist_index` were added for the Home Assistant discovery entities
+/// (`discovery.rs`); `playlist_index` is `null` while no playlist is active.
 ///
 /// Pure: extracted from `publish_zone_state` so the wire schema is unit-testable
 /// without a broker. Note `source` uses the `Display` form (e.g. `subsonic_playlist`,
@@ -79,6 +84,9 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
         "repeat": match zone.repeat { snapdog_common::RepeatMode::Track => "one", snapdog_common::RepeatMode::Playlist => "all", snapdog_common::RepeatMode::Off => "off" },
         "source": zone.source.to_string(),
         "presence": zone.presence,
+        "presence_enabled": zone.presence_enabled,
+        "auto_off_delay": zone.auto_off_delay,
+        "playlist_index": zone.playlist_index,
     });
 
     if let Some(track) = &zone.track {
@@ -164,6 +172,9 @@ mod tests {
         assert_eq!(p["repeat"], "off");
         assert_eq!(p["source"], "idle");
         assert_eq!(p["presence"], false);
+        assert_eq!(p["presence_enabled"], true);
+        assert_eq!(p["auto_off_delay"], 0);
+        assert!(p["playlist_index"].is_null());
         assert!(p.get("media_title").is_none(), "no track fields when idle");
         assert!(p.get("media_image_url").is_none(), "no cover when none");
     }

@@ -115,6 +115,11 @@ async fn start_idle_bridge(cfg: &config::MqttConfig) -> snapdog::mqtt::MqttBridg
             state: store,
             snap_tx,
             notifications: notify_tx.subscribe(),
+            server: snapdog::mqtt::ServerInfo {
+                id: "it-server-id".into(),
+                name: "SnapDog".into(),
+                base_url: "http://test:5555".into(),
+            },
         },
     )
     .await

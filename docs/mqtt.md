@@ -33,6 +33,81 @@ start). Commands arrive at QoS 1. Command topics have two and three levels below
 zone or client, so an ACL needs both `.../+/+/set` and `.../+/+/+/set` (see
 `snapdog.example.toml`, which a test checks against a real broker).
 
+## Home Assistant
+
+Home Assistant's MQTT integration has no `media_player` platform, so a zone cannot be
+announced as a media player. SnapDog announces what MQTT discovery can express (stage 1
+of [RFC HAI-0007](rfcs/0007-home-assistant-integration.md)):
+
+```toml
+[mqtt.homeassistant]
+discovery = true                        # announce
+# discovery_prefix = "homeassistant"    # Home Assistant's discovery prefix
+# status_topic = "homeassistant/status" # Home Assistant's birth message
+```
+
+`discovery` has three states: `true` announces, `false` announces nothing and
+**deletes** the device message of an earlier run (that is how the entities leave Home
+Assistant again), and not set means off with nothing written to the discovery topic at
+all, so that a broker ACL without `homeassistant/#` is not asked for anything. The
+default is off: the entity set is new, entity ids follow the list positions of
+`[[zone]]` and `[[client]]` (RFC HAI-DEC-6 is open), and a discovery message puts
+dozens of entities into every connected Home Assistant.
+
+**One device, one message.** `homeassistant/device/snapdog_<server id>/config`
+(retained, QoS 1) holds the whole server as one Home Assistant device; the server id is
+the one in `state_dir/server_id` and in the mDNS record. It lists, per zone: playback
+state, volume (a slider), mute, shuffle, repeat (`off`/`one`/`all`), five transport
+buttons, title, artist, album, duration, source, playlist number, presence (a binary
+sensor), presence control (a switch, category `config`) and presence timeout (category
+`config`); per client: volume, mute, latency (`config`), zone (a select of the zone
+names) and connected (`diagnostic`). The entities read the existing state topics
+(`zones/<n>/state`, `clients/<n>/state`) through templates and send to the existing
+command topics, so nothing about the topic scheme changes. Names are `<zone or client
+name> <what>`, entity ids `<domain>.snapdog_<name>_<what>`.
+
+- **Availability.** All entities follow `{base}status` (`online`, `offline`: the last
+  will, and `offline` is also sent at a clean shutdown, so Home Assistant greys the
+  entities out at once). A client's volume, mute and latency also need the client to be
+  connected to Snapcast.
+- **Sent again** after every connect, when Snapcast accepts a client at runtime (it gets
+  entities), and when Home Assistant announces `online` on its birth topic, after a random
+  delay of 1 to 5 seconds (a Home Assistant that restarted forgets what it discovered).
+  The message always lists every component; SnapDog never relies on removing single
+  components.
+- **Volume.** The zone slider goes from 0 to 100 and sends a fraction (`0.33`), because a
+  zone takes a fraction up to `1.0` and a percentage above, so a plain `1` would mean
+  100 %. Everything else that is a number is sent as an integer.
+- **What is not there:** no cover art (the `image` entity logs an error for each message
+  that has no valid URL on its topic, which an idle zone's state is, and it cannot send an
+  API key), no position (a per-second sensor would fill the database; Home Assistant
+  wants `media_position` at jumps), no `media_player`, no `tts.speak` target, no browsing,
+  no EQ presets. Those need the custom integration of stages 2 and 3 of the RFC.
+- **Size.** About 0.4 KB per entity: 2 zones and 2 clients are 17 KB, 16 zones and 64
+  clients still fit well below the 1 MiB packet limit. A message that does not fit is
+  refused with an error in the log (`Home Assistant discovery message could not be
+  published`).
+- **ACL.** SnapDog needs `write homeassistant/device/snapdog_+/config` and `read
+  homeassistant/status`; `snapdog.example.toml` lists both.
+
+To remove the entities: set `discovery = false`, restart SnapDog once, and leave it or
+remove the section. To remove them by hand: `mosquitto_pub -r -n -t
+'homeassistant/device/snapdog_<server id>/config'`.
+
+**How this was checked.** The message is pinned by a golden file
+(`snapdog/src/mqtt/golden/discovery_device.json`) and schema tests written from the
+Home Assistant documentation (device discovery, the `number`, `switch`, `select`,
+`sensor`, `binary_sensor` and `button` pages as of Home Assistant 2026.10), and the
+Tier-2 tests send it through mosquitto. In addition, a Home Assistant 2026.10.4
+container was run against SnapDog and a broker (by hand, not part of the test suite):
+it created all 48 entities of two zones and two clients with the names, categories and
+device classes above and logged no warning or error; every value and command template
+was rendered with Home Assistant's own template engine and the rendered commands go
+through SnapDog's parsers (a unit test pins those strings); a restart of Home Assistant
+made SnapDog announce again; `discovery = false` removed all entities. Not checked
+against a real Home Assistant: entity states in the UI, availability switching, and
+commands sent from the UI (that needs a logged-in user, which was not created).
+
 ## Limits
 
 SnapDog speaks MQTT 3.1.1 (rumqttc). The sizes below are fixed in the code.
@@ -209,8 +284,10 @@ follows.
 
 **Discovery.** The `media_player` discovery messages are no longer published (Home
 Assistant has no such MQTT platform, they never produced an entity) and are deleted
-from the broker at start (`clear_legacy_topics`). Home Assistant discovery for the
-entities MQTT can express is described in the next section.
+from the broker at start (`clear_legacy_topics`). Discovery for the entities MQTT can
+express is new and off by default (see [Home Assistant](#home-assistant)). The zone
+state gained three keys for it (`presence_enabled`, `auto_off_delay`, `playlist_index`);
+no key was removed or changed.
 
 **Configuration.** A wrong `[mqtt]` section switches MQTT off and logs why, where an
 earlier build of this branch stopped the server and releases before it disabled MQTT

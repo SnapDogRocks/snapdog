@@ -68,9 +68,10 @@ pub fn snap_channel() -> (mpsc::Sender<SnapcastCmd>, mpsc::Receiver<SnapcastCmd>
 
 /// The receiving ends of a [`test_runtime`], kept alive by the test.
 pub struct RuntimeEnds {
+    pub store: state::SharedState,
     pub _zone_rx: mpsc::Receiver<ZoneCommand>,
     pub _snap_rx: mpsc::Receiver<SnapcastCmd>,
-    pub _notify_tx: broadcast::Sender<Arc<str>>,
+    pub notify_tx: broadcast::Sender<Arc<str>>,
 }
 
 /// What a bridge needs from the server, wired to channels the test owns.
@@ -78,17 +79,20 @@ pub fn test_runtime() -> (MqttRuntime, RuntimeEnds) {
     let (zone_commands, zone_rx) = zone_channels();
     let (snap_tx, snap_rx) = snap_channel();
     let (notify_tx, notifications) = broadcast::channel(16);
+    let store = test_state_with_client();
     (
         MqttRuntime {
             zone_commands,
-            state: test_state_with_client(),
+            state: store.clone(),
             snap_tx,
             notifications,
+            server: test_server(),
         },
         RuntimeEnds {
+            store,
             _zone_rx: zone_rx,
             _snap_rx: snap_rx,
-            _notify_tx: notify_tx,
+            notify_tx,
         },
     )
 }
@@ -109,6 +113,9 @@ pub enum Script {
     /// Serve, and answer the first SUBSCRIBE with a retained PUBLISH of this many
     /// bytes.
     SendOversized(usize),
+    /// Serve, and answer the SUBSCRIBE to this topic with a PUBLISH of `online` on it
+    /// (Home Assistant's birth message).
+    Birth(&'static str),
 }
 
 /// A broker on a loopback port that follows a [`Script`].
@@ -187,6 +194,13 @@ async fn serve_connection(mut socket: TcpStream, script: Script, log: Arc<Mutex<
                 SubAck::new(subscribe.pkid, granted)
                     .write(&mut out)
                     .unwrap();
+                if let Script::Birth(topic) = script
+                    && subscribe.filters.iter().any(|f| f.path == topic)
+                {
+                    Publish::new(topic, QoS::AtMostOnce, b"online".to_vec())
+                        .write(&mut out)
+                        .unwrap();
+                }
                 if let Script::SendOversized(bytes) = script
                     && !oversized_sent
                 {
@@ -255,4 +269,13 @@ pub fn capture_logs() -> (tracing::subscriber::DefaultGuard, CapturedLogs) {
         .with_max_level(tracing::Level::DEBUG)
         .finish();
     (tracing::subscriber::set_default(subscriber), logs)
+}
+
+/// The server the discovery tests announce.
+pub fn test_server() -> super::ServerInfo {
+    super::ServerInfo {
+        id: "0b1c2d3e-aaaa-bbbb-cccc-1234567890ab".into(),
+        name: "SnapDog".into(),
+        base_url: "http://snapdog.local:5555".into(),
+    }
 }

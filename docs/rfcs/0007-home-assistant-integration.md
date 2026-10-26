@@ -1,10 +1,10 @@
 ---
 rfc: HAI-0007
 title: A Home Assistant integration for SnapDog – what MQTT can carry, and a real integration for the rest
-status: draft            # draft | accepted | in-progress | done | superseded
-version: 0.1.0           # v0.1: scoping after the MQTT fix; nothing of stages 1 to 4 implemented
+status: in-progress      # draft | accepted | in-progress | done | superseded
+version: 0.2.0           # v0.2: stage 1 (MQTT device discovery) implemented; stages 2 to 4 are not
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-26
 target_repo: snapdog     # stage 3 lives in a new repository (see HAI-DEC-3)
 target_branch: main
 related: [CID-0005]
@@ -13,8 +13,10 @@ owners: [metaneutrons]
 
 # RFC HAI-0007 – A Home Assistant integration for SnapDog
 
-> **For AI agents:** this is a **scoping** RFC, not accepted. **Nothing in stages 1 to 4
-> is implemented.** Stage 0 (the MQTT repair) is done and described in §2. Requirements
+> **For AI agents:** this is a **scoping** RFC, not accepted as a whole. **Stage 1 (MQTT
+> device discovery) is implemented** (§4.3, on the branch `fix/mqtt-commands-and-security`,
+> opt-in, off by default); **stages 2 to 4 are not.** Stage 0 (the MQTT repair) is done and
+> described in §2. Requirements
 > are `HAI-REQ-*`, decisions `HAI-DEC-*`, tasks `HAI-T*`. SnapDog line numbers are
 > approximate, symbol names are the anchor. Statements about Home Assistant come from the
 > documentation as read on 2026-10-25 (§16 lists the pages and how each was read); they
@@ -168,12 +170,54 @@ discovery = true                 # off by default until stage 1 is approved; see
 discovery_prefix = "homeassistant"
 ```
 
-### 4.2 What it will not do
+### 4.2 What it will not do (as planned)
 
-No position sensor (§2), no cover art on a server with API keys (§5 item 2), no EQ preset
+No position sensor (§2), no cover art (§4.3; on a server with API keys it cannot work, §5 item 2), no EQ preset
 list (the API only reports presets in an error message), and no zone-to-client moves by name
 without a `command_template` that maps names to indices (doable: the generator knows the
 names). Entity IDs depend on list positions until HAI-DEC-6 is settled.
+
+### 4.3 Status: implemented (2026-10-26)
+
+Stage 1 is implemented in `snapdog/src/mqtt/discovery.rs` (reference: `docs/mqtt.md`,
+section "Home Assistant"). What was built, and where it differs from §4.1 and §8:
+
+- **Config** as proposed, with a third state: `[mqtt.homeassistant] discovery = true`
+  announces, `= false` announces nothing and deletes the device message (the way entities
+  leave Home Assistant), and *not set* is off and writes nothing to the discovery topic.
+  Further keys: `discovery_prefix` (default `homeassistant`), `status_topic` (default
+  `homeassistant/status`, Home Assistant's birth message).
+- **Default: off**, as HAI-DEC-2 recommends. The maintainer asked for stage 1 to be built;
+  the entity set has not been approved yet, entity ids still follow list positions
+  (HAI-DEC-6), and a discovery message puts dozens of entities into every Home Assistant
+  on the broker. Switching the default to on is a one-line change of the config
+  semantics, to be decided with HAI-T1.
+- **One device message per server**, `homeassistant/device/snapdog_<server_id>/config`,
+  retained, QoS 1, always listing all components; sent after every (re)connect, when a
+  client is added at runtime, and after Home Assistant's birth message with a random delay
+  of 1 to 5 s.
+- **Entity set** as in the §8 table with these differences: **no cover `image`**
+  (found by running Home Assistant 2026.10.4 against it: the MQTT `image` entity logs an
+  error for each message on its URL topic that holds no valid URL, which the zone state
+  of an idle zone or of a radio without artwork never does, so the entity would fill the
+  log; with API keys it cannot work at all, §5 item 2); the zone state gained
+  `presence_enabled`, `auto_off_delay` and `playlist_index` for the presence and playlist
+  entities; the presence switch is called "Presence control".
+- **Verified against Home Assistant 2026.10.4** (container, by hand): all 48 entities of
+  two zones and two clients were created with the expected names, categories and device
+  classes and no warning or error was logged; all value and command templates were rendered
+  with Home Assistant's own template engine; a Home Assistant restart made SnapDog announce
+  again; `discovery = false` removed every entity. **Not verified:** entity states and
+  availability in the UI and commands sent from the UI (they need a logged-in user, which
+  was not created).
+- **Documentation checked** (read as raw markdown on 2026-10-26): the MQTT integration
+  page (device discovery payload, shared options, availability, birth message, removal) and
+  the `number`, `switch`, `select`, `sensor`, `binary_sensor`, `button` and `image` pages.
+
+Open from §14 and §15: HAI-DEC-2 (the default), HAI-DEC-6 (stable ids), the question
+whether one device for the whole server (as §4.1 proposed) is the right shape or one device
+per zone and client would read better in the Home Assistant UI (a device message carries
+one `device` for all its components, so that needs one message per zone and client).
 
 ## 5. Stage 2: API prerequisites
 
@@ -301,7 +345,7 @@ integration. "Availability" lists what makes the entity unavailable.
 | Now playing | `sensor` title, artist, album from `media_title` etc. | `media_player` attributes | as above; empty when idle |
 | Track duration | `sensor` `duration` (s) | `media_duration` | as above |
 | Track position | not offered (per-second updates, see §2) | `media_position` + `media_position_updated_at`, set at jumps | as above |
-| Cover art | `image` with `url_topic` `media_image_url`; **only without API keys** | `media_image_url` through HA's proxy, or `async_get_media_image` (needs §5 item 2 on protected servers) | as above |
+| Cover art | not offered: the `image` entity logs an error for every state without a URL (§4.3); with API keys it cannot work at all | `media_image_url` through HA's proxy, or `async_get_media_image` (needs §5 item 2 on protected servers) | as above |
 | Source / playlist | `number` (box) for the playlist index, or none; names are not available over MQTT | `select_source`, `source_list` from `/media/playlists` | as above |
 | Active source type | `sensor` enum (`radio`, `airplay`, `spotify`, ...) from `source` | `app_name` | as above |
 | Presence | `binary_sensor` (presence), `switch` (enabled), `number` (timeout, `config`) | same, through the API | as above |
@@ -369,7 +413,7 @@ the integration should offer a repair if both are active.
 **From the dead `media_player` discovery (stage 0, done).** SnapDog publishes an empty
 retained message to `homeassistant/media_player/snapdog_zone_{n}/config` for `n` from 1 to
 the larger of the zone count and 16, once per process start, and clears `{base}/status`
-(double slash). HA never created entities from those messages, so there are no registry
+(double slash). `[mqtt] clear_legacy_topics = false` switches this off. HA never created entities from those messages, so there are no registry
 entries to clean. Orphans for zone numbers above 16 (or from another discovery prefix) stay
 on the broker; remove them by hand:
 
@@ -411,7 +455,7 @@ Estimates are for one developer who knows the code, in working days, without rev
 | Stage | Content | Estimate |
 |---|---|---|
 | 0 | MQTT repair, TLS, validation, this RFC | done |
-| 1 | Device discovery generator, birth-message handling, config keys, tests (golden payloads, a mock HA through `mqtt_mock`-style schema checks), docs | 4 to 6 |
+| 1 | Device discovery generator, birth-message handling, config keys, tests (golden payloads, a mock HA through `mqtt_mock`-style schema checks), docs | done (§4.3) |
 | 2 | API additions §5 items 1 to 3 (items 4 to 6 optional, 2 to 5 days each) | 3 to 5 |
 | 3a | Library `snapdog-api` (REST, WebSocket, models, tests) | 4 to 6 |
 | 3b | Integration alpha: zeroconf, config flow, reauth, zone `media_player`, client entities | 6 to 9 |
@@ -450,7 +494,7 @@ Risks:
   universal media player; offer stage 1 entities plus the integration. *Recommended.*
 - **HAI-DEC-2** Stage 1 publishes one device message, retained and after HA's birth message;
   `[mqtt.homeassistant] discovery` defaults to **off** until the entity set is approved, then
-  on. *Open for the maintainer.*
+  on. *Implemented with default off (§4.3); the default stays open for the maintainer.*
 - **HAI-DEC-3** The integration and its library live in separate repositories. *Recommended.*
 - **HAI-DEC-4** The integration uses the REST and WebSocket API with the header for
   authentication, zeroconf discovery, no polling. *Recommended.*
@@ -464,7 +508,7 @@ Risks:
 
 - **HAI-T0** ✅ MQTT repair, TLS, validation (stage 0).
 - **HAI-T1** Resolve HAI-DEC-2, -6, -7 with the maintainer.
-- **HAI-T2** Stage 1: discovery generator with golden tests, birth-message resend, config.
+- **HAI-T2** ✅ Stage 1: discovery generator with golden tests, birth-message resend, config (§4.3).
 - **HAI-T3** `GET /api/v1/eq/presets`.
 - **HAI-T4** Remove the unused `ZoneProgress` notification or give it a job (a tick marker the
   integration can use instead of detecting jumps).

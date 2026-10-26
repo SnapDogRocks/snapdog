@@ -520,6 +520,11 @@ pub async fn run_app() -> Result<()> {
                 state: store.clone(),
                 snap_tx: snap_cmd_tx.clone(),
                 notifications: notify_tx.subscribe(),
+                server: mqtt::ServerInfo {
+                    id: server_id.clone(),
+                    name: config.name.clone(),
+                    base_url: config.http.base_url.clone(),
+                },
             },
         )
         .await

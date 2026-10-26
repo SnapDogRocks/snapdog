@@ -38,6 +38,7 @@ use rumqttc::{
 use tokio::sync::{broadcast, watch};
 
 use super::commands::{CommandHandler, Handled};
+use super::discovery::Discovery;
 use super::limits::LogThrottle;
 use super::publisher::Publisher;
 use super::transport::MAX_INCOMING_PACKET_BYTES;
@@ -268,6 +269,8 @@ pub struct Session {
     pub publisher: Publisher,
     /// The MQTT client id, for the hint about a duplicate one.
     pub client_id: String,
+    /// Home Assistant discovery, if `[mqtt.homeassistant]` configures it.
+    pub discovery: Option<Discovery>,
     /// Whether to clear what earlier releases left on the broker (`[mqtt]
     /// clear_legacy_topics`).
     pub clear_legacy_topics: bool,
@@ -365,10 +368,23 @@ impl Session {
         }
         let states = self.publisher.snapshot(&store);
         drop(store);
+        if let Some(discovery) = &self.discovery {
+            discovery.on_connected(first_connect).await;
+        }
         tracing::info!(subscribed, states, "MQTT subscribed and announced");
     }
 
     async fn on_message(&mut self, msg: &rumqttc::Publish) {
+        // Home Assistant's birth message is not a command: it asks for the discovery
+        // message again.
+        if let Some(discovery) = &self.discovery
+            && discovery.is_birth_topic(&msg.topic)
+        {
+            if msg.payload.as_ref() == b"online" {
+                discovery.on_birth();
+            }
+            return;
+        }
         // The payload is logged here and nowhere else, and only at debug level, in
         // part and escaped (`?`): it is whatever somebody on the network sent.
         tracing::debug!(
@@ -522,6 +538,7 @@ pub async fn run_backlog_flusher(handler: &CommandHandler, shutdown: &mut watch:
 /// What the state publisher works with. Kept apart from the task so that it
 /// survives a panic of the task.
 pub struct StateFeed {
+    pub discovery: Option<Discovery>,
     pub publisher: Publisher,
     pub store: state::SharedState,
     pub notifications: broadcast::Receiver<Arc<str>>,
@@ -536,6 +553,7 @@ pub struct StateFeed {
 /// notifications are dropped, it re-publishes everything.
 pub async fn run_state_publisher(feed: &mut StateFeed) {
     let StateFeed {
+        discovery,
         publisher,
         store,
         notifications,
@@ -567,6 +585,12 @@ pub async fn run_state_publisher(feed: &mut StateFeed) {
                     Notification::ClientStateChanged { client, .. } => {
                         if let Some(c) = store.clients.get(&client) {
                             let _ = publisher.client_state(client, c);
+                        }
+                        drop(store);
+                        // A client that was not there when the entities were announced
+                        // (Snapcast accepted it at runtime) gets entities of its own.
+                        if let Some(discovery) = discovery {
+                            discovery.announce_if_changed().await;
                         }
                     }
                     _ => {}
@@ -753,6 +777,7 @@ mod tests {
         let session = Session {
             publisher: Publisher::new(client, topics.clone(), "http://h"),
             client_id: config.client_id,
+            discovery: None,
             clear_legacy_topics: true,
             backoff,
             handler: CommandHandler::new(

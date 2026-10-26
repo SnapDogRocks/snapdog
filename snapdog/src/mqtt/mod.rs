@@ -26,6 +26,7 @@ use crate::player::{SnapcastCmd, ZoneCommandSender};
 use crate::state;
 
 mod commands;
+mod discovery;
 mod limits;
 mod parse;
 mod payloads;
@@ -40,6 +41,8 @@ mod topics;
 mod transport;
 
 use commands::CommandHandler;
+use discovery::Discovery;
+pub use discovery::ServerInfo;
 use limits::LogThrottle;
 use publisher::{Publisher, request_capacity};
 use runner::{
@@ -59,6 +62,8 @@ pub struct MqttRuntime {
     pub snap_tx: mpsc::Sender<SnapcastCmd>,
     /// Notification stream (`ZoneChanged`, `ClientStateChanged`, ...) as JSON.
     pub notifications: broadcast::Receiver<Arc<str>>,
+    /// Who `SnapDog` says it is in the Home Assistant discovery message.
+    pub server: ServerInfo,
 }
 
 /// `config`, checked and with its file-based secrets loaded.
@@ -111,6 +116,12 @@ impl MqttBridge {
         };
         let (client, eventloop) = AsyncClient::new(options, capacity);
         let publisher = Publisher::new(client, topics.clone(), base_url);
+        let discovery = Discovery::new(
+            config,
+            publisher.clone(),
+            runtime.state.clone(),
+            runtime.server,
+        );
 
         let (connected_tx, connected_rx) = watch::channel(false);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -124,6 +135,7 @@ impl MqttBridge {
         let session = Session {
             publisher: publisher.clone(),
             client_id: config.client_id.clone(),
+            discovery: discovery.clone(),
             clear_legacy_topics: config.clear_legacy_topics,
             backoff: Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
             handler: handler.clone(),
@@ -133,6 +145,7 @@ impl MqttBridge {
             log_throttle: LogThrottle::new(Duration::from_secs(10)),
         };
         let feed = StateFeed {
+            discovery,
             publisher: publisher.clone(),
             store: runtime.state,
             notifications: runtime.notifications,
@@ -436,6 +449,182 @@ mod tests {
             "nothing outside the base topic may be written: {off:?}"
         );
         assert!(off.iter().any(|(topic, _)| topic == "snapdog/status"));
+    }
+
+    // ── Home Assistant discovery on the wire ──────────────────
+
+    /// A bridge against a scripted broker, with `extra` lines after the broker address.
+    async fn bridge_with(
+        script: crate::mqtt::test_support::Script,
+        extra: &str,
+    ) -> (
+        crate::mqtt::test_support::FakeBroker,
+        MqttBridge,
+        crate::mqtt::test_support::RuntimeEnds,
+    ) {
+        use crate::mqtt::test_support::{FakeBroker, test_runtime};
+        let broker = FakeBroker::start(script).await;
+        let config: MqttConfig =
+            toml::from_str(&format!("broker = \"127.0.0.1:{}\"\n{extra}", broker.port)).unwrap();
+        let (runtime, ends) = test_runtime();
+        let bridge = MqttBridge::start(&config, "http://h", runtime)
+            .await
+            .unwrap();
+        assert!(bridge.wait_connected(Duration::from_secs(5)).await);
+        // The client state is queued last of the announcement.
+        wait_for(&broker, |p| {
+            p.iter()
+                .any(|x| matches!(x, rumqttc::Packet::Publish(x) if x.topic == "snapdog/clients/1/state"))
+        })
+        .await;
+        // Give the discovery message (queued after it) time to go out.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        (broker, bridge, ends)
+    }
+
+    async fn wait_for(
+        broker: &crate::mqtt::test_support::FakeBroker,
+        done: impl Fn(&[rumqttc::Packet]) -> bool,
+    ) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while tokio::time::Instant::now() < deadline && !done(&broker.packets()) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    const DEVICE_TOPIC: &str =
+        "homeassistant/device/snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab/config";
+
+    fn device_messages(broker: &crate::mqtt::test_support::FakeBroker) -> Vec<rumqttc::Publish> {
+        broker
+            .packets()
+            .into_iter()
+            .filter_map(|p| match p {
+                rumqttc::Packet::Publish(x) if x.topic == DEVICE_TOPIC => Some(x),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn subscribed_to(broker: &crate::mqtt::test_support::FakeBroker, topic: &str) -> bool {
+        broker.packets().iter().any(|p| {
+            matches!(p, rumqttc::Packet::Subscribe(s) if s.filters.iter().any(|f| f.path == topic))
+        })
+    }
+
+    #[tokio::test]
+    async fn without_a_home_assistant_section_nothing_is_announced_or_touched() {
+        let (broker, bridge, _ends) =
+            bridge_with(crate::mqtt::test_support::Script::Serve, "").await;
+        assert_eq!(device_messages(&broker).len(), 0);
+        assert!(!subscribed_to(&broker, "homeassistant/status"));
+        drop(bridge);
+    }
+
+    #[tokio::test]
+    async fn discovery_on_announces_one_retained_device_message_and_listens_for_the_birth() {
+        let (broker, bridge, _ends) = bridge_with(
+            crate::mqtt::test_support::Script::Serve,
+            "[homeassistant]\ndiscovery = true",
+        )
+        .await;
+        let messages = device_messages(&broker);
+        assert_eq!(messages.len(), 1, "one message for the whole server");
+        let message = &messages[0];
+        assert!(message.retain);
+        assert_eq!(message.qos, rumqttc::QoS::AtLeastOnce);
+        // It is the message of the server state: 2 zones, 1 client.
+        let sent: serde_json::Value = serde_json::from_slice(&message.payload).unwrap();
+        let store = crate::mqtt::test_support::test_state_with_client();
+        let expected = crate::mqtt::discovery::device_payload(
+            &Topics::new("snapdog"),
+            &crate::mqtt::test_support::test_server(),
+            &crate::mqtt::discovery::Model::of(&*store.read().await),
+        );
+        assert_eq!(sent, expected);
+        assert!(subscribed_to(&broker, "homeassistant/status"));
+        drop(bridge);
+    }
+
+    #[tokio::test]
+    async fn the_prefix_and_the_birth_topic_follow_the_configuration() {
+        let (broker, bridge, _ends) = bridge_with(
+            crate::mqtt::test_support::Script::Serve,
+            "[homeassistant]\ndiscovery = true\ndiscovery_prefix = \"ha\"\nstatus_topic = \"ha/birth\"",
+        )
+        .await;
+        assert!(broker.packets().iter().any(|p| matches!(
+            p,
+            rumqttc::Packet::Publish(x) if x.topic == "ha/device/snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab/config"
+        )));
+        assert!(subscribed_to(&broker, "ha/birth"));
+        assert!(!subscribed_to(&broker, "homeassistant/status"));
+        drop(bridge);
+    }
+
+    #[tokio::test]
+    async fn discovery_false_deletes_the_device_message_once() {
+        let (broker, bridge, _ends) = bridge_with(
+            crate::mqtt::test_support::Script::Serve,
+            "[homeassistant]\ndiscovery = false",
+        )
+        .await;
+        let messages = device_messages(&broker);
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0].retain);
+        assert!(
+            messages[0].payload.is_empty(),
+            "an empty retained payload deletes"
+        );
+        assert!(!subscribed_to(&broker, "homeassistant/status"));
+        drop(bridge);
+    }
+
+    /// Home Assistant forgets its discovered entities when it restarts, and says so
+    /// with a birth message: the device message follows (after a random delay).
+    #[tokio::test]
+    async fn a_birth_message_makes_the_device_message_go_out_again() {
+        let (broker, bridge, _ends) = bridge_with(
+            crate::mqtt::test_support::Script::Birth("homeassistant/status"),
+            "[homeassistant]\ndiscovery = true",
+        )
+        .await;
+        wait_for(&broker, |_| device_messages(&broker).len() >= 2).await;
+        assert!(
+            device_messages(&broker).len() >= 2,
+            "no second device message after the birth message"
+        );
+        // The birth message is not a command and is not complained about.
+        drop(bridge);
+    }
+
+    #[tokio::test]
+    async fn a_client_that_appears_later_gets_entities() {
+        let (broker, bridge, ends) = bridge_with(
+            crate::mqtt::test_support::Script::Serve,
+            "[homeassistant]\ndiscovery = true",
+        )
+        .await;
+        assert_eq!(device_messages(&broker).len(), 1);
+        {
+            let mut store = ends.store.write().await;
+            let mut client = store.clients[&1].clone();
+            client.name = "Runtime".into();
+            store.clients.insert(2, client);
+        }
+        let notification = serde_json::json!({
+            "type": "client_state_changed", "client": 2, "volume": 50, "muted": false,
+            "connected": true, "zone": 1, "is_snapdog": false
+        });
+        ends.notify_tx
+            .send(notification.to_string().into())
+            .unwrap();
+        wait_for(&broker, |_| device_messages(&broker).len() >= 2).await;
+        let messages = device_messages(&broker);
+        assert_eq!(messages.len(), 2);
+        let latest: serde_json::Value = serde_json::from_slice(&messages[1].payload).unwrap();
+        assert!(latest["components"]["client_2_volume"].is_object());
+        drop(bridge);
     }
 
     fn resolved_err(config: &MqttConfig) -> String {

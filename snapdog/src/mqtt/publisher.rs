@@ -24,7 +24,9 @@ use crate::state;
 /// Zone indices whose legacy discovery topic is cleared, at least.
 const LEGACY_DISCOVERY_ZONES: usize = 16;
 /// Requests an announcement queues apart from the per-zone/-client state.
-const ANNOUNCE_FIXED_REQUESTS: usize = COMMAND_ROUTES.len() + 1 + LEGACY_DISCOVERY_ZONES + 1;
+/// (the subscriptions, `online`, the legacy cleanup, the discovery message and the
+/// subscription to Home Assistant's birth topic.)
+const ANNOUNCE_FIXED_REQUESTS: usize = COMMAND_ROUTES.len() + 1 + LEGACY_DISCOVERY_ZONES + 1 + 2;
 /// Headroom for steady-state publishes on top of an announcement.
 const REQUEST_HEADROOM: usize = 256;
 

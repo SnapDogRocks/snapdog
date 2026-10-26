@@ -161,6 +161,11 @@ async fn try_start_bridge(cfg: &config::AppConfig) -> anyhow::Result<Rig> {
             state: store.clone(),
             snap_tx,
             notifications: notify_tx.subscribe(),
+            server: snapdog::mqtt::ServerInfo {
+                id: "it-server-id".into(),
+                name: "SnapDog".into(),
+                base_url: "http://test:5555".into(),
+            },
         },
     )
     .await?;
@@ -192,6 +197,8 @@ impl Observer {
     fn start(client_id: &str, host: &str, port: u16, filter: &str) -> Self {
         let mut opts = MqttOptions::new(client_id, host, port);
         opts.set_keep_alive(Duration::from_secs(5));
+        // The discovery message is tens of kilobytes.
+        opts.set_max_packet_size(4 << 20, 4 << 20);
         let (client, mut eventloop) = AsyncClient::new(opts, 64);
         let log = Arc::new(Mutex::new(Vec::new()));
         let seen = log.clone();
@@ -613,6 +620,195 @@ async fn mqtt_tier2_legacy_retained_messages_are_cleared() {
         "double-slash status not cleared; saw: {own:?}"
     );
     assert_eq!(last_on(&own, "snapdog/status"), Some("online"));
+}
+
+// ── Home Assistant discovery ──────────────────────────────────
+
+const HA_DEVICE_TOPIC: &str = "homeassistant/device/snapdog_it-server-id/config";
+
+/// A bridge with `homeassistant = { discovery = ... }` on `host:port`.
+async fn discovery_bridge(host: &str, port: u16, discovery: bool) -> Rig {
+    try_start_bridge(&config_with_mqtt(&format!(
+        "broker = \"{host}:{port}\"\nhomeassistant = {{ discovery = {discovery} }}"
+    )))
+    .await
+    .expect("bridge starts")
+}
+
+/// The device message is retained, valid JSON, lists the entities of the zones and
+/// clients, names the availability topic that SnapDog really publishes, and goes
+/// away with the entities' availability when the server leaves.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_discovery_message_is_retained_and_consistent_with_the_state_topics() {
+    let Some(broker) = start_broker("IT-T32 discovery").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    let observer = Observer::start("it-t32-ha-obs", &host, port, "#");
+    let rig = discovery_bridge(&host, port, true).await;
+    assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+    assert!(
+        observer
+            .wait_for(20, |seen| {
+                last_on(seen, HA_DEVICE_TOPIC).is_some()
+                    && last_on(seen, "snapdog/zones/1/state").is_some()
+                    && last_on(seen, "snapdog/clients/1/state").is_some()
+            })
+            .await,
+        "device message and state; saw: {:?}",
+        observer.seen().iter().map(|m| &m.topic).collect::<Vec<_>>()
+    );
+
+    // A subscriber that arrives later still gets it: it is retained.
+    let late = retained_under(&host, port, "homeassistant/device/#").await;
+    assert_eq!(
+        late.len(),
+        1,
+        "{:?}",
+        late.iter().map(|m| &m.topic).collect::<Vec<_>>()
+    );
+    let message: serde_json::Value = serde_json::from_str(&late[0].payload).expect("JSON");
+    let components = message["components"].as_object().expect("components");
+    assert_eq!(components.len(), 19 + 5, "one zone and one client");
+    assert_eq!(message["device"]["name"], "SnapDog");
+
+    // Every topic the entities use is one SnapDog publishes or subscribes to.
+    let seen = observer.seen();
+    for (key, component) in components {
+        if let Some(topic) = component["state_topic"]
+            .as_str()
+            .or_else(|| component["url_topic"].as_str())
+        {
+            assert!(
+                last_on(&seen, topic).is_some(),
+                "{key}: nobody publishes {topic}"
+            );
+        }
+    }
+    // The availability topic is the one with the retained `online`.
+    let availability = message["availability"][0]["topic"].as_str().unwrap();
+    assert_eq!(last_on(&seen, availability), Some("online"));
+    // ... and the state topics carry the keys the templates read.
+    let zone: serde_json::Value =
+        serde_json::from_str(last_on(&seen, "snapdog/zones/1/state").unwrap()).unwrap();
+    for key in [
+        "state",
+        "volume_level",
+        "is_volume_muted",
+        "shuffle",
+        "repeat",
+        "source",
+        "presence",
+        "presence_enabled",
+        "auto_off_delay",
+        "playlist_index",
+    ] {
+        assert!(zone.get(key).is_some(), "{key} missing in {zone}");
+    }
+
+    // The server leaves: the entities become unavailable through the availability
+    // topic, the device message stays (Home Assistant keeps the entities).
+    rig.bridge.shutdown(Duration::from_secs(2)).await;
+    assert!(
+        observer
+            .wait_for(10, |seen| last_on(seen, "snapdog/status")
+                == Some("offline"))
+            .await
+    );
+    assert_eq!(
+        retained_under(&host, port, "homeassistant/device/#")
+            .await
+            .len(),
+        1
+    );
+}
+
+/// `discovery = false` deletes the device message of an earlier run, so that the
+/// entities leave Home Assistant; with no `homeassistant` setting at all nothing is
+/// touched.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_discovery_off_removes_the_device_and_the_default_leaves_it_alone() {
+    let Some(broker) = start_broker("IT-T32 discovery off").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    let on = discovery_bridge(&host, port, true).await;
+    assert!(on.bridge.wait_connected(Duration::from_secs(20)).await);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(
+        retained_under(&host, port, "homeassistant/device/#")
+            .await
+            .len(),
+        1
+    );
+    on.bridge.shutdown(Duration::from_secs(2)).await;
+
+    // Nothing configured: the message of the earlier run stays.
+    let untouched = start_bridge(&host, port).await;
+    assert!(
+        untouched
+            .bridge
+            .wait_connected(Duration::from_secs(20))
+            .await
+    );
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(
+        retained_under(&host, port, "homeassistant/device/#")
+            .await
+            .len(),
+        1,
+        "an unconfigured SnapDog must not touch the discovery topic"
+    );
+    untouched.bridge.shutdown(Duration::from_secs(2)).await;
+
+    // Explicitly off: it is deleted.
+    let off = discovery_bridge(&host, port, false).await;
+    assert!(off.bridge.wait_connected(Duration::from_secs(20)).await);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let left = retained_under(&host, port, "homeassistant/device/#").await;
+    assert!(
+        left.is_empty(),
+        "the device message must be deleted; saw {left:?}"
+    );
+}
+
+/// Home Assistant's birth message makes SnapDog announce again.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_the_home_assistant_birth_message_triggers_a_new_announcement() {
+    let Some(broker) = start_broker("IT-T32 birth").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    let observer = Observer::start("it-t32-birth-obs", &host, port, "homeassistant/device/#");
+    let rig = discovery_bridge(&host, port, true).await;
+    assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+    assert!(
+        observer.wait_for(20, |seen| !seen.is_empty()).await,
+        "first announcement"
+    );
+    // The subscription to the birth topic is live once a published `online` has an effect.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let mut announcements = 1;
+    while announcements < 2 && tokio::time::Instant::now() < deadline {
+        let mut opts = MqttOptions::new("it-t32-ha", &host, port);
+        opts.set_keep_alive(Duration::from_secs(5));
+        let (client, mut eventloop) = AsyncClient::new(opts, 8);
+        client
+            .publish("homeassistant/status", QoS::AtLeastOnce, false, "online")
+            .await
+            .expect("queue");
+        let _ = tokio::time::timeout(Duration::from_secs(2), async {
+            while eventloop.poll().await.is_ok() {}
+        })
+        .await;
+        // The new announcement follows after a random delay of up to 5 s.
+        observer.wait_for(8, |seen| seen.len() >= 2).await;
+        announcements = observer.seen().len();
+    }
+    assert!(
+        announcements >= 2,
+        "no new device message after the birth message"
+    );
 }
 
 /// `clear_legacy_topics = false` leaves what is outside the base topic alone.

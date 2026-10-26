@@ -89,6 +89,10 @@ pub struct MqttConfig {
     /// (some brokers then drop the connection).
     #[serde(default = "default_true")]
     pub clear_legacy_topics: bool,
+    /// Home Assistant MQTT discovery (`[mqtt.homeassistant]`). Absent: `SnapDog`
+    /// announces nothing and touches nothing.
+    #[serde(default)]
+    pub homeassistant: Option<HomeAssistantConfig>,
     /// Keys the section has that `SnapDog` does not know (a typo such as `ca_flie`).
     /// Only the names are kept, never the values. [`Self::resolve`] refuses them:
     /// a misspelt TLS or credential key must not silently fall back to a default.
@@ -99,6 +103,54 @@ pub struct MqttConfig {
     /// up, and logged by the caller.
     #[serde(skip)]
     pub warnings: Vec<String>,
+}
+
+/// The `[mqtt.homeassistant]` section: MQTT device discovery for Home Assistant.
+///
+/// ```toml
+/// [mqtt.homeassistant]
+/// discovery = true
+/// ```
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct HomeAssistantConfig {
+    /// `true`: announce the zones and clients as Home Assistant entities (one
+    /// retained device message, sent again whenever Home Assistant announces that it
+    /// started). `false`: announce nothing **and delete** a device message that an
+    /// earlier run published (the way to take the entities out of Home Assistant).
+    /// Not set: off, and `SnapDog` does not write to the discovery topic at all, so
+    /// that a broker ACL without `homeassistant/#` is not asked for anything.
+    #[serde(default)]
+    pub discovery: Option<bool>,
+    /// Home Assistant's discovery prefix (its default is `homeassistant`).
+    #[serde(default = "default_discovery_prefix")]
+    pub discovery_prefix: String,
+    /// The topic on which Home Assistant announces `online` after it started
+    /// (its birth message; the default is `homeassistant/status`). `SnapDog` sends the
+    /// discovery message again when it arrives, after a random delay.
+    #[serde(default = "default_ha_status_topic")]
+    pub status_topic: String,
+    /// Unknown keys of this table (see [`MqttConfig::unknown_keys`]).
+    #[serde(flatten)]
+    pub unknown_keys: UnknownKeys,
+}
+
+fn default_discovery_prefix() -> String {
+    "homeassistant".into()
+}
+
+fn default_ha_status_topic() -> String {
+    "homeassistant/status".into()
+}
+
+/// What `SnapDog` does about Home Assistant discovery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscoveryMode {
+    /// Nothing is configured: nothing is published, nothing is deleted.
+    Untouched,
+    /// `discovery = false`: delete the device message of an earlier run.
+    Off,
+    /// `discovery = true`: announce the entities.
+    On,
 }
 
 /// The names of the keys a section has beyond the known ones. The values are
@@ -160,6 +212,7 @@ impl Default for MqttConfig {
             client_cert: None,
             client_key: None,
             clear_legacy_topics: true,
+            homeassistant: None,
             unknown_keys: UnknownKeys::default(),
             warnings: Vec::new(),
         }
@@ -375,6 +428,16 @@ impl MqttConfig {
             self.unknown_keys.names().join(", ")
         );
         let endpoint = self.endpoint()?;
+        if let Some(ha) = &mut self.homeassistant {
+            ensure!(
+                ha.unknown_keys.names().is_empty(),
+                "[mqtt.homeassistant] unknown key(s): {}. Check the spelling against \
+                 snapdog.example.toml",
+                ha.unknown_keys.names().join(", ")
+            );
+            ha.discovery_prefix = validate_ha_topic(&ha.discovery_prefix, "discovery_prefix")?;
+            ha.status_topic = validate_ha_topic(&ha.status_topic, "status_topic")?;
+        }
 
         ensure!(
             !self.client_id.is_empty()
@@ -464,6 +527,16 @@ impl MqttConfig {
         Ok(())
     }
 
+    /// What to do about Home Assistant discovery.
+    #[must_use]
+    pub fn discovery_mode(&self) -> DiscoveryMode {
+        match self.homeassistant.as_ref().and_then(|ha| ha.discovery) {
+            None => DiscoveryMode::Untouched,
+            Some(false) => DiscoveryMode::Off,
+            Some(true) => DiscoveryMode::On,
+        }
+    }
+
     /// A warning if credentials would be sent unencrypted to another machine, which
     /// anybody on the path can read (and replay). `None` otherwise.
     #[must_use]
@@ -478,6 +551,25 @@ impl MqttConfig {
             )
         })
     }
+}
+
+/// A topic or prefix of `[mqtt.homeassistant]`: no wildcards, NUL or control
+/// characters, no `$`, not empty. A trailing `/` is dropped.
+fn validate_ha_topic(topic: &str, key: &str) -> Result<String> {
+    let topic = topic.trim_end_matches('/');
+    ensure!(
+        !topic.is_empty() && topic.len() <= MAX_BASE_TOPIC_BYTES,
+        "[mqtt.homeassistant] {key} must be 1 to {MAX_BASE_TOPIC_BYTES} bytes"
+    );
+    ensure!(
+        !topic.contains(['+', '#', '\0']) && !topic.starts_with('$') && !topic.contains("//"),
+        "[mqtt.homeassistant] {key} must not contain '+', '#', NUL or '//' or start with '$'"
+    );
+    ensure!(
+        !topic.chars().any(char::is_control),
+        "[mqtt.homeassistant] {key} must not contain control characters"
+    );
+    Ok(topic.to_string())
 }
 
 /// MQTT topic rules for a prefix that is both published to and subscribed under.
@@ -1196,6 +1288,48 @@ mod tests {
         assert!(e.contains("client_key"), "{e}");
         let e = section(&format!("ca_file = {fake_ca:?}")).unwrap_err();
         assert!(e.contains("ca_file"), "{e}");
+    }
+
+    #[test]
+    fn home_assistant_discovery_is_off_and_untouched_unless_configured() {
+        let mode = |toml: &str| {
+            let mut c = parse(&format!("broker = \"b:1883\"\n{toml}"));
+            c.resolve().unwrap();
+            c.discovery_mode()
+        };
+        assert_eq!(mode(""), DiscoveryMode::Untouched);
+        // A section without the switch is still "not configured".
+        assert_eq!(
+            mode("[homeassistant]\ndiscovery_prefix = \"ha\""),
+            DiscoveryMode::Untouched
+        );
+        assert_eq!(
+            mode("[homeassistant]\ndiscovery = false"),
+            DiscoveryMode::Off
+        );
+        assert_eq!(mode("[homeassistant]\ndiscovery = true"), DiscoveryMode::On);
+    }
+
+    #[test]
+    fn home_assistant_topics_are_checked_and_normalised() {
+        let mut c = parse(
+            "broker = \"b:1883\"\n[homeassistant]\ndiscovery = true\ndiscovery_prefix = \"ha/\"",
+        );
+        c.resolve().unwrap();
+        let ha = c.homeassistant.as_ref().unwrap();
+        assert_eq!(ha.discovery_prefix, "ha");
+        assert_eq!(ha.status_topic, "homeassistant/status");
+        for (line, needle) in [
+            ("discovery_prefix = \"a/+\"", "discovery_prefix"),
+            ("discovery_prefix = \"\"", "discovery_prefix"),
+            ("status_topic = \"$SYS/x\"", "status_topic"),
+            ("status_topic = \"a//b\"", "status_topic"),
+            ("dicovery = true", "dicovery"),
+        ] {
+            let mut c = parse(&format!("broker = \"b:1883\"\n[homeassistant]\n{line}"));
+            let err = c.resolve().unwrap_err().to_string();
+            assert!(err.contains(needle), "{line}: {err}");
+        }
     }
 
     #[test]

@@ -1,0 +1,617 @@
+{
+  "availability": [
+    {
+      "payload_available": "online",
+      "payload_not_available": "offline",
+      "topic": "snapdog/status"
+    }
+  ],
+  "components": {
+    "client_1_connected": {
+      "device_class": "connectivity",
+      "entity_category": "diagnostic",
+      "name": "Sofa Connected",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "binary_sensor",
+      "state_topic": "snapdog/clients/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_1_connected",
+      "value_template": "{{ 'ON' if value_json.connected else 'OFF' }}"
+    },
+    "client_1_latency": {
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/status"
+        },
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/clients/1/state",
+          "value_template": "{{ 'online' if value_json.connected else 'offline' }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_template": "{{ value | int }}",
+      "command_topic": "snapdog/clients/1/latency/set",
+      "entity_category": "config",
+      "max": 10000,
+      "min": -10000,
+      "mode": "box",
+      "name": "Sofa Latency",
+      "platform": "number",
+      "state_topic": "snapdog/clients/1/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_1_latency",
+      "unit_of_measurement": "ms",
+      "value_template": "{{ value_json.latency }}"
+    },
+    "client_1_mute": {
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/status"
+        },
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/clients/1/state",
+          "value_template": "{{ 'online' if value_json.connected else 'offline' }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "snapdog/clients/1/mute/set",
+      "name": "Sofa Mute",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "switch",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "snapdog/clients/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_1_mute",
+      "value_template": "{{ 'ON' if value_json.muted else 'OFF' }}"
+    },
+    "client_1_volume": {
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/status"
+        },
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/clients/1/state",
+          "value_template": "{{ 'online' if value_json.connected else 'offline' }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_template": "{{ value | int }}",
+      "command_topic": "snapdog/clients/1/volume/set",
+      "max": 100,
+      "min": 0,
+      "mode": "slider",
+      "name": "Sofa Volume",
+      "platform": "number",
+      "state_topic": "snapdog/clients/1/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_1_volume",
+      "unit_of_measurement": "%",
+      "value_template": "{{ value_json.volume }}"
+    },
+    "client_1_zone": {
+      "command_template": "{{ [\"Living Room\",\"Kitchen\"].index(value) + 1 }}",
+      "command_topic": "snapdog/clients/1/zone/set",
+      "name": "Sofa Zone",
+      "options": [
+        "Living Room",
+        "Kitchen"
+      ],
+      "platform": "select",
+      "state_topic": "snapdog/clients/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_1_zone",
+      "value_template": "{% set zones = [\"Living Room\",\"Kitchen\"] %}{{ zones[value_json.zone - 1] if 0 < value_json.zone <= zones | length else none }}"
+    },
+    "client_2_connected": {
+      "device_class": "connectivity",
+      "entity_category": "diagnostic",
+      "name": "Shelf Connected",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "binary_sensor",
+      "state_topic": "snapdog/clients/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_2_connected",
+      "value_template": "{{ 'ON' if value_json.connected else 'OFF' }}"
+    },
+    "client_2_latency": {
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/status"
+        },
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/clients/2/state",
+          "value_template": "{{ 'online' if value_json.connected else 'offline' }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_template": "{{ value | int }}",
+      "command_topic": "snapdog/clients/2/latency/set",
+      "entity_category": "config",
+      "max": 10000,
+      "min": -10000,
+      "mode": "box",
+      "name": "Shelf Latency",
+      "platform": "number",
+      "state_topic": "snapdog/clients/2/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_2_latency",
+      "unit_of_measurement": "ms",
+      "value_template": "{{ value_json.latency }}"
+    },
+    "client_2_mute": {
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/status"
+        },
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/clients/2/state",
+          "value_template": "{{ 'online' if value_json.connected else 'offline' }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "snapdog/clients/2/mute/set",
+      "name": "Shelf Mute",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "switch",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "snapdog/clients/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_2_mute",
+      "value_template": "{{ 'ON' if value_json.muted else 'OFF' }}"
+    },
+    "client_2_volume": {
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/status"
+        },
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "snapdog/clients/2/state",
+          "value_template": "{{ 'online' if value_json.connected else 'offline' }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_template": "{{ value | int }}",
+      "command_topic": "snapdog/clients/2/volume/set",
+      "max": 100,
+      "min": 0,
+      "mode": "slider",
+      "name": "Shelf Volume",
+      "platform": "number",
+      "state_topic": "snapdog/clients/2/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_2_volume",
+      "unit_of_measurement": "%",
+      "value_template": "{{ value_json.volume }}"
+    },
+    "client_2_zone": {
+      "command_template": "{{ [\"Living Room\",\"Kitchen\"].index(value) + 1 }}",
+      "command_topic": "snapdog/clients/2/zone/set",
+      "name": "Shelf Zone",
+      "options": [
+        "Living Room",
+        "Kitchen"
+      ],
+      "platform": "select",
+      "state_topic": "snapdog/clients/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_client_2_zone",
+      "value_template": "{% set zones = [\"Living Room\",\"Kitchen\"] %}{{ zones[value_json.zone - 1] if 0 < value_json.zone <= zones | length else none }}"
+    },
+    "zone_1_album": {
+      "name": "Living Room Album",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_album",
+      "value_template": "{{ (value_json.media_album_name | default(''))[:255] }}"
+    },
+    "zone_1_artist": {
+      "name": "Living Room Artist",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_artist",
+      "value_template": "{{ (value_json.media_artist | default(''))[:255] }}"
+    },
+    "zone_1_duration": {
+      "device_class": "duration",
+      "name": "Living Room Duration",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_duration",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.media_duration if 'media_duration' in value_json else none }}"
+    },
+    "zone_1_mute": {
+      "command_topic": "snapdog/zones/1/mute/set",
+      "name": "Living Room Mute",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "switch",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_mute",
+      "value_template": "{{ 'ON' if value_json.is_volume_muted else 'OFF' }}"
+    },
+    "zone_1_next": {
+      "command_topic": "snapdog/zones/1/control/set",
+      "name": "Living Room Next",
+      "payload_press": "next",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_next"
+    },
+    "zone_1_pause": {
+      "command_topic": "snapdog/zones/1/control/set",
+      "name": "Living Room Pause",
+      "payload_press": "pause",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_pause"
+    },
+    "zone_1_play": {
+      "command_topic": "snapdog/zones/1/control/set",
+      "name": "Living Room Play",
+      "payload_press": "play",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_play"
+    },
+    "zone_1_playlist": {
+      "command_template": "{{ value | int }}",
+      "command_topic": "snapdog/zones/1/playlist/set",
+      "max": 999,
+      "min": 0,
+      "mode": "box",
+      "name": "Living Room Playlist",
+      "platform": "number",
+      "state_topic": "snapdog/zones/1/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_playlist",
+      "value_template": "{{ value_json.playlist_index if value_json.playlist_index is not none else none }}"
+    },
+    "zone_1_presence": {
+      "device_class": "occupancy",
+      "name": "Living Room Presence",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "binary_sensor",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_presence",
+      "value_template": "{{ 'ON' if value_json.presence else 'OFF' }}"
+    },
+    "zone_1_presence_enabled": {
+      "command_topic": "snapdog/zones/1/presence/enable/set",
+      "entity_category": "config",
+      "name": "Living Room Presence control",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "switch",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_presence_enabled",
+      "value_template": "{{ 'ON' if value_json.presence_enabled else 'OFF' }}"
+    },
+    "zone_1_presence_timeout": {
+      "command_template": "{{ value | int }}",
+      "command_topic": "snapdog/zones/1/presence/timeout/set",
+      "entity_category": "config",
+      "max": 65535,
+      "min": 0,
+      "mode": "box",
+      "name": "Living Room Presence timeout",
+      "platform": "number",
+      "state_topic": "snapdog/zones/1/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_presence_timeout",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.auto_off_delay }}"
+    },
+    "zone_1_previous": {
+      "command_topic": "snapdog/zones/1/control/set",
+      "name": "Living Room Previous",
+      "payload_press": "previous",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_previous"
+    },
+    "zone_1_repeat": {
+      "command_topic": "snapdog/zones/1/repeat/set",
+      "name": "Living Room Repeat",
+      "options": [
+        "off",
+        "one",
+        "all"
+      ],
+      "platform": "select",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_repeat",
+      "value_template": "{{ value_json.repeat }}"
+    },
+    "zone_1_shuffle": {
+      "command_topic": "snapdog/zones/1/shuffle/set",
+      "name": "Living Room Shuffle",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "switch",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_shuffle",
+      "value_template": "{{ 'ON' if value_json.shuffle else 'OFF' }}"
+    },
+    "zone_1_source": {
+      "name": "Living Room Source",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_source",
+      "value_template": "{{ value_json.source }}"
+    },
+    "zone_1_state": {
+      "device_class": "enum",
+      "name": "Living Room State",
+      "options": [
+        "playing",
+        "paused",
+        "stopped",
+        "idle"
+      ],
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_state",
+      "value_template": "{{ value_json.state }}"
+    },
+    "zone_1_stop": {
+      "command_topic": "snapdog/zones/1/control/set",
+      "name": "Living Room Stop",
+      "payload_press": "stop",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_stop"
+    },
+    "zone_1_title": {
+      "name": "Living Room Title",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/1/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_title",
+      "value_template": "{{ (value_json.media_title | default(''))[:255] }}"
+    },
+    "zone_1_volume": {
+      "command_template": "{{ (value | float / 100) | round(2) }}",
+      "command_topic": "snapdog/zones/1/volume/set",
+      "max": 100,
+      "min": 0,
+      "mode": "slider",
+      "name": "Living Room Volume",
+      "platform": "number",
+      "state_topic": "snapdog/zones/1/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_1_volume",
+      "unit_of_measurement": "%",
+      "value_template": "{{ (value_json.volume_level * 100) | round(0) | int }}"
+    },
+    "zone_2_album": {
+      "name": "Kitchen Album",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_album",
+      "value_template": "{{ (value_json.media_album_name | default(''))[:255] }}"
+    },
+    "zone_2_artist": {
+      "name": "Kitchen Artist",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_artist",
+      "value_template": "{{ (value_json.media_artist | default(''))[:255] }}"
+    },
+    "zone_2_duration": {
+      "device_class": "duration",
+      "name": "Kitchen Duration",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_duration",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.media_duration if 'media_duration' in value_json else none }}"
+    },
+    "zone_2_mute": {
+      "command_topic": "snapdog/zones/2/mute/set",
+      "name": "Kitchen Mute",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "switch",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_mute",
+      "value_template": "{{ 'ON' if value_json.is_volume_muted else 'OFF' }}"
+    },
+    "zone_2_next": {
+      "command_topic": "snapdog/zones/2/control/set",
+      "name": "Kitchen Next",
+      "payload_press": "next",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_next"
+    },
+    "zone_2_pause": {
+      "command_topic": "snapdog/zones/2/control/set",
+      "name": "Kitchen Pause",
+      "payload_press": "pause",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_pause"
+    },
+    "zone_2_play": {
+      "command_topic": "snapdog/zones/2/control/set",
+      "name": "Kitchen Play",
+      "payload_press": "play",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_play"
+    },
+    "zone_2_playlist": {
+      "command_template": "{{ value | int }}",
+      "command_topic": "snapdog/zones/2/playlist/set",
+      "max": 999,
+      "min": 0,
+      "mode": "box",
+      "name": "Kitchen Playlist",
+      "platform": "number",
+      "state_topic": "snapdog/zones/2/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_playlist",
+      "value_template": "{{ value_json.playlist_index if value_json.playlist_index is not none else none }}"
+    },
+    "zone_2_presence": {
+      "device_class": "occupancy",
+      "name": "Kitchen Presence",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "binary_sensor",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_presence",
+      "value_template": "{{ 'ON' if value_json.presence else 'OFF' }}"
+    },
+    "zone_2_presence_enabled": {
+      "command_topic": "snapdog/zones/2/presence/enable/set",
+      "entity_category": "config",
+      "name": "Kitchen Presence control",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "switch",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_presence_enabled",
+      "value_template": "{{ 'ON' if value_json.presence_enabled else 'OFF' }}"
+    },
+    "zone_2_presence_timeout": {
+      "command_template": "{{ value | int }}",
+      "command_topic": "snapdog/zones/2/presence/timeout/set",
+      "entity_category": "config",
+      "max": 65535,
+      "min": 0,
+      "mode": "box",
+      "name": "Kitchen Presence timeout",
+      "platform": "number",
+      "state_topic": "snapdog/zones/2/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_presence_timeout",
+      "unit_of_measurement": "s",
+      "value_template": "{{ value_json.auto_off_delay }}"
+    },
+    "zone_2_previous": {
+      "command_topic": "snapdog/zones/2/control/set",
+      "name": "Kitchen Previous",
+      "payload_press": "previous",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_previous"
+    },
+    "zone_2_repeat": {
+      "command_topic": "snapdog/zones/2/repeat/set",
+      "name": "Kitchen Repeat",
+      "options": [
+        "off",
+        "one",
+        "all"
+      ],
+      "platform": "select",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_repeat",
+      "value_template": "{{ value_json.repeat }}"
+    },
+    "zone_2_shuffle": {
+      "command_topic": "snapdog/zones/2/shuffle/set",
+      "name": "Kitchen Shuffle",
+      "payload_off": "OFF",
+      "payload_on": "ON",
+      "platform": "switch",
+      "state_off": "OFF",
+      "state_on": "ON",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_shuffle",
+      "value_template": "{{ 'ON' if value_json.shuffle else 'OFF' }}"
+    },
+    "zone_2_source": {
+      "name": "Kitchen Source",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_source",
+      "value_template": "{{ value_json.source }}"
+    },
+    "zone_2_state": {
+      "device_class": "enum",
+      "name": "Kitchen State",
+      "options": [
+        "playing",
+        "paused",
+        "stopped",
+        "idle"
+      ],
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_state",
+      "value_template": "{{ value_json.state }}"
+    },
+    "zone_2_stop": {
+      "command_topic": "snapdog/zones/2/control/set",
+      "name": "Kitchen Stop",
+      "payload_press": "stop",
+      "platform": "button",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_stop"
+    },
+    "zone_2_title": {
+      "name": "Kitchen Title",
+      "platform": "sensor",
+      "state_topic": "snapdog/zones/2/state",
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_title",
+      "value_template": "{{ (value_json.media_title | default(''))[:255] }}"
+    },
+    "zone_2_volume": {
+      "command_template": "{{ (value | float / 100) | round(2) }}",
+      "command_topic": "snapdog/zones/2/volume/set",
+      "max": 100,
+      "min": 0,
+      "mode": "slider",
+      "name": "Kitchen Volume",
+      "platform": "number",
+      "state_topic": "snapdog/zones/2/state",
+      "step": 1,
+      "unique_id": "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab_zone_2_volume",
+      "unit_of_measurement": "%",
+      "value_template": "{{ (value_json.volume_level * 100) | round(0) | int }}"
+    }
+  },
+  "device": {
+    "configuration_url": "http://snapdog.local:5555",
+    "identifiers": [
+      "snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab"
+    ],
+    "manufacturer": "SnapDog",
+    "model": "Multi-zone audio server",
+    "name": "SnapDog",
+    "sw_version": "<version>"
+  },
+  "origin": {
+    "name": "SnapDog",
+    "support_url": "https://github.com/SnapDogRocks/snapdog",
+    "sw_version": "<version>"
+  },
+  "qos": 1
+}
