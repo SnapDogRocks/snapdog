@@ -29,7 +29,7 @@ mod transport;
 pub use device::DeviceOptions;
 pub use ets_config::ets_device_config;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -155,6 +155,9 @@ pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
     let knx = config.knx.as_ref().context("KNX not configured")?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let bridge = Bridge::new(config, store, zone_commands, snap_tx);
+    for problem in duplicate_addresses(config) {
+        tracing::warn!("KNX group address configured twice: {problem}");
+    }
     match knx.role {
         crate::config::KnxRole::Client => {
             let url = knx
@@ -162,9 +165,6 @@ pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
                 .as_deref()
                 .context("KNX client mode requires 'url'")?;
             let target = supervisor::ClientTarget::parse(url)?;
-            for problem in duplicate_addresses(config) {
-                tracing::warn!("KNX group address configured twice: {problem}");
-            }
             let task = tokio::spawn(supervisor::run_client(
                 target,
                 bridge,
@@ -856,61 +856,95 @@ pub(crate) fn duplicate_addresses(config: &AppConfig) -> Vec<String> {
             ));
         }
     }
+    duplicates.extend(shared_status_addresses(config));
     duplicates
+}
+
+/// Every configured status object with its group address: a label for messages and the
+/// canonical address. Zones come first, then clients, then the global objects.
+fn status_addresses(config: &AppConfig) -> Vec<(String, String)> {
+    let mut list = Vec::new();
+    for zone in &config.zones {
+        let k = &zone.knx;
+        let fields = [
+            (&k.volume_status, "volume_status"),
+            (&k.mute_status, "mute_status"),
+            (&k.control_status, "control_status"),
+            (&k.track_title_status, "track_title_status"),
+            (&k.track_artist_status, "track_artist_status"),
+            (&k.track_album_status, "track_album_status"),
+            (&k.track_progress_status, "track_progress_status"),
+            (&k.track_playing_status, "track_playing_status"),
+            (&k.track_repeat_status, "track_repeat_status"),
+            (&k.playlist_status, "playlist_status"),
+            (&k.shuffle_status, "shuffle_status"),
+            (&k.repeat_status, "repeat_status"),
+            (&k.presence_enable_status, "presence_enable_status"),
+            (&k.presence_timer_status, "presence_timer_status"),
+        ];
+        for (ga, name) in fields {
+            if let Some(ga) = ga {
+                list.push((format!("zone {} {name}", zone.index), canonical_ga(ga)));
+            }
+        }
+    }
+    for client in &config.clients {
+        let k = &client.knx;
+        let fields = [
+            (&k.volume_status, "volume_status"),
+            (&k.mute_status, "mute_status"),
+            (&k.latency_status, "latency_status"),
+            (&k.zone_status, "zone_status"),
+            (&k.connected_status, "connected_status"),
+        ];
+        for (ga, name) in fields {
+            if let Some(ga) = ga {
+                list.push((format!("client {} {name}", client.index), canonical_ga(ga)));
+            }
+        }
+    }
+    if let Some(k) = config.knx.as_ref() {
+        let fields = [
+            (&k.server_online, "server_online"),
+            (&k.all_mute_status, "all_mute_status"),
+            (&k.system_fault, "system_fault"),
+        ];
+        for (ga, name) in fields {
+            if let Some(ga) = ga {
+                list.push((format!("global {name}"), canonical_ga(ga)));
+            }
+        }
+    }
+    list
 }
 
 /// The group addresses of all status objects (canonical form), the ones a group read is
 /// answered for.
 pub(crate) fn build_status_ga_set(config: &AppConfig) -> HashSet<String> {
-    let mut set = HashSet::new();
-    for zone in &config.zones {
-        let k = &zone.knx;
-        for ga in [
-            &k.volume_status,
-            &k.mute_status,
-            &k.control_status,
-            &k.track_title_status,
-            &k.track_artist_status,
-            &k.track_album_status,
-            &k.track_progress_status,
-            &k.track_playing_status,
-            &k.track_repeat_status,
-            &k.playlist_status,
-            &k.shuffle_status,
-            &k.repeat_status,
-            &k.presence_enable_status,
-            &k.presence_timer_status,
-        ]
+    status_addresses(config)
         .into_iter()
-        .flatten()
-        {
-            set.insert(canonical_ga(ga));
-        }
+        .map(|(_, ga)| ga)
+        .collect()
+}
+
+/// Status objects that share a group address, one message per address. A group read has a
+/// single answer: the value of the object with the lowest number (zones, then clients, then the
+/// global objects, each by number in the product database), see [`StatusSink::answer_read`].
+fn shared_status_addresses(config: &AppConfig) -> Vec<String> {
+    let mut by_address: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (label, ga) in status_addresses(config) {
+        by_address.entry(ga).or_default().push(label);
     }
-    for client in &config.clients {
-        let k = &client.knx;
-        for ga in [
-            &k.volume_status,
-            &k.mute_status,
-            &k.latency_status,
-            &k.zone_status,
-            &k.connected_status,
-        ]
+    by_address
         .into_iter()
-        .flatten()
-        {
-            set.insert(canonical_ga(ga));
-        }
-    }
-    if let Some(k) = config.knx.as_ref() {
-        for ga in [&k.server_online, &k.all_mute_status, &k.system_fault]
-            .into_iter()
-            .flatten()
-        {
-            set.insert(canonical_ga(ga));
-        }
-    }
-    set
+        .filter(|(_, labels)| labels.len() > 1)
+        .map(|(ga, labels)| {
+            format!(
+                "{ga} is the status address of {}: every change goes out as its own telegram and a read is answered with the value of the object with the lowest number",
+                labels.join(", ")
+            )
+        })
+        .collect()
 }
 
 /// Offset in seconds from the system clock to the KNX-provided time-of-day.
@@ -2297,6 +2331,46 @@ mute = "2/0/1"
             && m.contains("never runs")));
         // A zone and a client may share an address: both run.
         let ok = cfg_with_knx();
+        assert_eq!(duplicate_addresses(&ok).len(), 0);
+    }
+
+    #[test]
+    fn status_objects_that_share_an_address_are_reported() {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+system_fault = "0/0/9"
+
+[[zone]]
+name = "Z1"
+[zone.knx]
+volume_status = "1/1/1"
+mute_status = "1/1/2"
+[[zone]]
+name = "Z2"
+[zone.knx]
+volume_status = "1/1/01"
+mute_status = "1/1/3"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+[client.knx]
+mute_status = "0/0/9"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let d = duplicate_addresses(&cfg);
+        assert_eq!(d.len(), 2, "{d:?}");
+        assert!(d.iter().any(|m| m.starts_with("0/0/9 ")
+            && m.contains("client 1 mute_status")
+            && m.contains("global system_fault")));
+        assert!(d.iter().any(|m| m.starts_with("1/1/1 ")
+            && m.contains("zone 1 volume_status")
+            && m.contains("zone 2 volume_status")));
+        // The same address for a status and a command object is the usual single-address setup.
+        let ok = cfg_with_status_gas();
         assert_eq!(duplicate_addresses(&ok).len(), 0);
     }
 

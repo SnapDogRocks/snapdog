@@ -31,7 +31,7 @@ use super::transport::{KnxPublisher, Target};
 /// 10 zones and 30 clients the product database has. Client mode has no such limit, so state
 /// that is kept per object (what was sent last) must not be keyed by ASAP: zone 11 would share
 /// its key with client 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ObjectKey {
     /// Object `.1` of zone `.0` (both 1-based for the zone, 0-based for the object).
     Zone(usize, usize),
@@ -131,11 +131,15 @@ impl<'a, P: KnxPublisher> StatusSink<'a, P> {
     /// remembered and `false` is returned: the caller offers the current values again, and the
     /// offer for `ga` goes out as the response. Call [`end_reads`](Self::end_reads) afterwards.
     pub async fn answer_read(&mut self, ga: GroupAddress) -> bool {
+        // Two status objects on one address answer with the one that comes first in the order of
+        // `ObjectKey` (zones, clients, global objects, each by number), not with whichever the
+        // hash map yields first.
         let known = self
             .sent
-            .values()
-            .find(|s| s.address == Some(ga))
-            .map(|s| (s.dpt, s.value.clone()));
+            .iter()
+            .filter(|(_, s)| s.address == Some(ga))
+            .min_by_key(|(key, _)| **key)
+            .map(|(_, s)| (s.dpt, s.value.clone()));
         if let Some((dpt, value)) = known {
             return self.transport.respond(ga, dpt, &value).await;
         }
@@ -412,6 +416,42 @@ mod tests {
         sink.write(k(1), Some("1/1/1"), DPT_SWITCH, &false.into())
             .await;
         assert_eq!(rec.count(), 2);
+    }
+
+    /// Two status objects on one address: a read gets the value of the lower object, whatever
+    /// order the hash map happens to hold them in (a fresh map has a fresh random seed).
+    #[tokio::test]
+    async fn a_read_of_a_shared_status_address_is_answered_by_the_lowest_object() {
+        let ga = GroupAddress::from_str("1/1/1").unwrap();
+        for _ in 0..40 {
+            let rec = Recorder::<true>::default();
+            let mut sink = StatusSink::new(&rec);
+            sink.write(
+                ObjectKey::Client(1, 0),
+                Some("1/1/1"),
+                DPT_SCALING,
+                &DptValue::Float(70.0),
+            )
+            .await;
+            sink.write(
+                ObjectKey::Zone(2, 3),
+                Some("1/1/1"),
+                DPT_SCALING,
+                &DptValue::Float(50.0),
+            )
+            .await;
+            sink.write(
+                ObjectKey::Zone(1, 3),
+                Some("1/1/1"),
+                DPT_SCALING,
+                &DptValue::Float(20.0),
+            )
+            .await;
+            assert!(sink.answer_read(ga).await);
+            let responses = rec.responses.lock().unwrap();
+            assert_eq!(responses.len(), 1);
+            assert_eq!(responses[0].1, DptValue::Float(20.0));
+        }
     }
 
     #[tokio::test]
