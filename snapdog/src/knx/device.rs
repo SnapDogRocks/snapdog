@@ -1197,8 +1197,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
 
                 // ETS programs through management services addressed to this device, over a
                 // tunnel or through a router.
-                let programming = frame.address_type() == knx_rs_core::types::AddressType::Individual
-                    && frame.destination_address_raw() == bau.individual_address().raw();
+                let programming = is_management_for_device(bau, &frame);
                 let before = programming.then(|| TableSummary::of(bau));
                 let ia_before = bau.individual_address();
                 match classify_group_frame(bau, &frame) {
@@ -1693,6 +1692,14 @@ async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(u16, Vec<
             let _ = update_tx.send((asap, data)).await;
         }
     }
+}
+
+/// Whether `frame` is a point-to-point frame to this device: what ETS (a programming tool) sends,
+/// over a tunnel or through a router. Group telegrams, even a burst of them from a visualisation,
+/// are not programming.
+fn is_management_for_device(bau: &Bau, frame: &CemiFrame) -> bool {
+    frame.address_type() == knx_rs_core::types::AddressType::Individual
+        && frame.destination_address_raw() == bau.individual_address().raw()
 }
 
 /// What the BAU task does with a telegram before the device stack sees it.
@@ -2698,5 +2705,24 @@ mod tests {
         persist_generation(&other, &[3], IA, older).unwrap();
         assert_eq!(load_memory(&other).unwrap().payload, vec![3]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_frames_to_this_device_count_as_programming() {
+        let bau = policy_bau();
+        let mgmt = management_frame(&bau, &[0x03, 0x00]).unwrap();
+        assert!(is_management_for_device(&bau, &mgmt));
+        // The same frame to another device, and group telegrams, do not.
+        let mut other = Bau::new(
+            device_object::new_device_object(device_serial(), group_objects::HARDWARE_TYPE),
+            TOTAL_GO_COUNT as u16,
+            DEFAULT_GO_SIZE,
+        );
+        device_object::set_individual_address(other.device_mut(), 0x1165);
+        assert!(!is_management_for_device(&other, &mgmt));
+        assert!(!is_management_for_device(
+            &bau,
+            &group_frame("1/0/1", Kind::Write, 1)
+        ));
     }
 }
