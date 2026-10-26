@@ -103,8 +103,31 @@ struct Persisted {
     ia: Option<IaRecord>,
 }
 
+/// Numbers the snapshots in the order they were taken, so that a slow writer holding an older
+/// snapshot cannot replace a newer file.
+static PERSIST_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// The newest generation written per file.
+static PERSIST_WRITTEN: std::sync::Mutex<Vec<(PathBuf, u64)>> = std::sync::Mutex::new(Vec::new());
+
+/// Take the number for a snapshot about to be persisted.
+fn next_generation() -> u64 {
+    PERSIST_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Write ETS memory to disk with integrity envelope (atomic).
 fn persist_memory(path: &std::path::Path, payload: &[u8], ia: IaRecord) -> std::io::Result<()> {
+    persist_generation(path, payload, ia, next_generation())
+}
+
+/// [`persist_memory`] for a snapshot taken as `generation`: written unless a newer snapshot of
+/// the same file went to disk already.
+fn persist_generation(
+    path: &std::path::Path,
+    payload: &[u8],
+    ia: IaRecord,
+    generation: u64,
+) -> std::io::Result<()> {
     let len = u16::try_from(payload.len()).map_err(|_| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -129,11 +152,66 @@ fn persist_memory(path: &std::path::Path, payload: &[u8], ia: IaRecord) -> std::
     buf.extend_from_slice(&record);
     buf.extend_from_slice(&crc.finalize().to_le_bytes());
 
-    // Atomic write: temp file + rename
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, &buf)?;
-    std::fs::rename(&tmp, path)?;
+    // One writer at a time per process; a snapshot older than the file is dropped.
+    let mut written = PERSIST_WRITTEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let newer = written.iter().any(|(p, g)| p == path && *g > generation);
+    if newer {
+        tracing::debug!(path = %path.display(), generation, "ETS state snapshot is older than the file, not written");
+        return Ok(());
+    }
+    write_atomically(path, &buf)?;
+    if let Some(entry) = written.iter_mut().find(|(p, _)| p == path) {
+        entry.1 = generation;
+    } else {
+        written.push((path.to_path_buf(), generation));
+    }
+    drop(written);
     Ok(())
+}
+
+/// Replace `path` with `buf` so that a crash leaves either the old or the new file: a temp file
+/// of its own (two writers never share one), written with owner-only permissions (the file holds
+/// the MQTT, `AirPlay` and Subsonic passwords, the PSK and the API keys ETS parameters carry),
+/// flushed to disk, renamed over the target, and the rename flushed through the directory.
+fn write_atomically(path: &std::path::Path, buf: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+
+    static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = path.with_extension(format!(
+        "tmp.{}.{}",
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options.open(&tmp)?;
+        file.write_all(buf)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&tmp, path)?;
+        // Make the rename itself durable. Not every platform can open a directory.
+        #[cfg(unix)]
+        if let Some(dir) = path.parent().map(|d| {
+            if d.as_os_str().is_empty() {
+                std::path::Path::new(".")
+            } else {
+                d
+            }
+        }) && let Ok(dir) = std::fs::File::open(dir)
+        {
+            let _ = dir.sync_all();
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
 }
 
 /// Load ETS memory from disk, verifying magic, version, length, and CRC32.
@@ -784,6 +862,16 @@ fn restore_state(bau: &mut Bau, path: &std::path::Path) {
     }
 }
 
+/// What [`start_device_transport`] hands back.
+pub struct DeviceTransport {
+    /// Sends status values and controls programming mode.
+    pub publisher: DevicePublisher,
+    /// Receives the group objects the bus updated.
+    pub listener: DeviceListener,
+    /// The supervisor task; it persists on its way out, so shutdown waits for it.
+    pub task: tokio::task::JoinHandle<()>,
+}
+
 /// Start the device server and BAU, returning a publisher/listener pair.
 ///
 /// The server is supervised: when it cannot be bound (yet) or stops later, it is started
@@ -793,7 +881,7 @@ pub async fn start_device_transport(
     config: &crate::config::AppConfig,
     options: &DeviceOptions,
     shutdown: watch::Receiver<bool>,
-) -> Result<(DevicePublisher, DeviceListener, Option<EtsParams>)> {
+) -> Result<DeviceTransport> {
     let ia = IndividualAddress::from_str(individual_address)
         .map_err(|e| anyhow::anyhow!("Invalid individual address: {e}"))?;
 
@@ -813,7 +901,6 @@ pub async fn start_device_transport(
 
     // Build BAU and restore state before spawning the task
     let mut bau = build_bau(ia);
-    let mut ets_params = None;
     if let Some(ref path) = persist_path {
         restore_state(&mut bau, path);
     }
@@ -831,7 +918,6 @@ pub async fn start_device_transport(
             mqtt = !ets.mqtt_broker.is_empty(),
             "ETS parameters loaded"
         );
-        ets_params = Some(ets);
         "ETS programming"
     } else if build_tables_from_config(&mut bau, config) {
         tracing::info!("No ETS programming found — using group addresses from TOML config");
@@ -866,7 +952,7 @@ pub async fn start_device_transport(
     };
 
     let resync = Arc::new(Notify::new());
-    tokio::spawn(device_supervisor(
+    let task = tokio::spawn(device_supervisor(
         DeviceTask {
             bau,
             cmd_rx,
@@ -878,21 +964,22 @@ pub async fn start_device_transport(
             addr_tx,
             resync: Arc::clone(&resync),
             shutdown,
+            pending_persist: None,
         },
         first,
     ));
 
     tracing::info!(%individual_address, persist, "KNX device mode started");
 
-    Ok((
-        DevicePublisher {
+    Ok(DeviceTransport {
+        publisher: DevicePublisher {
             cmd_tx,
             local_addr: addr_rx,
             resync,
         },
-        DeviceListener { update_rx },
-        ets_params,
-    ))
+        listener: DeviceListener { update_rx },
+        task,
+    })
 }
 
 impl super::transport::KnxPublisher for DevicePublisher {
@@ -938,6 +1025,8 @@ struct DeviceTask {
     addr_tx: watch::Sender<Option<std::net::SocketAddr>>,
     resync: Arc<Notify>,
     shutdown: watch::Receiver<bool>,
+    /// The debounced write that may still be running; shutdown waits for it.
+    pending_persist: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Why [`bau_task_loop`] returned.
@@ -959,7 +1048,7 @@ async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
     if restarted {
         let delay = backoff.failure();
         if !idle(&mut task, delay).await {
-            tracing::info!("KNX BAU task ended");
+            finish(&mut task).await;
             return;
         }
     }
@@ -1010,6 +1099,14 @@ async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
         if !idle(&mut task, delay).await {
             break;
         }
+    }
+    finish(&mut task).await;
+}
+
+/// The end of the BAU task: the debounced write that is still running finishes first.
+async fn finish(task: &mut DeviceTask) {
+    if let Some(write) = task.pending_persist.take() {
+        let _ = write.await;
     }
     tracing::info!("KNX BAU task ended");
 }
@@ -1065,6 +1162,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
         config_ia,
         shutdown,
         resync,
+        pending_persist,
         ..
     } = task;
     let mut memory_dirty = false;
@@ -1195,7 +1293,11 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                 memory_dirty = false;
                 tunnel_active = false;
                 if let Some(ref path) = *persist_path {
-                    spawn_persist(persisted_state(bau), path.clone(), ia_record(bau, *config_ia));
+                    *pending_persist = Some(spawn_persist(
+                        persisted_state(bau),
+                        path.clone(),
+                        ia_record(bau, *config_ia),
+                    ));
                 }
             }
             () = stop_requested(shutdown) => break LoopEnd::Stopped,
@@ -1225,13 +1327,17 @@ fn ia_record(bau: &Bau, config_ia: u16) -> IaRecord {
 
 /// Persist a saved BAU memory snapshot to `path` in a blocking task, logging the
 /// outcome. Shared by the debounced-persist and restart-persist paths.
-fn spawn_persist(state: Vec<u8>, path: PathBuf, ia: IaRecord) {
-    tokio::task::spawn_blocking(move || match persist_memory(&path, &state, ia) {
-        Ok(()) => {
-            tracing::info!(path = %path.display(), bytes = state.len(), "ETS programming persisted");
-        }
-        Err(e) => tracing::warn!(error = %e, "Failed to persist ETS state"),
-    });
+fn spawn_persist(state: Vec<u8>, path: PathBuf, ia: IaRecord) -> tokio::task::JoinHandle<()> {
+    // The snapshot is numbered now, not when the blocking task gets to run.
+    let generation = next_generation();
+    tokio::task::spawn_blocking(
+        move || match persist_generation(&path, &state, ia, generation) {
+            Ok(()) => {
+                tracing::info!(path = %path.display(), bytes = state.len(), "ETS programming persisted");
+            }
+            Err(e) => tracing::warn!(error = %e, "Failed to persist ETS state"),
+        },
+    )
 }
 
 /// Load and parse persisted ETS device memory into [`EtsParams`], or `None` if the
@@ -2514,5 +2620,83 @@ mod tests {
         assert!(s.configured);
         assert_eq!((s.group_addresses, s.associations), (11, 11));
         assert_eq!(bau.memory_area().len(), 0);
+    }
+
+    // ── Persisting ──────────────────────────────────────────────────
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("snapdog_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_memory_file_is_readable_by_its_owner_only() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = temp_dir("mode");
+        let path = dir.join("knx-memory.bin");
+        // A file left by an older release, with the umask's permissions.
+        std::fs::write(&path, b"old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        persist_memory(&path, &[1, 2, 3], IA).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the file holds passwords, keys and the PSK");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn concurrent_writers_never_leave_a_mixed_file_or_a_temp_file() {
+        // Two snapdog processes (the old one still shutting down, the new one starting) have
+        // no lock in common: each writer needs a temp file of its own.
+        let dir = temp_dir("writers");
+        let path = dir.join("knx-memory.bin");
+        let payloads = [vec![0xAA_u8; 30_000], vec![0x55_u8; 30_001]];
+        let handles: Vec<_> = payloads
+            .iter()
+            .cloned()
+            .map(|payload| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..100 {
+                        write_atomically(&path, &payload).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let written = std::fs::read(&path).unwrap();
+        assert!(payloads.contains(&written), "a complete file of one writer");
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .filter(|n| n != "knx-memory.bin")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp files left behind: {leftovers:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_older_snapshot_does_not_replace_a_newer_file() {
+        let dir = temp_dir("generation");
+        let path = dir.join("knx-memory.bin");
+        let newer = next_generation();
+        let older = next_generation() - 2; // numbered before `newer`
+        assert!(older < newer);
+        persist_generation(&path, &[2, 2, 2], IA, newer).unwrap();
+        persist_generation(&path, &[1, 1, 1], IA, older).unwrap();
+        assert_eq!(load_memory(&path).unwrap().payload, vec![2, 2, 2]);
+        // Another file is not affected by that bookkeeping.
+        let other = dir.join("other.bin");
+        persist_generation(&other, &[3], IA, older).unwrap();
+        assert_eq!(load_memory(&other).unwrap().payload, vec![3]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -168,8 +168,9 @@ pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
                 .individual_address
                 .as_deref()
                 .context("KNX device mode requires 'individual_address'")?;
-            let (publisher, listener, _ets_params) =
+            let transport =
                 device::start_device_transport(addr, config, options, shutdown_rx.clone()).await?;
+            let (publisher, listener) = (transport.publisher, transport.listener);
             let handle: DeviceControlHandle = Arc::new(publisher.clone());
             let task = tokio::spawn(supervisor::run_device(
                 publisher,
@@ -181,7 +182,8 @@ pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
             Ok(KnxBridge {
                 device: Some(handle),
                 shutdown: shutdown_tx,
-                tasks: vec![task],
+                // The device task persists on its way out: shutdown waits for it as well.
+                tasks: vec![task, transport.task],
             })
         }
     }

@@ -647,6 +647,34 @@ async fn repeated_downloads_do_not_grow_the_memory_file() {
     assert!(matches!(cmd, Ok(Some(ZoneCommand::Play))), "{cmd:?}");
 }
 
+/// Shutdown returns only after the device task has written the state it holds. The debounce for
+/// a persist after a download is two seconds, so a shutdown right after the download has to
+/// write the file itself, and the bridge has to wait for that.
+#[tokio::test]
+async fn shutdown_returns_after_the_state_is_on_disk() {
+    let tmp = tempfile::tempdir().unwrap();
+    let memory = tmp.path().join("knx-memory.bin");
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, memory.clone()).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    assert!(!memory.exists(), "the debounce has not elapsed yet");
+    dev.bridge.shutdown().await;
+    assert!(
+        memory.exists(),
+        "shutdown() returned before the state was written"
+    );
+    assert!(
+        knx_memory_loads(&memory),
+        "and what it wrote is a complete file"
+    );
+}
+
+fn knx_memory_loads(path: &std::path::Path) -> bool {
+    let raw = std::fs::read(path).unwrap();
+    raw.len() > 11 && &raw[..4] == b"SDKM"
+}
+
 /// Status is sent when it changes, not on every state notification.
 #[tokio::test]
 async fn status_is_sent_on_change_only() {
