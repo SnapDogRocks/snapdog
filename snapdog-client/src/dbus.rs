@@ -441,54 +441,197 @@ pub async fn start(
     Ok((conn, state, iface_ref))
 }
 
+/// A full Type 14 metadata message for the tests, with every field set to a value that
+/// differs from the `ClientDbusState` default, so a field that is not copied shows up.
+#[cfg(test)]
+fn sample_metadata(playback: &str) -> snapdog_common::TrackMetadata {
+    snapdog_common::TrackMetadata {
+        playback: playback.to_owned(),
+        source: "airplay".to_owned(),
+        shuffle: true,
+        repeat: snapdog_common::RepeatMode::Playlist,
+        title: "Title".to_owned(),
+        artist: "Artist".to_owned(),
+        album: "Album".to_owned(),
+        album_artist: None,
+        genre: None,
+        year: None,
+        track_number: None,
+        disc_number: None,
+        duration_ms: 240_000,
+        position_ms: 61_000,
+        seekable: true,
+        cover_url: None,
+        bitrate_kbps: None,
+        content_type: None,
+        track_index: None,
+        track_count: None,
+        playlist: None,
+        playlist_name: None,
+        playlist_total: None,
+        can_playlist_next: false,
+        can_playlist_prev: false,
+        can_next: true,
+        can_prev: true,
+        volume: 42,
+        muted: true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Values of the `<allow ATTR="...">` rules in a policy file.
-    fn allow_rules(policy: &str, attr: &str) -> Vec<String> {
-        let open = format!("<allow {attr}=\"");
-        policy
-            .lines()
-            .filter_map(|line| {
-                line.trim()
-                    .strip_prefix(open.as_str())?
-                    .strip_suffix("\"/>")
-                    .map(str::to_owned)
-            })
+    // The state the event loop feeds in decides what `PlayPause` does and what the
+    // properties report, so these are tested on their own, not only through the bus.
+
+    #[test]
+    fn set_metadata_maps_playback_to_the_playing_flag() {
+        let mut state = ClientDbusState::default();
+        assert!(!state.playing);
+        state.set_metadata(&sample_metadata("playing"));
+        assert!(state.playing);
+        for other in ["paused", "stopped", ""] {
+            state.set_metadata(&sample_metadata("playing"));
+            state.set_metadata(&sample_metadata(other));
+            assert!(!state.playing, "{other:?} must not count as playing");
+        }
+    }
+
+    #[test]
+    fn set_metadata_copies_every_field_the_properties_report() {
+        let mut state = ClientDbusState::default();
+        state.set_metadata(&sample_metadata("playing"));
+        assert_eq!((state.volume, state.muted), (42, true));
+        assert_eq!(state.title, "Title");
+        assert_eq!(state.artist, "Artist");
+        assert_eq!(state.album, "Album");
+        assert_eq!((state.duration_ms, state.position_ms), (240_000, 61_000));
+        assert!(state.seekable && state.can_next && state.can_prev && state.shuffle);
+        assert_eq!(state.repeat, snapdog_common::RepeatMode::Playlist);
+    }
+
+    #[test]
+    fn set_volume_follows_the_server_and_remembers_the_unmuted_volume() {
+        let mut state = ClientDbusState::default();
+        state.set_volume(30, false);
+        assert_eq!((state.volume, state.muted), (30, false));
+        assert!((state.mpris_volume() - 0.3).abs() < 1e-9);
+        // A mute keeps the volume to restore, and MPRIS reports 0.0 while muted.
+        state.set_volume(30, true);
+        assert_eq!((state.volume, state.muted), (30, true));
+        assert!(state.mpris_volume().abs() < f64::EPSILON);
+        assert_eq!(state.pre_mute_volume, 30);
+        // A new volume while muted must not overwrite the one to restore.
+        state.set_volume(80, true);
+        assert_eq!(state.pre_mute_volume, 30);
+        state.set_volume(80, false);
+        assert_eq!(state.pre_mute_volume, 80);
+    }
+
+    /// The policy file with its comments removed, as trimmed, non-empty lines. Panics on a
+    /// comment that XML does not allow (`--` inside it).
+    fn policy_lines(policy: &str) -> Vec<String> {
+        let mut text = String::new();
+        let mut rest = policy;
+        while let Some(start) = rest.find("<!--") {
+            text.push_str(&rest[..start]);
+            let body = &rest[start + 4..];
+            let end = body.find("-->").expect("unterminated comment");
+            assert!(
+                !body[..end].contains("--"),
+                "a comment contains `--`, which is not well-formed XML"
+            );
+            rest = &body[end + 3..];
+        }
+        text.push_str(rest);
+        text.lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
             .collect()
     }
 
-    /// The bus policy has to allow sending to every name `start` can end up owning.
+    /// Every line the policy file is allowed to contain, in order. The file grants exactly
+    /// this and nothing else.
+    fn expected_policy() -> Vec<String> {
+        let mut lines: Vec<String> = [
+            r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN""#,
+            r#""http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">"#,
+            "<busconfig>",
+            r#"<policy context="default">"#,
+        ]
+        .map(str::to_owned)
+        .into();
+        lines.push(format!(r#"<allow own_prefix="{BUS_NAME_PREFIX}"/>"#));
+        lines.extend(bus_names().map(|n| format!(r#"<allow send_destination="{n}"/>"#)));
+        lines.extend(["</policy>", "</busconfig>"].map(str::to_owned));
+        lines
+    }
+
+    /// The bus policy has to allow sending to every name `start` can end up owning, and
+    /// nothing besides.
     ///
     /// It lists them one by one. A `send_destination_prefix` rule would be shorter, but
     /// dbus-broker ignores it ("Unknown attribute", so every non-root caller is denied) and
     /// dbus-daemon 1.12 rejects the whole file.
+    ///
+    /// The whole file is compared, not only the rules that should be there: an extra
+    /// `<allow>` (a wildcard `own`, a `send_type`, a prefix rule), a `<deny>`, a second or
+    /// different `<policy>` context or a duplicated line each grant or change something
+    /// that nobody reviewed, and each fails here.
     #[test]
-    fn policy_file_lists_every_bus_name() {
+    fn policy_file_is_exactly_what_bus_names_requires() {
         let policy = include_str!("../dbus/snapdog-client.conf");
-        let expected: Vec<String> = bus_names().collect();
-        let allowed = allow_rules(policy, "send_destination");
+        let actual = policy_lines(policy);
+        let expected = expected_policy();
+
         let missing: Vec<_> = expected
             .iter()
-            .filter(|n| !allowed.contains(n))
+            .filter(|l| !actual.contains(l))
             .take(5)
             .collect();
-        let unused: Vec<_> = allowed
+        let unexpected: Vec<_> = actual
             .iter()
-            .filter(|n| !expected.contains(n))
+            .filter(|l| !expected.contains(l))
             .take(5)
             .collect();
         assert!(
-            missing.is_empty() && unused.is_empty(),
-            "dbus/snapdog-client.conf and bus_names() disagree. Not in the file (first 5): \
-             {missing:?}. In the file but never requested (first 5): {unused:?}"
+            missing.is_empty() && unexpected.is_empty(),
+            "dbus/snapdog-client.conf and bus_names() disagree. Missing (first 5): {missing:?}. \
+             Not allowed to be there (first 5): {unexpected:?}"
         );
-        assert_eq!(allow_rules(policy, "own_prefix"), [BUS_NAME_PREFIX]);
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "a rule is duplicated, or a line is missing or extra"
+        );
+        assert_eq!(actual, expected, "same lines, different order or structure");
+
+        // The same facts as named checks, for a readable failure.
+        let rules = actual.join("\n");
+        assert_eq!(
+            rules.matches("<policy").count(),
+            1,
+            "one policy context only"
+        );
         assert!(
-            !policy.contains("send_destination_prefix=\""),
+            !rules.contains("<deny"),
+            "everything not allowed stays denied by default"
+        );
+        assert!(
+            !rules.contains("own=\""),
+            "no `own` wildcard or name outside the prefix"
+        );
+        assert!(
+            !rules.contains("send_destination_prefix=\""),
             "send_destination_prefix is not understood by dbus-broker or dbus-daemon 1.12"
         );
+        assert!(
+            !rules.contains("send_type") && !rules.contains("send_interface"),
+            "rules that match on type or interface instead of destination are broader"
+        );
+        assert!(policy.ends_with('\n'), "the file ends with a newline");
     }
 }
 
@@ -563,16 +706,26 @@ mod p2p_tests {
         .unwrap_or_else(|e| panic!("{method} failed: {e}"))
     }
 
-    async fn next_control(commands: &mut mpsc::Receiver<ClientCommand>) -> PlaybackControl {
-        let cmd = tokio::time::timeout(DEADLINE, commands.recv())
+    async fn next_command(commands: &mut mpsc::Receiver<ClientCommand>) -> ClientCommand {
+        tokio::time::timeout(DEADLINE, commands.recv())
             .await
             .expect("no command was forwarded")
-            .expect("command channel closed");
-        let ClientCommand::SendCustom(msg) = cmd else {
+            .expect("command channel closed")
+    }
+
+    async fn next_control(commands: &mut mpsc::Receiver<ClientCommand>) -> PlaybackControl {
+        let ClientCommand::SendCustom(msg) = next_command(commands).await else {
             panic!("expected a custom message");
         };
         assert_eq!(msg.type_id, snapdog_common::MSG_TYPE_PLAYBACK_CONTROL);
         serde_json::from_slice(&msg.payload).expect("payload is a PlaybackControl")
+    }
+
+    async fn next_volume(commands: &mut mpsc::Receiver<ClientCommand>) -> (u16, bool) {
+        let ClientCommand::SetVolume { volume, muted } = next_command(commands).await else {
+            panic!("expected a volume command");
+        };
+        (volume, muted)
     }
 
     // The old `play_pause` took the state lock with `blocking_lock`, which panics inside
@@ -608,7 +761,7 @@ mod p2p_tests {
     }
 
     /// Every method has to answer on the runtime thread, so a blocking call added to any of
-    /// them shows up here.
+    /// them shows up here. The property setters have their own tests below.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn every_method_replies_and_forwards_its_command() {
         let mut f = fixture().await;
@@ -637,31 +790,144 @@ mod p2p_tests {
         call(&f.caller, "OpenUri", &("file:///x",)).await;
     }
 
+    const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
+
+    /// `Properties.Get` on the Player interface, with a deadline.
+    async fn get_property(caller: &zbus::Connection, name: &str) -> zbus::OwnedVariant {
+        let reply = tokio::time::timeout(
+            DEADLINE,
+            caller.call_method(None::<&str>, PATH, Some(PROPERTIES), "Get", &(PLAYER, name)),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("Get {name} got no reply within {DEADLINE:?}"))
+        .unwrap_or_else(|e| panic!("Get {name} failed: {e}"));
+        reply.body().deserialize().expect("variant body")
+    }
+
+    async fn get_string(caller: &zbus::Connection, name: &str) -> String {
+        String::try_from(get_property(caller, name).await).expect("string property")
+    }
+
+    async fn get_bool(caller: &zbus::Connection, name: &str) -> bool {
+        bool::try_from(get_property(caller, name).await).expect("bool property")
+    }
+
+    async fn get_f64(caller: &zbus::Connection, name: &str) -> f64 {
+        f64::try_from(get_property(caller, name).await).expect("double property")
+    }
+
+    /// `Properties.Set` on the Player interface, with a deadline. The setters run on the
+    /// runtime thread like the methods do, so a blocking call in one of them shows up as a
+    /// missing reply.
+    async fn set_property(caller: &zbus::Connection, name: &str, value: zbus::Variant<'_>) {
+        tokio::time::timeout(
+            DEADLINE,
+            caller.call_method(
+                None::<&str>,
+                PATH,
+                Some(PROPERTIES),
+                "Set",
+                &(PLAYER, name, value),
+            ),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            panic!("Set {name} got no reply within {DEADLINE:?}: the setter most likely panicked")
+        })
+        .unwrap_or_else(|e| panic!("Set {name} failed: {e}"));
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn playback_status_property_follows_the_state() {
         let f = fixture().await;
-        let get = |name: &'static str| {
-            let caller = f.caller.clone();
-            async move {
-                let reply = tokio::time::timeout(
-                    DEADLINE,
-                    caller.call_method(
-                        None::<&str>,
-                        PATH,
-                        Some("org.freedesktop.DBus.Properties"),
-                        "Get",
-                        &(PLAYER, name),
-                    ),
-                )
-                .await
-                .expect("Properties.Get got no reply")
-                .expect("Properties.Get failed");
-                let value: zbus::OwnedVariant = reply.body().deserialize().expect("body");
-                String::try_from(value).expect("string property")
-            }
-        };
-        assert_eq!(get("PlaybackStatus").await, "Stopped");
+        assert_eq!(get_string(&f.caller, "PlaybackStatus").await, "Stopped");
         f.state.lock().await.playing = true;
-        assert_eq!(get("PlaybackStatus").await, "Playing");
+        assert_eq!(get_string(&f.caller, "PlaybackStatus").await, "Playing");
+    }
+
+    /// The state comes from the event loop (`set_metadata`, Type 14), never from the bus.
+    /// Feed it the way the event loop does and check what the bus then does with it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn metadata_from_the_event_loop_drives_the_toggle_and_the_properties() {
+        let mut f = fixture().await;
+        f.state
+            .lock()
+            .await
+            .set_metadata(&sample_metadata("playing"));
+        assert_eq!(get_string(&f.caller, "PlaybackStatus").await, "Playing");
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Pause);
+
+        f.state
+            .lock()
+            .await
+            .set_metadata(&sample_metadata("paused"));
+        // The client does not report Paused to MPRIS, only Playing or Stopped.
+        assert_eq!(get_string(&f.caller, "PlaybackStatus").await, "Stopped");
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Play);
+
+        // The rest of the message reaches the properties (42 % volume, but muted).
+        assert!(get_f64(&f.caller, "Volume").await.abs() < f64::EPSILON);
+        assert!(get_bool(&f.caller, "Shuffle").await);
+        assert_eq!(get_string(&f.caller, "LoopStatus").await, "Playlist");
+        assert!(get_bool(&f.caller, "CanSeek").await);
+        assert!(get_bool(&f.caller, "CanGoNext").await);
+        assert!(get_bool(&f.caller, "CanGoPrevious").await);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn volume_setter_replies_forwards_and_remembers_the_unmuted_volume() {
+        let mut f = fixture().await;
+        set_property(&f.caller, "Volume", zbus::Variant::from(0.5_f64)).await;
+        assert_eq!(next_volume(&mut f.commands).await, (50, false));
+        assert_eq!(get_f64(&f.caller, "Volume").await, 0.5);
+
+        // Mute: the volume to restore stays in the state, the property reads 0.0.
+        set_property(&f.caller, "Volume", zbus::Variant::from(0.0_f64)).await;
+        assert_eq!(next_volume(&mut f.commands).await, (0, true));
+        {
+            let s = f.state.lock().await;
+            assert_eq!((s.volume, s.muted), (50, true));
+        }
+        assert!(get_f64(&f.caller, "Volume").await.abs() < f64::EPSILON);
+
+        set_property(&f.caller, "Volume", zbus::Variant::from(0.8_f64)).await;
+        assert_eq!(next_volume(&mut f.commands).await, (80, false));
+        {
+            let s = f.state.lock().await;
+            assert_eq!((s.volume, s.muted), (80, false));
+        }
+
+        // Out-of-range values are clamped.
+        set_property(&f.caller, "Volume", zbus::Variant::from(1.7_f64)).await;
+        assert_eq!(next_volume(&mut f.commands).await, (100, false));
+        set_property(&f.caller, "Volume", zbus::Variant::from(-1.0_f64)).await;
+        assert_eq!(next_volume(&mut f.commands).await, (0, true));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shuffle_and_loop_status_setters_reply_and_forward() {
+        let mut f = fixture().await;
+        for enabled in [true, false] {
+            set_property(&f.caller, "Shuffle", zbus::Variant::from(enabled)).await;
+            assert_eq!(
+                next_control(&mut f.commands).await,
+                PlaybackControl::Shuffle { enabled }
+            );
+        }
+        for (status, mode) in [
+            ("Track", snapdog_common::RepeatMode::Track),
+            ("Playlist", snapdog_common::RepeatMode::Playlist),
+            ("None", snapdog_common::RepeatMode::Off),
+            ("anything else", snapdog_common::RepeatMode::Off),
+        ] {
+            set_property(&f.caller, "LoopStatus", zbus::Variant::from(status)).await;
+            assert_eq!(
+                next_control(&mut f.commands).await,
+                PlaybackControl::Repeat { mode },
+                "{status}"
+            );
+        }
     }
 }
