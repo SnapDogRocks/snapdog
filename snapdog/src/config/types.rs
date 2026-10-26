@@ -230,11 +230,10 @@ pub struct SystemConfig {
     pub log_level: LogLevel,
     /// Optional log file, written in addition to stdout with daily rotation.
     /// The date is inserted before the extension (`snapdog.log` becomes
-    /// `snapdog.2026-10-25.log`). `SnapDog` keeps 14 daily files and deletes
-    /// older ones whose names start with the same stem and end with the same
-    /// extension, so the directory should be its own. Days change at midnight
-    /// UTC. If the file cannot be opened, `SnapDog` logs a warning and continues
-    /// with stdout only.
+    /// `snapdog.2026-10-25.log`). `SnapDog` keeps 14 daily files and deletes older
+    /// ones at start and then hourly. Only files named exactly like that are deleted,
+    /// the oldest date first. Days change at midnight UTC. If the file cannot be
+    /// opened, `SnapDog` logs a warning and continues with stdout only.
     pub log_file: Option<String>,
     /// Directory for persistent state files (`zones.json`, `eq.json`,
     /// `server_id`, and `airplay-pairing` with the `ap2` feature).

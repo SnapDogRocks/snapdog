@@ -422,10 +422,10 @@ refuses an unusable `streaming_bind`. It does not try to bind the port.
 <summary><strong>Log file</strong></summary>
 
 `[system].log_file` writes the log to a file in addition to stdout, one file per day (`snapdog.log` becomes
-`snapdog.2026-10-26.log`). SnapDog keeps 14 daily files, the current one and 13 more, and deletes older ones when a
-new day's file is created. The retention matches file names by prefix and suffix, so give SnapDog a directory of
-its own; SnapDog warns at startup when it finds other files there that the rule would also delete. Days change at
-midnight UTC, whatever the local time zone. An error while writing (disk full) is not reported; stdout keeps working.
+`snapdog.2026-10-26.log`). SnapDog keeps 14 daily files, the current one and 13 more, and deletes older ones when
+it starts and then hourly. It deletes only files named exactly `snapdog.<yyyy-mm-dd>.log`, the oldest date first;
+everything else in the directory, such as `snapdog-audit.log`, is left alone. Days change at midnight UTC,
+whatever the local time zone. An error while writing (disk full) is not reported; stdout keeps working.
 The packaged systemd unit creates `/var/log/snapdog` for this (`LogsDirectory=`).
 
 </details>

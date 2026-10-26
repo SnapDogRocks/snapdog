@@ -7,12 +7,24 @@
 //! `tracing-appender` rotates), so the date in a file name can differ from the local
 //! date by up to a day. Write errors (a full disk) are swallowed by the background
 //! writer of `tracing-appender`: stdout keeps working, the file silently loses lines.
+//!
+//! Old files are deleted by `SnapDog` itself, not by `tracing-appender`, whose own
+//! retention selects files by name prefix and suffix and would also delete unrelated
+//! files such as `snapdog-audit.log`. Only names of the exact form
+//! `<stem>.<yyyy-mm-dd>[.<extension>]` are ever touched, the oldest date goes first
+//! (not the oldest creation time, so copied or restored files sort correctly), and the
+//! file of the current day is never deleted.
 
 /// Number of daily log files kept: the current one and the 13 before it.
-/// Older files are deleted when a new day's file is created.
 pub const LOG_FILES_KEPT: usize = 14;
 
-use std::path::Path;
+/// How often the log directory is checked for files beyond [`LOG_FILES_KEPT`]. The
+/// check also runs once when the file is opened.
+const PRUNE_INTERVAL: Duration = Duration::from_secs(3600);
+
+use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tracing::Subscriber;
@@ -22,18 +34,24 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+/// Keeps file logging running: the background writer of the log file and the
+/// thread that deletes old files. Dropping it flushes the writer and stops the thread.
+pub struct FileGuard {
+    _writer: WorkerGuard,
+    /// Dropping the sender wakes the pruning thread, which then ends.
+    _stop_pruning: mpsc::Sender<()>,
+}
+
 /// A configured subscriber plus what has to stay alive with it.
 pub struct LogSetup {
     /// The subscriber to install.
     pub subscriber: Box<dyn Subscriber + Send + Sync>,
     /// Keeps the background writer of the log file alive. Dropping it flushes
     /// and stops file logging, so hold it for the lifetime of the process.
-    pub file_guard: Option<WorkerGuard>,
+    pub file_guard: Option<FileGuard>,
     /// Set when `log_file` was configured but could not be opened. Log it as a
     /// warning once the subscriber is installed.
     pub file_error: Option<String>,
-    /// Warnings about the log directory, to log once the subscriber is installed.
-    pub file_warnings: Vec<String>,
 }
 
 /// Build the subscriber for `level` (the `snapdog` target; `RUST_LOG` can
@@ -49,7 +67,6 @@ pub fn build(level: &str, log_file: Option<&str>) -> Result<LogSetup> {
             .with_context(|| format!("invalid log level {level:?}"))?,
     );
 
-    let file_warnings = log_file.map(retention_warnings).unwrap_or_default();
     let (file_writer, file_guard, file_error) = match log_file.map(open_log_file) {
         Some(Ok((writer, guard))) => (Some(writer), Some(guard), None),
         Some(Err(error)) => (None, None, Some(format!("{error:#}"))),
@@ -71,7 +88,6 @@ pub fn build(level: &str, log_file: Option<&str>) -> Result<LogSetup> {
         subscriber: Box::new(subscriber),
         file_guard,
         file_error,
-        file_warnings,
     })
 }
 
@@ -106,12 +122,11 @@ fn log_file_parts(path: &str) -> Result<(&Path, &str, Option<&str>)> {
 /// Open `path` as a daily-rotated, non-blocking log file that keeps
 /// [`LOG_FILES_KEPT`] files. The date goes between the file stem and the
 /// extension: `snapdog.log` becomes `snapdog.2026-10-25.log`.
-fn open_log_file(path: &str) -> Result<(NonBlocking, WorkerGuard)> {
+fn open_log_file(path: &str) -> Result<(NonBlocking, FileGuard)> {
     let (directory, stem, extension) = log_file_parts(path)?;
 
     let mut builder = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
-        .max_log_files(LOG_FILES_KEPT)
         .filename_prefix(stem);
     if let Some(extension) = extension {
         builder = builder.filename_suffix(extension);
@@ -120,55 +135,83 @@ fn open_log_file(path: &str) -> Result<(NonBlocking, WorkerGuard)> {
     let appender = builder
         .build(directory)
         .map_err(|e| anyhow::anyhow!("cannot write log files to {}: {e}", directory.display()))?;
-    Ok(tracing_appender::non_blocking(appender))
+    let (writer, worker) = tracing_appender::non_blocking(appender);
+
+    let stop = spawn_pruner(directory, stem, extension, PRUNE_INTERVAL);
+    Ok((
+        writer,
+        FileGuard {
+            _writer: worker,
+            _stop_pruning: stop,
+        },
+    ))
 }
 
-/// Whether `name` is one of the daily files of `stem` and `extension`
-/// (`<stem>.<yyyy-mm-dd>[.<extension>]`).
-fn is_daily_file(name: &str, stem: &str, extension: Option<&str>) -> bool {
-    let Some(rest) = name.strip_prefix(stem).and_then(|r| r.strip_prefix('.')) else {
-        return false;
-    };
-    let date = extension.map_or(Some(rest), |extension| {
-        rest.strip_suffix(extension)
-            .and_then(|r| r.strip_suffix('.'))
-    });
-    date.is_some_and(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok())
+/// Delete old daily files now and then every `interval`, until the returned sender
+/// is dropped.
+fn spawn_pruner(
+    directory: &Path,
+    stem: &str,
+    extension: Option<&str>,
+    interval: Duration,
+) -> mpsc::Sender<()> {
+    let (stop, stopped) = mpsc::channel::<()>();
+    let (directory, stem, extension) = (
+        directory.to_path_buf(),
+        stem.to_string(),
+        extension.map(str::to_string),
+    );
+    prune_daily_files(&directory, &stem, extension.as_deref(), LOG_FILES_KEPT);
+    let spawned = std::thread::Builder::new()
+        .name("log-pruner".into())
+        .spawn(move || {
+            // Timeout: time to check again. Disconnected: the guard was dropped.
+            while stopped.recv_timeout(interval) == Err(mpsc::RecvTimeoutError::Timeout) {
+                prune_daily_files(&directory, &stem, extension.as_deref(), LOG_FILES_KEPT);
+            }
+        });
+    if let Err(error) = spawned {
+        // Without the thread files are still pruned at every start.
+        eprintln!("cannot start the log file pruning thread: {error}");
+    }
+    stop
 }
 
-/// `tracing-appender` deletes by file-name prefix and suffix only, not by the
-/// exact daily pattern: with `log_file = "/var/log/snapdog.log"` it would also
-/// count (and, beyond [`LOG_FILES_KEPT`], delete) `snapdog-client.log`. Name the
-/// files in the directory that retention would touch without being `SnapDog`'s own.
-fn retention_warnings(path: &str) -> Vec<String> {
-    let Ok((directory, stem, extension)) = log_file_parts(path) else {
-        return Vec::new();
+/// The date in the name of a daily file of `stem` and `extension`
+/// (`<stem>.<yyyy-mm-dd>[.<extension>]`), or `None` for any other name.
+fn daily_file_date(name: &str, stem: &str, extension: Option<&str>) -> Option<chrono::NaiveDate> {
+    let rest = name.strip_prefix(stem)?.strip_prefix('.')?;
+    let date = match extension {
+        Some(extension) => rest.strip_suffix(extension)?.strip_suffix('.')?,
+        None => rest,
     };
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()
+}
+
+/// Delete the oldest daily files of `stem` and `extension` in `directory` until `keep`
+/// are left. Only regular files with an exact daily name are considered, ordered by the
+/// date in the name; the file of the current UTC day is never deleted. Errors are
+/// ignored: a file that cannot be removed is tried again next time.
+fn prune_daily_files(directory: &Path, stem: &str, extension: Option<&str>, keep: usize) {
     let Ok(entries) = std::fs::read_dir(directory) else {
-        return Vec::new();
+        return;
     };
-    let mut others: Vec<String> = entries
+    let mut daily: Vec<(chrono::NaiveDate, PathBuf)> = entries
         .filter_map(Result::ok)
-        .filter(|e| e.metadata().is_ok_and(|m| m.is_file()))
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|name| {
-            name.starts_with(stem)
-                && extension.is_none_or(|x| name.ends_with(x))
-                && !is_daily_file(name, stem, extension)
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            Some((daily_file_date(&name, stem, extension)?, e.path()))
         })
         .collect();
-    if others.is_empty() {
-        return Vec::new();
+    daily.sort();
+    let today = chrono::Utc::now().date_naive();
+    let excess = daily.len().saturating_sub(keep);
+    for (date, path) in daily.into_iter().take(excess) {
+        if date != today {
+            let _ = std::fs::remove_file(path);
+        }
     }
-    others.sort();
-    vec![format!(
-        "log_file retention keeps {LOG_FILES_KEPT} files and deletes older ones whose names \
-         start with \"{stem}\"{}. These files in {} are not SnapDog's daily files but match \
-         that rule and can be deleted: {}. Give SnapDog a log directory of its own.",
-        extension.map_or_else(String::new, |x| format!(" and end with \"{x}\"")),
-        directory.display(),
-        others.join(", ")
-    )]
 }
 
 #[cfg(test)]
@@ -217,11 +260,18 @@ mod tests {
         );
     }
 
-    /// `count` dated files `<stem>.2020-01-NN.log`, created oldest first.
-    fn old_files(dir: &Path, count: u32) {
-        for day in 1..=count {
+    fn names(dir: &Path) -> Vec<String> {
+        log_files(dir)
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// Dated files `snapdog.2020-01-NN.log` for NN in `days`, in the given order of creation.
+    fn dated_files(dir: &Path, days: impl IntoIterator<Item = u32>) {
+        for day in days {
             std::fs::write(dir.join(format!("snapdog.2020-01-{day:02}.log")), "old\n").unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 
@@ -229,16 +279,13 @@ mod tests {
     fn keeps_fourteen_daily_files_and_deletes_the_oldest() {
         assert_eq!(LOG_FILES_KEPT, 14);
         let dir = tempfile::tempdir().unwrap();
-        old_files(dir.path(), 20);
+        dated_files(dir.path(), 1..=20);
         let path = dir.path().join("snapdog.log");
 
         let setup = build("info", Some(path.to_str().unwrap())).unwrap();
         drop(setup.file_guard);
 
-        let names: Vec<String> = log_files(dir.path())
-            .iter()
-            .map(|f| f.file_name().unwrap().to_string_lossy().into_owned())
-            .collect();
+        let names = names(dir.path());
         assert_eq!(names.len(), 14, "{names:?}");
         assert!(
             !names.contains(&"snapdog.2020-01-07.log".to_string()),
@@ -257,7 +304,7 @@ mod tests {
     #[test]
     fn fewer_than_the_limit_are_all_kept() {
         let dir = tempfile::tempdir().unwrap();
-        old_files(dir.path(), 5);
+        dated_files(dir.path(), 1..=5);
         let path = dir.path().join("snapdog.log");
         drop(
             build("info", Some(path.to_str().unwrap()))
@@ -268,57 +315,120 @@ mod tests {
     }
 
     #[test]
-    fn daily_file_names_are_recognised_exactly() {
-        assert!(is_daily_file(
-            "snapdog.2026-10-26.log",
-            "snapdog",
-            Some("log")
-        ));
-        assert!(is_daily_file("snapdog.2026-10-26", "snapdog", None));
-        assert!(!is_daily_file("snapdog.log", "snapdog", Some("log")));
-        assert!(!is_daily_file(
-            "snapdog-client.2026-10-26.log",
-            "snapdog",
-            Some("log")
-        ));
-        assert!(!is_daily_file(
-            "snapdog.2026-10-26.txt",
-            "snapdog",
-            Some("log")
-        ));
-        assert!(!is_daily_file("snapdog.old.log", "snapdog", Some("log")));
-        assert!(!is_daily_file(
-            "snapdog.2026-13-40.log",
-            "snapdog",
-            Some("log")
-        ));
+    fn the_oldest_date_goes_first_whatever_the_creation_order() {
+        // Restored from a backup in reverse: the newest day was created first.
+        let dir = tempfile::tempdir().unwrap();
+        dated_files(dir.path(), (1..=20).rev());
+        prune_daily_files(dir.path(), "snapdog", Some("log"), 14);
+        let names = names(dir.path());
+        assert_eq!(names.len(), 14, "{names:?}");
+        assert_eq!(names[0], "snapdog.2020-01-07.log", "{names:?}");
+        assert_eq!(names[13], "snapdog.2020-01-20.log", "{names:?}");
     }
 
     #[test]
-    fn foreign_files_that_retention_would_delete_are_named() {
+    fn files_that_are_not_daily_files_are_never_touched() {
         let dir = tempfile::tempdir().unwrap();
+        // Older than every daily file by name and by creation time.
+        let foreign = [
+            "snapdog-audit.log",
+            "snapdog-client.log",
+            "snapdog.old.log",
+            "snapdog.log",
+            "snapdog.2020-01-01.log.gz",
+            "snapdog.2020-01-01.txt",
+            "snapdog.2020-13-40.log",
+            "snapdog2020-01-01.log",
+            "other.2020-01-01.log",
+            "notes.txt",
+        ];
+        for name in foreign {
+            std::fs::write(dir.path().join(name), "keep me").unwrap();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::fs::create_dir(dir.path().join("snapdog.2020-01-02.log")).unwrap();
+        dated_files(dir.path(), 3..=25);
+
         let path = dir.path().join("snapdog.log");
-        let path = path.to_str().unwrap();
-        assert_eq!(retention_warnings(path), Vec::<String>::new());
-
-        std::fs::write(dir.path().join("snapdog.2026-10-26.log"), "").unwrap();
-        std::fs::write(dir.path().join("unrelated.log"), "").unwrap();
-        std::fs::write(dir.path().join("snapdog.conf"), "").unwrap();
-        assert_eq!(retention_warnings(path), Vec::<String>::new());
-
-        std::fs::write(dir.path().join("snapdog-client.log"), "").unwrap();
-        std::fs::write(dir.path().join("snapdog.old.log"), "").unwrap();
-        let warnings = retention_warnings(path);
-        assert_eq!(warnings.len(), 1, "{warnings:?}");
-        assert!(
-            warnings[0].contains("snapdog-client.log, snapdog.old.log"),
-            "{warnings:?}"
+        drop(
+            build("info", Some(path.to_str().unwrap()))
+                .unwrap()
+                .file_guard,
         );
-        assert!(warnings[0].contains("keeps 14 files"), "{warnings:?}");
 
-        let setup = build("info", Some(path)).unwrap();
-        assert_eq!(setup.file_warnings, warnings);
-        drop(setup.file_guard);
+        let left = names(dir.path());
+        for name in foreign {
+            assert!(
+                left.contains(&name.to_string()),
+                "{name} was deleted: {left:?}"
+            );
+        }
+        assert!(
+            dir.path().join("snapdog.2020-01-02.log").is_dir(),
+            "a directory with a daily name is not a log file"
+        );
+        let daily = left
+            .iter()
+            .filter(|n| daily_file_date(n, "snapdog", Some("log")).is_some())
+            .filter(|n| dir.path().join(n).is_file())
+            .count();
+        // 23 old daily files plus today's: exactly 14 stay (the directory is not counted).
+        assert_eq!(daily, 14, "{left:?}");
+    }
+
+    #[test]
+    fn the_file_of_the_current_day_is_never_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let today = chrono::Utc::now().date_naive();
+        let todays = format!("snapdog.{today}.log");
+        std::fs::write(dir.path().join(&todays), "today").unwrap();
+        // Files dated after today (a clock that went backwards) must not push it out.
+        for ahead in 1..=3 {
+            let day = today + chrono::Days::new(ahead);
+            std::fs::write(dir.path().join(format!("snapdog.{day}.log")), "").unwrap();
+        }
+        prune_daily_files(dir.path(), "snapdog", Some("log"), 2);
+        assert!(names(dir.path()).contains(&todays));
+    }
+
+    #[test]
+    fn daily_file_names_are_recognised_exactly() {
+        let date = |n: &str, e: Option<&str>| daily_file_date(n, "snapdog", e);
+        assert_eq!(
+            date("snapdog.2026-10-26.log", Some("log")),
+            chrono::NaiveDate::from_ymd_opt(2026, 10, 26)
+        );
+        assert!(date("snapdog.2026-10-26", None).is_some());
+        assert!(date("snapdog.log", Some("log")).is_none());
+        assert!(date("snapdog-client.2026-10-26.log", Some("log")).is_none());
+        assert!(date("snapdog.2026-10-26.txt", Some("log")).is_none());
+        assert!(date("snapdog.old.log", Some("log")).is_none());
+        assert!(date("snapdog.2026-13-40.log", Some("log")).is_none());
+        // Without an extension the name is the date and nothing else.
+        assert!(date("snapdog.2026-10-26.log", None).is_none());
+    }
+
+    #[test]
+    fn old_files_are_also_removed_while_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let stop = spawn_pruner(
+            dir.path(),
+            "snapdog",
+            Some("log"),
+            Duration::from_millis(50),
+        );
+        dated_files(dir.path(), 1..=16);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while names(dir.path()).len() > 14 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(names(dir.path()).len(), 14, "{:?}", names(dir.path()));
+        // Dropping the guard ends the thread: later files stay.
+        drop(stop);
+        std::thread::sleep(Duration::from_millis(200));
+        dated_files(dir.path(), 17..=18);
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(names(dir.path()).len(), 16, "{:?}", names(dir.path()));
     }
 
     #[test]
