@@ -1290,6 +1290,14 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) ->
 
     for zone_cfg in &config.zones {
         let idx = zone_cfg.index;
+        if idx > MAX_ZONES {
+            tracing::warn!(
+                zone = idx,
+                max = MAX_ZONES,
+                "KNX device mode has no objects for this zone, its addresses are ignored"
+            );
+            continue;
+        }
         let knx = &zone_cfg.knx;
         // Map each configured GA to its zone GO ASAP
         let zone_gas: &[(&Option<String>, usize)] = &[
@@ -1340,6 +1348,14 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) ->
 
     for client_cfg in &config.clients {
         let idx = client_cfg.index;
+        if idx > MAX_CLIENTS {
+            tracing::warn!(
+                client = idx,
+                max = MAX_CLIENTS,
+                "KNX device mode has no objects for this client, its addresses are ignored"
+            );
+            continue;
+        }
         let knx = &client_cfg.knx;
         let client_gas: &[(&Option<String>, usize)] = &[
             (&knx.volume, CGO_VOLUME),
@@ -2201,5 +2217,27 @@ mod tests {
         complete(&mut bau, 1);
         assert!(!bau.configured());
         assert!(compact_state(&mut bau).is_none());
+    }
+
+    #[test]
+    fn toml_addresses_of_zone_11_are_not_installed_on_client_1() {
+        // zone_asap(11, i) == client_asap(1, i): without the bound, zone 11's play address
+        // would be associated with a client object.
+        let mut toml = String::new();
+        for z in 1..=11 {
+            let _ =
+                std::fmt::Write::write_fmt(&mut toml, format_args!("[[zone]]\nname = \"Z{z}\"\n"));
+            if z == 11 {
+                toml.push_str("[zone.knx]\nplay = \"4/0/1\"\n");
+            }
+        }
+        toml.push_str("[[client]]\nname = \"C\"\nmac = \"02:42:ac:11:00:10\"\nzone = \"Z1\"\n");
+        let config = crate::config::load_raw(toml::from_str(&toml).unwrap()).unwrap();
+        let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
+        assert!(
+            !build_tables_from_config(&mut bau, &config),
+            "nothing to install"
+        );
+        assert_eq!(TableSummary::of(&bau).associations, 0);
     }
 }

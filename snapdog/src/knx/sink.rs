@@ -18,7 +18,46 @@ use knx_rs_core::address::GroupAddress;
 use knx_rs_core::dpt::{self, Dpt, DptValue};
 use tokio::time::Instant;
 
+use super::group_objects::{
+    CLIENT_GO_COUNT, GLOBAL_GO_COUNT, MAX_CLIENTS, MAX_ZONES, ZONE_GO_COUNT, client_asap,
+    global_asap, zone_asap,
+};
 use super::transport::{KnxPublisher, Target};
+
+/// Identity of a group object: the zone or client it belongs to and its index in
+/// `ZONE_GOS` / `CLIENT_GOS`, or its index in `GLOBAL_GOS`.
+///
+/// The ASAP number is the device stack's name for the same thing, and it only exists for the
+/// 10 zones and 30 clients the product database has. Client mode has no such limit, so state
+/// that is kept per object (what was sent last) must not be keyed by ASAP: zone 11 would share
+/// its key with client 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ObjectKey {
+    /// Object `.1` of zone `.0` (both 1-based for the zone, 0-based for the object).
+    Zone(usize, usize),
+    /// Object `.1` of client `.0`.
+    Client(usize, usize),
+    /// Device-level object.
+    Global(usize),
+}
+
+impl ObjectKey {
+    /// The device stack's ASAP number, `None` for an object the product database does not have
+    /// (a zone above 10, a client above 30).
+    #[must_use]
+    pub fn asap(self) -> Option<u16> {
+        match self {
+            Self::Zone(z, i) if (1..=MAX_ZONES).contains(&z) && i < ZONE_GO_COUNT => {
+                Some(zone_asap(z, i))
+            }
+            Self::Client(c, i) if (1..=MAX_CLIENTS).contains(&c) && i < CLIENT_GO_COUNT => {
+                Some(client_asap(c, i))
+            }
+            Self::Global(i) if i < GLOBAL_GO_COUNT => Some(global_asap(i)),
+            _ => None,
+        }
+    }
+}
 
 /// Shortest time between two progress telegrams of one zone, unless the position jumps back
 /// (a new track). The value itself only changes in whole percent.
@@ -38,10 +77,10 @@ enum Mode {
 /// Change-filtering front end of a [`KnxPublisher`].
 pub struct StatusSink<'a, P> {
     transport: &'a P,
-    /// Encoded value last handed to the transport, per group object (ASAP).
-    sent: HashMap<u16, Vec<u8>>,
+    /// Encoded value last handed to the transport, per group object.
+    sent: HashMap<ObjectKey, Vec<u8>>,
     /// When a progress value was last handed to the transport, per group object.
-    progress_at: HashMap<u16, Instant>,
+    progress_at: HashMap<ObjectKey, Instant>,
 }
 
 impl<'a, P: KnxPublisher> StatusSink<'a, P> {
@@ -62,37 +101,43 @@ impl<'a, P: KnxPublisher> StatusSink<'a, P> {
 
     /// Offer a status value; it is sent when it differs from the last one sent.
     ///
-    /// `asap` identifies the group object. `address` is the configured group address, which
+    /// `key` identifies the group object. `address` is the configured group address, which
     /// only client mode uses (device mode lets the programmed associations choose).
-    pub async fn write(&mut self, asap: u16, address: Option<&str>, dpt: Dpt, value: &DptValue) {
-        self.offer(asap, address, dpt, value, Mode::OnChange).await;
+    pub async fn write(
+        &mut self,
+        key: ObjectKey,
+        address: Option<&str>,
+        dpt: Dpt,
+        value: &DptValue,
+    ) {
+        self.offer(key, address, dpt, value, Mode::OnChange).await;
     }
 
     /// Offer a value that is sent every time, changed or not.
     pub async fn write_always(
         &mut self,
-        asap: u16,
+        key: ObjectKey,
         address: Option<&str>,
         dpt: Dpt,
         value: &DptValue,
     ) {
-        self.offer(asap, address, dpt, value, Mode::Always).await;
+        self.offer(key, address, dpt, value, Mode::Always).await;
     }
 
     /// Offer a playback progress value: on change, rate limited.
     pub async fn write_progress(
         &mut self,
-        asap: u16,
+        key: ObjectKey,
         address: Option<&str>,
         dpt: Dpt,
         value: &DptValue,
     ) {
-        self.offer(asap, address, dpt, value, Mode::Progress).await;
+        self.offer(key, address, dpt, value, Mode::Progress).await;
     }
 
     async fn offer(
         &mut self,
-        asap: u16,
+        key: ObjectKey,
         address: Option<&str>,
         dpt: Dpt,
         value: &DptValue,
@@ -111,41 +156,46 @@ impl<'a, P: KnxPublisher> StatusSink<'a, P> {
                 }
             }
         } else {
+            // A zone or client the product database does not have has no object to write.
+            let Some(asap) = key.asap() else {
+                tracing::debug!(?key, "no device object for this zone or client, not sent");
+                return;
+            };
             Target::Object(asap)
         };
         let encoded = match dpt::encode(dpt, value) {
             Ok(bytes) => bytes,
             Err(e) => {
-                tracing::warn!(asap, error = %e, "KNX value not encodable");
+                tracing::warn!(?key, error = %e, "KNX value not encodable");
                 return;
             }
         };
 
-        if mode != Mode::Always && self.sent.get(&asap) == Some(&encoded) {
+        if mode != Mode::Always && self.sent.get(&key) == Some(&encoded) {
             return;
         }
-        if mode == Mode::Progress && !self.progress_due(asap, &encoded) {
+        if mode == Mode::Progress && !self.progress_due(key, &encoded) {
             return;
         }
 
         // Count only what the transport took, so a failed write is offered again next time.
         if self.transport.write(target, dpt, value).await {
-            self.sent.insert(asap, encoded);
+            self.sent.insert(key, encoded);
             if mode == Mode::Progress {
-                self.progress_at.insert(asap, Instant::now());
+                self.progress_at.insert(key, Instant::now());
             }
         }
     }
 
     /// Whether a progress telegram may go out now: it has been long enough, or the value
     /// went backwards (the next track started).
-    fn progress_due(&self, asap: u16, encoded: &[u8]) -> bool {
-        let Some(at) = self.progress_at.get(&asap) else {
+    fn progress_due(&self, key: ObjectKey, encoded: &[u8]) -> bool {
+        let Some(at) = self.progress_at.get(&key) else {
             return true;
         };
         let went_back = self
             .sent
-            .get(&asap)
+            .get(&key)
             .is_some_and(|last| encoded.first() < last.first());
         went_back || at.elapsed() >= PROGRESS_MIN_INTERVAL
     }
@@ -213,15 +263,21 @@ mod tests {
     use super::testing::Recorder;
     use super::*;
 
+    /// Object `n` of zone 1.
+    const fn k(n: usize) -> ObjectKey {
+        ObjectKey::Zone(1, n)
+    }
+
     #[tokio::test]
     async fn unchanged_values_are_not_sent_again() {
         let rec = Recorder::<true>::default();
         let mut sink = StatusSink::new(&rec);
         for _ in 0..5 {
-            sink.write(1, Some("1/1/1"), DPT_SWITCH, &true.into()).await;
+            sink.write(k(1), Some("1/1/1"), DPT_SWITCH, &true.into())
+                .await;
         }
         assert_eq!(rec.count(), 1);
-        sink.write(1, Some("1/1/1"), DPT_SWITCH, &false.into())
+        sink.write(k(1), Some("1/1/1"), DPT_SWITCH, &false.into())
             .await;
         assert_eq!(rec.count(), 2);
     }
@@ -230,9 +286,11 @@ mod tests {
     async fn invalidate_sends_everything_again() {
         let rec = Recorder::<true>::default();
         let mut sink = StatusSink::new(&rec);
-        sink.write(1, Some("1/1/1"), DPT_SWITCH, &true.into()).await;
+        sink.write(k(1), Some("1/1/1"), DPT_SWITCH, &true.into())
+            .await;
         sink.invalidate();
-        sink.write(1, Some("1/1/1"), DPT_SWITCH, &true.into()).await;
+        sink.write(k(1), Some("1/1/1"), DPT_SWITCH, &true.into())
+            .await;
         assert_eq!(rec.count(), 2);
     }
 
@@ -241,7 +299,7 @@ mod tests {
         let rec = Recorder::<true>::default();
         let mut sink = StatusSink::new(&rec);
         for _ in 0..3 {
-            sink.write_always(1, Some("1/1/1"), DPT_SWITCH, &true.into())
+            sink.write_always(k(1), Some("1/1/1"), DPT_SWITCH, &true.into())
                 .await;
         }
         assert_eq!(rec.count(), 3);
@@ -251,11 +309,11 @@ mod tests {
     async fn client_mode_needs_a_configured_address() {
         let rec = Recorder::<true>::default();
         let mut sink = StatusSink::new(&rec);
-        sink.write(1, None, DPT_SWITCH, &true.into()).await;
-        sink.write(2, Some("not-an-address"), DPT_SWITCH, &true.into())
+        sink.write(k(1), None, DPT_SWITCH, &true.into()).await;
+        sink.write(k(2), Some("not-an-address"), DPT_SWITCH, &true.into())
             .await;
         assert_eq!(rec.count(), 0);
-        sink.write(3, Some("1/2047"), DPT_SWITCH, &true.into())
+        sink.write(k(3), Some("1/2047"), DPT_SWITCH, &true.into())
             .await;
         let writes = rec.writes.lock().unwrap();
         assert_eq!(
@@ -268,12 +326,12 @@ mod tests {
     async fn device_mode_addresses_the_object_and_ignores_configured_addresses() {
         let rec = Recorder::<false>::default();
         let mut sink = StatusSink::new(&rec);
-        sink.write(42, None, DPT_SWITCH, &true.into()).await;
-        sink.write(43, Some("garbage"), DPT_SWITCH, &true.into())
+        sink.write(k(3), None, DPT_SWITCH, &true.into()).await;
+        sink.write(k(4), Some("garbage"), DPT_SWITCH, &true.into())
             .await;
         let writes = rec.writes.lock().unwrap();
-        assert_eq!(writes[0].0, Target::Object(42));
-        assert_eq!(writes[1].0, Target::Object(43));
+        assert_eq!(writes[0].0, Target::Object(zone_asap(1, 3)));
+        assert_eq!(writes[1].0, Target::Object(zone_asap(1, 4)));
     }
 
     #[tokio::test]
@@ -282,9 +340,11 @@ mod tests {
         rec.accept
             .store(false, std::sync::atomic::Ordering::Relaxed);
         let mut sink = StatusSink::new(&rec);
-        sink.write(1, Some("1/1/1"), DPT_SWITCH, &true.into()).await;
+        sink.write(k(1), Some("1/1/1"), DPT_SWITCH, &true.into())
+            .await;
         rec.accept.store(true, std::sync::atomic::Ordering::Relaxed);
-        sink.write(1, Some("1/1/1"), DPT_SWITCH, &true.into()).await;
+        sink.write(k(1), Some("1/1/1"), DPT_SWITCH, &true.into())
+            .await;
         assert_eq!(rec.count(), 1);
     }
 
@@ -293,18 +353,18 @@ mod tests {
         let rec = Recorder::<true>::default();
         let mut sink = StatusSink::new(&rec);
         let pct = |p: f64| DptValue::Float(p);
-        sink.write_progress(1, Some("1/1/8"), DPT_SCALING, &pct(10.0))
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &pct(10.0))
             .await;
         // Within the interval: held back although the value changed.
-        sink.write_progress(1, Some("1/1/8"), DPT_SCALING, &pct(11.0))
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &pct(11.0))
             .await;
         assert_eq!(rec.count(), 1);
         // The next track starts: the value goes back and is sent immediately.
-        sink.write_progress(1, Some("1/1/8"), DPT_SCALING, &pct(0.0))
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &pct(0.0))
             .await;
         assert_eq!(rec.count(), 2);
         // Same value again: nothing.
-        sink.write_progress(1, Some("1/1/8"), DPT_SCALING, &pct(0.0))
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &pct(0.0))
             .await;
         assert_eq!(rec.count(), 2);
     }
@@ -313,11 +373,59 @@ mod tests {
     async fn progress_resumes_after_the_interval() {
         let rec = Recorder::<true>::default();
         let mut sink = StatusSink::new(&rec);
-        sink.write_progress(1, Some("1/1/8"), DPT_SCALING, &DptValue::Float(10.0))
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &DptValue::Float(10.0))
             .await;
         tokio::time::advance(PROGRESS_MIN_INTERVAL).await;
-        sink.write_progress(1, Some("1/1/8"), DPT_SCALING, &DptValue::Float(11.0))
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &DptValue::Float(11.0))
             .await;
         assert_eq!(rec.count(), 2);
+    }
+
+    #[test]
+    fn asap_exists_only_for_the_objects_of_the_product_database() {
+        assert_eq!(ObjectKey::Zone(1, 0).asap(), Some(1));
+        assert_eq!(
+            ObjectKey::Zone(MAX_ZONES, ZONE_GO_COUNT - 1).asap(),
+            Some(330)
+        );
+        assert_eq!(ObjectKey::Zone(MAX_ZONES + 1, 0).asap(), None);
+        assert_eq!(ObjectKey::Zone(0, 0).asap(), None);
+        assert_eq!(ObjectKey::Zone(1, ZONE_GO_COUNT).asap(), None);
+        assert_eq!(ObjectKey::Client(1, 0).asap(), Some(331));
+        assert_eq!(ObjectKey::Client(MAX_CLIENTS + 1, 0).asap(), None);
+        assert_eq!(ObjectKey::Global(0).asap(), Some(661));
+        assert_eq!(ObjectKey::Global(GLOBAL_GO_COUNT).asap(), None);
+        // The numbers that collide when two objects are told apart by ASAP only.
+        assert_eq!(
+            zone_asap(MAX_ZONES + 1, 8),
+            client_asap(1, 8),
+            "zone 11 shares ASAPs with client 1"
+        );
+    }
+
+    #[tokio::test]
+    async fn client_mode_zone_11_does_not_share_memory_with_client_1() {
+        // Client mode has no limit on zones. Zone 11's mute status (object 9) and client 1's
+        // zone status (object 8) are different objects whose ASAP numbers are both 340.
+        let rec = Recorder::<true>::default();
+        let mut sink = StatusSink::new(&rec);
+        let zone_11_mute = ObjectKey::Zone(11, 9);
+        let client_1_zone = ObjectKey::Client(1, 8);
+        sink.write(zone_11_mute, Some("3/0/1"), DPT_SWITCH, &true.into())
+            .await;
+        // Same encoded byte, different object: must still go out.
+        sink.write(client_1_zone, Some("3/0/2"), DPT_SWITCH, &true.into())
+            .await;
+        assert_eq!(rec.count(), 2);
+    }
+
+    #[tokio::test]
+    async fn device_mode_has_no_object_for_zone_11() {
+        // Writing zone 11 to ASAP 340 would overwrite client 1's object.
+        let rec = Recorder::<false>::default();
+        let mut sink = StatusSink::new(&rec);
+        sink.write(ObjectKey::Zone(11, 9), None, DPT_SWITCH, &true.into())
+            .await;
+        assert_eq!(rec.count(), 0);
     }
 }

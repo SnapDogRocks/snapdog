@@ -56,9 +56,9 @@ use group_objects::{
     ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING,
     ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
     ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
-    ZONE_GO_COUNT, client_asap, global_asap, zone_asap,
+    ZONE_GO_COUNT,
 };
-use sink::StatusSink;
+use sink::{ObjectKey, StatusSink};
 use transport::{Incoming, KnxListener, KnxPublisher};
 
 // ── Start ─────────────────────────────────────────────────────
@@ -298,7 +298,7 @@ async fn publish_heartbeat<P: KnxPublisher>(
     };
     // The heartbeat is the point of the object: send it every time, changed or not.
     sink.write_always(
-        global_asap(GGO_SERVER_ONLINE),
+        ObjectKey::Global(GGO_SERVER_ONLINE),
         knx.server_online.as_deref(),
         DPT_SWITCH,
         &true.into(),
@@ -308,7 +308,7 @@ async fn publish_heartbeat<P: KnxPublisher>(
     if *last_healthy != Some(healthy) {
         *last_healthy = Some(healthy);
         sink.write(
-            global_asap(GGO_SYSTEM_FAULT),
+            ObjectKey::Global(GGO_SYSTEM_FAULT),
             knx.system_fault.as_deref(),
             DPT_SWITCH,
             &(!healthy).into(),
@@ -393,7 +393,7 @@ async fn publish_all_mute_status<P: KnxPublisher>(
         !s.zones.is_empty() && s.zones.values().all(|z| z.muted)
     };
     sink.write(
-        global_asap(GGO_ALL_MUTE),
+        ObjectKey::Global(GGO_ALL_MUTE),
         config
             .knx
             .as_ref()
@@ -422,7 +422,7 @@ async fn publish_zone_state<P: KnxPublisher>(
         }
     };
     let playing = zone.playback.to_string() == "playing";
-    let go = |i: usize| zone_asap(zone_index, i);
+    let go = |i: usize| ObjectKey::Zone(zone_index, i);
 
     sink.write(
         go(ZGO_VOLUME_STATUS),
@@ -514,7 +514,7 @@ async fn publish_zone_track<P: KnxPublisher>(
     };
 
     if let Some(ref track) = track {
-        let go = |i: usize| zone_asap(zone_index, i);
+        let go = |i: usize| ObjectKey::Zone(zone_index, i);
         sink.write(
             go(ZGO_TRACK_TITLE),
             knx.track_title_status.as_deref(),
@@ -577,7 +577,7 @@ async fn publish_zone_progress<P: KnxPublisher>(
             .map_or(0.0, track_progress_pct)
     };
     sink.write_progress(
-        zone_asap(zone_index, ZGO_TRACK_PROGRESS),
+        ObjectKey::Zone(zone_index, ZGO_TRACK_PROGRESS),
         zone_cfg.knx.track_progress_status.as_deref(),
         DPT_SCALING,
         &DptValue::Float(pct),
@@ -602,7 +602,7 @@ async fn publish_client_state<P: KnxPublisher>(
             None => return,
         }
     };
-    let go = |i: usize| client_asap(client_index, i);
+    let go = |i: usize| ObjectKey::Client(client_index, i);
 
     sink.write(
         go(CGO_VOLUME_STATUS),
@@ -1190,6 +1190,7 @@ fn decode_dim(payload: &[u8]) -> Option<i32> {
 mod tests {
     use super::*;
     use crate::player::ZoneCommand;
+    use group_objects::{client_asap, global_asap, zone_asap};
     use knx_rs_core::address::GroupAddress;
     use knx_rs_core::dpt::Dpt;
     use std::sync::Arc;
@@ -1854,6 +1855,122 @@ zone = "Z1"
         assert!(
             progress >= TICKS / 2 - 1,
             "progress still advances ({progress})"
+        );
+    }
+
+    /// Client mode has no limit on zones. Zone 11's mute status and client 1's zone status
+    /// are different objects that the device stack would number alike (ASAP 340); the change
+    /// filter must tell them apart or the second telegram is suppressed.
+    #[tokio::test]
+    async fn eleven_zones_do_not_suppress_the_status_of_client_one() {
+        let mut toml =
+            String::from("[knx]\nrole = \"client\"\nurl = \"udp://192.168.1.50:3671\"\n");
+        for z in 1..=11 {
+            let _ =
+                std::fmt::Write::write_fmt(&mut toml, format_args!("[[zone]]\nname = \"Z{z}\"\n"));
+            if z == 11 {
+                toml.push_str("[zone.knx]\nmute_status = \"3/0/1\"\n");
+            }
+        }
+        toml.push_str(
+            "[[client]]\nname = \"C1\"\nmac = \"02:42:ac:11:00:10\"\nzone = \"Z1\"\n[client.knx]\nzone_status = \"3/0/2\"\n",
+        );
+        let cfg = crate::config::load_raw(toml::from_str(&toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        store.write().await.zones.get_mut(&11).unwrap().muted = true;
+
+        let rec = Rec::default();
+        let mut sink = StatusSink::new(&rec);
+        publish_zone_state(11, &cfg, &store, &mut sink).await;
+        publish_client_state(1, &cfg, &store, &mut sink).await;
+
+        let w = written(&rec);
+        assert!(
+            w.iter().any(|(g, _, _)| g == "3/0/1"),
+            "zone 11 mute status"
+        );
+        assert!(
+            w.iter().any(|(g, _, _)| g == "3/0/2"),
+            "client 1 zone status"
+        );
+    }
+
+    // ── object_command ──────────────────────────────────────────────
+
+    #[test]
+    fn object_command_maps_every_writable_object_and_only_those() {
+        use group_objects::{CLIENT_GOS, GLOBAL_GOS, ZONE_GOS};
+        for zone in [1, 2, MAX_ZONES] {
+            for (i, def) in ZONE_GOS.iter().enumerate() {
+                let cmd = object_command(zone_asap(zone, i));
+                assert_eq!(
+                    cmd.is_some(),
+                    def.flags.write,
+                    "zone {zone} object {i} ({}): writable objects command, status objects do not",
+                    def.name
+                );
+                if let Some(Command::Zone(z, _)) = cmd {
+                    assert_eq!(z, zone, "{}", def.name);
+                }
+            }
+        }
+        for client in [1, 2, MAX_CLIENTS] {
+            for (i, def) in CLIENT_GOS.iter().enumerate() {
+                let cmd = object_command(client_asap(client, i));
+                assert_eq!(
+                    cmd.is_some(),
+                    def.flags.write,
+                    "client {client} {}",
+                    def.name
+                );
+                if let Some(Command::Client(c, _)) = cmd {
+                    assert_eq!(c, client);
+                }
+            }
+        }
+        for (i, def) in GLOBAL_GOS.iter().enumerate() {
+            let cmd = object_command(global_asap(i));
+            assert_eq!(cmd.is_some(), def.flags.write, "global {}", def.name);
+        }
+    }
+
+    #[test]
+    fn object_command_names_the_action_of_known_objects() {
+        assert_eq!(
+            object_command(zone_asap(1, ZGO_PLAY)),
+            Some(Command::Zone(1, "play"))
+        );
+        assert_eq!(
+            object_command(zone_asap(3, ZGO_VOLUME)),
+            Some(Command::Zone(3, "volume"))
+        );
+        assert_eq!(
+            object_command(zone_asap(MAX_ZONES, ZGO_PRESENCE_ENABLE)),
+            Some(Command::Zone(MAX_ZONES, "presence_enable"))
+        );
+        assert_eq!(
+            object_command(client_asap(2, CGO_LATENCY)),
+            Some(Command::Client(2, "latency"))
+        );
+        assert_eq!(
+            object_command(global_asap(GGO_ALL_STOP)),
+            Some(Command::Global("all_stop"))
+        );
+        // Status objects and out-of-range numbers command nothing.
+        assert_eq!(object_command(zone_asap(1, ZGO_VOLUME_STATUS)), None);
+        assert_eq!(object_command(0), None);
+        assert_eq!(object_command(666), None);
+        assert_eq!(object_command(u16::MAX), None);
+        // Adjacent ASAPs at the block borders land on the right side.
+        assert_eq!(
+            object_command(330),
+            None,
+            "zone 10's last object is a status object"
+        );
+        assert_eq!(
+            object_command(331),
+            Some(Command::Client(1, "volume")),
+            "first client object"
         );
     }
 }
