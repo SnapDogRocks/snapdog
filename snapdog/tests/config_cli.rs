@@ -157,3 +157,31 @@ fn help_describes_codec_and_bind_as_the_code_behaves() {
     assert!(help.contains("--check-config"));
     assert!(help.contains("--knx-sync-system-clock"));
 }
+
+#[test]
+fn codec_override_gets_the_same_key_warnings_as_the_file() {
+    let zone = "[[zone]]\nname = \"Living\"\n";
+
+    // f32lz4e only on the command line: the default key is public.
+    let output = run_check(zone, &["--codec", "f32lz4e"]);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("built-in default key"), "{stderr}");
+
+    // The file asks for f32lz4e without a key, the command line switches it off:
+    // the warning about the file's codec no longer applies.
+    let file = format!("[snapcast]\ncodec = \"f32lz4e\"\n{zone}");
+    let stderr = String::from_utf8_lossy(&run_check(&file, &[]).stderr).into_owned();
+    assert!(stderr.contains("built-in default key"), "{stderr}");
+    let stderr =
+        String::from_utf8_lossy(&run_check(&file, &["--codec", "pcm"]).stderr).into_owned();
+    assert!(!stderr.contains("built-in default key"), "{stderr}");
+
+    // A key in the file with a codec that does not encrypt, chosen on the command line.
+    let keyed = format!("[snapcast]\ncodec = \"f32lz4e\"\nencryption_psk = \"s3cret\"\n{zone}");
+    let stderr = String::from_utf8_lossy(&run_check(&keyed, &[]).stderr).into_owned();
+    assert!(!stderr.contains("does not encrypt"), "{stderr}");
+    let stderr =
+        String::from_utf8_lossy(&run_check(&keyed, &["--codec", "flac"]).stderr).into_owned();
+    assert!(stderr.contains("does not encrypt"), "{stderr}");
+}

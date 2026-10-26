@@ -241,13 +241,14 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
 
     apply_env_overrides(&mut config);
     validate(&mut config)?;
-    notices::collect(&mut config);
 
     Ok(config)
 }
 
 /// Cross-field validation and normalization. Runs after all overrides are applied,
 /// and again after command-line overrides (see `main`), so it must be idempotent.
+/// It also recomputes the notices that depend on the resolved settings
+/// (default encryption key, keys this build ignores), so those reflect the final values.
 ///
 /// # Errors
 ///
@@ -307,6 +308,7 @@ pub fn validate(config: &mut AppConfig) -> Result<()> {
         config.warn(message);
     }
 
+    notices::collect(config);
     Ok(())
 }
 

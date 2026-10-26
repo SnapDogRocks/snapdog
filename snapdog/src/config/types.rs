@@ -1134,6 +1134,10 @@ pub struct ConfigNotice {
     pub level: NoticeLevel,
     /// Human-readable text. Names the key and says what to do instead.
     pub message: String,
+    /// Computed from the resolved settings (see `notices::collect`) rather than
+    /// recorded while loading. Such notices are recomputed whenever the
+    /// settings change, so a command-line override replaces a stale one.
+    pub derived: bool,
 }
 
 /// Result of resolving a unified playlist index.
@@ -1157,8 +1161,16 @@ impl AppConfig {
     }
 
     fn push_notice(&mut self, level: NoticeLevel, message: String) {
-        let notice = ConfigNotice { level, message };
-        if !self.notices.contains(&notice) {
+        let notice = ConfigNotice {
+            level,
+            message,
+            derived: false,
+        };
+        if !self
+            .notices
+            .iter()
+            .any(|n| n.level == notice.level && n.message == notice.message)
+        {
             self.notices.push(notice);
         }
     }

@@ -11,7 +11,21 @@
 use super::SnapcastConfig;
 use super::{AppConfig, AudioCodec};
 
+/// Recompute the notices that follow from the resolved settings.
+///
+/// Call it after every change to those settings (file, environment, command
+/// line): it first drops the notices an earlier call produced, so a setting
+/// that was fixed since then no longer warns.
 pub(super) fn collect(config: &mut AppConfig) {
+    config.notices.retain(|n| !n.derived);
+    let recorded = config.notices.len();
+    derive(config);
+    for notice in &mut config.notices[recorded..] {
+        notice.derived = true;
+    }
+}
+
+fn derive(config: &mut AppConfig) {
     encryption(config);
     #[cfg(feature = "snapcast-embedded")]
     embedded_snapcast(config);
@@ -172,6 +186,34 @@ mod tests {
         let mut config = load("");
         config::override_psk(&mut config, Some(String::new()));
         assert!(config.snapcast.encryption_psk.is_none());
+    }
+
+    #[test]
+    fn derived_notices_follow_the_settings_when_they_change() {
+        let mut config = load("[snapcast]\ncodec = \"f32lz4e\"");
+        assert!(mentions(&config, "built-in default key"));
+
+        config.snapcast.codec = config::AudioCodec::Pcm;
+        super::collect(&mut config);
+        assert!(!mentions(&config, "built-in default key"));
+
+        config.snapcast.codec = config::AudioCodec::F32lz4e;
+        super::collect(&mut config);
+        super::collect(&mut config);
+        let hits = warnings(&config)
+            .into_iter()
+            .filter(|m| m.contains("built-in default key"))
+            .count();
+        assert_eq!(hits, 1, "recomputing must not duplicate");
+    }
+
+    #[test]
+    fn recorded_notices_survive_a_recomputation() {
+        let mut config = load("[snapcast]\nstreaming_prot = 1");
+        config.warn("recorded while loading");
+        super::collect(&mut config);
+        assert!(mentions(&config, "streaming_prot"));
+        assert!(mentions(&config, "recorded while loading"));
     }
 
     #[test]
