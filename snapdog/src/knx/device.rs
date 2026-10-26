@@ -27,13 +27,15 @@ use super::supervisor::{
 };
 use super::transport::{DeviceUnavailable, Incoming, Target};
 
-/// Current monotonic time in milliseconds (for transport layer timeouts).
+/// Milliseconds on the monotonic clock since the first call (for transport layer timeouts).
+///
+/// The wall clock must not be used for this: `sync_system_clock` sets it from the bus, and a
+/// step backwards or forwards would fire or stretch the transport layer's timeouts. Starts at 1,
+/// so that no time stamp is 0.
 fn now_ms() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let started = START.get_or_init(std::time::Instant::now);
+    u64::try_from(started.elapsed().as_millis()).map_or(u64::MAX, |ms| ms.saturating_add(1))
 }
 
 /// KNX device serial number: manufacturer prefix (0x00FA) + last 4 bytes of host MAC.
@@ -186,11 +188,22 @@ fn write_atomically(path: &std::path::Path, buf: &[u8]) -> std::io::Result<()> {
         TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let result = (|| {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-        let mut file = options.open(&tmp)?;
+        let open = || {
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+            options.open(&tmp)
+        };
+        let mut file = match open() {
+            // A leftover of a process that had our process id (and crashed before it could clean
+            // up): the name is ours to take.
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                std::fs::remove_file(&tmp)?;
+                open()?
+            }
+            other => other?,
+        };
         file.write_all(buf)?;
         file.sync_all()?;
         drop(file);
@@ -1938,6 +1951,34 @@ fn classify_group_frame(bau: &Bau, frame: &CemiFrame) -> GroupPolicy {
 mod tests {
     use super::group_objects::zone_asap;
     use super::*;
+
+    #[test]
+    fn the_transport_clock_follows_no_wall_clock() {
+        let first = now_ms();
+        // Epoch milliseconds are about 1.8e12; a monotonic clock that starts with the process is
+        // far below a day, whatever the system clock says.
+        assert!((1..86_400_000).contains(&first), "{first}");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(now_ms() > first);
+    }
+
+    #[test]
+    fn a_leftover_temp_file_of_the_same_name_does_not_fail_the_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("knx-memory.bin");
+        // The temp file names are `knx-memory.tmp.<pid>.<counter>`: occupy the next ones.
+        let pid = std::process::id();
+        for counter in 0..200 {
+            std::fs::write(
+                dir.path().join(format!("knx-memory.tmp.{pid}.{counter}")),
+                b"stale",
+            )
+            .unwrap();
+        }
+        // Whatever the counter is at, the write goes through, and no leftover stays that it used.
+        write_atomically(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+    }
 
     /// A point-to-point frame from 15.15.177 to 1.1.100 carrying `tpdu` (TPCI and APDU).
     fn p2p(tpdu: &[u8]) -> CemiFrame {
