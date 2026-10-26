@@ -401,6 +401,7 @@ Before this change `/docs` was on by default and embedded the document without a
 |------|----------|---------|------------|
 | 5555 (`[http].port`) | TCP | WebUI, REST API, WebSocket | `[http].api_keys`, optional TLS; `[http].bind` limits the address |
 | 1704 (`[snapcast].streaming_port`) | TCP | The audio stream for Snapcast clients | None. Whoever can reach the port can connect as a client and receive the audio |
+| 1705 (`[snapcast].jsonrpc_tcp_port`) | TCP | JSON-RPC control of an external `snapserver`, only in builds with the `snapcast-process` feature (the released binaries use the embedded server and do not open it) | None. Anyone who can reach it controls the server, and SnapDog's generated `snapserver.conf` does not restrict its address, so block it in the firewall |
 | 3671 | UDP | KNX/IP device mode | KNX/IP has no authentication of its own |
 
 Port 1704 has no authentication, in SnapDog as in Snapcast. To limit it:

@@ -422,3 +422,25 @@ fn the_readme_names_the_zone_of_the_packaged_config() {
         "README does not say the packaged config has one zone named \"{name}\""
     );
 }
+
+#[test]
+fn the_readme_port_table_lists_every_port_the_server_opens() {
+    // Port 1705 (JSON-RPC of an external snapserver, process builds) has no authentication
+    // and was missing from the table.
+    let readme = include_str!("../../README.md");
+    let table: Vec<&str> = readme.lines().filter(|l| l.starts_with("| ")).collect();
+    let row = |needle: &str| {
+        table
+            .iter()
+            .find(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("no README table row for {needle}"))
+    };
+    assert!(
+        row("jsonrpc_tcp_port").contains("None"),
+        "1705 is unauthenticated"
+    );
+    assert!(row("jsonrpc_tcp_port").contains("snapcast-process"));
+    assert!(row("streaming_port").contains("None"));
+    assert!(row("[http].port").contains("api_keys"));
+    assert!(row("KNX/IP device mode").contains("3671"));
+}
