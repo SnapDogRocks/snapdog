@@ -22,9 +22,25 @@
 #   printf '#!/bin/sh\nexec sleep 100000\n' >stub && install -Dm755 stub \
 #     target/<triple>/release/snapdog   (and the same for snapdog-client)
 #   cargo deb -p snapdog --target <triple> --no-build --no-strip
+#
+# An "upgrade" here is a reinstall of the same version: dpkg runs the same scripts with
+# the same arguments. Scenarios named reboot_* restart the container between two phases,
+# which empties /run like a reboot does and keeps everything else.
+# The scenario_* functions are called by name, which shellcheck cannot see.
+# shellcheck disable=SC2329
 set -eu
 
 IMAGE=snapdog-deb-lifecycle-test
+
+wait_for_systemd() { # CONTAINER
+    i=0
+    until docker exec "$1" systemctl is-system-running 2>/dev/null \
+        | grep -q '^\(running\|degraded\)$'; do
+        i=$((i + 1))
+        [ "$i" -lt 60 ] || { echo "systemd did not come up" >&2; return 1; }
+        sleep 0.5
+    done
+}
 
 if [ "${1:-}" != --inside ]; then
     [ $# -ge 1 ] || { sed -n '2,14p' "$0" >&2; exit 2; }
@@ -52,16 +68,20 @@ EOF
         docker cp "$deb_dir/." "$name:/deb"
         [ -z "$old_dir" ] || docker cp "$old_dir/." "$name:/deb-old"
         docker cp "$0" "$name:/lifecycle.sh"
-        i=0
-        until docker exec "$name" systemctl is-system-running 2>/dev/null \
-            | grep -q '^\(running\|degraded\)$'; do
-            i=$((i + 1))
-            [ "$i" -lt 30 ] || { echo "systemd did not come up" >&2; exit 1; }
-            sleep 1
-        done
-        if docker exec "$name" sh /lifecycle.sh --inside "$scenario"; then :; else
-            failed=$((failed + 1))
-        fi
+        wait_for_systemd "$name"
+        ok=1
+        case $scenario in
+            reboot_*)
+                docker exec "$name" sh /lifecycle.sh --inside "$scenario" 1 || ok=0
+                if [ "$ok" = 1 ]; then
+                    docker restart "$name" >/dev/null
+                    wait_for_systemd "$name"
+                    docker exec "$name" sh /lifecycle.sh --inside "$scenario" 2 || ok=0
+                fi
+                ;;
+            *) docker exec "$name" sh /lifecycle.sh --inside "$scenario" 0 || ok=0 ;;
+        esac
+        [ "$ok" = 1 ] || failed=$((failed + 1))
         docker rm -f "$name" >/dev/null
     done
     if [ "$failed" -ne 0 ]; then
@@ -77,10 +97,17 @@ fi
 scenario_list="fresh_install
 upgrade_restarts_running_services
 upgrade_keeps_a_stopped_server_stopped
+upgrade_starts_a_stopped_enabled_client
 upgrade_respects_a_disabled_client
+two_upgrades_in_a_row
+masked_server_stays_masked
 reinstall_after_remove_restores_a_running_server
+reboot_reinstall_after_remove_restores_a_running_server
 reinstall_after_remove_leaves_a_stopped_server_alone
 reinstall_after_remove_leaves_a_disabled_server_alone
+interrupted_remove_leaves_nothing_for_a_later_upgrade
+policy_rc_d_101_keeps_state_of_a_running_server
+failed_server_unit
 purge_removes_state
 purge_while_running
 purge_after_remove
@@ -101,15 +128,31 @@ old_server=$(ls /deb-old/snapdog_*_"$arch".deb 2>/dev/null || true)
 old_client=$(ls /deb-old/snapdog-client_*_"$arch".deb 2>/dev/null || true)
 failures=0
 step_name=setup
+state_dir=/var/lib/snapdog
+note=$state_dir/.dpkg-was-running
 
+# Wait for what the scripts started to settle: a check passes at once if it holds, and is
+# retried for up to 10 s if not, so that no check depends on a fixed pause.
+retry() {
+    i=0
+    until "$@"; do
+        i=$((i + 1))
+        [ "$i" -lt 20 ] || return 1
+        sleep 0.5
+    done
+}
+
+is_inactive() { [ "$(systemctl is-active "$1" 2>&1 || true)" = inactive ]; }
+is_state() { # UNIT ENABLED ACTIVE
+    [ "$(systemctl is-enabled "$1" 2>&1 || true)" = "$2" ] \
+        && [ "$(systemctl is-active "$1" 2>&1 || true)" = "$3" ]
+}
 # state UNIT ENABLED ACTIVE: expect the unit file state and the activity to match.
 state() {
-    got_enabled=$(systemctl is-enabled "$1" 2>&1 || true)
-    got_active=$(systemctl is-active "$1" 2>&1 || true)
-    if [ "$got_enabled" = "$2" ] && [ "$got_active" = "$3" ]; then
+    if retry is_state "$1" "$2" "$3"; then
         echo "  ok    $1 $2/$3"
     else
-        echo "  FAIL  $1: expected $2/$3, got $got_enabled/$got_active ($step_name)"
+        echo "  FAIL  $1: expected $2/$3, got $(systemctl is-enabled "$1" 2>&1 || true)/$(systemctl is-active "$1" 2>&1 || true) ($step_name)"
         failures=$((failures + 1))
     fi
 }
@@ -140,26 +183,41 @@ present() {
         failures=$((failures + 1))
     fi
 }
+is_restarted() { new=$(pid "$1"); [ "$new" != 0 ] && [ "$new" != "$2" ]; }
 changed_pid() { # UNIT OLDPID
-    new=$(pid "$1")
-    if [ "$new" != 0 ] && [ "$new" != "$2" ]; then echo "  ok    $1 restarted ($2 -> $new)"; else
-        echo "  FAIL  $1 was not restarted (pid $2 -> $new) ($step_name)"
+    if retry is_restarted "$1" "$2"; then echo "  ok    $1 restarted ($2 -> $(pid "$1"))"; else
+        echo "  FAIL  $1 was not restarted (pid $2 -> $(pid "$1")) ($step_name)"
         failures=$((failures + 1))
     fi
 }
-same_pid() {
-    new=$(pid "$1")
-    if [ "$new" = "$2" ]; then echo "  ok    $1 left alone (pid $new)"; else
-        echo "  FAIL  $1 pid changed $2 -> $new ($step_name)"
+same_pid() { # UNIT PID
+    if [ "$(pid "$1")" = "$2" ]; then echo "  ok    $1 left alone (pid $2)"; else
+        echo "  FAIL  $1 pid changed $2 -> $(pid "$1") ($step_name)"
         failures=$((failures + 1))
     fi
 }
 step() { step_name=$*; echo "-- $*"; }
-install_() { apt-get install -y -qq "$@" >/tmp/apt.log 2>&1 || { cat /tmp/apt.log; exit 1; }; sleep 1; }
-reinstall() { apt-get install -y -qq --reinstall "$@" >/tmp/apt.log 2>&1 || { cat /tmp/apt.log; exit 1; }; sleep 1; }
-remove() { apt-get remove -y -qq "$@" >/tmp/apt.log 2>&1 || { cat /tmp/apt.log; exit 1; }; }
-purge() { apt-get purge -y -qq "$@" >/tmp/apt.log 2>&1 || { cat /tmp/apt.log; exit 1; }; }
-start_server() { systemctl enable --now snapdog >/dev/null 2>&1; sleep 1; }
+apt_quiet() { apt-get "$@" >/tmp/apt.log 2>&1 || { cat /tmp/apt.log; return 1; }; }
+install_() { apt_quiet install -y -qq "$@" || exit 1; }
+reinstall() { apt_quiet install -y -qq --reinstall "$@" || exit 1; }
+remove() { apt_quiet remove -y -qq "$@" || exit 1; }
+purge() { apt_quiet purge -y -qq "$@" || exit 1; }
+# A Type=simple unit counts as started once it is forked, before systemd has made its
+# state directory, so wait for the directory too.
+has_state_dir() { [ -d /var/lib/private/snapdog ]; }
+start_server() {
+    systemctl enable --now snapdog >/dev/null 2>&1
+    retry has_state_dir || { echo "  FAIL  no state directory after the start ($step_name)"; failures=$((failures + 1)); }
+}
+# A copy of a .deb whose postrm fails when `remove` is called and /tmp/failrm exists.
+build_failing_postrm_deb() { # DEB OUT
+    rm -rf /tmp/v
+    mkdir /tmp/v
+    dpkg-deb -R "$1" /tmp/v
+    # shellcheck disable=SC2016  # $1 is for the postrm that is patched, not for this shell
+    sed -i '0,/^set -e$/s//set -e\n[ ! -e \/tmp\/failrm ] || [ "$1" != remove ] || { echo "postrm: forced failure" >\&2; exit 1; }/' /tmp/v/DEBIAN/postrm
+    dpkg-deb -b /tmp/v "$2" >/dev/null
+}
 
 scenario_fresh_install() {
     step "fresh install of both"
@@ -175,7 +233,7 @@ scenario_upgrade_restarts_running_services() {
     start_server
     state snapdog enabled active
     s=$(pid snapdog) c=$(pid snapdog-client)
-    step "upgrade (reinstall of the same version) with both running"
+    step "upgrade with both running"
     reinstall "$new_server" "$new_client"
     state snapdog enabled active
     state snapdog-client enabled active
@@ -192,6 +250,15 @@ scenario_upgrade_keeps_a_stopped_server_stopped() {
     state snapdog enabled inactive
 }
 
+scenario_upgrade_starts_a_stopped_enabled_client() {
+    install_ "$new_server" "$new_client"
+    systemctl stop snapdog-client
+    state snapdog-client enabled inactive
+    step "upgrade with the client enabled but stopped: it is started again (start = true)"
+    reinstall "$new_server" "$new_client"
+    state snapdog-client enabled active
+}
+
 scenario_upgrade_respects_a_disabled_client() {
     install_ "$new_server" "$new_client"
     systemctl disable --now snapdog-client >/dev/null 2>&1
@@ -199,6 +266,51 @@ scenario_upgrade_respects_a_disabled_client() {
     step "upgrade with the client disabled by the administrator"
     reinstall "$new_server" "$new_client"
     state snapdog-client disabled inactive
+}
+
+scenario_two_upgrades_in_a_row() {
+    install_ "$new_server" "$new_client"
+    start_server
+    s=$(pid snapdog)
+    step "first upgrade"
+    reinstall "$new_server" "$new_client"
+    state snapdog enabled active
+    changed_pid snapdog "$s"
+    s=$(pid snapdog)
+    step "second upgrade"
+    reinstall "$new_server" "$new_client"
+    state snapdog enabled active
+    state snapdog-client enabled active
+    changed_pid snapdog "$s"
+    step "the administrator disables the server without stopping it, then a third upgrade"
+    systemctl disable snapdog >/dev/null 2>&1
+    reinstall "$new_server" "$new_client"
+    state snapdog disabled active
+    step "the administrator enables it again and stops it, then a fourth upgrade"
+    systemctl enable snapdog >/dev/null 2>&1
+    systemctl stop snapdog
+    reinstall "$new_server" "$new_client"
+    state snapdog enabled inactive
+}
+
+scenario_masked_server_stays_masked() {
+    install_ "$new_server" "$new_client"
+    systemctl mask --now snapdog snapdog-client >/dev/null 2>&1
+    state snapdog masked inactive
+    state snapdog-client masked inactive
+    step "upgrade with both masked by the administrator"
+    reinstall "$new_server" "$new_client"
+    state snapdog masked inactive
+    state snapdog-client masked inactive
+    step "remove and install again"
+    remove snapdog snapdog-client
+    install_ "$new_server" "$new_client"
+    state snapdog masked inactive
+    state snapdog-client masked inactive
+    step "purge: the administrator's mask is not ours to remove"
+    purge snapdog snapdog-client
+    present /etc/systemd/system/snapdog.service
+    present /etc/systemd/system/snapdog-client.service
 }
 
 scenario_reinstall_after_remove_restores_a_running_server() {
@@ -209,11 +321,30 @@ scenario_reinstall_after_remove_restores_a_running_server() {
     remove snapdog snapdog-client
     state snapdog masked inactive
     state snapdog-client masked inactive
+    present "$note"
     step "install both again"
     install_ "$new_server" "$new_client"
     state snapdog enabled active
     state snapdog-client enabled active
-    absent /run/snapdog.was-active
+    absent "$note" "$note.pending"
+}
+
+# The note of the removal must survive a reboot: /run is emptied, /var/lib is not.
+scenario_reboot_reinstall_after_remove_restores_a_running_server() {
+    if [ "${3:-}" = 1 ]; then
+        install_ "$new_server" "$new_client"
+        start_server
+        state snapdog enabled active
+        step "remove both, then reboot"
+        remove snapdog snapdog-client
+        present "$note"
+    else
+        step "after the reboot: install both again"
+        install_ "$new_server" "$new_client"
+        state snapdog enabled active
+        state snapdog-client enabled active
+        absent "$note" "$note.pending"
+    fi
 }
 
 scenario_reinstall_after_remove_leaves_a_stopped_server_alone() {
@@ -221,9 +352,9 @@ scenario_reinstall_after_remove_leaves_a_stopped_server_alone() {
     systemctl enable snapdog >/dev/null 2>&1
     step "remove and install again, the server enabled but stopped throughout"
     remove snapdog snapdog-client
+    absent "$note" "$note.pending"
     install_ "$new_server" "$new_client"
     state snapdog enabled inactive
-    absent /run/snapdog.was-active
 }
 
 scenario_reinstall_after_remove_leaves_a_disabled_server_alone() {
@@ -234,7 +365,86 @@ scenario_reinstall_after_remove_leaves_a_disabled_server_alone() {
     remove snapdog snapdog-client
     install_ "$new_server" "$new_client"
     state snapdog disabled inactive
-    absent /run/snapdog.was-active
+    absent "$note" "$note.pending"
+}
+
+# A removal whose postrm fails stops the server and leaves the package half removed. What
+# it leaves must not start the server later, when the administrator has stopped it again.
+scenario_interrupted_remove_leaves_nothing_for_a_later_upgrade() {
+    install_ "$new_server" "$new_client"
+    start_server
+    build_failing_postrm_deb "$new_server" /tmp/failing-postrm.deb
+    reinstall /tmp/failing-postrm.deb
+    state snapdog enabled active
+    step "remove with a postrm that fails"
+    touch /tmp/failrm
+    if apt-get remove -y -qq snapdog >/tmp/apt.log 2>&1; then
+        echo "  FAIL  the removal did not fail ($step_name)"
+        failures=$((failures + 1))
+    else
+        echo "  ok    the removal failed, as set up"
+    fi
+    # The files are gone, the unit with them, and prerm has stopped the server.
+    if retry is_inactive snapdog; then echo "  ok    snapdog is stopped"; else
+        echo "  FAIL  snapdog is not stopped ($step_name)"
+        failures=$((failures + 1))
+    fi
+    present "$note.pending"
+    absent "$note"
+    rm /tmp/failrm
+    step "the package is put right again (the server stays stopped, no note is left)"
+    reinstall "$new_server"
+    state snapdog enabled inactive
+    absent "$note" "$note.pending"
+    step "a further upgrade does not start it either"
+    reinstall "$new_server" "$new_client"
+    state snapdog enabled inactive
+}
+
+# With a policy-rc.d that forbids everything (exit 101), the scripts may not stop the
+# server. Purge must not delete its state under the running process.
+scenario_policy_rc_d_101_keeps_state_of_a_running_server() {
+    install_ "$new_server" "$new_client"
+    start_server
+    state snapdog enabled active
+    printf '#!/bin/sh\nexit 101\n' >/usr/sbin/policy-rc.d
+    chmod +x /usr/sbin/policy-rc.d
+    s=$(pid snapdog)
+    step "remove under a policy-rc.d that returns 101: the server keeps running"
+    remove snapdog snapdog-client
+    same_pid snapdog "$s"
+    step "purge: the state is kept, with a message, while the server runs"
+    apt-get purge -y -qq snapdog snapdog-client >/tmp/apt.log 2>&1 || { cat /tmp/apt.log; exit 1; }
+    if grep -q "snapdog.service is still running" /tmp/apt.log; then
+        echo "  ok    purge said why it kept /var/lib/snapdog"
+    else
+        echo "  FAIL  purge printed no message ($step_name)"
+        failures=$((failures + 1))
+    fi
+    present /var/lib/private/snapdog
+    same_pid snapdog "$s"
+    step "once the server is stopped, nothing but the files by hand are left"
+    systemctl stop snapdog
+    rm -rf /var/lib/private/snapdog /var/lib/snapdog
+    absent /var/lib/private/snapdog /var/lib/snapdog
+}
+
+scenario_failed_server_unit() {
+    install_ "$new_server" "$new_client"
+    mkdir -p /etc/systemd/system/snapdog.service.d
+    printf '[Service]\nExecStart=\nExecStart=/bin/false\nRestart=no\n' \
+        >/etc/systemd/system/snapdog.service.d/fail.conf
+    systemctl daemon-reload
+    systemctl enable snapdog >/dev/null 2>&1
+    systemctl start snapdog || true
+    state snapdog enabled failed
+    step "upgrade with a failed server: the package still installs"
+    reinstall "$new_server" "$new_client"
+    state snapdog-client enabled active
+    step "remove and purge with a failed server"
+    remove snapdog snapdog-client
+    purge snapdog snapdog-client
+    absent /var/lib/private/snapdog /var/lib/snapdog /etc/snapdog
 }
 
 scenario_purge_removes_state() {
@@ -248,7 +458,7 @@ scenario_purge_removes_state() {
     gone snapdog.service
     gone snapdog-client.service
     absent /var/lib/private/snapdog /var/lib/snapdog /etc/snapdog /etc/default/snapdog \
-        /etc/default/snapdog-client /run/snapdog.was-active \
+        /etc/default/snapdog-client \
         /var/lib/systemd/deb-systemd-helper-enabled/multi-user.target.wants/snapdog.service \
         /var/lib/systemd/deb-systemd-helper-masked/snapdog.service \
         /var/lib/systemd/deb-systemd-helper-masked/snapdog-client.service
@@ -261,17 +471,17 @@ scenario_purge_while_running() {
     purge snapdog snapdog-client
     gone snapdog.service
     gone snapdog-client.service
-    absent /var/lib/private/snapdog /var/lib/snapdog /run/snapdog.was-active
+    absent /var/lib/private/snapdog /var/lib/snapdog
 }
 
 scenario_purge_after_remove() {
     install_ "$new_server" "$new_client"
     start_server
     remove snapdog snapdog-client
-    present /run/snapdog.was-active
+    present "$note"
     step "purge after remove"
     purge snapdog snapdog-client
-    absent /var/lib/private/snapdog /var/lib/snapdog /run/snapdog.was-active
+    absent /var/lib/private/snapdog /var/lib/snapdog
 }
 
 scenario_upgrade_from_old_release() {
@@ -312,5 +522,5 @@ scenario_upgrade_from_old_release_with_masked_client() {
 }
 
 echo "== ${2}"
-"scenario_${2}"
+"scenario_${2}" "$@"
 exit "$((failures > 0))"
