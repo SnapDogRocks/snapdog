@@ -137,3 +137,23 @@ pub async fn set_property(caller: &zbus::Connection, name: &str, value: zbus::Va
     })
     .unwrap_or_else(|e| panic!("Set {name} failed: {e}"));
 }
+
+/// The position carried by the next `Seeked` signal on `stream`, with a deadline. Create the
+/// stream (`zbus::MessageStream::from(&caller)`) before the call that causes the signal.
+pub async fn next_seeked(stream: &mut zbus::MessageStream) -> i64 {
+    use futures_util::StreamExt;
+    tokio::time::timeout(DEADLINE, async {
+        loop {
+            let msg = stream
+                .next()
+                .await
+                .expect("connection closed")
+                .expect("message");
+            if msg.header().member().map(zbus::names::MemberName::as_str) == Some("Seeked") {
+                return msg.body().deserialize::<i64>().expect("Seeked(i64)");
+            }
+        }
+    })
+    .await
+    .expect("no Seeked signal")
+}

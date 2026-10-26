@@ -22,7 +22,7 @@ use anyhow::Result;
 use tokio::sync::{Mutex, mpsc};
 use zbus::object_server::InterfaceRef;
 
-use snapcast_client::ClientCommand;
+use snapcast_client::{ClientCommand, ClientEvent};
 
 /// Bus name prefix for the client.
 const BUS_NAME_PREFIX: &str = "org.mpris.MediaPlayer2.snapdog_client";
@@ -385,6 +385,27 @@ impl PlayerInterface {
     fn open_uri(&self, #[allow(unused)] uri: &str) {}
 }
 
+/// Feed a client event into the D-Bus state, the way the event loop in `main` does for
+/// every event it receives: a volume change from the server or a Type 14 metadata message.
+/// Anything else, and a metadata payload that does not parse, leaves the state alone.
+pub async fn handle_event(state: &SharedDbusState, event: &ClientEvent) {
+    match event {
+        ClientEvent::VolumeChanged { volume, muted } => {
+            state.lock().await.set_volume(*volume, *muted);
+        }
+        #[cfg(feature = "custom-protocol")]
+        ClientEvent::CustomMessage(msg)
+            if msg.type_id == snapdog_common::MSG_TYPE_TRACK_METADATA =>
+        {
+            if let Ok(meta) = serde_json::from_slice::<snapdog_common::TrackMetadata>(&msg.payload)
+            {
+                state.lock().await.set_metadata(&meta);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Start the MPRIS2 D-Bus interface. Returns the shared state for the event loop to update.
 ///
 /// # Errors
@@ -489,6 +510,28 @@ mod tests {
 
     // The state the event loop feeds in decides what `PlayPause` does and what the
     // properties report, so these are tested on their own, not only through the bus.
+
+    /// The event loop is inside `main()` and cannot be driven from a test, so check the
+    /// source instead: it has to hand every event to `handle_event` before it matches on it,
+    /// or the MPRIS2 state never sees a volume or metadata change.
+    #[test]
+    fn the_event_loop_hands_every_event_to_handle_event() {
+        let main = include_str!("main.rs");
+        let call = main
+            .find("dbus::handle_event(state, &event).await")
+            .expect("main.rs no longer calls dbus::handle_event for the events it receives");
+        let loop_start = main
+            .find("while let Some(event) = events.recv().await")
+            .expect("the event loop moved");
+        let dispatch = main[loop_start..]
+            .find("match event {")
+            .expect("the event dispatch moved")
+            + loop_start;
+        assert!(
+            loop_start < call && call < dispatch,
+            "handle_event has to run for every event, before the match on it"
+        );
+    }
 
     #[test]
     fn set_metadata_maps_playback_to_the_playing_flag() {
@@ -805,6 +848,19 @@ mod p2p_tests {
         bool::try_from(get_property(caller, name).await).expect("bool property")
     }
 
+    async fn get_i64(caller: &zbus::Connection, name: &str) -> i64 {
+        i64::try_from(get_property(caller, name).await).expect("int64 property")
+    }
+
+    async fn get_metadata(
+        caller: &zbus::Connection,
+    ) -> std::collections::HashMap<String, zbus::OwnedVariant> {
+        get_property(caller, "Metadata")
+            .await
+            .try_into()
+            .expect("a{sv}")
+    }
+
     async fn get_f64(caller: &zbus::Connection, name: &str) -> f64 {
         f64::try_from(get_property(caller, name).await).expect("double property")
     }
@@ -922,5 +978,113 @@ mod p2p_tests {
                 "{status}"
             );
         }
+    }
+
+    fn metadata_event(playback: &str) -> ClientEvent {
+        let payload = serde_json::to_vec(&sample_metadata(playback)).expect("serialize");
+        ClientEvent::CustomMessage(snapcast_proto::CustomMessage::new(
+            snapdog_common::MSG_TYPE_TRACK_METADATA,
+            payload,
+        ))
+    }
+
+    /// `handle_event` is what the event loop in `main` calls for every event it receives.
+    /// Drive it with real events and read the result over the bus.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn volume_events_reach_the_volume_property() {
+        let f = fixture().await;
+        handle_event(
+            &f.state,
+            &ClientEvent::VolumeChanged {
+                volume: 30,
+                muted: false,
+            },
+        )
+        .await;
+        assert!((get_f64(&f.caller, "Volume").await - 0.3).abs() < 1e-9);
+        handle_event(
+            &f.state,
+            &ClientEvent::VolumeChanged {
+                volume: 30,
+                muted: true,
+            },
+        )
+        .await;
+        assert!(get_f64(&f.caller, "Volume").await.abs() < f64::EPSILON);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn metadata_messages_drive_the_toggle_and_the_properties() {
+        let mut f = fixture().await;
+        handle_event(&f.state, &metadata_event("playing")).await;
+        assert_eq!(get_string(&f.caller, "PlaybackStatus").await, "Playing");
+        assert_eq!(get_i64(&f.caller, "Position").await, 61_000_000);
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Pause);
+
+        handle_event(&f.state, &metadata_event("stopped")).await;
+        assert_eq!(get_string(&f.caller, "PlaybackStatus").await, "Stopped");
+        call(&f.caller, "PlayPause", &()).await;
+        assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Play);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn other_events_and_bad_payloads_leave_the_state_alone() {
+        let f = fixture().await;
+        handle_event(&f.state, &metadata_event("playing")).await;
+        let before = format!("{:?}", *f.state.lock().await);
+
+        // The same JSON under another message type, and a payload that is not metadata.
+        let payload = serde_json::to_vec(&sample_metadata("stopped")).expect("serialize");
+        for event in [
+            ClientEvent::CustomMessage(snapcast_proto::CustomMessage::new(
+                snapdog_common::MSG_TYPE_COVER_ART,
+                payload,
+            )),
+            ClientEvent::CustomMessage(snapcast_proto::CustomMessage::new(
+                snapdog_common::MSG_TYPE_TRACK_METADATA,
+                b"not json".to_vec(),
+            )),
+            ClientEvent::Disconnected {
+                reason: "test".into(),
+            },
+        ] {
+            handle_event(&f.state, &event).await;
+            assert_eq!(format!("{:?}", *f.state.lock().await), before);
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn position_property_is_in_microseconds() {
+        let f = fixture().await;
+        assert_eq!(get_i64(&f.caller, "Position").await, 0);
+        f.state.lock().await.position_ms = 1_500;
+        assert_eq!(get_i64(&f.caller, "Position").await, 1_500_000);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn metadata_property_reports_track_fields_in_mpris_units() {
+        let f = fixture().await;
+        // Nothing known yet: only the track id.
+        let empty = get_metadata(&f.caller).await;
+        assert_eq!(empty.len(), 1, "{:?}", empty.keys().collect::<Vec<_>>());
+        assert!(empty.contains_key("mpris:trackid"));
+
+        handle_event(&f.state, &metadata_event("playing")).await;
+        f.state.lock().await.cover_path = Some("/tmp/snapdog-cover-1.jpg".into());
+        let m = get_metadata(&f.caller).await;
+        let string = |key: &str| String::try_from(m[key].try_clone().expect("clone")).expect(key);
+        assert_eq!(string("xesam:title"), "Title");
+        assert_eq!(string("xesam:album"), "Album");
+        assert_eq!(
+            Vec::<String>::try_from(m["xesam:artist"].try_clone().expect("clone")).expect("array"),
+            ["Artist"]
+        );
+        // MPRIS lengths are microseconds, the message carries milliseconds.
+        assert_eq!(
+            i64::try_from(m["mpris:length"].try_clone().expect("clone")).expect("int64"),
+            240_000_000
+        );
+        assert_eq!(string("mpris:artUrl"), "file:///tmp/snapdog-cover-1.jpg");
     }
 }

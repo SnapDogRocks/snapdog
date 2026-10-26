@@ -310,7 +310,10 @@ impl PlayerInterface {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use crate::dbus::testing::{call, fixture, get_f64, get_string, next_command, set_property};
+    use crate::dbus::testing::{
+        call, fixture, get_bool, get_f64, get_i64, get_string, next_command, next_seeked,
+        set_property,
+    };
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn play_pause_plays_unless_playing() {
@@ -426,5 +429,74 @@ mod tests {
         }
         assert!(get_f64(&f.caller, "Volume").await.abs() < f64::EPSILON);
         assert_eq!(get_string(&f.caller, "LoopStatus").await, "Track");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn capability_properties_follow_their_own_state_flag() {
+        let f = fixture().await;
+        for name in ["CanSeek", "CanGoNext", "CanGoPrevious"] {
+            assert!(!get_bool(&f.caller, name).await, "{name} by default");
+        }
+        // One flag at a time, so a swapped or constant getter shows up.
+        for (set, expect) in [(0, ["CanSeek"]), (1, ["CanGoNext"]), (2, ["CanGoPrevious"])] {
+            {
+                let mut s = f.state.lock().await;
+                s.seekable = set == 0;
+                s.can_next = set == 1;
+                s.can_prev = set == 2;
+            }
+            for name in ["CanSeek", "CanGoNext", "CanGoPrevious"] {
+                assert_eq!(
+                    get_bool(&f.caller, name).await,
+                    expect.contains(&name),
+                    "{name} with only {} set",
+                    expect[0]
+                );
+            }
+        }
+        // Always true, whatever the state.
+        for name in ["CanPlay", "CanPause", "CanControl"] {
+            assert!(get_bool(&f.caller, name).await, "{name}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn seek_is_relative_in_milliseconds_clamped_at_zero_and_emits_seeked() {
+        let mut f = fixture().await;
+        let mut signals = zbus::MessageStream::from(&f.caller);
+        f.state.lock().await.position_ms = 5_000;
+
+        call(&f.caller, "Seek", &(2_500_000_i64,)).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Seek(7_500)
+        ));
+        // The signal carries microseconds, like the property.
+        assert_eq!(next_seeked(&mut signals).await, 7_500_000);
+        assert_eq!(get_i64(&f.caller, "Position").await, 7_500_000);
+
+        // Back past the start: the position stops at zero.
+        call(&f.caller, "Seek", &(-60_000_000_i64,)).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Seek(0)
+        ));
+        assert_eq!(next_seeked(&mut signals).await, 0);
+        assert_eq!(get_i64(&f.caller, "Position").await, 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn set_position_is_absolute_and_emits_seeked_in_microseconds() {
+        let mut f = fixture().await;
+        let mut signals = zbus::MessageStream::from(&f.caller);
+        f.state.lock().await.position_ms = 5_000;
+        let track = zbus::ObjectPath::try_from("/org/snapdog/track").expect("path");
+        call(&f.caller, "SetPosition", &(track, 12_000_000_i64)).await;
+        assert!(matches!(
+            next_command(&mut f.commands).await,
+            ZoneCommand::Seek(12_000)
+        ));
+        assert_eq!(next_seeked(&mut signals).await, 12_000_000);
+        assert_eq!(get_i64(&f.caller, "Position").await, 12_000_000);
     }
 }

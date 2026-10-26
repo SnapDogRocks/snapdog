@@ -181,6 +181,11 @@ fn main() -> anyhow::Result<()> {
             let mut last_eq_config: Option<eq::EqConfig> = None;
             let mut last_speaker_config: Option<eq::EqConfig> = None;
             while let Some(event) = events.recv().await {
+                // The MPRIS2 state follows the volume and metadata events.
+                #[cfg(feature = "dbus")]
+                if let Some(ref state) = dbus_state {
+                    dbus::handle_event(state, &event).await;
+                }
                 match event {
                     ClientEvent::Connected { host, port } => {
                         tracing::info!(host, port, "Connected");
@@ -189,10 +194,6 @@ fn main() -> anyhow::Result<()> {
                     ClientEvent::VolumeChanged { volume, muted } => {
                         tracing::info!(volume, muted, "Volume changed");
                         event_mixer.set_volume(volume as u8, muted);
-                        #[cfg(feature = "dbus")]
-                        if let Some(ref state) = dbus_state {
-                            state.lock().await.set_volume(volume, muted);
-                        }
                         #[cfg(target_os = "linux")]
                         {
                             let status =
@@ -296,10 +297,6 @@ fn main() -> anyhow::Result<()> {
                             serde_json::from_slice::<snapdog_common::TrackMetadata>(&msg.payload)
                         {
                             tracing::debug!(title = %meta.title, artist = %meta.artist, "Metadata received");
-                            #[cfg(feature = "dbus")]
-                            if let Some(ref state) = dbus_state {
-                                state.lock().await.set_metadata(&meta);
-                            }
                         }
                     }
                     #[cfg(feature = "custom-protocol")]

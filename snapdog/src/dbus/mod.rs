@@ -536,6 +536,31 @@ mod mpris {
             }
             publish(&tx, &muted);
             wait_for_volume(&f.caller, 0.0).await;
+
+            // The capability flags one at a time, so a swapped pair shows up.
+            for (seekable, next, prev) in [(false, true, false), (false, false, true)] {
+                let mut flags = zone_changed(ZONE, "playing");
+                if let Notification::ZoneChanged {
+                    seekable: s,
+                    can_next: n,
+                    can_prev: p,
+                    ..
+                } = &mut flags
+                {
+                    (*s, *n, *p) = (seekable, next, prev);
+                }
+                publish(&tx, &flags);
+                let deadline = tokio::time::Instant::now() + DEADLINE;
+                while get_bool(&f.caller, "CanGoNext").await != next {
+                    assert!(
+                        tokio::time::Instant::now() < deadline,
+                        "CanGoNext never became {next}"
+                    );
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert_eq!(get_bool(&f.caller, "CanGoPrevious").await, prev);
+                assert_eq!(get_bool(&f.caller, "CanSeek").await, seekable);
+            }
         }
 
         /// Notifications for another zone must change nothing. The updater handles them in
