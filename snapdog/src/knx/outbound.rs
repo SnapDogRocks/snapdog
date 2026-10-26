@@ -647,13 +647,19 @@ mod tests {
             Some(PACE)
         );
         let mut reports = Vec::new();
-        while started.elapsed() < Duration::from_secs(200) {
+        // The loop is bounded: a queue that never reports must fail the test, not spin.
+        for _ in 0..100_000 {
+            if started.elapsed() >= Duration::from_secs(200) {
+                break;
+            }
             let now = Instant::now();
             out.flush(&server, now);
             if let Some(StallEvent::Stalled { seconds, .. }) = out.poll_stall(now) {
                 reports.push(seconds);
             }
-            tokio::time::sleep_until(out.next_wake().unwrap()).await;
+            // At least a millisecond, so that virtual time moves on.
+            let wake = out.next_wake().unwrap().max(now + Duration::from_millis(1));
+            tokio::time::sleep_until(wake).await;
         }
         // At 10 s, 70 s, 130 s, 190 s.
         assert_eq!(reports, vec![10, 70, 130, 190]);
