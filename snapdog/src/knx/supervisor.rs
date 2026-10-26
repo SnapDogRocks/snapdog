@@ -125,6 +125,28 @@ pub struct ClientTarget {
     literal: Option<SocketAddr>,
 }
 
+/// A host name as DNS has it: labels of letters, digits, hyphens and underscores, separated by
+/// dots. Something that only has digits and dots is meant as an IPv4 address and has to be one
+/// (`256.1.1.1` is no host name, it is a typo), and a user name (`user@host`) is no part of a
+/// KNXnet/IP address.
+fn check_host_name(host: &str) -> Result<()> {
+    anyhow::ensure!(
+        host.len() <= 253
+            && host.split('.').all(|label| !label.is_empty()
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')),
+        "Invalid KNX URL: invalid host '{host}'"
+    );
+    if host.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        anyhow::ensure!(
+            host.parse::<std::net::Ipv4Addr>().is_ok(),
+            "Invalid KNX URL: invalid IPv4 address '{host}'"
+        );
+    }
+    Ok(())
+}
+
 impl ClientTarget {
     /// Check the URL: `udp://`, `tunnel://` or `router://`, followed by `host:port` (an IP
     /// literal, or a host name that is resolved on every connection attempt).
@@ -141,15 +163,18 @@ impl ClientTarget {
             "Invalid KNX URL: unsupported scheme '{scheme}' (use udp://, tunnel:// or router://)"
         );
         let literal = authority.parse::<SocketAddr>().ok();
-        if literal.is_none() {
+        if let Some(addr) = literal {
+            anyhow::ensure!(addr.port() != 0, "Invalid KNX URL: invalid port '0'");
+        } else {
             let (host, port) = authority
                 .rsplit_once(':')
                 .context("Invalid KNX URL: missing port (expected host:port)")?;
             anyhow::ensure!(!host.is_empty(), "Invalid KNX URL: missing host");
             anyhow::ensure!(
-                port.parse::<u16>().is_ok(),
+                port.parse::<u16>().is_ok_and(|p| p != 0),
                 "Invalid KNX URL: invalid port '{port}'"
             );
+            check_host_name(host)?;
         }
         Ok(Self {
             scheme: scheme.to_string(),
@@ -439,6 +464,15 @@ mod tests {
             ("udp://gateway.local", "missing port"),
             ("udp://gateway.local:abc", "invalid port"),
             ("udp://:3671", "missing host"),
+            ("udp://192.168.1.50:0", "invalid port"),
+            ("udp://gateway.local:0", "invalid port"),
+            ("tunnel://[::1]:0", "invalid port"),
+            ("udp://user@192.168.1.50:3671", "invalid host"),
+            ("udp://256.1.1.1:3671", "invalid IPv4 address"),
+            ("udp://192.168.1:3671", "invalid IPv4 address"),
+            ("udp://gate way:3671", "invalid host"),
+            ("udp://gateway..local:3671", "invalid host"),
+            ("udp://192.168.1.50:3671/path", "invalid port"),
         ] {
             let err = ClientTarget::parse(bad).unwrap_err().to_string();
             assert!(err.contains(why), "{bad}: {err}");

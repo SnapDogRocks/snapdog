@@ -1095,6 +1095,9 @@ mod tests {
             ("192.168.1.50:3671", "'://'"),
             ("tcp://192.168.1.50:3671", "unsupported scheme"),
             ("udp://192.168.1.50", "missing port"),
+            ("udp://1.2.3.4:0", "invalid port"),
+            ("udp://user@192.168.1.50:3671", "invalid host"),
+            ("udp://256.1.1.1:3671", "invalid IPv4 address"),
         ] {
             let err = format!("{:#}", load_raw(knx_client(bad)).unwrap_err());
             assert!(err.contains(why), "{bad}: {err}");
