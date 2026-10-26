@@ -104,11 +104,34 @@ fn bind_streaming_listener(
 ) -> Result<std::net::TcpListener> {
     let addr = snapcast.streaming_socket_addr();
     let listener = std::net::TcpListener::bind(addr)
-        .with_context(|| format!("bind embedded Snapcast streaming port {addr}"))?;
+        .map_err(|e| anyhow::anyhow!(streaming_bind_message(addr, &e)))?;
     listener
         .set_nonblocking(true)
         .context("set embedded Snapcast listener non-blocking")?;
     Ok(listener)
+}
+
+/// What a failed bind of the streaming port means, by kind of error.
+///
+/// A port that is taken is a second instance, an address that is not ours is a wrong
+/// `[snapcast].streaming_bind`, and anything else is reported as it is.
+#[must_use]
+pub fn streaming_bind_message(addr: std::net::SocketAddr, error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::AddrInUse => format!(
+            "Snapcast streaming port {addr} is already in use - is snapdog already running? ({error})"
+        ),
+        std::io::ErrorKind::AddrNotAvailable => format!(
+            "Snapcast streaming port {addr} cannot be bound: {} is not an address of this host. \
+             Check [snapcast].streaming_bind ({error})",
+            addr.ip()
+        ),
+        std::io::ErrorKind::PermissionDenied => format!(
+            "Snapcast streaming port {addr} cannot be bound: permission denied. Ports below 1024 \
+             need extra privileges ({error})"
+        ),
+        _ => format!("Snapcast streaming port {addr} cannot be bound: {error}"),
+    }
 }
 
 /// Check that the streaming port can be bound, then release it. `main` calls this
@@ -674,6 +697,52 @@ mod tests {
         );
         drop(taken);
         check_streaming_port(&config.snapcast).expect("free again");
+    }
+
+    #[test]
+    fn a_bind_failure_is_explained_by_its_kind() {
+        use std::io::{Error, ErrorKind};
+        let addr: std::net::SocketAddr = "192.0.2.1:1704".parse().unwrap();
+        let in_use = streaming_bind_message(addr, &Error::from(ErrorKind::AddrInUse));
+        assert!(in_use.contains("already in use"), "{in_use}");
+        assert!(in_use.contains("already running"), "{in_use}");
+
+        let unassigned = streaming_bind_message(addr, &Error::from(ErrorKind::AddrNotAvailable));
+        assert!(
+            unassigned.contains("192.0.2.1 is not an address of this host"),
+            "{unassigned}"
+        );
+        assert!(unassigned.contains("streaming_bind"), "{unassigned}");
+        assert!(!unassigned.contains("already running"), "{unassigned}");
+
+        let denied = streaming_bind_message(addr, &Error::from(ErrorKind::PermissionDenied));
+        assert!(denied.contains("permission denied"), "{denied}");
+        assert!(!denied.contains("already running"), "{denied}");
+
+        let other = streaming_bind_message(addr, &Error::from(ErrorKind::TimedOut));
+        assert!(!other.contains("already running"), "{other}");
+    }
+
+    #[test]
+    fn the_real_errors_get_the_matching_message() {
+        // Taken port: a second instance.
+        let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = taken.local_addr().unwrap().port();
+        let config = snapcast_config(&format!(
+            "streaming_port = {port}\nstreaming_bind = \"127.0.0.1\""
+        ));
+        let error = check_streaming_port(&config.snapcast)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("already running"), "{error}");
+
+        // An address that no interface has (TEST-NET-1, reserved for documentation).
+        let config = snapcast_config("streaming_port = 0\nstreaming_bind = \"192.0.2.1\"");
+        let error = check_streaming_port(&config.snapcast)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("not an address of this host"), "{error}");
+        assert!(!error.contains("already running"), "{error}");
     }
 
     #[tokio::test]

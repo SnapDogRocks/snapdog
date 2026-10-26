@@ -309,3 +309,25 @@ fn check_config_reports_state_left_in_a_literal_tilde_directory() {
         .unwrap();
     assert!(!String::from_utf8_lossy(&output.stderr).contains("now means"));
 }
+
+#[test]
+fn check_config_warns_about_a_streaming_bind_that_no_interface_has() {
+    let config = |bind: &str| {
+        format!("[snapcast]\nstreaming_bind = \"{bind}\"\n[[zone]]\nname = \"Living\"\n")
+    };
+    // Documentation address (TEST-NET-1): valid, but not on this host. A warning, not an
+    // error: the file may be checked on another machine than the one that runs it.
+    let output = run_check(&config("192.0.2.1"), &[]);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "warning: [snapcast].streaming_bind = 192.0.2.1 is not an address of this host"
+        ),
+        "{stderr}"
+    );
+
+    let output = run_check(&config("127.0.0.1"), &[]);
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("is not an address of this host"));
+}

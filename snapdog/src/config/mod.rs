@@ -66,6 +66,19 @@ fn resolve(raw: FileConfig, unknown: Vec<String>) -> Result<AppConfig> {
     Ok(config)
 }
 
+/// Best effort: whether `ip` is certainly not assigned to any network interface of this host.
+///
+/// Found by binding a TCP socket to it on an ephemeral port. Only the operating system's
+/// "cannot assign requested address" counts. Any other outcome, including a successful
+/// bind and every other error, says nothing, so this never reports a problem that is not one.
+#[must_use]
+pub fn address_is_not_local(ip: std::net::IpAddr) -> bool {
+    matches!(
+        std::net::TcpListener::bind((ip, 0)),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable
+    )
+}
+
 /// Unknown-key list for a TOML text, in the form used in log messages.
 /// Mainly for tests that need to assert a file contains no stale keys.
 ///
@@ -1312,6 +1325,15 @@ mod tests {
         .unwrap();
         assert_eq!(config.audio.bit_depth, 24);
         assert!(config.notices.iter().any(|n| n.message.contains("FLAC")));
+    }
+
+    #[test]
+    fn an_address_that_is_not_ours_is_recognised_without_false_alarms() {
+        // Loopback is always ours, as are the wildcard addresses.
+        assert!(!address_is_not_local("127.0.0.1".parse().unwrap()));
+        assert!(!address_is_not_local("0.0.0.0".parse().unwrap()));
+        // TEST-NET-1 is reserved for documentation: no interface has it.
+        assert!(address_is_not_local("192.0.2.1".parse().unwrap()));
     }
 
     #[test]

@@ -417,8 +417,12 @@ Port 1704 has no authentication, in SnapDog as in Snapcast. To limit it:
 - Clients that find the server with mDNS connect to the address mDNS resolves, so the bound address must be
   reachable for them.
 
-`snapdog --config snapdog.toml --check-config` prints a note while the port listens on all interfaces, and
-refuses an unusable `streaming_bind`. It does not try to bind the port.
+`snapdog --config snapdog.toml --check-config` prints a note while the port listens on all interfaces, refuses a
+`streaming_bind` that is not an address, and warns when the address belongs to no network interface of the machine
+it runs on (a best-effort check: it only reports the operating system's "cannot assign requested address", so it is
+a warning, not an error, because the file may be checked on another host). It does not bind the port itself. At
+start, an unassignable address stops SnapDog with a message that says so; a port that is already in use says that
+instead.
 
 </details>
 

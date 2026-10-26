@@ -298,6 +298,15 @@ pub async fn run_app() -> Result<()> {
     }
 
     if cli.check_config {
+        if let Some(bind) = app_config.snapcast.streaming_bind
+            && config::address_is_not_local(bind)
+        {
+            app_config.warn(format!(
+                "[snapcast].streaming_bind = {bind} is not an address of this host (or not one \
+                 that can be bound), so the server would not start here. Check the address, or \
+                 ignore this if the configuration is for another machine."
+            ));
+        }
         for notice in &app_config.notices {
             let label = match notice.level {
                 config::NoticeLevel::Info => "note",
@@ -368,12 +377,7 @@ pub async fn run_app() -> Result<()> {
     // Snapcast streaming port — probe-bind then immediately release so the
     // embedded server can bind it a moment later.  Catches conflicts early.
     #[cfg(feature = "snapcast-embedded")]
-    snapcast::embedded::check_streaming_port(&config.snapcast).with_context(|| {
-        format!(
-            "Snapcast streaming port {} cannot be bound — is snapdog already running?",
-            config.snapcast.streaming_socket_addr()
-        )
-    })?;
+    snapcast::embedded::check_streaming_port(&config.snapcast)?;
 
     // ── Initialize subsystems ─────────────────────────────────
     let state_dir = PathBuf::from(&config.system.state_dir);
