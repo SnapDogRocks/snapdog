@@ -200,6 +200,17 @@ sudo apt install snapdog snapdog-client
 Do not add `trusted=yes`. It disables exactly the check the fingerprint above is
 for.
 
+#### What the packages do
+
+The packages install the systemd units and manage them on install, upgrade and removal.
+
+- **Install:** `snapdog-client` is enabled and started. It finds its server through mDNS. `snapdog` is installed disabled, because it needs a configuration first. Edit `/etc/snapdog/snapdog.toml`, then run `sudo systemctl enable --now snapdog`.
+- **Upgrade:** a service that runs is restarted, which interrupts the audio for a moment. Whether a service is enabled stays as you left it. A stopped `snapdog` stays stopped, and a disabled or masked `snapdog-client` stays that way.
+- **Removal:** both services are stopped. If `snapdog` was enabled and running when you removed it, installing it again starts it again.
+- **Purge:** also deletes what `snapdog` keeps in `/var/lib/snapdog`, such as pairing keys and the ETS and EQ settings.
+
+**Upgrading from 0.28.2 or older.** Those packages shipped the unit files but no maintainer scripts, so they left no record of whether you ever enabled or stopped `snapdog-client` on purpose. The first upgrade to a package with these scripts therefore enables and starts `snapdog-client` on every host that has it installed. It connects to the Snapcast server it finds through mDNS and can start playing. To keep it off, run `sudo systemctl mask snapdog-client` before the upgrade, or `sudo systemctl disable --now snapdog-client` right after it. Later upgrades keep either state. The upgrade does not enable `snapdog`. If you enabled it yourself, it is restarted like any running service, so expect a short gap in the audio.
+
 #### Moving from the old repository
 
 Until September 2026 the packages were served from a branch of this repository
