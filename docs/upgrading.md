@@ -60,6 +60,35 @@ Every zone after the first logs the same line with `Address already in use`, bec
 first zone's listener already serves the process. That is expected. You also get it on
 every zone if another PTP daemon such as `ptp4l` owns the ports.
 
+### Allowing UDP 319 and 320
+
+The packaged systemd unit (`.deb`, AUR, release archive) grants the service
+`CAP_NET_BIND_SERVICE` and nothing else, so the listener binds without further steps.
+This needs the unit file of the new release: after the package update, run
+`systemctl daemon-reload` and restart the service. If you replaced the unit or use a
+drop-in that resets it, add these lines to the `[Service]` section:
+
+```ini
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+```
+
+Containers: the image runs as a non-root user. Docker does not pass `cap_add` on to
+such a user as an ambient capability, so `cap_add: [NET_BIND_SERVICE]` does not help (tested
+with Docker 29 and the user the image uses). Under host networking, which AirPlay needs for
+discovery, lower the host's limit for unprivileged ports instead. The `sysctl` option of
+the container is refused there with `not allowed in host network namespace`:
+
+```sh
+echo 'net.ipv4.ip_unprivileged_port_start=319' | sudo tee /etc/sysctl.d/50-snapdog-ptp.conf
+sudo sysctl --system
+```
+
+This lets every unprivileged process on that host bind the ports from 319 upwards. If you
+do not want that, leave it. AirPlay 2 then works with the slower connect described above.
+With bridge networking the container has its own limit (0 by default on Docker 29,
+tested), so the listener binds, but discovery does not reach your network that way.
+
 ### Pairing data
 
 AirPlay 2 can keep the keys of paired senders in `airplay-pairing` in the state directory
