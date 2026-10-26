@@ -306,6 +306,7 @@ pub fn capture_logs() -> (tracing::subscriber::DefaultGuard, CapturedLogs) {
 pub fn test_server() -> super::ServerInfo {
     super::ServerInfo {
         id: "0b1c2d3e-aaaa-bbbb-cccc-1234567890ab".into(),
+        stable_id: true,
         name: "SnapDog".into(),
         base_url: "http://snapdog.local:5555".into(),
     }

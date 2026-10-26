@@ -149,6 +149,7 @@ password = "admin"
 # TLS verifies the broker's certificate and its host name, always; there is no way to
 # switch that off. Without `ca_file` it is checked against the system trust store.
 # Minimum TLS 1.2. Do not put user:password into the address: use the keys below.
+# The host must be ASCII: write an international name in punycode (xn--mller-kva.lan).
 broker = "192.168.1.10:1883"
 # client_id = "snapdog"            # MQTT client ID. Must be unique per broker: a second client
 #                                  # with the same ID makes the broker drop the first, and the two
@@ -203,9 +204,10 @@ base_topic = "snapdog"
 #                       (how to take the entities out of Home Assistant again)
 #   not set             off; nothing is written to the discovery topic
 # Entity ids follow the position of the [[zone]] / [[client]] in this file: moving one moves
-# its entities onto another zone. Covers are announced only without [http] api_keys (Home
-# Assistant fetches the picture without a header). Needs, besides the ACL below: write on
-# homeassistant/device/snapdog_+/config and read on homeassistant/status.
+# its entities onto another zone. No cover art is announced (Home Assistant's image entity
+# logs an error for every state without a cover URL). Needs, besides the ACL below: write on
+# homeassistant/device/+/config and read on homeassistant/status. A discovery message needs
+# a stable server id: SnapDog refuses to announce when it cannot persist it (state_dir).
 # [mqtt.homeassistant]
 # discovery = true
 # discovery_prefix = "homeassistant"      # Home Assistant's discovery prefix

@@ -572,11 +572,24 @@ mod tests {
         MqttBridge,
         crate::mqtt::test_support::RuntimeEnds,
     ) {
+        bridge_for(script, extra, crate::mqtt::test_support::test_server()).await
+    }
+
+    async fn bridge_for(
+        script: crate::mqtt::test_support::Script,
+        extra: &str,
+        server: ServerInfo,
+    ) -> (
+        crate::mqtt::test_support::FakeBroker,
+        MqttBridge,
+        crate::mqtt::test_support::RuntimeEnds,
+    ) {
         use crate::mqtt::test_support::{FakeBroker, test_runtime};
         let broker = FakeBroker::start(script).await;
         let config: MqttConfig =
             toml::from_str(&format!("broker = \"127.0.0.1:{}\"\n{extra}", broker.port)).unwrap();
-        let (runtime, ends) = test_runtime();
+        let (mut runtime, ends) = test_runtime();
+        runtime.server = server;
         let bridge = MqttBridge::start(&config, "http://h", runtime)
             .await
             .unwrap();
@@ -654,6 +667,45 @@ mod tests {
         assert_eq!(sent, expected);
         assert!(subscribed_to(&broker, "homeassistant/status"));
         drop(bridge);
+    }
+
+    /// Review finding m6: when the server id cannot be stored, every start would
+    /// announce a new device next to the old one. Nothing is announced then, and the
+    /// log says why.
+    #[tokio::test]
+    async fn with_a_server_id_that_is_not_stored_nothing_is_announced() {
+        let (logs_guard, logs) = crate::mqtt::test_support::capture_logs();
+        let server = ServerInfo {
+            stable_id: false,
+            ..crate::mqtt::test_support::test_server()
+        };
+        let (broker, bridge, ends) = bridge_for(
+            crate::mqtt::test_support::Script::Birth("homeassistant/status"),
+            "[homeassistant]\ndiscovery = true",
+            server,
+        )
+        .await;
+        // A birth message and a new client change nothing either.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        {
+            let mut store = ends.store.write().await;
+            let client = store.clients[&1].clone();
+            store.clients.insert(2, client);
+        }
+        ends.notify_tx
+            .send(
+                serde_json::json!({"type": "client_state_changed", "client": 2, "volume": 50,
+                    "muted": false, "connected": true, "zone": 1, "is_snapdog": false})
+                .to_string()
+                .into(),
+            )
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(device_messages(&broker).len(), 0);
+        let text = logs.text();
+        assert!(text.contains("nothing is announced"), "{text}");
+        assert!(text.contains("state_dir"), "{text}");
+        drop((bridge, logs_guard));
     }
 
     #[tokio::test]

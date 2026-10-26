@@ -365,7 +365,7 @@ fn split_host_port(rest: &str) -> Result<(String, Option<u16>)> {
                 && host
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_')),
-            "[mqtt] broker host may only contain letters, digits, '-', '.' and '_'"
+            "[mqtt] broker host may only contain letters, digits, '-', '.' and '_' (use the punycode form, xn--..., of an international name)"
         );
     }
     let port = match port {
@@ -852,6 +852,13 @@ mod tests {
             assert!(err.contains(needle), "{broker:?}: {err}");
             assert!(err.starts_with("[mqtt] broker"), "{err}");
         }
+    }
+
+    #[test]
+    fn a_non_ascii_host_is_refused_with_the_punycode_hint() {
+        let err = endpoint("m\u{fc}ller.lan:1883").unwrap_err().to_string();
+        assert!(err.contains("punycode") && err.contains("xn--"), "{err}");
+        assert!(endpoint("xn--mller-kva.lan:1883").is_ok());
     }
 
     #[test]

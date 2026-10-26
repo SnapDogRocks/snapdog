@@ -57,6 +57,11 @@ const BIRTH_DELAY_MS: std::ops::RangeInclusive<u64> = 1_000..=5_000;
 pub struct ServerInfo {
     /// The stable server id (`state_dir/server_id`, also in the mDNS TXT record).
     pub id: String,
+    /// Whether `id` is stored (see [`crate::state::ServerIdentity`]). Home Assistant
+    /// entities carry the id in their unique ids: with an id that changes at every
+    /// start each start would announce a second device next to the first, so nothing
+    /// is announced then.
+    pub stable_id: bool,
     /// The server's display name (`name`).
     pub name: String,
     /// `[http].base_url`, shown as the device's configuration URL.
@@ -222,6 +227,13 @@ impl Discovery {
     /// `discovery = false`, once per start) delete what an earlier run announced.
     pub async fn on_connected(&self, first_connect: bool) {
         match self.inner.mode {
+            DiscoveryMode::On if !self.inner.server.stable_id => {
+                tracing::error!(
+                    "Home Assistant discovery is switched on but nothing is announced: the server id \
+                     cannot be stored in the state directory (is `system.state_dir` writable?), so \
+                     every start would make up a new id and add a second device to Home Assistant"
+                );
+            }
             DiscoveryMode::On => {
                 if let Err(e) = self
                     .inner
@@ -255,6 +267,9 @@ impl Discovery {
 
     /// Send the device message now.
     pub async fn announce(&self) {
+        if !self.inner.server.stable_id {
+            return;
+        }
         let model = Model::of(&*self.inner.store.read().await);
         self.send(model);
     }
@@ -294,7 +309,7 @@ impl Discovery {
     /// Announce again if the zones or clients differ from what was announced (a
     /// client that Snapcast accepted at runtime has entities of its own).
     pub async fn announce_if_changed(&self) {
-        if self.inner.mode != DiscoveryMode::On {
+        if self.inner.mode != DiscoveryMode::On || !self.inner.server.stable_id {
             return;
         }
         let model = Model::of(&*self.inner.store.read().await);
@@ -1055,7 +1070,8 @@ mod tests {
 
     #[test]
     fn a_large_installation_still_fits_one_message() {
-        // 16 zones and 64 clients is large for a home; the message has to stay well
+        // 16 zones and 64 clients is large for a home (about 330 KB: the zone select of
+        // every client lists all zone names three times); the message has to stay well
         // below the packet limit, or the publish is refused (and logged).
         let model = Model {
             zones: (1..=16).map(|i| (i, format!("Zone number {i}"))).collect(),

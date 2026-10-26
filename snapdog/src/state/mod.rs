@@ -18,6 +18,35 @@ use tokio::sync::RwLock;
 
 use crate::config::AppConfig;
 
+/// The stable identity of this server: a random id that is written to
+/// `state_dir/server_id` once and read back at every start.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServerIdentity {
+    /// The id.
+    pub id: String,
+    /// Whether the id is stored: `false` when it could not be written, so that the next
+    /// start makes up another one. Anything that outlives a start (Home Assistant
+    /// entities, whose ids contain it) must not be built on an id that is not stored.
+    pub persisted: bool,
+}
+
+/// Read `state_dir/server_id`, or make an id up and try to store it.
+#[must_use]
+pub fn server_identity(state_dir: &Path) -> ServerIdentity {
+    let path = state_dir.join("server_id");
+    if let Ok(id) = std::fs::read_to_string(&path)
+        && !id.trim().is_empty()
+    {
+        return ServerIdentity {
+            id: id.trim().to_string(),
+            persisted: true,
+        };
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let persisted = std::fs::write(&path, &id).is_ok();
+    ServerIdentity { id, persisted }
+}
+
 /// Thread-safe shared state handle.
 pub type SharedState = Arc<RwLock<Store>>;
 
@@ -448,6 +477,38 @@ pub async fn update_client_and_notify(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_server_id_is_stored_once_and_read_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = server_identity(dir.path());
+        assert!(first.persisted);
+        assert_eq!(
+            server_identity(dir.path()),
+            first,
+            "the same id at the next start"
+        );
+        // A blank file is not an id.
+        std::fs::write(dir.path().join("server_id"), " \n").unwrap();
+        let again = server_identity(dir.path());
+        assert!(again.persisted);
+        assert_ne!(again.id, first.id);
+    }
+
+    /// Review finding m6: when the id cannot be stored (a read-only or missing state
+    /// directory) every start makes up a new one; that must be known.
+    #[test]
+    fn an_id_that_cannot_be_stored_is_marked_as_not_persisted() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        let identity = server_identity(&missing);
+        assert!(!identity.persisted);
+        assert_ne!(
+            identity.id,
+            server_identity(&missing).id,
+            "a new id at every start"
+        );
+    }
 
     fn test_config() -> AppConfig {
         let raw: crate::config::FileConfig = toml::from_str(

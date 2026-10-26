@@ -357,17 +357,8 @@ pub async fn run_app() -> Result<()> {
     tracing::info!(path = %state_dir.display(), "State directory");
 
     // Stable server identity — persisted across restarts
-    let server_id = {
-        let id_path = state_dir.join("server_id");
-        match std::fs::read_to_string(&id_path) {
-            Ok(id) if !id.trim().is_empty() => id.trim().to_string(),
-            _ => {
-                let id = uuid::Uuid::new_v4().to_string();
-                std::fs::write(&id_path, &id).ok();
-                id
-            }
-        }
-    };
+    let server_identity = state::server_identity(&state_dir);
+    let server_id = server_identity.id.clone();
 
     let store = state::init(&config, Some(&state_dir.join(STATE_FILE)))?;
     state::spawn_auto_save(store.clone());
@@ -522,6 +513,7 @@ pub async fn run_app() -> Result<()> {
                 notifications: notify_tx.subscribe(),
                 server: mqtt::ServerInfo {
                     id: server_id.clone(),
+                    stable_id: server_identity.persisted,
                     name: config.name.clone(),
                     base_url: config.http.base_url.clone(),
                 },

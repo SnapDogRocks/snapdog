@@ -189,6 +189,7 @@ async fn try_start_bridge(cfg: &config::AppConfig) -> anyhow::Result<Rig> {
             notifications: notify_tx.subscribe(),
             server: snapdog::mqtt::ServerInfo {
                 id: "it-server-id".into(),
+                stable_id: true,
                 name: "SnapDog".into(),
                 base_url: "http://test:5555".into(),
             },

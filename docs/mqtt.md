@@ -83,11 +83,24 @@ name> <what>`, entity ids `<domain>.snapdog_<name>_<what>`.
   API key), no position (a per-second sensor would fill the database; Home Assistant
   wants `media_position` at jumps), no `media_player`, no `tts.speak` target, no browsing,
   no EQ presets. Those need the custom integration of stages 2 and 3 of the RFC.
-- **Size.** About 0.4 KB per entity: 2 zones and 2 clients are 17 KB, 16 zones and 64
-  clients still fit well below the 1 MiB packet limit. A message that does not fit is
-  refused with an error in the log (`Home Assistant discovery message could not be
-  published`).
-- **ACL.** SnapDog needs `write homeassistant/device/snapdog_+/config` and `read
+- **Size.** The message grows with zones x clients, because the zone select of every
+  client lists all zone names (three times: its options and two templates). Measured
+  with short names: 2 zones and 2 clients 17 KB, 4 and 12 60 KB, 8 and 24 125 KB, 16 and
+  32 211 KB, 16 and 64 331 KB. That is below SnapDog's own 1 MiB packet limit, but
+  **above a broker's `message_size_limit` of 256 KiB** as recommended for the commands
+  below: with discovery on, allow at least 512 KiB (`message_size_limit 524288`), and more
+  for a larger installation. Managed brokers may have a lower per-message limit than that: check yours. A message that does not fit, for SnapDog
+  or for the broker, is not announced and the log says so (`Home Assistant discovery
+  message could not be published`; a broker that drops it says nothing).
+- **Server id.** The entities carry the server id (`state_dir/server_id`). If it cannot
+  be stored (a missing or read-only `system.state_dir`), every start would make up a new
+  id and announce a second device next to the old one, so SnapDog announces nothing then
+  and logs an error. Make the state directory writable.
+- **Names.** Entity ids are built by Home Assistant from the device name (SnapDog's
+  `name`, "SnapDog" by default), so `number.snapdog_living_room_volume` assumes that
+  name. In KNX device mode ETS sets the whole `[mqtt]` section, so `[mqtt.homeassistant]`
+  cannot be configured there.
+- **ACL.** SnapDog needs `write homeassistant/device/+/config` and `read
   homeassistant/status`; `snapdog.example.toml` lists both.
 
 To remove the entities: set `discovery = false`, restart SnapDog once, and leave it or
@@ -149,7 +162,8 @@ mosquitto_pub -r -n -t 'snapdog/zones/1/volume/set'
 To keep it from happening, limit the size on the broker. In Mosquitto:
 
 ```conf
-message_size_limit 262144     # bytes; 0 (the default) means no limit
+message_size_limit 262144     # bytes; 0 (the default) means no limit.
+                              # 524288 or more if Home Assistant discovery is on
 ```
 
 and restrict who may publish to the `.../set` topics with an ACL (see
@@ -198,7 +212,10 @@ What counts as wrong (the message names the key):
 - an unknown key (a misspelt `ca_flie` would otherwise silently fall back to the
   system trust store);
 - a password without a username, `password` together with `password_file`;
-- a broker address with credentials, a path, an unknown scheme or a WebSocket scheme;
+- a broker address with credentials, a path, an unknown scheme or a WebSocket scheme,
+  or a host name that is not ASCII (use the punycode form of an international name,
+  for example `xn--mller-kva.lan` for `müller.lan`; the check is stricter than the
+  releases before it, which passed such a name on);
 - a base topic with `+`, `#`, NUL, control characters or a leading `$`;
 - `ca_file`, `client_cert` or `client_key` with a plaintext address, `client_cert`
   without `client_key`, or TLS material the TLS library refuses: a CA file without a
