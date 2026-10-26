@@ -1176,7 +1176,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
     // Values written while there was no server wait in their group objects.
     bau.poll(now_ms());
     while let Some(out) = bau.next_outgoing_frame() {
-        let _ = server.send_frame(out).await;
+        let _ = server.send_frame(to_indication(out)).await;
     }
 
     let end = loop {
@@ -1219,7 +1219,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                 bau.poll(now_ms());
 
                 while let Some(out) = bau.next_outgoing_frame() {
-                    let _ = server.send_frame(out).await;
+                    let _ = server.send_frame(to_indication(out)).await;
                 }
 
                 // ETS programs via tunnel — mark dirty for persistence. So does an individual
@@ -1671,7 +1671,7 @@ async fn write_object(bau: &mut Bau, server: &DeviceServer, asap: u16, value: &D
     // Poll to send pending writes
     bau.poll(now_ms());
     while let Some(out) = bau.next_outgoing_frame() {
-        let _ = server.send_frame(out).await;
+        let _ = server.send_frame(to_indication(out)).await;
     }
 }
 
@@ -1704,6 +1704,22 @@ async fn dispatch_updated_gos(bau: &mut Bau, update_tx: &mpsc::Sender<(u16, Vec<
 fn is_management_for_device(bau: &Bau, frame: &CemiFrame) -> bool {
     frame.address_type() == knx_rs_core::types::AddressType::Individual
         && frame.destination_address_raw() == bau.individual_address().raw()
+}
+
+/// A frame the device stack produced, as the KNXnet/IP server must deliver it.
+///
+/// The stack builds its outgoing frames as `L_Data.req` (0x11), a request from an application to
+/// the data link layer. A server tells its tunnel clients, and the routing multicast group, about
+/// a telegram with `L_Data.ind` (0x29). Clients and routers that follow the specification may
+/// ignore a request that arrives where an indication belongs.
+fn to_indication(frame: CemiFrame) -> CemiFrame {
+    use knx_rs_core::message::MessageCode;
+    if frame.message_code_raw() != MessageCode::LDataReq as u8 {
+        return frame;
+    }
+    let mut bytes = frame.as_bytes().to_vec();
+    bytes[0] = MessageCode::LDataInd as u8;
+    CemiFrame::parse(&bytes).unwrap_or(frame)
 }
 
 /// What the BAU task does with a telegram before the device stack sees it.
@@ -2800,5 +2816,26 @@ mod tests {
             .expect("everything offered while there was no server goes out once it is up");
         shutdown_tx.send(true).unwrap();
         supervisor.await.unwrap();
+    }
+
+    #[test]
+    fn frames_leave_the_server_as_indications() {
+        let mut bau = bau_from_toml(&toml_config());
+        let go = bau
+            .group_objects_mut()
+            .get_mut(zone_asap(1, ZGO_VOLUME_STATUS))
+            .unwrap();
+        go.set_value(&DptValue::Float(40.0)).unwrap();
+        bau.poll(0);
+        let req = bau.next_outgoing_frame().unwrap();
+        assert_eq!(req.message_code_raw(), 0x11, "the stack builds requests");
+        let ind = to_indication(req.clone());
+        assert_eq!(ind.message_code_raw(), 0x29);
+        // Nothing else about the telegram changes.
+        assert_eq!(ind.destination_address_raw(), req.destination_address_raw());
+        assert_eq!(ind.source_address(), req.source_address());
+        assert_eq!(ind.as_group_write(), req.as_group_write());
+        // A frame that is not a request is left alone.
+        assert_eq!(to_indication(ind.clone()).as_bytes(), ind.as_bytes());
     }
 }

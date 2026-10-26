@@ -127,6 +127,11 @@ async fn property_write(ets: &mut TunnelConnection, obj: u8, pid: u8, data: Vec<
         loop {
             let frame = ets.recv().await.expect("tunnel open");
             if frame.as_group_write().is_none() {
+                assert_eq!(
+                    frame.message_code_raw(),
+                    0x29,
+                    "a management response is an L_Data.ind as well"
+                );
                 return;
             }
         }
@@ -376,6 +381,14 @@ async fn expect_group_write(conn: &mut TunnelConnection, dst: &str) -> Vec<u8> {
             if let Some((g, data)) = frame.as_group_write()
                 && g == want
             {
+                // A server tells its clients about a telegram with L_Data.ind (0x29). The device
+                // stack builds its frames as L_Data.req (0x11), which a client or router that
+                // follows the specification may ignore.
+                assert_eq!(
+                    frame.message_code_raw(),
+                    0x29,
+                    "status telegram to {dst} is not an L_Data.ind"
+                );
                 return data;
             }
         }

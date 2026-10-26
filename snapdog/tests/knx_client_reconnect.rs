@@ -123,6 +123,8 @@ async fn expect_write(gw: &mut DeviceServer, dst: &str) -> Vec<u8> {
             if let Some((g, data)) = frame.as_group_write()
                 && g == want
             {
+                // A client asks the gateway to send: L_Data.req.
+                assert_eq!(frame.message_code_raw(), 0x11, "client telegram to {dst}");
                 return data;
             }
         }
