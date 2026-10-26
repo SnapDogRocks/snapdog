@@ -307,83 +307,10 @@ impl PlayerInterface {
     }
 }
 
-/// Served over a peer-to-peer connection, which needs a Unix socket pair.
 #[cfg(all(test, unix))]
 mod tests {
-    use std::os::unix::net::UnixStream;
-    use std::time::Duration;
-
-    use zbus::{Guid, connection};
-
     use super::*;
-
-    const PATH: &str = "/org/mpris/MediaPlayer2";
-    const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
-    /// A reply that never arrives is the failure these tests exist to catch, so every wait
-    /// has a deadline.
-    const DEADLINE: Duration = Duration::from_secs(5);
-
-    /// The Player interface served over a peer-to-peer connection (a socketpair), so no bus
-    /// daemon is needed, and the calling end of it.
-    struct Fixture {
-        caller: zbus::Connection,
-        /// Keeps the serving end open.
-        _server: zbus::Connection,
-        state: Arc<Mutex<PlayerState>>,
-        commands: mpsc::Receiver<ZoneCommand>,
-    }
-
-    async fn fixture() -> Fixture {
-        let (server_end, caller_end) = UnixStream::pair().expect("socketpair");
-        let (cmd_tx, commands) = mpsc::channel(8);
-        let state = Arc::new(Mutex::new(PlayerState::default()));
-        let player = PlayerInterface::new(
-            1,
-            "http://localhost:5555".into(),
-            Arc::clone(&state),
-            cmd_tx,
-        );
-        let (server, caller) = tokio::try_join!(
-            async {
-                connection::Builder::unix_stream(server_end)
-                    .server(Guid::generate())
-                    .p2p()
-                    .serve_at(PATH, player)
-                    .build()
-                    .await
-            },
-            connection::Builder::unix_stream(caller_end).p2p().build(),
-        )
-        .expect("peer-to-peer handshake");
-        Fixture {
-            caller,
-            _server: server,
-            state,
-            commands,
-        }
-    }
-
-    async fn call<B>(caller: &zbus::Connection, method: &str, body: &B)
-    where
-        B: zbus::export::serde::Serialize + zbus::zvariant::DynamicType,
-    {
-        tokio::time::timeout(
-            DEADLINE,
-            caller.call_method(None::<&str>, PATH, Some(PLAYER), method, body),
-        )
-        .await
-        .unwrap_or_else(|_| {
-            panic!("{method} got no reply within {DEADLINE:?}: the method most likely panicked")
-        })
-        .unwrap_or_else(|e| panic!("{method} failed: {e}"));
-    }
-
-    async fn next_command(commands: &mut mpsc::Receiver<ZoneCommand>) -> ZoneCommand {
-        tokio::time::timeout(DEADLINE, commands.recv())
-            .await
-            .expect("no command was forwarded")
-            .expect("command channel closed")
-    }
+    use crate::dbus::testing::{call, fixture, get_f64, get_string, next_command, set_property};
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn play_pause_plays_unless_playing() {
@@ -405,7 +332,7 @@ mod tests {
     }
 
     /// Every method has to answer on the runtime thread, so a blocking call added to any of
-    /// them shows up here.
+    /// them shows up here. The property setters have their own test below.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn every_method_replies_and_forwards_its_command() {
         let mut f = fixture().await;
@@ -447,5 +374,57 @@ mod tests {
             ZoneCommand::Seek(7000)
         ));
         call(&f.caller, "OpenUri", &("file:///x",)).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn property_setters_reply_and_forward_their_command() {
+        let mut f = fixture().await;
+        for (value, expected) in [(0.5_f64, 50), (0.0, 0), (1.0, 100), (7.0, 100), (-1.0, 0)] {
+            set_property(&f.caller, "Volume", zbus::Variant::from(value)).await;
+            let ZoneCommand::SetVolume(v) = next_command(&mut f.commands).await else {
+                panic!("expected SetVolume for {value}");
+            };
+            assert_eq!(v, expected, "{value}");
+        }
+        for enabled in [true, false] {
+            set_property(&f.caller, "Shuffle", zbus::Variant::from(enabled)).await;
+            let ZoneCommand::SetShuffle(v) = next_command(&mut f.commands).await else {
+                panic!("expected SetShuffle");
+            };
+            assert_eq!(v, enabled);
+        }
+        for (status, mode) in [
+            ("Track", snapdog_common::RepeatMode::Track),
+            ("Playlist", snapdog_common::RepeatMode::Playlist),
+            ("None", snapdog_common::RepeatMode::Off),
+        ] {
+            set_property(&f.caller, "LoopStatus", zbus::Variant::from(status)).await;
+            let ZoneCommand::SetRepeat(m) = next_command(&mut f.commands).await else {
+                panic!("expected SetRepeat");
+            };
+            assert_eq!(m, mode, "{status}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn properties_report_the_state() {
+        let f = fixture().await;
+        {
+            let mut s = f.state.lock().await;
+            s.playback = "Paused".into();
+            s.volume = 40;
+            s.repeat = true;
+        }
+        assert_eq!(get_string(&f.caller, "PlaybackStatus").await, "Paused");
+        assert_eq!(get_string(&f.caller, "LoopStatus").await, "Playlist");
+        assert!((get_f64(&f.caller, "Volume").await - 0.4).abs() < 1e-9);
+        // Muted reads as 0.0, and Track repeat wins over Playlist repeat.
+        {
+            let mut s = f.state.lock().await;
+            s.muted = true;
+            s.track_repeat = true;
+        }
+        assert!(get_f64(&f.caller, "Volume").await.abs() < f64::EPSILON);
+        assert_eq!(get_string(&f.caller, "LoopStatus").await, "Track");
     }
 }
