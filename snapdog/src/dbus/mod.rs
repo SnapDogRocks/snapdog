@@ -5,6 +5,10 @@
 
 #[cfg(feature = "dbus")]
 mod player;
+/// Checks shared with the client's policy test (well-formed XML, comments).
+#[cfg(all(test, feature = "dbus"))]
+#[path = "../../../snapdog-common/test-support/policy_xml.rs"]
+mod policy_xml;
 #[cfg(feature = "dbus")]
 mod root;
 #[cfg(all(test, unix, feature = "dbus"))]
@@ -236,24 +240,12 @@ mod mpris {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::dbus::policy_xml;
 
-        /// The policy file with its comments removed, as trimmed, non-empty lines. Panics on
-        /// a comment that XML does not allow (`--` inside it).
+        /// The policy file with its comments removed, as trimmed, non-empty lines.
         fn policy_lines(policy: &str) -> Vec<String> {
-            let mut text = String::new();
-            let mut rest = policy;
-            while let Some(start) = rest.find("<!--") {
-                text.push_str(&rest[..start]);
-                let body = &rest[start + 4..];
-                let end = body.find("-->").expect("unterminated comment");
-                assert!(
-                    !body[..end].contains("--"),
-                    "a comment contains `--`, which is not well-formed XML"
-                );
-                rest = &body[end + 3..];
-            }
-            text.push_str(rest);
-            text.lines()
+            policy_xml::strip_comments(policy)
+                .lines()
                 .map(str::trim)
                 .filter(|l| !l.is_empty())
                 .map(str::to_owned)
@@ -295,6 +287,7 @@ mod mpris {
         #[test]
         fn policy_file_is_exactly_what_bus_names_requires() {
             let policy = include_str!("../../dbus/snapdog.conf");
+            policy_xml::assert_well_formed(policy);
             let actual = policy_lines(policy);
             let expected = expected_policy();
 
