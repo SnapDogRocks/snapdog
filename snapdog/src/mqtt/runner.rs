@@ -3,7 +3,7 @@
 
 //! The broker connection, run as tasks of their own.
 //!
-//! - [`Connection`] polls rumqttc's event loop, hands incoming messages to the
+//! - [`run_connection`] polls rumqttc's event loop, hands incoming messages to the
 //!   [`CommandHandler`], reconnects with a jittered backoff and, after every
 //!   (re)connect, subscribes again and re-announces (availability and a state
 //!   snapshot).

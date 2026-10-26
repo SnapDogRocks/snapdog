@@ -348,7 +348,7 @@ Topics, all below `base_topic` (`{n}` is the 1-based position of the `[[zone]]` 
 
 After a reconnect SnapDog subscribes again and republishes availability and state. Commands are rate limited per zone and client.
 
-`broker` takes `host:port` (plaintext) or `mqtts://host:8883` (TLS 1.2 or newer, certificate and host name always verified, optional `ca_file` and mutual TLS). `snapdog.example.toml` describes every key and how to harden the broker (TLS-only listener, per-client credentials, ACL).
+`broker` takes `host:port` (plaintext) or `mqtts://host:8883` (TLS 1.2 or newer, certificate and host name always verified, optional `ca_file` and mutual TLS). A wrong `[mqtt]` section switches MQTT off and is logged as an error, the rest of the server keeps running (`snapdog --check-config` reports it). Limits, error handling, broker settings and what changed from earlier releases: [docs/mqtt.md](docs/mqtt.md). `snapdog.example.toml` describes every key and how to harden the broker (TLS-only listener, per-client credentials, ACL).
 
 SnapDog does **not** announce itself to Home Assistant at the moment. Home Assistant's MQTT integration has no `media_player` platform, so the discovery messages earlier releases published never produced an entity (SnapDog now clears them from the broker). [RFC 0007](docs/rfcs/0007-home-assistant-integration.md) proposes how a proper Home Assistant integration could work.
 

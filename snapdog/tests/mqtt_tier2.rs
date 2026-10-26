@@ -760,6 +760,127 @@ async fn mqtt_tier2_graceful_shutdown_publishes_offline() {
     assert!(offline, "retained offline; saw: {:?}", observer.seen());
 }
 
+// ── The documented ACL ────────────────────────────────────────
+
+/// The `topic read|write ...` lines of the ACL that `snapdog.example.toml`
+/// recommends, so that the test checks what the documentation says.
+fn documented_acl() -> String {
+    include_str!("../../snapdog.example.toml")
+        .lines()
+        .filter_map(|line| {
+            let rule = line.trim_start_matches('#').trim();
+            // A trailing comment starts with " #"; a bare '#' is the MQTT wildcard.
+            let rule = rule.split(" #").next().unwrap_or("").trim();
+            (rule.starts_with("topic read ") || rule.starts_with("topic write "))
+                .then(|| format!("{rule}\n"))
+        })
+        .collect()
+}
+
+/// The ACL in `snapdog.example.toml` lets SnapDog (and whatever controls it) do
+/// everything: all 16 command topics are subscribed and arrive, including the three
+/// that have three levels below the zone (`presence/enable`, `presence/timeout`,
+/// `track/position`), which the first version of that ACL left out.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_the_documented_acl_lets_every_command_through() {
+    let acl = documented_acl();
+    assert!(
+        acl.lines().count() >= 8,
+        "the ACL was not found in the example config: {acl}"
+    );
+    let image = mosquitto()
+        .with_copy_to(
+            CopyTargetOptions::new("/mosquitto/config/acl.conf").with_mode(0o644),
+            acl.into_bytes(),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/mosquitto/config/acl-test.conf").with_mode(0o644),
+            b"persistence false\nallow_anonymous true\nlistener 1883\nacl_file /mosquitto/config/acl.conf\n"
+                .to_vec(),
+        )
+        .with_cmd(["mosquitto", "-c", "/mosquitto/config/acl-test.conf"]);
+    let container = match image.start().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("SKIP IT-T32 ACL: Docker/mosquitto unavailable: {e}");
+            return;
+        }
+    };
+    let host = container.get_host().await.expect("host").to_string();
+    let port = container.get_host_port_ipv4(1883).await.expect("port");
+
+    let mut rig = start_bridge(&host, port).await;
+    assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+
+    let zone_topics = [
+        ("volume", "40", "SetVolume(40)"),
+        ("mute", "on", "SetMute(true)"),
+        ("control", "pause", "Pause"),
+        ("shuffle", "on", "SetShuffle(true)"),
+        ("repeat", "all", "SetRepeat(Playlist)"),
+        ("position", "12", "Seek(12000)"),
+        ("track", "3", "SetTrack(3)"),
+        ("track/position", "15", "Seek(15000)"),
+        ("playlist", "2", "SetPlaylist(2, 0)"),
+        ("presence", "on", "SetPresence(true)"),
+        ("presence/enable", "off", "SetPresenceEnabled(false)"),
+        ("presence/timeout", "90", "SetAutoOffDelay(90)"),
+    ];
+    for (tail, payload, expected) in zone_topics {
+        let topic = format!("snapdog/zones/1/{tail}/set");
+        let got = publish_until_received(&host, port, &topic, payload, &mut rig.zone_rx, 10).await;
+        assert_eq!(
+            got.map(|c| format!("{c:?}")).as_deref(),
+            Some(expected),
+            "{topic} must get through the documented ACL"
+        );
+    }
+    // The four client topics: the test client has no Snapcast id, so nothing is
+    // forwarded, but the broker lets a publish to them through, which is what the
+    // ACL decides (it drops a denied publish silently).
+    let observer = Observer::start("it-t32-acl-obs", &host, port, "snapdog/clients/+/+/set");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let mut opts = MqttOptions::new("it-t32-acl", &host, port);
+    opts.set_keep_alive(Duration::from_secs(5));
+    let (client, mut eventloop) = AsyncClient::new(opts, 16);
+    let driver = tokio::spawn(async move {
+        loop {
+            if eventloop.poll().await.is_err() {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    });
+    for (tail, payload) in [
+        ("volume", "30"),
+        ("mute", "on"),
+        ("latency", "20"),
+        ("zone", "1"),
+    ] {
+        let topic = format!("snapdog/clients/1/{tail}/set");
+        let arrived = async {
+            loop {
+                client
+                    .publish(&topic, QoS::AtLeastOnce, false, payload.as_bytes())
+                    .await
+                    .expect("queue");
+                if observer
+                    .wait_for(1, |seen| seen.iter().any(|m| m.topic == topic))
+                    .await
+                {
+                    return true;
+                }
+            }
+        };
+        assert!(
+            tokio::time::timeout(Duration::from_secs(10), arrived)
+                .await
+                .unwrap_or(false),
+            "{topic} must get through the documented ACL"
+        );
+    }
+    driver.abort();
+}
+
 // ── TLS ───────────────────────────────────────────────────────
 
 /// mosquitto with a plaintext listener (for observers), a TLS listener and a

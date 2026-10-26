@@ -4,6 +4,35 @@ What SnapDog does over MQTT, which limits apply, and what to configure on the br
 The user-facing overview is in the [README](../README.md#mqtt), every `[mqtt]` key is
 described in [`snapdog.example.toml`](../snapdog.example.toml).
 
+## Topics
+
+All topics are below `base_topic` (default `snapdog/`; a missing trailing slash is
+added). `<n>` is the 1-based position of the `[[zone]]` or `[[client]]` in the config
+file. A client that Snapcast accepts at runtime (`snapcast.unknown_clients = "accept"`)
+gets the next free number after those in the file.
+
+| Topic | Direction | Content |
+|---|---|---|
+| `status` | published, retained | `online` / `offline`; `offline` is also the last will |
+| `zones/<n>/state`, `clients/<n>/state` | published, retained | JSON, see `snapdog/src/mqtt/payloads.rs` |
+| `zones/<n>/volume/set` | command | `0.0..1.0` or `0..100` (`1` is 100 %, `0.01` is 1 %) |
+| `zones/<n>/mute/set`, `shuffle/set`, `presence/set`, `presence/enable/set` | command | `true`/`false`, `on`/`off`, `1`/`0`, any case |
+| `zones/<n>/control/set` | command | `play`, `pause`, `stop`, `next`, `previous` |
+| `zones/<n>/repeat/set` | command | `off`, `one`/`track`, `all`/`playlist` |
+| `zones/<n>/position/set`, `track/position/set` | command | seconds, `0` to one week, fractions allowed |
+| `zones/<n>/track/set`, `playlist/set` | command | a non-negative integer |
+| `zones/<n>/presence/timeout/set` | command | seconds, `0..65535` |
+| `clients/<n>/volume/set` | command | integer `0..100` |
+| `clients/<n>/mute/set` | command | boolean, as above |
+| `clients/<n>/latency/set` | command | milliseconds, `-10000..10000` |
+| `clients/<n>/zone/set` | command | zone number |
+
+A command is understood exactly or rejected: a payload that is not understood changes
+nothing. A **retained** command is never executed (the broker would replay it at every
+start). Commands arrive at QoS 1. Command topics have two and three levels below the
+zone or client, so an ACL needs both `.../+/+/set` and `.../+/+/+/set` (see
+`snapdog.example.toml`, which a test checks against a real broker).
+
 ## Limits
 
 SnapDog speaks MQTT 3.1.1 (rumqttc). The sizes below are fixed in the code.
@@ -157,3 +186,47 @@ clear_legacy_topics = false
 
 once the old messages are gone, or if the ACL refuses them. The default is `true`, so
 that an upgrade cleans up by itself.
+
+## Migration notes
+
+For users of earlier releases. Inbound MQTT commands did not work at all in releases
+from v0.16.0 on (the bridge rejected every message), so only automations written
+for v0.15 or older, or written since against the documented topics, can notice what
+follows.
+
+**Commands (stricter, now working)**
+
+| Command | Before | Now |
+|---|---|---|
+| `mute`, `shuffle` of a zone | `true`/`1`/`on` was true, anything else false (so Home Assistant's `ON` was false) | `true`/`on`/`1` and `false`/`off`/`0`, any case, whitespace ignored; anything else is rejected and changes nothing |
+| `repeat` | `one`/`track` and `all`/`playlist`, anything else was `off` | `off` must be written; `false`, `none`, `0`, an empty payload are rejected |
+| zone `volume` | `NaN` was 0, `inf` was 100 | rejected |
+| `position` | negative and `NaN` accepted | finite, `0` to one week |
+| client `latency` | any integer | within +-10000 ms |
+| counts, zone and client numbers | `+3`, `01` accepted | plain digits; topic numbers `1..1024` |
+| retained command | executed at every start | ignored (a retained publish that is delivered live to a connected bridge still runs) |
+| flood | each command took the channel | 20 per second per zone or client, backlog of the latest value, see above |
+
+**Discovery.** The `media_player` discovery messages are no longer published (Home
+Assistant has no such MQTT platform, they never produced an entity) and are deleted
+from the broker at start (`clear_legacy_topics`). Home Assistant discovery for the
+entities MQTT can express is described in the next section.
+
+**Configuration.** A wrong `[mqtt]` section switches MQTT off and logs why, where an
+earlier build of this branch stopped the server and releases before it disabled MQTT
+without a clear message. New keys: `password_file`, `ca_file`, `client_cert`,
+`client_key`, `clear_legacy_topics`; `broker` takes `mqtts://`. Unknown keys, a password
+without a username, wildcards or a leading `$` in `base_topic`, and TLS options on a
+plaintext address are now errors (MQTT off). `SNAPDOG_MQTT_USERNAME` and the TLS path
+variables are new; an empty `SNAPDOG_MQTT_PASSWORD` or `SNAPDOG_MQTT_USERNAME` is ignored.
+
+**Reconnects.** The client id, keep-alive (60 s), last will (`offline`, retained, QoS 1)
+and the topics are unchanged. After a reconnect SnapDog now subscribes again and
+republishes (before, a broker restart silently ended command handling and
+availability). Reconnects use a jittered backoff of 1 to 60 seconds instead of a flat 5.
+
+**Library users** (code that links the `snapdog` crate): `MqttBridge::connect`,
+`subscribe_commands`, `publish_ha_discovery`, `poll_once` and `run` are gone;
+`MqttBridge::start` takes the configuration and what the bridge needs from the server
+(`MqttRuntime`) and runs its own tasks; `publish`, `publish_zone_state` and
+`publish_client_state` are synchronous and queue the message.

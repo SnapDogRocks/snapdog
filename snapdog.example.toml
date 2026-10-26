@@ -139,11 +139,13 @@ password = "admin"
 #   subscribes  zones/<n>/<what>/set        volume, mute, control, shuffle, repeat, position,
 #               clients/<n>/<what>/set      track, playlist, presence, ... (a `set` topic is a
 #                                           command; a retained command is never executed)
-# <n> is the position of the [[zone]] / [[client]] in this file, counting from 1.
+# <n> is the position of the [[zone]] / [[client]] in this file, counting from 1. A client that
+# Snapcast accepts at runtime (snapcast.unknown_clients = "accept") gets the next free number
+# after those in the file.
 [mqtt]
 # Broker address:
 #   "host:1883"            plaintext; also "mqtt://host" or "tcp://host" (port 1883 if omitted)
-#   "mqtts://host:8883"    TLS; also "ssl://host" (port 8883 if omitted)
+#   "mqtts://host:8883"    TLS; also "ssl://host" or "tls://host" (port 8883 if omitted)
 # TLS verifies the broker's certificate and its host name, always; there is no way to
 # switch that off. Without `ca_file` it is checked against the system trust store.
 # Minimum TLS 1.2. Do not put user:password into the address: use the keys below.
@@ -202,12 +204,17 @@ base_topic = "snapdog"
 #        topic write snapdog/clients/+/state
 #        topic read  snapdog/zones/#
 #        topic read  snapdog/clients/#
-#        # Optional, only to let SnapDog delete messages that old releases left behind:
+#        # Optional (clear_legacy_topics), only to let SnapDog delete messages that old
+#        # releases left behind; set clear_legacy_topics = false and leave these out otherwise:
 #        topic write snapdog//status
 #        topic write homeassistant/media_player/+/config
-#      and give whatever controls SnapDog (Home Assistant, a script) `topic write` on
-#      snapdog/zones/+/+/set and friends, and `topic read snapdog/#`. Everybody who may
-#      write a `.../set` topic can control the audio.
+#      and give whatever controls SnapDog (Home Assistant, a script) `topic write` on the
+#      command topics and `topic read snapdog/#`. Commands have two and three levels below
+#      the zone or client, so both patterns are needed:
+#        topic write snapdog/zones/+/+/set        # volume, mute, control, shuffle, ...
+#        topic write snapdog/zones/+/+/+/set      # presence/enable, presence/timeout, track/position
+#        topic write snapdog/clients/+/+/set      # volume, mute, latency, zone
+#      Everybody who may write one of these topics can control the audio.
 #   4. A client that is refused a subscription shows up as a warning in SnapDog's log.
 
 # ── KNX ────────────────────────────────────────────────────────────────────

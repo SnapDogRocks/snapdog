@@ -19,6 +19,7 @@ use anyhow::Result;
 use rumqttc::AsyncClient;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use crate::config::MqttConfig;
 use crate::player::{SnapcastCmd, ZoneCommandSender};
@@ -138,10 +139,13 @@ impl MqttBridge {
             connected: connected_rx.clone(),
             shutdown: shutdown_rx.clone(),
         };
+        // The tasks outlive this function, so they carry its span (the broker
+        // field) with them: their log lines say which broker they are about.
+        let span = tracing::Span::current();
         let tasks = vec![
-            tokio::spawn(supervised_connection(eventloop, session)),
-            tokio::spawn(supervised_backlog_flusher(handler, shutdown_rx)),
-            tokio::spawn(supervised_state_publisher(feed)),
+            tokio::spawn(supervised_connection(eventloop, session).instrument(span.clone())),
+            tokio::spawn(supervised_backlog_flusher(handler, shutdown_rx).instrument(span.clone())),
+            tokio::spawn(supervised_state_publisher(feed).instrument(span)),
         ];
         tracing::info!(capacity, "MQTT bridge started");
 

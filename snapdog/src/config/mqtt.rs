@@ -32,7 +32,7 @@ const MAX_BASE_TOPIC_BYTES: usize = 256;
 ///
 /// A plain `broker = "host:1883"` is a plaintext connection, as it has always
 /// been. A TLS listener is selected by the scheme of `broker` (`mqtts://`,
-/// `ssl://`); there is no separate switch and no way to turn certificate or host
+/// `ssl://` or `tls://`); there is no separate switch and no way to turn certificate or host
 /// name verification off.
 ///
 /// Environment variables override the file (and win over `password_file`):
@@ -43,7 +43,7 @@ const MAX_BASE_TOPIC_BYTES: usize = 256;
 pub struct MqttConfig {
     /// Broker address: `host:port`, `mqtt://host[:port]` or `tcp://host[:port]`
     /// (plaintext, port 1883 unless named), `mqtts://host[:port]` or
-    /// `ssl://host[:port]` (TLS, port 8883 unless named). IPv6 literals in
+    /// `ssl://host[:port]` or `tls://host[:port]` (TLS, port 8883 unless named). IPv6 literals in
     /// brackets (plaintext only: a TLS certificate is matched against a name).
     /// No credentials in the address: use `username` and `password`.
     pub broker: String,
@@ -237,8 +237,8 @@ impl BrokerEndpoint {
                  (use mqtt:// or mqtts://)"
             ),
             Some(_) => bail!(
-                "[mqtt] broker has an unknown scheme (use mqtt://, tcp://, mqtts:// or ssl://, \
-                 or just host:port)"
+                "[mqtt] broker has an unknown scheme (use mqtt://, tcp://, mqtts://, ssl:// or \
+                 tls://, or just host:port)"
             ),
         };
         ensure!(
