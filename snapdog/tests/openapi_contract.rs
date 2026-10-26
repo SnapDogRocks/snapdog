@@ -71,3 +71,18 @@ fn openapi_doc_is_structurally_stable() {
         assert!(schemas.contains_key(s), "missing schema {s}");
     }
 }
+
+/// The programming-mode calls wait two seconds for the KNX device task and answer 503 when it does
+/// not respond; the contract has to say so.
+#[test]
+fn the_programming_mode_calls_document_the_503() {
+    let doc: serde_json::Value =
+        serde_json::to_value(ApiDoc::openapi()).expect("openapi serializes");
+    for verb in ["get", "put"] {
+        let responses = &doc["paths"]["/api/v1/knx/programming-mode"][verb]["responses"];
+        assert!(
+            responses.get("503").is_some(),
+            "{verb} /api/v1/knx/programming-mode has no 503: {responses}"
+        );
+    }
+}

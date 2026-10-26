@@ -91,7 +91,8 @@ pub async fn get_knxprod() -> impl IntoResponse {
     path = "/api/v1/knx/programming-mode",
     responses(
         (status = 200, description = "Programming mode status", body = bool),
-        (status = 409, description = "KNX device mode not active", body = ErrorBody)
+        (status = 409, description = "KNX device mode not active", body = ErrorBody),
+        (status = 503, description = "The KNX device task did not answer within two seconds", body = ErrorBody)
     ),
     tag = "knx"
 )]
@@ -116,7 +117,8 @@ async fn get_programming_mode(State(state): State<SharedState>) -> impl IntoResp
     request_body = bool,
     responses(
         (status = 200, description = "Updated programming mode status", body = bool),
-        (status = 409, description = "KNX device mode not active", body = ErrorBody)
+        (status = 409, description = "KNX device mode not active", body = ErrorBody),
+        (status = 503, description = "The KNX device task did not answer within two seconds", body = ErrorBody)
     ),
     tag = "knx"
 )]
