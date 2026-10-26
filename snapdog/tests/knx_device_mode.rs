@@ -198,7 +198,7 @@ async fn write_segment(ets: &TunnelConnection, at: u16, data: &[u8]) {
 /// The download order of the generated product: the application segment is allocated first
 /// (load procedure 2), then the address and association tables are loaded, then the
 /// parameters are written into the application segment and it is completed.
-async fn ets_download(ets: &mut TunnelConnection, p: &Programming) {
+async fn ets_download(ets: &mut TunnelConnection, p: &Programming) -> Vec<CemiFrame> {
     const LSC: u8 = 5; // PID_LOAD_STATE_CONTROL
     const ADDR_TABLE: u8 = 1;
     const ASSOC_TABLE: u8 = 2;
@@ -230,6 +230,8 @@ async fn ets_download(ets: &mut TunnelConnection, p: &Programming) {
         assoc.extend_from_slice(&asap.to_be_bytes());
     }
 
+    // What the device sent to the tunnel while the download ran.
+    let mut seen = Vec::new();
     // ETS unloads what it is about to load before it starts.
     for obj in [APP_PROGRAM, ADDR_TABLE, ASSOC_TABLE] {
         property_write(ets, obj, LSC, vec![4]).await;
@@ -240,10 +242,11 @@ async fn ets_download(ets: &mut TunnelConnection, p: &Programming) {
         write_segment(ets, at, data).await;
         property_write(ets, obj, LSC, vec![2]).await; // load completed
         // Completing a table can make a device configured, which then sends its status.
-        drain(ets).await;
+        seen.extend(drain(ets).await);
     }
     write_segment(ets, app_at, &p.params).await;
     property_write(ets, APP_PROGRAM, LSC, vec![2]).await;
+    seen
 }
 
 /// Parameter memory with two zones, one client and no radios.
@@ -559,6 +562,75 @@ async fn ets_programmed_device_sends_status_on_programmed_addresses() {
     );
     let muted = expect_group_write(&mut ets, "1/1/4").await;
     assert!(dpt::decode(DPT_SWITCH, &muted).unwrap().as_bool().unwrap());
+}
+
+/// ETS loads the tables in steps and the device is configured at the end of the last one. Every
+/// status telegram goes out once for that download, not once per step (it used to be twice:
+/// 52 telegrams for 26 addresses), and the telegrams are paced rather than sent in one burst.
+#[tokio::test]
+async fn a_download_publishes_each_status_address_once() {
+    use snapdog::knx::group_objects::{
+        ZGO_CONTROL_STATUS, ZGO_PLAYLIST_STATUS, ZGO_REPEAT_STATUS, ZGO_SHUFFLE_STATUS,
+        ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_PLAYING, ZGO_TRACK_PROGRESS,
+        ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_TITLE,
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+
+    let mut programming = ets_links();
+    let mut n = 0u32;
+    for zone in 1..=2usize {
+        for go in [
+            ZGO_VOLUME_STATUS,
+            ZGO_MUTE_STATUS,
+            ZGO_SHUFFLE_STATUS,
+            ZGO_REPEAT_STATUS,
+            ZGO_TRACK_PLAYING,
+            ZGO_TRACK_REPEAT_STATUS,
+            ZGO_CONTROL_STATUS,
+            ZGO_PLAYLIST_STATUS,
+            ZGO_TRACK_TITLE,
+            ZGO_TRACK_ARTIST,
+            ZGO_TRACK_ALBUM,
+            ZGO_TRACK_PROGRESS,
+        ] {
+            n += 1;
+            let address: &'static str = Box::leak(format!("5/{zone}/{n}").into_boxed_str());
+            programming.links.push((address, zone_asap(zone, go)));
+        }
+    }
+    let started = std::time::Instant::now();
+    let mut frames = ets_download(&mut ets, &programming).await;
+    // The burst starts a moment after the download and lasts a while: wait until it is over.
+    loop {
+        let more = drain(&mut ets).await;
+        if more.is_empty() {
+            break;
+        }
+        frames.extend(more);
+    }
+    let elapsed = started.elapsed();
+
+    let mut per_address = std::collections::BTreeMap::<String, usize>::new();
+    for frame in &frames {
+        if let Some((address, _)) = frame.as_group_write() {
+            *per_address.entry(address.to_string()).or_default() += 1;
+        }
+    }
+    assert!(
+        per_address.len() >= 24,
+        "the status burst did not arrive: {per_address:?}"
+    );
+    let twice: Vec<_> = per_address.iter().filter(|(_, c)| **c != 1).collect();
+    assert!(twice.is_empty(), "sent more than once: {twice:?}");
+    // 25 ms between two frames of the burst, so 26 telegrams take at least half a second.
+    assert!(
+        elapsed >= Duration::from_millis(500),
+        "no pacing: {} telegrams in {elapsed:?}",
+        per_address.len()
+    );
 }
 
 /// Global objects work in device mode as well: the three-byte KNX time arrives intact and
@@ -1047,6 +1119,64 @@ fn spawn_acker(socket: std::sync::Arc<tokio::net::UdpSocket>) -> tokio::task::Jo
             }
         }
     })
+}
+
+/// A device that keeps writing a wrong value to a status address (a logic loop gone wrong) is
+/// corrected, but not once per write: the corrections are paced and a pending one is replaced
+/// by the newer, so the bus (and a slow gateway) does not see a telegram for each of them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_flood_of_foreign_writes_is_corrected_at_a_bounded_rate() {
+    use knx_rs_core::knxip::KnxIpFrame;
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &ets_links()).await;
+    drain(&mut ets).await;
+
+    let router = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let wrong = CemiFrame::new_l_data(
+        knx_rs_core::message::MessageCode::LDataInd,
+        knx_rs_core::address::IndividualAddress::from_raw(0x1101),
+        knx_rs_core::address::DestinationAddress::Group(ga("1/1/3")),
+        knx_rs_core::types::Priority::Low,
+        &[0x00, 0x80, 0xE6],
+    );
+    let datagram = KnxIpFrame::routing_indication(wrong.as_bytes()).to_bytes();
+    let started = std::time::Instant::now();
+    for _ in 0..300 {
+        router.send_to(&datagram, dev.addr).await.unwrap();
+    }
+    let sent_in = started.elapsed();
+
+    let mut corrections = Vec::new();
+    while let Ok(Some(frame)) = timeout(Duration::from_millis(800), ets.recv()).await {
+        if let Some((address, data)) = frame.as_group_write()
+            && address == ga("1/1/3")
+        {
+            corrections.push(data);
+        }
+    }
+    // At most one telegram per pacing interval of the time the flood took, plus the one that
+    // was sent at once.
+    let allowed = sent_in.as_millis() / 25 + 2;
+    assert!(
+        !corrections.is_empty() && (corrections.len() as u128) <= allowed,
+        "{} corrections for 300 foreign writes in {sent_in:?} (at most {allowed})",
+        corrections.len()
+    );
+    assert!(corrections.len() < 300);
+    for data in corrections {
+        let value = dpt::decode(DPT_SCALING, &data)
+            .unwrap()
+            .as_f64()
+            .map(f64::round);
+        assert_eq!(
+            value,
+            Some(50.0),
+            "every correction carries the real volume"
+        );
+    }
 }
 
 /// A tunnel client that stops acknowledging (a hung visualisation, a half-open NAT mapping), a burst

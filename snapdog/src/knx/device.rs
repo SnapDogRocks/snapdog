@@ -1262,7 +1262,13 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     let after = TableSummary::of(bau);
                     if after != before {
                         after.log("ETS download");
-                        resync.notify_one();
+                        // A device that is not configured sends nothing, and what its group
+                        // objects were handed meanwhile goes out when it becomes configured.
+                        // Asking for a burst at every step of the download would send each
+                        // status telegram once per step.
+                        if after.configured {
+                            resync.notify_one();
+                        }
                     }
                 }
 
@@ -1723,6 +1729,13 @@ fn install_tables(bau: &mut Bau, addr: &[u8], assoc: &[u8]) {
 /// not associated with any address keeps the value (a read of it is answered once it has one)
 /// and sends nothing. The frame the poll produces is the caller's to queue.
 fn write_object(bau: &mut Bau, asap: u16, value: &DptValue) {
+    // A value for an object nobody listens to, or one handed over while the device does not
+    // send (no download yet, or one in progress), would stay queued in the object and go out
+    // as soon as the device is configured, in front of the burst that the end of the download
+    // asks for anyway: every status telegram twice, in ASAP order and in publishing order.
+    if !bau.configured() || bau.association_table().translate_asap(asap).is_none() {
+        return;
+    }
     let Some(go) = bau.group_objects_mut().get_mut(asap) else {
         return;
     };

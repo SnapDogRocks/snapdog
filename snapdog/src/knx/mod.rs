@@ -265,7 +265,7 @@ where
     S: BuildHasher + Send + Sync,
 {
     // The listener passes group reads on to the publisher, which knows the values.
-    let (read_tx, mut read_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (read_tx, mut read_rx) = tokio::sync::mpsc::channel(READ_QUEUE);
     tokio::select! {
         () = publisher_loop(publisher, bridge, notify_rx, &mut read_rx) => SessionEnd::NotificationsClosed,
         () = listener_loop(listener, bridge, &read_tx) => SessionEnd::ConnectionClosed,
@@ -338,11 +338,26 @@ async fn publish_heartbeat<P: KnxPublisher>(
     }
 }
 
+/// How many group reads wait for the publisher. More are dropped, the asker repeats.
+const READ_QUEUE: usize = 64;
+
+/// Shortest time between two answers to reads of the same address. A display that asks again
+/// within it gets no second telegram: the first answer was a group response every device saw.
+const READ_ANSWER_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// A device that was programmed or restarted publishes everything again, but only after it
+/// stayed quiet this long: a download changes the tables in several steps, each of them can
+/// ask for the same burst.
+const RESYNC_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// A burst of resync requests is answered after this long at the latest.
+const RESYNC_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
 async fn publisher_loop<P, S>(
     transport: &P,
     bridge: &Bridge<S>,
     notify_rx: &mut tokio::sync::broadcast::Receiver<Arc<str>>,
-    read_rx: &mut tokio::sync::mpsc::UnboundedReceiver<GroupAddress>,
+    read_rx: &mut tokio::sync::mpsc::Receiver<GroupAddress>,
 ) where
     P: KnxPublisher,
     S: Send + Sync,
@@ -356,10 +371,16 @@ async fn publisher_loop<P, S>(
 
     // Cyclic "server online" heartbeat + fault publishing. The first tick fires immediately.
     let mut heartbeat = tokio::time::interval(heartbeat_period(config));
+    // A late heartbeat is sent late, not followed by a catch-up burst.
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_healthy: Option<bool> = None;
+    // `(first request, answer at)` of a resync that waits for things to settle.
+    let mut resync_due: Option<(tokio::time::Instant, tokio::time::Instant)> = None;
+    let mut last_answer: HashMap<GroupAddress, tokio::time::Instant> = HashMap::new();
 
     loop {
         let progress_due = sink.next_due();
+        let resync_at = resync_due.map(|(_, at)| at);
         tokio::select! {
             _ = heartbeat.tick() => {
                 publish_heartbeat(config, &mut last_healthy, &mut sink).await;
@@ -373,6 +394,11 @@ async fn publisher_loop<P, S>(
                 sink.flush_due().await;
             }
             Some(ga) = read_rx.recv() => {
+                let now = tokio::time::Instant::now();
+                if last_answer.get(&ga).is_some_and(|at| now.duration_since(*at) < READ_ANSWER_MIN_INTERVAL) {
+                    continue;
+                }
+                last_answer.insert(ga, now);
                 // A display that starts late asks for the values: answer with the last one sent,
                 // and for an address nothing was sent to yet, with the current value.
                 if !sink.answer_read(ga).await {
@@ -381,6 +407,17 @@ async fn publisher_loop<P, S>(
                 }
             }
             () = transport.resync() => {
+                let now = tokio::time::Instant::now();
+                let first = resync_due.map_or(now, |(first, _)| first);
+                resync_due = Some((first, (now + RESYNC_SETTLE).min(first + RESYNC_MAX_WAIT)));
+            }
+            () = async {
+                match resync_at {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                resync_due = None;
                 tracing::info!("KNX transport restarted or reprogrammed — publishing all status values again");
                 sink.invalidate();
                 publish_all(config, store, &mut sink).await;
@@ -688,7 +725,7 @@ async fn publish_client_state<P: KnxPublisher>(
 async fn listener_loop<L, S>(
     mut transport: L,
     bridge: &Bridge<S>,
-    read_tx: &tokio::sync::mpsc::UnboundedSender<GroupAddress>,
+    read_tx: &tokio::sync::mpsc::Sender<GroupAddress>,
 ) where
     L: KnxListener,
     S: BuildHasher + Send + Sync,
@@ -727,8 +764,9 @@ async fn listener_loop<L, S>(
             }
             Incoming::Read(ga) => {
                 // Only the addresses of status objects are answered.
+                // A full queue means the publisher is behind: the asker repeats the read.
                 if bridge.status_gas.contains(&canonical_ga(&ga.to_string())) {
-                    let _ = read_tx.send(ga);
+                    let _ = read_tx.try_send(ga);
                 }
             }
             Incoming::Object(asap, data) => {
@@ -2184,7 +2222,7 @@ zone = "Z1"
         );
         let rec = Rec::default();
         let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
-        let (read_tx, mut read_rx) = mpsc::unbounded_channel();
+        let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
         let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
         tokio::pin!(fut);
 
@@ -2196,7 +2234,7 @@ zone = "Z1"
         );
 
         // A visualisation starts and reads the volume status and a command address.
-        read_tx.send(ga("1/1/1")).unwrap();
+        read_tx.try_send(ga("1/1/1")).unwrap();
         settle(&mut fut).await;
         let responses = rec.responses.lock().unwrap().clone();
         assert_eq!(responses.len(), 1);
@@ -2220,14 +2258,14 @@ zone = "Z1"
         rec.accept
             .store(false, std::sync::atomic::Ordering::Relaxed);
         let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
-        let (read_tx, mut read_rx) = mpsc::unbounded_channel();
+        let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
         let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
         tokio::pin!(fut);
         settle(&mut fut).await;
         assert_eq!(rec.count(), 0);
 
         rec.accept.store(true, std::sync::atomic::Ordering::Relaxed);
-        read_tx.send(ga("1/1/1")).unwrap();
+        read_tx.try_send(ga("1/1/1")).unwrap();
         settle(&mut fut).await;
         assert_eq!(
             rec.responses.lock().unwrap().len(),
@@ -2414,7 +2452,7 @@ mute_status = "0/0/9"
             resync: Arc::new(tokio::sync::Notify::new()),
         };
         let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
-        let (_read_tx, mut read_rx) = mpsc::unbounded_channel();
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
         let fut = publisher_loop(&publisher, &bridge, &mut notify_rx, &mut read_rx);
         tokio::pin!(fut);
 
@@ -2423,8 +2461,162 @@ mute_status = "0/0/9"
         // Nothing changed, but the peers lost what they had: all eight go out again, not none
         // (the change filter must forget what it sent).
         publisher.resync.notify_one();
-        settle(&mut fut).await;
+        run_for(&mut fut, std::time::Duration::from_secs(1)).await;
         assert_eq!(publisher.rec.count(), 16);
+    }
+
+    /// Run `fut` for `period` of (paused) time.
+    async fn run_for<F: std::future::Future<Output = ()> + Unpin>(
+        fut: &mut F,
+        period: std::time::Duration,
+    ) {
+        tokio::select! {
+            () = fut => unreachable!("the publisher loop does not end"),
+            () = tokio::time::sleep(period) => {}
+        }
+    }
+
+    /// A download asks for a resync after each table it completes: one burst answers them all,
+    /// sent only when things have been quiet for `RESYNC_SETTLE`.
+    #[tokio::test(start_paused = true)]
+    async fn resync_requests_that_follow_each_other_are_answered_by_one_burst() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let publisher = Resyncing {
+            rec: Rec::default(),
+            resync: Arc::new(tokio::sync::Notify::new()),
+        };
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&publisher, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+        settle(&mut fut).await;
+        assert_eq!(publisher.rec.count(), 8);
+
+        let step = RESYNC_SETTLE / 2;
+        for _ in 0..3 {
+            publisher.resync.notify_one();
+            run_for(&mut fut, step).await;
+            assert_eq!(
+                publisher.rec.count(),
+                8,
+                "nothing goes out while requests keep coming"
+            );
+        }
+        run_for(&mut fut, RESYNC_SETTLE).await;
+        assert_eq!(publisher.rec.count(), 16, "one burst of eight, not three");
+        run_for(&mut fut, std::time::Duration::from_secs(10)).await;
+        assert_eq!(publisher.rec.count(), 16);
+    }
+
+    /// Requests that never stop do not postpone the burst for ever.
+    #[tokio::test(start_paused = true)]
+    async fn a_resync_is_answered_at_the_latest_after_the_maximum_wait() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let publisher = Resyncing {
+            rec: Rec::default(),
+            resync: Arc::new(tokio::sync::Notify::new()),
+        };
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&publisher, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+        settle(&mut fut).await;
+
+        let step = RESYNC_SETTLE / 2;
+        let mut waited = std::time::Duration::ZERO;
+        while waited <= RESYNC_MAX_WAIT + RESYNC_SETTLE {
+            publisher.resync.notify_one();
+            run_for(&mut fut, step).await;
+            waited += step;
+        }
+        assert!(
+            publisher.rec.count() >= 16,
+            "the burst was postponed for {waited:?}"
+        );
+    }
+
+    /// A listener that hears the same group read over and over.
+    struct ReadFlood(u32);
+
+    impl KnxListener for ReadFlood {
+        fn recv(&mut self) -> impl std::future::Future<Output = Option<Incoming>> + Send {
+            let next = self.0.checked_sub(1);
+            self.0 = next.unwrap_or(0);
+            std::future::ready(next.map(|_| Incoming::Read(ga("1/1/1"))))
+        }
+    }
+
+    /// Reads that the publisher has not got to yet wait in a queue of fixed size; the listener
+    /// neither blocks on it (it would stop hearing writes) nor lets it grow.
+    #[tokio::test]
+    async fn a_flood_of_group_reads_fills_a_bounded_queue_and_no_more() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            listener_loop(ReadFlood(10_000), &bridge, &read_tx),
+        )
+        .await
+        .expect("the listener never waits for the publisher");
+        let mut queued = 0;
+        while read_rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, READ_QUEUE);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reads_of_one_address_are_answered_at_most_twice_a_second() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let rec = Rec::default();
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+        settle(&mut fut).await;
+
+        for _ in 0..40 {
+            read_tx.try_send(ga("1/1/1")).unwrap();
+            run_for(&mut fut, std::time::Duration::from_millis(25)).await;
+        }
+        // 40 reads in one second: the first, and one more after the minimum interval.
+        assert_eq!(rec.responses.lock().unwrap().len(), 2);
+        // Another address is not held back by it.
+        read_tx.try_send(ga("1/1/2")).unwrap();
+        run_for(&mut fut, std::time::Duration::from_millis(25)).await;
+        assert_eq!(rec.responses.lock().unwrap().len(), 3);
     }
 
     #[tokio::test(start_paused = true)]
@@ -2450,7 +2642,7 @@ name = "Z1"
         );
         let rec = Rec::default();
         let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
-        let (_read_tx, mut read_rx) = mpsc::unbounded_channel();
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
         let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
         tokio::pin!(fut);
 
