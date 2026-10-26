@@ -294,12 +294,23 @@ async fn publish_until_received(
 /// Publish `messages` retained (QoS 1) with a throw-away client and wait for the
 /// broker's acknowledgements.
 async fn seed_retained(host: &str, port: u16, messages: &[(&str, &str)]) {
+    let messages: Vec<(&str, Vec<u8>)> = messages
+        .iter()
+        .map(|(topic, payload)| (*topic, payload.as_bytes().to_vec()))
+        .collect();
+    seed_retained_bytes(host, port, &messages).await;
+}
+
+/// [`seed_retained`] for arbitrary payloads, including ones above rumqttc's 10 KiB
+/// default packet limit.
+async fn seed_retained_bytes(host: &str, port: u16, messages: &[(&str, Vec<u8>)]) {
     let mut opts = MqttOptions::new("it-t32-seed", host, port);
     opts.set_keep_alive(Duration::from_secs(5));
+    opts.set_max_packet_size(4 << 20, 4 << 20);
     let (client, mut eventloop) = AsyncClient::new(opts, 16);
     for (topic, payload) in messages {
         client
-            .publish(*topic, QoS::AtLeastOnce, true, payload.as_bytes())
+            .publish(*topic, QoS::AtLeastOnce, true, payload.clone())
             .await
             .expect("queue seed");
     }
@@ -450,6 +461,47 @@ async fn mqtt_tier2_retained_command_is_not_executed() {
             "only the live command may arrive; got {cmd:?}"
         );
     }
+}
+
+/// F1: one retained message above rumqttc's 10 KiB default limit on a command topic
+/// used to drop the connection at every subscribe (the broker replays it each
+/// time), so MQTT never stayed up and no live command arrived. It must now be
+/// received, ignored, and leave the bridge connected and working.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_oversized_retained_command_does_not_disable_mqtt() {
+    let Some(broker) = start_broker("IT-T32 oversized retained").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    seed_retained_bytes(
+        &host,
+        port,
+        &[("snapdog/zones/1/volume/set", vec![b'1'; 20_000])],
+    )
+    .await;
+
+    let mut rig = start_bridge(&host, port).await;
+    assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+    let cmd = publish_until_received(
+        &host,
+        port,
+        "snapdog/zones/1/volume/set",
+        "42",
+        &mut rig.zone_rx,
+        20,
+    )
+    .await;
+    assert!(
+        matches!(cmd, Some(ZoneCommand::SetVolume(42))),
+        "a live command must arrive despite the oversized retained one; got {cmd:?}"
+    );
+    // And it stays up: no reconnect loop in the background.
+    for _ in 0..30 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(rig.bridge.is_connected(), "the connection dropped again");
+    }
+    // The 20,000-byte payload was ignored, never executed.
+    assert!(rig.zone_rx.try_recv().is_err(), "nothing else may run");
 }
 
 /// SnapDog used to publish `media_player` discovery configs, a platform that Home

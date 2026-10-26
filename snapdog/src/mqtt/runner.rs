@@ -22,12 +22,16 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rumqttc::{ConnectReturnCode, ConnectionError, Event, EventLoop, Outgoing, Packet, QoS};
+use rumqttc::mqttbytes::Error as MqttBytesError;
+use rumqttc::{
+    ConnectReturnCode, ConnectionError, Event, EventLoop, Outgoing, Packet, QoS, StateError,
+};
 use tokio::sync::{broadcast, watch};
 
 use super::commands::{CommandHandler, Handled};
 use super::limits::LogThrottle;
 use super::publisher::Publisher;
+use super::transport::MAX_INCOMING_PACKET_BYTES;
 use crate::api::ws::Notification;
 use crate::state;
 
@@ -150,7 +154,7 @@ pub async fn run_connection(mut eventloop: EventLoop, mut this: Session) {
                     backoff.reset();
                 }
                 let delay = backoff.next_delay();
-                log_connection_error(&e, delay);
+                this.report_connection_error(&e, delay);
                 tokio::select! {
                     () = tokio::time::sleep(delay) => {}
                     () = shutdown_requested(&mut this.shutdown) => break,
@@ -223,6 +227,54 @@ impl Session {
             // The topic is whatever a client published to: escaped (`?`), never raw.
             tracing::warn!(topic = ?msg.topic, held_back, "{outcome}");
         }
+    }
+}
+
+/// The size of the packet that ended the connection, if that was the cause: the
+/// broker sent more than [`MAX_INCOMING_PACKET_BYTES`].
+const fn oversized_packet(error: &ConnectionError) -> Option<usize> {
+    match error {
+        ConnectionError::MqttState(StateError::Deserialization(
+            MqttBytesError::PayloadSizeLimitExceeded(size),
+        )) => Some(*size),
+        _ => None,
+    }
+}
+
+/// The hint for an oversized packet: what it most likely is and how to get rid of it.
+fn oversized_packet_hint(size: usize, base: &str) -> String {
+    format!(
+        "MQTT broker sent a packet of {size} bytes, above the limit of \
+         {MAX_INCOMING_PACKET_BYTES} bytes, and the connection was dropped. This is usually a \
+         retained message that somebody published below {base}, typically to a `.../set` command \
+         topic: the broker replays it at every connect, so MQTT stays down until it is removed. \
+         Find it (for example with `mosquitto_sub -v -t '{base}#'`) and clear it with an empty \
+         retained publish to the same topic (`mosquitto_pub -r -n -t <topic>`). Limit the \
+         broker's message size (Mosquitto: `message_size_limit`) to keep it from happening again"
+    )
+}
+
+impl Session {
+    /// Log why a connection attempt failed, with a hint where the cause is typical.
+    /// A cause that repeats on every retry is logged once per throttle interval.
+    fn report_connection_error(&mut self, error: &ConnectionError, retry_in: Duration) {
+        if let Some(size) = oversized_packet(error) {
+            if let Some(held_back) = self
+                .log_throttle
+                .check("connection: packet too large", Instant::now())
+            {
+                let base = self.publisher.topics().join("");
+                tracing::error!(
+                    size,
+                    held_back,
+                    retry_in_secs = retry_in.as_secs_f32(),
+                    "{}",
+                    oversized_packet_hint(size, &base)
+                );
+            }
+            return;
+        }
+        log_connection_error(error, retry_in);
     }
 }
 
@@ -309,6 +361,25 @@ pub async fn run_state_publisher(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_packet_over_the_limit_is_recognised_and_gets_a_hint_about_retained_messages() {
+        let error = ConnectionError::MqttState(StateError::Deserialization(
+            MqttBytesError::PayloadSizeLimitExceeded(20_000),
+        ));
+        assert_eq!(oversized_packet(&error), Some(20_000));
+        let hint = oversized_packet_hint(20_000, "snapdog/");
+        assert!(hint.contains("retained"), "{hint}");
+        assert!(hint.contains("snapdog/"), "{hint}");
+        assert!(hint.contains("20000"), "{hint}");
+        assert!(hint.contains("message_size_limit"), "{hint}");
+        // Other errors are not mistaken for it.
+        assert_eq!(oversized_packet(&ConnectionError::NetworkTimeout), None);
+        assert_eq!(
+            oversized_packet(&ConnectionError::MqttState(StateError::AwaitPingResp)),
+            None
+        );
+    }
 
     #[test]
     fn backoff_stays_within_its_bounds_and_grows_to_the_cap() {

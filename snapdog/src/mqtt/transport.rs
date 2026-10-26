@@ -30,6 +30,19 @@ use crate::config::MqttConfig;
 /// MQTT keep-alive interval.
 const MQTT_KEEP_ALIVE: std::time::Duration = std::time::Duration::from_mins(1);
 
+/// Largest packet accepted from the broker, in bytes (rumqttc's own default is
+/// 10 KiB). A packet over the limit is not skipped, it ends the connection, and a
+/// *retained* one is replayed by the broker at every subscribe, so a limit that is
+/// too low turns one oversized retained message under `{base}.../set` into an
+/// endless reconnect loop that no command survives. 1 MiB lets such a message
+/// arrive and be rejected by the 256-byte payload check; the broker's own
+/// `message_size_limit` is the real bound (see `docs/mqtt.md`).
+pub const MAX_INCOMING_PACKET_BYTES: usize = 1 << 20;
+/// Largest packet sent to the broker, in bytes. Our payloads are bounded on their
+/// own (see `payloads.rs`); this is the backstop, large enough for the discovery
+/// message of a big installation.
+pub const MAX_OUTGOING_PACKET_BYTES: usize = 1 << 20;
+
 /// Connection options for `config`: address, keep-alive, credentials, TLS and the
 /// last will (`offline`, retained, on the availability topic).
 ///
@@ -41,6 +54,7 @@ pub fn mqtt_options(config: &MqttConfig, topics: &Topics) -> Result<MqttOptions>
     let endpoint = config.endpoint()?;
     let mut opts = MqttOptions::new(&config.client_id, &endpoint.host, endpoint.port);
     opts.set_keep_alive(MQTT_KEEP_ALIVE);
+    opts.set_max_packet_size(MAX_INCOMING_PACKET_BYTES, MAX_OUTGOING_PACKET_BYTES);
     if !config.username.is_empty() {
         opts.set_credentials(&config.username, &*config.password);
     }
@@ -142,6 +156,15 @@ mod tests {
         assert_eq!(will.topic, "snapdog/status");
         assert_eq!(&will.message[..], b"offline");
         assert!(will.retain);
+    }
+
+    #[test]
+    fn the_incoming_packet_limit_is_above_rumqttcs_default_so_that_a_retained_command_arrives() {
+        // rumqttc's default is 10 KiB: one retained message above it, replayed at
+        // every subscribe, drops the connection every time.
+        let opts = options(&config("broker = \"localhost:1883\"")).unwrap();
+        assert_eq!(opts.max_packet_size(), MAX_INCOMING_PACKET_BYTES);
+        assert!(opts.max_packet_size() >= 256 * 1024);
     }
 
     #[test]
