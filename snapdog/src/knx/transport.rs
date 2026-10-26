@@ -33,6 +33,9 @@ pub enum Incoming {
     Address(GroupAddress, Vec<u8>),
     /// A group object that was updated from the bus (device mode), by ASAP number.
     Object(u16, Vec<u8>),
+    /// A group read request on the bus (client mode). Device mode answers reads inside the
+    /// device stack, by the object flags.
+    Read(GroupAddress),
 }
 
 /// Write-only interface to the KNX bus.
@@ -52,6 +55,17 @@ pub trait KnxPublisher: Send + Sync + 'static {
         dpt: Dpt,
         value: &DptValue,
     ) -> impl std::future::Future<Output = bool> + Send;
+
+    /// Answer a group read with a group value response. Returns whether the transport took it.
+    /// Device mode answers inside the device stack, so only client mode implements this.
+    fn respond(
+        &self,
+        _ga: GroupAddress,
+        _dpt: Dpt,
+        _value: &DptValue,
+    ) -> impl std::future::Future<Output = bool> + Send {
+        std::future::ready(false)
+    }
 
     /// Completes whenever the transport lost the state its peers hold (for example a device
     /// stack that restarted), so the caller re-sends every status value.

@@ -141,17 +141,102 @@ fn volume_of(data: &[u8]) -> f64 {
 
 /// A group telegram as the gateway delivers it to its tunnel client.
 fn bus_telegram(code: MessageCode, dst: &str) -> CemiFrame {
+    bus_apdu(code, dst, [0x00, 0x81]) // GroupValueWrite, 1
+}
+
+fn bus_apdu(code: MessageCode, dst: &str, apdu: [u8; 2]) -> CemiFrame {
     CemiFrame::new_l_data(
         code,
         IndividualAddress::from_raw(0x1101),
         DestinationAddress::Group(ga(dst)),
         Priority::Low,
-        &[0x00, 0x81], // GroupValueWrite, 1
+        &apdu,
     )
+}
+
+/// Next group value response from the bridge to `dst` on the gateway side.
+async fn expect_response(gw: &mut DeviceServer, dst: &str) -> Vec<u8> {
+    use knx_rs_core::message::ApduType;
+    let want = ga(dst);
+    timeout(T, async {
+        loop {
+            let Some(ServerEvent::TunnelFrame(frame)) = gw.recv().await else {
+                continue;
+            };
+            if let Some((g, data)) = frame.as_group_write()
+                && g == want
+                && frame.tpdu().and_then(|t| t.apdu().map(|a| a.apdu_type))
+                    == Some(ApduType::GroupValueResponse)
+            {
+                return data;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("no group value response to {dst} within {T:?}"))
+}
+
+/// No group telegram of any kind to `dst` within a short window.
+async fn expect_silence(gw: &mut DeviceServer, dst: &str) {
+    let want = ga(dst);
+    let r = timeout(Duration::from_millis(700), async {
+        loop {
+            if let Some(ServerEvent::TunnelFrame(frame)) = gw.recv().await
+                && let Some((g, _)) = frame.as_group_write()
+                && g == want
+            {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(r.is_err(), "unexpected telegram to {dst}");
 }
 
 async fn gateway(addr: SocketAddr) -> DeviceServer {
     DeviceServer::start_at(addr).await.expect("gateway binds")
+}
+
+/// A visualisation that starts late reads the status addresses and gets the values; a command
+/// address is not answered, and the answer of somebody else to a read is not a command.
+#[tokio::test]
+async fn bridge_answers_reads_and_ignores_responses() {
+    let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
+    let mut gw = gateway(addr).await;
+    let mut b = start_bridge(&format!("tunnel://{addr}")).await;
+    assert_eq!(volume_of(&expect_write(&mut gw, "1/1/3").await), 40.0);
+
+    // The volume changes; the display missed the telegram (it was not running).
+    set_volume(&b, 55).await;
+    assert_eq!(volume_of(&expect_write(&mut gw, "1/1/3").await), 55.0);
+
+    // Now it starts and asks.
+    gw.send_frame(bus_apdu(MessageCode::LDataInd, "1/1/3", [0x00, 0x00]))
+        .await
+        .unwrap();
+    assert_eq!(volume_of(&expect_response(&mut gw, "1/1/3").await), 55.0);
+
+    // The play command address has no status: no answer.
+    gw.send_frame(bus_apdu(MessageCode::LDataInd, "1/1/1", [0x00, 0x00]))
+        .await
+        .unwrap();
+    expect_silence(&mut gw, "1/1/1").await;
+
+    // Somebody else's answer on the command address is not a command.
+    gw.send_frame(bus_apdu(MessageCode::LDataInd, "1/1/1", [0x00, 0x41]))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        b.zone_rx.try_recv().is_err(),
+        "a response executed a command"
+    );
+    gw.send_frame(bus_telegram(MessageCode::LDataInd, "1/1/1"))
+        .await
+        .unwrap();
+    let cmd = timeout(T, b.zone_rx.recv()).await;
+    assert!(matches!(cmd, Ok(Some(ZoneCommand::Play))), "{cmd:?}");
+    b.bridge.shutdown().await;
 }
 
 #[tokio::test]

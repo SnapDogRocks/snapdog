@@ -10,7 +10,7 @@
 //! sent last for every group object and passes only changes on; a transport reconnect or a
 //! reprogrammed device calls [`StatusSink::invalidate`] so that everything is sent again.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -74,13 +74,37 @@ enum Mode {
     Progress,
 }
 
+/// What was last handed to the transport for a group object.
+struct Sent {
+    /// The value as it went on the wire.
+    encoded: Vec<u8>,
+    /// Client mode: the group address it went to.
+    address: Option<GroupAddress>,
+    /// For answering a read of that address.
+    dpt: Dpt,
+    value: DptValue,
+}
+
+/// A progress value that arrived inside the rate limit and waits for its turn.
+struct Deferred {
+    address: Option<String>,
+    dpt: Dpt,
+    value: DptValue,
+}
+
 /// Change-filtering front end of a [`KnxPublisher`].
 pub struct StatusSink<'a, P> {
     transport: &'a P,
-    /// Encoded value last handed to the transport, per group object.
-    sent: HashMap<ObjectKey, Vec<u8>>,
+    /// What was last handed to the transport, per group object.
+    sent: HashMap<ObjectKey, Sent>,
     /// When a progress value was last handed to the transport, per group object.
     progress_at: HashMap<ObjectKey, Instant>,
+    /// Progress values held back by the rate limit. Without this, the last position before
+    /// playback pauses would never reach the bus.
+    deferred: HashMap<ObjectKey, Deferred>,
+    /// Addresses somebody asked for and that had no value yet; the next offer for them goes out
+    /// as a read response.
+    reads: HashSet<GroupAddress>,
 }
 
 impl<'a, P: KnxPublisher> StatusSink<'a, P> {
@@ -90,6 +114,8 @@ impl<'a, P: KnxPublisher> StatusSink<'a, P> {
             transport,
             sent: HashMap::new(),
             progress_at: HashMap::new(),
+            deferred: HashMap::new(),
+            reads: HashSet::new(),
         }
     }
 
@@ -97,6 +123,61 @@ impl<'a, P: KnxPublisher> StatusSink<'a, P> {
     pub fn invalidate(&mut self) {
         self.sent.clear();
         self.progress_at.clear();
+        self.deferred.clear();
+    }
+
+    /// Answer a group read of `ga` with the value last sent to it. When nothing was sent to that
+    /// address yet (the first write failed, or the object has no value yet) the address is
+    /// remembered and `false` is returned: the caller offers the current values again, and the
+    /// offer for `ga` goes out as the response. Call [`end_reads`](Self::end_reads) afterwards.
+    pub async fn answer_read(&mut self, ga: GroupAddress) -> bool {
+        let known = self
+            .sent
+            .values()
+            .find(|s| s.address == Some(ga))
+            .map(|s| (s.dpt, s.value.clone()));
+        if let Some((dpt, value)) = known {
+            return self.transport.respond(ga, dpt, &value).await;
+        }
+        self.reads.insert(ga);
+        false
+    }
+
+    /// Forget the reads that the offers since [`answer_read`](Self::answer_read) did not answer
+    /// (an address that has no status object).
+    pub fn end_reads(&mut self) {
+        self.reads.clear();
+    }
+
+    /// When the oldest deferred progress value may go out, if there is one.
+    #[must_use]
+    pub fn next_due(&self) -> Option<Instant> {
+        self.deferred
+            .keys()
+            .filter_map(|k| self.progress_at.get(k))
+            .map(|at| *at + PROGRESS_MIN_INTERVAL)
+            .min()
+    }
+
+    /// Send the deferred progress values whose time has come.
+    pub async fn flush_due(&mut self) {
+        let now = Instant::now();
+        let due: Vec<ObjectKey> = self
+            .deferred
+            .keys()
+            .copied()
+            .filter(|k| {
+                self.progress_at
+                    .get(k)
+                    .is_none_or(|at| *at + PROGRESS_MIN_INTERVAL <= now)
+            })
+            .collect();
+        for key in due {
+            if let Some(d) = self.deferred.remove(&key) {
+                self.offer(key, d.address.as_deref(), d.dpt, &d.value, Mode::Progress)
+                    .await;
+            }
+        }
     }
 
     /// Offer a status value; it is sent when it differs from the last one sent.
@@ -171,16 +252,51 @@ impl<'a, P: KnxPublisher> StatusSink<'a, P> {
             }
         };
 
-        if mode != Mode::Always && self.sent.get(&key) == Some(&encoded) {
+        let reading = matches!(target, Target::Address(ga) if self.reads.contains(&ga));
+        if mode != Mode::Always
+            && !reading
+            && self.sent.get(&key).is_some_and(|s| s.encoded == encoded)
+        {
+            self.deferred.remove(&key);
             return;
         }
-        if mode == Mode::Progress && !self.progress_due(key, &encoded) {
+        if mode == Mode::Progress && !reading && !self.progress_due(key, &encoded) {
+            self.deferred.insert(
+                key,
+                Deferred {
+                    address: address.map(str::to_owned),
+                    dpt,
+                    value: value.clone(),
+                },
+            );
             return;
         }
 
         // Count only what the transport took, so a failed write is offered again next time.
-        if self.transport.write(target, dpt, value).await {
-            self.sent.insert(key, encoded);
+        let taken = match target {
+            Target::Address(ga) if reading => {
+                let ok = self.transport.respond(ga, dpt, value).await;
+                if ok {
+                    self.reads.remove(&ga);
+                }
+                ok
+            }
+            _ => self.transport.write(target, dpt, value).await,
+        };
+        if taken {
+            self.deferred.remove(&key);
+            self.sent.insert(
+                key,
+                Sent {
+                    encoded,
+                    address: match target {
+                        Target::Address(ga) => Some(ga),
+                        Target::Object(_) => None,
+                    },
+                    dpt,
+                    value: value.clone(),
+                },
+            );
             if mode == Mode::Progress {
                 self.progress_at.insert(key, Instant::now());
             }
@@ -196,7 +312,7 @@ impl<'a, P: KnxPublisher> StatusSink<'a, P> {
         let went_back = self
             .sent
             .get(&key)
-            .is_some_and(|last| encoded.first() < last.first());
+            .is_some_and(|last| encoded.first() < last.encoded.first());
         went_back || at.elapsed() >= PROGRESS_MIN_INTERVAL
     }
 }
@@ -217,6 +333,8 @@ pub mod testing {
         pub writes: Mutex<Vec<(Target, Dpt, DptValue)>>,
         /// Whether writes succeed.
         pub accept: std::sync::atomic::AtomicBool,
+        /// `(address, value)` of every read response, in order.
+        pub responses: Mutex<Vec<(knx_rs_core::address::GroupAddress, DptValue)>>,
     }
 
     impl<const A: bool> Default for Recorder<A> {
@@ -224,6 +342,7 @@ pub mod testing {
             Self {
                 writes: Mutex::new(Vec::new()),
                 accept: std::sync::atomic::AtomicBool::new(true),
+                responses: Mutex::new(Vec::new()),
             }
         }
     }
@@ -250,6 +369,19 @@ pub mod testing {
                     .lock()
                     .unwrap()
                     .push((target, dpt, value.clone()));
+            }
+            std::future::ready(ok)
+        }
+
+        fn respond(
+            &self,
+            ga: knx_rs_core::address::GroupAddress,
+            _dpt: Dpt,
+            value: &DptValue,
+        ) -> impl std::future::Future<Output = bool> + Send {
+            let ok = self.accept.load(std::sync::atomic::Ordering::Relaxed);
+            if ok {
+                self.responses.lock().unwrap().push((ga, value.clone()));
             }
             std::future::ready(ok)
         }
@@ -427,5 +559,102 @@ mod tests {
         sink.write(ObjectKey::Zone(11, 9), None, DPT_SWITCH, &true.into())
             .await;
         assert_eq!(rec.count(), 0);
+    }
+
+    // ── Reads ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn a_read_is_answered_with_the_last_value_sent_to_the_address() {
+        let rec = Recorder::<true>::default();
+        let mut sink = StatusSink::new(&rec);
+        sink.write(k(1), Some("1/1/1"), DPT_SCALING, &DptValue::Float(40.0))
+            .await;
+        sink.write(k(1), Some("1/1/1"), DPT_SCALING, &DptValue::Float(55.0))
+            .await;
+        let asked = GroupAddress::from_str("1/1/1").unwrap();
+        assert!(sink.answer_read(asked).await);
+        let responses = rec.responses.lock().unwrap();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].0, asked);
+        assert_eq!(
+            responses[0].1,
+            DptValue::Float(55.0),
+            "the current value, not the first"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_read_of_an_address_without_a_value_is_answered_by_the_next_offer() {
+        // The first write failed, so nothing was ever sent to the address.
+        let rec = Recorder::<true>::default();
+        rec.accept
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let mut sink = StatusSink::new(&rec);
+        sink.write(k(1), Some("1/1/1"), DPT_SCALING, &DptValue::Float(40.0))
+            .await;
+        rec.accept.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let asked = GroupAddress::from_str("1/1/1").unwrap();
+        assert!(!sink.answer_read(asked).await, "nothing to answer with yet");
+        // The caller offers the current values again; the one for the address is the response.
+        sink.write(k(1), Some("1/1/1"), DPT_SCALING, &DptValue::Float(40.0))
+            .await;
+        sink.write(k(2), Some("1/1/2"), DPT_SCALING, &DptValue::Float(10.0))
+            .await;
+        sink.end_reads();
+        assert_eq!(
+            rec.responses.lock().unwrap().len(),
+            1,
+            "a response for 1/1/1"
+        );
+        assert_eq!(rec.count(), 1, "and an ordinary write for 1/1/2");
+        // The read is over: later changes are writes again.
+        sink.write(k(1), Some("1/1/1"), DPT_SCALING, &DptValue::Float(41.0))
+            .await;
+        assert_eq!(rec.responses.lock().unwrap().len(), 1);
+        assert_eq!(rec.count(), 2);
+    }
+
+    #[tokio::test]
+    async fn reads_of_addresses_without_status_stay_unanswered() {
+        let rec = Recorder::<true>::default();
+        let mut sink = StatusSink::new(&rec);
+        sink.write(k(1), Some("1/1/1"), DPT_SCALING, &DptValue::Float(40.0))
+            .await;
+        let asked = GroupAddress::from_str("9/7/9").unwrap();
+        assert!(!sink.answer_read(asked).await);
+        sink.end_reads();
+        assert!(rec.responses.lock().unwrap().is_empty());
+    }
+
+    // ── Deferred progress ───────────────────────────────────────────
+
+    #[tokio::test(start_paused = true)]
+    async fn the_last_progress_inside_the_window_is_sent_when_the_window_ends() {
+        let rec = Recorder::<true>::default();
+        let mut sink = StatusSink::new(&rec);
+        let pct = |p: f64| DptValue::Float(p);
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &pct(36.0))
+            .await;
+        assert_eq!(sink.next_due(), None);
+        // 37 % comes inside the rate limit and playback pauses: it must not be lost.
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &pct(37.0))
+            .await;
+        assert_eq!(rec.count(), 1);
+        let due = sink.next_due().expect("the held back value has a time");
+        assert!(due > Instant::now());
+        // Not yet.
+        sink.flush_due().await;
+        assert_eq!(rec.count(), 1);
+        tokio::time::advance(PROGRESS_MIN_INTERVAL).await;
+        sink.flush_due().await;
+        assert_eq!(rec.count(), 2, "37 % goes out");
+        assert_eq!(sink.next_due(), None);
+        // A value that returns to what was sent cancels the wait.
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &pct(38.0))
+            .await;
+        sink.write_progress(k(1), Some("1/1/8"), DPT_SCALING, &pct(37.0))
+            .await;
+        assert_eq!(sink.next_due(), None);
     }
 }
