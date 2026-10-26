@@ -93,6 +93,9 @@ codec = "flac"
 # Pre-shared key for f32lz4e encryption (both server and client must match).
 # Without a key the built-in default is used, which is public: the stream is then
 # not protected, and SnapDog logs a warning. Also: SNAPDOG_SNAPCAST_ENCRYPTION_PSK.
+# An empty key (a blank value here, or the variable set to nothing, as with an unset
+# ${PSK:-} in a compose file) is never used as a key: with f32lz4e SnapDog refuses to
+# start, so a secret that did not arrive cannot turn into the public key unnoticed.
 # encryption_psk = "my-secret-key"
 # How zone volume changes affect individual client volumes:
 #   "absolute" = set all clients to the zone volume

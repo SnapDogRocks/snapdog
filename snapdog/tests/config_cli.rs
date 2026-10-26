@@ -228,3 +228,46 @@ fn check_config_drops_the_float_codec_note_when_the_command_line_changes_the_cod
         assert!(!stderr.contains("native 32-bit float"), "{codec}: {stderr}");
     }
 }
+
+/// Run `--check-config` with `SNAPDOG_SNAPCAST_ENCRYPTION_PSK` set to `value`.
+fn run_check_with_psk(config: &str, extra_args: &[&str], value: &str) -> std::process::Output {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("snapdog.toml");
+    std::fs::write(&path, config).unwrap();
+    Command::new(env!("CARGO_BIN_EXE_snapdog"))
+        .args(["--config", path.to_str().unwrap(), "--check-config"])
+        .args(extra_args)
+        .env("SNAPDOG_SNAPCAST_ENCRYPTION_PSK", value)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn an_empty_key_variable_does_not_downgrade_f32lz4e_to_the_public_key() {
+    let zone = "[[zone]]\nname = \"Living\"\n";
+
+    // A compose file with `${PSK:-}` whose secret did not arrive.
+    let file = format!("[snapcast]\ncodec = \"f32lz4e\"\n{zone}");
+    let output = run_check_with_psk(&file, &[], "");
+    assert!(!output.status.success(), "must not start with an empty key");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("empty encryption key"));
+    // The same through the command line.
+    let output = run_check_with_psk(zone, &["--codec", "f32lz4e"], "");
+    assert!(!output.status.success());
+
+    // A key in the file wins over the empty variable, with a warning.
+    let keyed = format!("[snapcast]\ncodec = \"f32lz4e\"\nencryption_psk = \"k\"\n{zone}");
+    let output = run_check_with_psk(&keyed, &[], "");
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("SNAPDOG_SNAPCAST_ENCRYPTION_PSK is set but empty"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("built-in default key"), "{stderr}");
+
+    // Without encryption an empty variable is only reported.
+    let output = run_check_with_psk(zone, &[], "");
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("is set but empty"));
+}

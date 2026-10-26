@@ -210,9 +210,20 @@ mod tests {
     }
 
     #[test]
-    fn f32lz4e_with_empty_key_still_warns() {
-        let config = load("[snapcast]\ncodec = \"f32lz4e\"\nencryption_psk = \"\"");
-        assert!(mentions(&config, "built-in default key"));
+    fn f32lz4e_with_an_empty_key_is_refused_not_downgraded() {
+        let error = config::load_str(
+            "[snapcast]\ncodec = \"f32lz4e\"\nencryption_psk = \"\"\n[[zone]]\nname = \"A\"",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("empty encryption key"), "{error}");
+        // The same empty value with a codec that does not encrypt is harmless.
+        assert!(
+            config::load_str(
+                "[snapcast]\ncodec = \"flac\"\nencryption_psk = \"\"\n[[zone]]\nname = \"A\""
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -239,10 +250,34 @@ mod tests {
     }
 
     #[test]
-    fn empty_psk_variable_is_not_a_key() {
-        let mut config = load("");
+    fn an_empty_psk_variable_is_reported_and_never_replaces_a_key() {
+        let mut config = load("[snapcast]\nencryption_psk = \"from-file\"");
         config::override_psk(&mut config, Some(String::new()));
-        assert!(config.snapcast.encryption_psk.is_none());
+        assert_eq!(
+            config
+                .snapcast
+                .encryption_psk
+                .as_ref()
+                .map(super::super::SecretString::as_str),
+            Some("from-file")
+        );
+        assert!(mentions(
+            &config,
+            "SNAPDOG_SNAPCAST_ENCRYPTION_PSK is set but empty"
+        ));
+    }
+
+    #[test]
+    fn an_empty_psk_variable_without_a_file_key_stops_f32lz4e() {
+        let mut config = load("[snapcast]\ncodec = \"f32lz4e\"\nencryption_psk = \"x\"");
+        config.snapcast.encryption_psk = None;
+        config::override_psk(&mut config, Some(String::new()));
+        let error = config::validate(&mut config).unwrap_err().to_string();
+        assert!(error.contains("empty encryption key"), "{error}");
+        // Other codecs go on, with the warning.
+        config.snapcast.codec = config::AudioCodec::Flac;
+        assert!(config::validate(&mut config).is_ok());
+        assert!(mentions(&config, "is set but empty"));
     }
 
     #[test]

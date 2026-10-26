@@ -611,7 +611,9 @@ mod tests {
 
     #[test]
     fn an_empty_key_is_never_used_as_a_secret() {
-        let empty = snapcast_config("codec = \"f32lz4e\"\nencryption_psk = \"\"");
+        // Config loading refuses this combination; the use site must still not trust it.
+        let mut empty = snapcast_config("codec = \"f32lz4e\"\nencryption_psk = \"x\"");
+        empty.snapcast.encryption_psk = Some(crate::config::SecretString::from(String::new()));
         assert_eq!(
             codec_and_key(&empty.snapcast).1.as_deref(),
             Some(snapcast_server::DEFAULT_ENCRYPTION_PSK)

@@ -329,6 +329,20 @@ pub fn validate(config: &mut AppConfig) -> Result<()> {
         config.audio.bit_depth = 24;
     }
 
+    // An empty key is a secret that did not arrive (an unset compose variable, a blank
+    // line in the file), not a request for the public built-in key.
+    anyhow::ensure!(
+        config.snapcast.codec != AudioCodec::F32lz4e
+            || !config
+                .snapcast
+                .encryption_psk
+                .as_ref()
+                .is_some_and(|key| key.is_empty()),
+        "codec f32lz4e is configured with an empty encryption key (encryption_psk or \
+         SNAPDOG_SNAPCAST_ENCRYPTION_PSK). Set a real key, or remove the setting to use the \
+         built-in key, which is public and protects nothing"
+    );
+
     // ── Port collision ────────────────────────────────────────
     if config.http.port == config.snapcast.streaming_port {
         anyhow::bail!(
@@ -512,10 +526,22 @@ fn override_http_port(config: &mut AppConfig, value: Option<String>) {
     }
 }
 
-/// An empty variable (for example `${PSK:-}` in a compose file) means "not set".
-/// Treating it as a key would encrypt with an empty, publicly known secret.
+/// A variable that is set and empty (for example `${PSK:-}` in a compose file whose
+/// secret did not arrive) is never used as a key: that would encrypt with an empty,
+/// publicly known secret. A key from the file stays in place, and without one the
+/// empty value is kept as such, so `f32lz4e` refuses to start in [`validate`] instead of
+/// quietly falling back to the public built-in key. Either way a warning names the variable.
 fn override_psk(config: &mut AppConfig, value: Option<String>) {
-    if let Some(val) = value.filter(|v| !v.is_empty()) {
+    let Some(val) = value else { return };
+    if val.is_empty() {
+        config.warn(
+            "SNAPDOG_SNAPCAST_ENCRYPTION_PSK is set but empty, so it is ignored. An empty key \
+             would encrypt with a secret everyone knows. Set it to a real key or unset it.",
+        );
+        if config.snapcast.encryption_psk.is_none() {
+            config.snapcast.encryption_psk = Some(SecretString::from(val));
+        }
+    } else {
         config.snapcast.encryption_psk = Some(SecretString::from(val));
     }
 }

@@ -679,7 +679,9 @@ pub struct SnapcastConfig {
     /// Pre-shared key for `f32lz4e` encryption. Without a key the built-in
     /// default key is used, which is public and protects nothing, so set one
     /// when you use `f32lz4e` (`SnapDog` logs a warning otherwise). Can also be
-    /// set with `SNAPDOG_SNAPCAST_ENCRYPTION_PSK`.
+    /// set with `SNAPDOG_SNAPCAST_ENCRYPTION_PSK`. An empty key, from the file or
+    /// the variable, is never used: with `f32lz4e` it stops the start, with
+    /// another codec it is ignored (the variable with a warning).
     #[serde(default)]
     pub encryption_psk: Option<SecretString>,
     /// Default group volume mode for all zones.
