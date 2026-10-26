@@ -17,6 +17,7 @@ use tokio::time::Instant;
 
 use super::client::{ClientListener, ClientPublisher};
 use super::device::{DeviceListener, DevicePublisher};
+use super::transport::{KnxListener, KnxPublisher};
 use super::{Bridge, SessionEnd, run_session};
 
 /// First retry delay.
@@ -194,11 +195,71 @@ fn drain_stale(notify_rx: &mut broadcast::Receiver<Arc<str>>) {
     while let Ok(_) | Err(TryRecvError::Lagged(_)) = notify_rx.try_recv() {}
 }
 
+/// What a connected client session consists of: the two halves the bridge runs on, the signal
+/// that the connection looks dead, and the task that drives the connection, which ends with
+/// the session.
+pub struct ClientLink<P, L> {
+    pub publisher: P,
+    pub listener: L,
+    pub broken: Option<Arc<tokio::sync::Notify>>,
+    pub driver: Option<tokio::task::JoinHandle<()>>,
+}
+
+/// The way a client connection is made: a real one, or one that a test makes (and loses) on a
+/// schedule.
+pub trait Dial: Send {
+    type Publisher: KnxPublisher;
+    type Listener: KnxListener;
+
+    fn dial(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<ClientLink<Self::Publisher, Self::Listener>>> + Send;
+}
+
+/// Connects to the gateway or router a [`ClientTarget`] names.
+struct Gateway<'a>(&'a ClientTarget);
+
+impl Dial for Gateway<'_> {
+    type Publisher = ClientPublisher;
+    type Listener = ClientListener;
+
+    async fn dial(&mut self) -> Result<ClientLink<ClientPublisher, ClientListener>> {
+        let spec = self.0.resolve().await?;
+        let conn = knx_rs_ip::connect(spec)
+            .await
+            .map_err(anyhow::Error::from)?;
+        let mux = Multiplexer::new(conn);
+        let (publisher, broken) = ClientPublisher::new(mux.handle());
+        let listener = ClientListener::new(mux.handle());
+        Ok(ClientLink {
+            publisher,
+            listener,
+            broken: Some(broken),
+            driver: Some(tokio::spawn(mux.run())),
+        })
+    }
+}
+
 /// Connect to the gateway, run the bridge, and do it again whenever the connection is lost,
 /// until shutdown. Failures to connect, at startup or later, back off from one second to a
 /// minute with jitter; every new connection publishes all status values again.
 pub async fn run_client<S>(
     target: ClientTarget,
+    bridge: Bridge<S>,
+    notify_rx: broadcast::Receiver<Arc<str>>,
+    shutdown: watch::Receiver<bool>,
+) where
+    S: BuildHasher + Send + Sync + 'static,
+{
+    let url = format!("{}://{}", target.scheme, target.authority);
+    run_client_with(&url, Gateway(&target), bridge, notify_rx, shutdown).await;
+}
+
+/// [`run_client`] with the way a connection is made left open, so that the supervision can be
+/// run against connections that are made (and lost) on a schedule.
+pub async fn run_client_with<S, D: Dial>(
+    url: &str,
+    mut dialer: D,
     bridge: Bridge<S>,
     mut notify_rx: broadcast::Receiver<Arc<str>>,
     mut shutdown: watch::Receiver<bool>,
@@ -206,7 +267,6 @@ pub async fn run_client<S>(
     S: BuildHasher + Send + Sync + 'static,
 {
     let mut backoff = Backoff::new(BACKOFF_BASE, BACKOFF_CAP);
-    let url = format!("{}://{}", target.scheme, target.authority);
 
     loop {
         if *shutdown.borrow() {
@@ -214,14 +274,11 @@ pub async fn run_client<S>(
         }
 
         let connected = tokio::select! {
-            r = async {
-                let spec = target.resolve().await?;
-                knx_rs_ip::connect(spec).await.map_err(anyhow::Error::from)
-            } => r,
+            r = dialer.dial() => r,
             () = stop_requested(&mut shutdown) => break,
         };
-        let conn = match connected {
-            Ok(conn) => conn,
+        let link = match connected {
+            Ok(link) => link,
             Err(e) => {
                 let delay = backoff.failure();
                 log_failure(
@@ -244,18 +301,22 @@ pub async fn run_client<S>(
         }
         let connected_at = Instant::now();
 
-        let mux = Multiplexer::new(conn);
-        let (publisher, broken) = ClientPublisher::new(mux.handle());
-        let listener = ClientListener::new(mux.handle());
-        let mux_task = tokio::spawn(mux.run());
+        let ClientLink {
+            publisher,
+            listener,
+            broken,
+            driver,
+        } = link;
         drain_stale(&mut notify_rx);
 
         let end = tokio::select! {
-            end = run_session(&publisher, listener, Some(&broken), &bridge, &mut notify_rx) => Some(end),
+            end = run_session(&publisher, listener, broken.as_deref(), &bridge, &mut notify_rx) => Some(end),
             () = stop_requested(&mut shutdown) => None,
         };
         // Dropping the multiplexer drops the tunnel, which tells the gateway goodbye.
-        mux_task.abort();
+        if let Some(driver) = driver {
+            driver.abort();
+        }
         drop(publisher);
 
         match end {
@@ -418,5 +479,147 @@ mod tests {
             tokio::time::timeout(Duration::from_millis(50), stop_requested(&mut rx)).await;
         assert!(stopped.is_err());
         assert!(sleep_or_shutdown(Duration::from_millis(10), &mut rx).await);
+    }
+    // ── The client loop, run against connections that follow a script ──────────
+
+    /// A publisher that takes everything.
+    struct Takes;
+
+    impl KnxPublisher for Takes {
+        const ADDRESSED: bool = true;
+
+        fn write(
+            &self,
+            _target: super::super::transport::Target,
+            _dpt: knx_rs_core::dpt::Dpt,
+            _value: &knx_rs_core::dpt::DptValue,
+        ) -> impl std::future::Future<Output = bool> + Send {
+            std::future::ready(true)
+        }
+    }
+
+    /// A listener whose connection ends after a while.
+    struct EndsAfter(Duration);
+
+    impl KnxListener for EndsAfter {
+        fn recv(
+            &mut self,
+        ) -> impl std::future::Future<Output = Option<super::super::transport::Incoming>> + Send
+        {
+            let lasts = self.0;
+            async move {
+                tokio::time::sleep(lasts).await;
+                None
+            }
+        }
+    }
+
+    /// Connections on a script: `None` is a failed attempt, `Some(d)` a connection that is lost
+    /// after `d`. When the script is used up the next attempt asks for shutdown.
+    struct Scripted {
+        script: std::vec::IntoIter<Option<Duration>>,
+        dialed: Arc<std::sync::Mutex<Vec<Instant>>>,
+        stop: watch::Sender<bool>,
+    }
+
+    impl Dial for Scripted {
+        type Publisher = Takes;
+        type Listener = EndsAfter;
+
+        fn dial(
+            &mut self,
+        ) -> impl std::future::Future<Output = Result<ClientLink<Takes, EndsAfter>>> + Send
+        {
+            self.dialed.lock().unwrap().push(Instant::now());
+            std::future::ready(match self.script.next() {
+                Some(Some(lasts)) => Ok(ClientLink {
+                    publisher: Takes,
+                    listener: EndsAfter(lasts),
+                    broken: None,
+                    driver: None,
+                }),
+                Some(None) => Err(anyhow::anyhow!("refused")),
+                None => {
+                    let _ = self.stop.send(true);
+                    Err(anyhow::anyhow!("done"))
+                }
+            })
+        }
+    }
+
+    /// When each attempt was made, for a script of failures and connections.
+    async fn dial_times(script: Vec<Option<Duration>>) -> Vec<Instant> {
+        let cfg = crate::config::load_raw(
+            toml::from_str(
+                r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+
+[[zone]]
+name = "Z1"
+"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let store = crate::state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = tokio::sync::mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            std::collections::HashMap::<usize, crate::player::ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let (_notify_tx, notify_rx) = broadcast::channel(8);
+        let (stop, shutdown) = watch::channel(false);
+        let dialed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let scripted = Scripted {
+            script: script.into_iter(),
+            dialed: Arc::clone(&dialed),
+            stop,
+        };
+        run_client_with("udp://test", scripted, bridge, notify_rx, shutdown).await;
+        dialed.lock().unwrap().clone()
+    }
+
+    /// Time between the end of a connection that began at `begin` and lasted `lasted`, and `next`.
+    fn pause_after(begin: Instant, lasted: Duration, next: Instant) -> Duration {
+        next.duration_since(begin + lasted)
+    }
+
+    /// A connection that stayed up for 30 s or more was healthy: after its loss the client tries
+    /// again after the first delay (0.5 to 1 s), not after the delay that three failures before
+    /// it had grown to (4 to 8 s). (The mutation that replaces the call in the client loop with
+    /// a plain `backoff.failure()` is killed by this.)
+    #[tokio::test(start_paused = true)]
+    async fn a_client_connection_that_lasted_starts_the_backoff_over() {
+        let lasted = STABLE_AFTER + Duration::from_secs(1);
+        let t = dial_times(vec![None, None, None, Some(lasted)]).await;
+        assert_eq!(t.len(), 5);
+        let pause = pause_after(t[3], lasted, t[4]);
+        assert!(
+            pause <= BACKOFF_BASE + Duration::from_millis(50),
+            "waited {pause:?} after a healthy connection"
+        );
+    }
+
+    /// A connection that is lost after a few seconds is no sign of health: the delays keep
+    /// growing, as they do for failed attempts.
+    #[tokio::test(start_paused = true)]
+    async fn a_client_connection_that_drops_at_once_keeps_backing_off() {
+        let lasted = Duration::from_secs(2);
+        let t = dial_times(vec![Some(lasted), Some(lasted), Some(lasted)]).await;
+        assert_eq!(t.len(), 4);
+        // 1st loss: 0.5 to 1 s, 2nd: 1 to 2 s, 3rd: 2 to 4 s.
+        let pauses: Vec<Duration> = (0..3)
+            .map(|i| pause_after(t[i], lasted, t[i + 1]))
+            .collect();
+        assert!(
+            pauses[0] <= Duration::from_secs(1) + Duration::from_millis(50),
+            "{pauses:?}"
+        );
+        assert!(pauses[1] >= Duration::from_secs(1), "{pauses:?}");
+        assert!(pauses[2] >= Duration::from_secs(2), "{pauses:?}");
     }
 }

@@ -1059,7 +1059,34 @@ enum LoopEnd {
 }
 
 /// Keep the KNXnet/IP server running for the lifetime of the BAU.
-async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
+async fn device_supervisor(task: DeviceTask, first: Option<DeviceServer>) {
+    device_supervisor_with(task, first, RealLoop).await;
+}
+
+/// What the supervisor runs for as long as a server is up: the BAU loop, or in a test a stand-in
+/// that lives for as long as the test says.
+trait ServerLoop: Send {
+    fn run(
+        &mut self,
+        task: &mut DeviceTask,
+        server: DeviceServer,
+    ) -> impl std::future::Future<Output = LoopEnd> + Send;
+}
+
+struct RealLoop;
+
+impl ServerLoop for RealLoop {
+    async fn run(&mut self, task: &mut DeviceTask, server: DeviceServer) -> LoopEnd {
+        bau_task_loop(task, server).await
+    }
+}
+
+/// [`device_supervisor`] with the BAU loop left open.
+async fn device_supervisor_with(
+    mut task: DeviceTask,
+    first: Option<DeviceServer>,
+    mut serve: impl ServerLoop,
+) {
     let mut backoff = Backoff::new(BACKOFF_BASE, BACKOFF_CAP);
     let mut server = first;
     // The first bind happened (and failed) in start_device_transport: count it, and let
@@ -1081,7 +1108,8 @@ async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
                     if backoff.failures() > 0 {
                         tracing::info!(attempts = backoff.failures(), "KNX device server is up");
                     }
-                    backoff.reset();
+                    // No reset here: a server that comes up and goes down again after a few
+                    // seconds keeps backing off. Only a session that lasted resets it.
                     let _ = task.addr_tx.send(Some(s.local_addr()));
                     s
                 }
@@ -1105,7 +1133,7 @@ async fn device_supervisor(mut task: DeviceTask, first: Option<DeviceServer>) {
             task.resync.notify_one();
         }
         let started = tokio::time::Instant::now();
-        let end = bau_task_loop(&mut task, srv).await;
+        let end = serve.run(&mut task, srv).await;
         let _ = task.addr_tx.send(None);
         if end == LoopEnd::Stopped {
             break;
@@ -2961,6 +2989,97 @@ mod tests {
             .await
             .expect("the supervisor ends on shutdown")
             .unwrap();
+    }
+
+    /// The debounced write that is still running when the BAU task ends is waited for: the
+    /// bridge's shutdown returns only once the file is complete.
+    #[tokio::test]
+    async fn the_end_of_the_bau_task_waits_for_the_write_that_is_running() {
+        let (mut task, _cmd_tx, _resync, _shutdown_tx) =
+            supervised_task("127.0.0.1:0".parse().unwrap());
+        let written = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = Arc::clone(&written);
+        task.pending_persist = Some(tokio::task::spawn_blocking(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+        finish(&mut task).await;
+        assert!(
+            written.load(std::sync::atomic::Ordering::SeqCst),
+            "finish() returned before the write was done"
+        );
+    }
+
+    /// A stand-in for the BAU loop: each server lives for as long as the script says (a
+    /// restart follows), and when the script is used up the loop ends for good.
+    struct Lives {
+        script: std::vec::IntoIter<std::time::Duration>,
+        started: Arc<std::sync::Mutex<Vec<tokio::time::Instant>>>,
+    }
+
+    impl ServerLoop for Lives {
+        async fn run(&mut self, _task: &mut DeviceTask, server: DeviceServer) -> LoopEnd {
+            self.started
+                .lock()
+                .unwrap()
+                .push(tokio::time::Instant::now());
+            let Some(lives) = self.script.next() else {
+                return LoopEnd::Stopped;
+            };
+            tokio::time::sleep(lives).await;
+            drop(server);
+            LoopEnd::ServerClosed
+        }
+    }
+
+    /// The times at which the server was started, for servers that live as the script says.
+    async fn start_times(script: Vec<std::time::Duration>) -> Vec<tokio::time::Instant> {
+        let bind = "127.0.0.1:0".parse().unwrap();
+        let (task, _cmd_tx, _resync, _shutdown_tx) = supervised_task(bind);
+        let first = open_server(Some(bind)).await.unwrap();
+        let started = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let serve = Lives {
+            script: script.into_iter(),
+            started: Arc::clone(&started),
+        };
+        device_supervisor_with(task, Some(first), serve).await;
+        started.lock().unwrap().clone()
+    }
+
+    /// A server that stayed up for 30 s or more was healthy, so the delay before the next one
+    /// starts over; a server that goes down again after a few seconds keeps the delays growing.
+    /// (The mutation that replaces the call in the supervisor with a plain `backoff.failure()`
+    /// is killed by the last assertion.)
+    #[tokio::test(start_paused = true)]
+    async fn a_device_server_that_lasted_starts_the_backoff_over() {
+        use std::time::Duration;
+        let short = Duration::from_secs(2);
+        let long = super::super::supervisor::STABLE_AFTER + Duration::from_secs(1);
+        let t = start_times(vec![short, short, short, long]).await;
+        assert_eq!(t.len(), 5);
+        let pause = |i: usize, lived: Duration| t[i + 1].duration_since(t[i] + lived);
+        // 1st loss: 0.5 to 1 s, 2nd: 1 to 2 s, 3rd: 2 to 4 s.
+        assert!(
+            pause(0, short) <= Duration::from_millis(1050),
+            "{:?}",
+            pause(0, short)
+        );
+        assert!(
+            pause(1, short) >= Duration::from_secs(1),
+            "{:?}",
+            pause(1, short)
+        );
+        assert!(
+            pause(2, short) >= Duration::from_secs(2),
+            "{:?}",
+            pause(2, short)
+        );
+        // After a healthy server the next delay is the first one again.
+        assert!(
+            pause(3, long) <= Duration::from_millis(1050),
+            "waited {:?} after a healthy server",
+            pause(3, long)
+        );
     }
 
     #[tokio::test]
