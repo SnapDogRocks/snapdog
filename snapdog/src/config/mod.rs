@@ -199,6 +199,9 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
             .with_context(|| format!("Client '{}' KNX error", client.name))?;
     }
 
+    // Resolving clamps the volume limits, so what the file said has to be reported first.
+    let volume_notices = volume_range_notices(&raw.client);
+
     let zones: Vec<ZoneConfig> = raw
         .zone
         .into_iter()
@@ -269,10 +272,38 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         notices: Vec::new(),
     };
 
+    for message in volume_notices {
+        config.warn(message);
+    }
     apply_env_overrides(&mut config);
     validate(&mut config)?;
 
     Ok(config)
+}
+
+/// Notices for `max_volume` and `default_volume` values outside 0 to 100, which
+/// resolving a client clamps. Same wording as the check in [`validate`].
+fn volume_range_notices(clients: &[RawClientConfig]) -> Vec<String> {
+    let mut notices = Vec::new();
+    for client in clients {
+        for (key, value) in [
+            ("max_volume", client.max_volume),
+            ("default_volume", client.default_volume),
+        ] {
+            if value > 100 {
+                notices.push(format!(
+                    "Client '{}': {key} {value} exceeds 100, using 100",
+                    client.name
+                ));
+            } else if value < 0 {
+                notices.push(format!(
+                    "Client '{}': {key} {value} is below 0, using 0",
+                    client.name
+                ));
+            }
+        }
+    }
+    notices
 }
 
 /// Cross-field validation and normalization.
@@ -1218,6 +1249,50 @@ mod tests {
         .unwrap();
         assert_eq!(config.audio.bit_depth, 24);
         assert!(config.notices.iter().any(|n| n.message.contains("FLAC")));
+    }
+
+    #[test]
+    fn channel_count_is_limited_to_one_through_eight() {
+        let with = |channels: u8| {
+            load_str(&format!(
+                "[audio]\nchannels = {channels}\n[[zone]]\nname = \"A\""
+            ))
+        };
+        assert!(with(1).is_ok());
+        assert!(with(8).is_ok());
+        for bad in [0, 9, 16] {
+            let error = with(bad).unwrap_err().to_string();
+            assert!(
+                error.contains(&format!("Unsupported number of channels: {bad}")),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn out_of_range_client_volumes_are_reported_as_clamped() {
+        let config = load_str(
+            "[[zone]]\nname = \"A\"\n[[client]]\nname = \"K\"\nmac = \"02:42:ac:11:00:10\"\n\
+             zone = \"A\"\nmax_volume = 120\ndefault_volume = -5\n",
+        )
+        .unwrap();
+        assert_eq!(config.clients[0].max_volume, 100);
+        assert_eq!(config.clients[0].default_volume, 0);
+        let messages: Vec<&str> = config.notices.iter().map(|n| n.message.as_str()).collect();
+        assert!(
+            messages.contains(&"Client 'K': max_volume 120 exceeds 100, using 100"),
+            "{messages:?}"
+        );
+        assert!(
+            messages.contains(&"Client 'K': default_volume -5 is below 0, using 0"),
+            "{messages:?}"
+        );
+        // In range: nothing to report.
+        let quiet = load_str(
+            "[[zone]]\nname = \"A\"\n[[client]]\nname = \"K\"\nmac = \"02:42:ac:11:00:10\"\nzone = \"A\"\n",
+        )
+        .unwrap();
+        assert!(!quiet.notices.iter().any(|n| n.message.contains("volume")));
     }
 
     #[test]
