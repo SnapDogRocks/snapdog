@@ -1,0 +1,18 @@
+#!/bin/sh
+# Maintainer script of the snapdog package. cargo-deb inserts the systemd handling it
+# generates from the unit (stop on removal, and so on) where the DEBHELPER marker is.
+set -e
+
+# Removal stops the server. Note that it was running, so that installing the
+# package again brings it back: the generated postinst only restarts a server
+# that is running at that moment, and the package does not start it by default.
+# /run is volatile, so after a reboot the note is gone, and the enabled unit
+# starts with the system anyway.
+if [ "$1" = remove ] && [ -d /run/systemd/system ] \
+    && systemctl is-active --quiet snapdog.service; then
+    touch /run/snapdog.was-active || true
+fi
+
+#DEBHELPER#
+
+exit 0

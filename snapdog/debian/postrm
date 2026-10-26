@@ -1,0 +1,18 @@
+#!/bin/sh
+# Maintainer script of the snapdog package. cargo-deb inserts the systemd handling it
+# generates from the unit (mask on removal, forget on purge) where the DEBHELPER marker
+# is.
+set -e
+
+#DEBHELPER#
+
+if [ "$1" = purge ]; then
+    rm -f /run/snapdog.was-active
+    # systemd keeps the state of a DynamicUser service (StateDirectory=snapdog) in
+    # /var/lib/private/snapdog and links it as /var/lib/snapdog: pairing keys, ETS
+    # and EQ settings. Purging means it goes too. Remove the target first, then the
+    # link; rm -rf does not follow the link.
+    rm -rf /var/lib/private/snapdog /var/lib/snapdog
+fi
+
+exit 0
