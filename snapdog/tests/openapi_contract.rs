@@ -75,40 +75,95 @@ fn openapi_doc_is_structurally_stable() {
 // ── Registered routes versus the spec ──────────────────────────────────────
 //
 // axum cannot list the routes of a built `Router`, so the route tables are read
-// from the source: every `.route("<path>", get(..).put(..))` in `api/routes/*.rs`
-// becomes an operation, prefixed with the path the router is nested under in
-// `api/mod.rs`. The spec has to list exactly those operations, so a route added
-// without a `#[utoipa::path]` (or documented but no longer served) fails here.
+// from the source: every `.route("<path>", get(..).put(..))` under `src/api` becomes
+// an operation, prefixed with the path its router is nested under in `api/mod.rs`.
+// The spec has to list exactly those operations (minus `UNDOCUMENTED`), so a route
+// added without a `#[utoipa::path]` (or documented but no longer served) fails here.
+// The scanner refuses what it cannot read: a `.route` in an unlisted file or
+// function, a handler chain without a verb it knows (`any(..)`, `on(..)`), and the
+// constructs that register routes without `.route` (`route_service`, `on`).
 
-/// `(file, router function, nest prefix)`. A `.route` in a function missing here
-/// fails the test, so a new router cannot slip past it.
+/// `(file under src/api, router function, nest prefix)`. A `.route` in a function
+/// missing here fails the test, so a new router cannot slip past it.
 const ROUTERS: &[(&str, &str, &str)] = &[
-    ("zones.rs", "router", "/api/v1/zones"),
-    ("eq.rs", "router", "/api/v1/zones"),
-    ("clients.rs", "router", "/api/v1/clients"),
-    ("client_eq.rs", "router", "/api/v1/clients"),
-    ("speakers.rs", "client_speaker_router", "/api/v1/clients"),
-    ("speakers.rs", "speakers_router", "/api/v1/speakers"),
-    ("media.rs", "router", "/api/v1/media"),
-    ("system.rs", "router", "/api/v1/system"),
-    ("knx.rs", "router", "/api/v1/knx"),
+    ("routes/zones.rs", "router", "/api/v1/zones"),
+    ("routes/eq.rs", "router", "/api/v1/zones"),
+    ("routes/clients.rs", "router", "/api/v1/clients"),
+    ("routes/client_eq.rs", "router", "/api/v1/clients"),
+    (
+        "routes/speakers.rs",
+        "client_speaker_router",
+        "/api/v1/clients",
+    ),
+    ("routes/speakers.rs", "speakers_router", "/api/v1/speakers"),
+    ("routes/media.rs", "router", "/api/v1/media"),
+    ("routes/system.rs", "router", "/api/v1/system"),
+    ("routes/knx.rs", "router", "/api/v1/knx"),
+    // Merged at the root, not nested.
+    ("health.rs", "router", ""),
+    ("ws.rs", "router", ""),
+    ("mod.rs", "build_router", ""),
+];
+
+/// Served on purpose, without an entry in the spec. Each has to exist, so a stale
+/// exemption fails as well.
+const UNDOCUMENTED: &[(&str, &str, &str)] = &[
+    (
+        "GET",
+        "/health",
+        "liveness probes, not part of the REST contract",
+    ),
+    ("GET", "/health/ready", "liveness probes"),
+    ("GET", "/health/live", "liveness probes"),
+    ("GET", "/ws", "WebSocket upgrade, described in the README"),
+    (
+        "GET",
+        "/api/v1/openapi.json",
+        "the document itself (feature api-docs)",
+    ),
 ];
 
 const ROUTE_SOURCES: &[(&str, &str)] = &[
-    ("zones.rs", include_str!("../src/api/routes/zones.rs")),
-    ("eq.rs", include_str!("../src/api/routes/eq.rs")),
-    ("clients.rs", include_str!("../src/api/routes/clients.rs")),
     (
-        "client_eq.rs",
+        "routes/zones.rs",
+        include_str!("../src/api/routes/zones.rs"),
+    ),
+    ("routes/eq.rs", include_str!("../src/api/routes/eq.rs")),
+    (
+        "routes/clients.rs",
+        include_str!("../src/api/routes/clients.rs"),
+    ),
+    (
+        "routes/client_eq.rs",
         include_str!("../src/api/routes/client_eq.rs"),
     ),
-    ("speakers.rs", include_str!("../src/api/routes/speakers.rs")),
-    ("media.rs", include_str!("../src/api/routes/media.rs")),
-    ("system.rs", include_str!("../src/api/routes/system.rs")),
-    ("knx.rs", include_str!("../src/api/routes/knx.rs")),
+    (
+        "routes/speakers.rs",
+        include_str!("../src/api/routes/speakers.rs"),
+    ),
+    (
+        "routes/media.rs",
+        include_str!("../src/api/routes/media.rs"),
+    ),
+    (
+        "routes/system.rs",
+        include_str!("../src/api/routes/system.rs"),
+    ),
+    ("routes/knx.rs", include_str!("../src/api/routes/knx.rs")),
+    ("health.rs", include_str!("../src/api/health.rs")),
+    ("ws.rs", include_str!("../src/api/ws.rs")),
+    ("mod.rs", include_str!("../src/api/mod.rs")),
 ];
 
 const API_MOD: &str = include_str!("../src/api/mod.rs");
+
+/// Constructs that register a route without `.route(` and so escape the scanner.
+const INVISIBLE_ROUTING: &[&str] = &[
+    "route_service(",
+    ".on(",
+    "nest_service(",
+    "fallback_service(",
+];
 
 const VERBS: [&str; 5] = ["get", "post", "put", "delete", "patch"];
 
@@ -130,8 +185,18 @@ fn normalise(path: &str) -> String {
     out
 }
 
+/// The source without whole-line `//` comments, so a commented-out route is not counted.
+fn without_comments(source: &str) -> String {
+    source
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Every `(VERB, path)` registered by the `.route(..)` calls in one source file.
 fn registered_in(file: &str, source: &str) -> Vec<(String, String)> {
+    let source = &without_comments(source);
     let mut found = Vec::new();
     let bytes = source.as_bytes();
     let mut search_from = 0;
@@ -159,6 +224,11 @@ fn registered_in(file: &str, source: &str) -> Vec<(String, String)> {
 
         // `"<path>"`, then the handler chain up to the call's closing parenthesis.
         let rest = &source[search_from..];
+        assert!(
+            rest.trim_start().starts_with('"'),
+            "{file}: a `.route` whose path is not a string literal cannot be scanned: {}",
+            rest.lines().next().unwrap_or_default()
+        );
         let open = rest.find('"').expect("route path literal") + 1;
         let close = open + rest[open..].find('"').expect("end of route path");
         let path = &rest[open..close];
@@ -181,6 +251,7 @@ fn registered_in(file: &str, source: &str) -> Vec<(String, String)> {
         let chain = &source[search_from + close + 1..end];
 
         // Verbs are the identifiers `get(`, `post(`, ... at call depth 1.
+        let before = found.len();
         let mut depth = 0;
         let chars: Vec<char> = chain.chars().collect();
         let mut i = 0;
@@ -208,14 +279,32 @@ fn registered_in(file: &str, source: &str) -> Vec<(String, String)> {
             }
             i += 1;
         }
+        assert!(
+            found.len() > before,
+            "{file}: `.route(\"{path}\", {chain})` has no verb the scanner knows ({VERBS:?}); \
+             extend the scanner rather than leave the route unchecked"
+        );
     }
     found
 }
 
-fn registered_operations() -> std::collections::BTreeSet<(String, String)> {
+/// Every operation the routers serve, documented or not.
+fn served_operations() -> std::collections::BTreeSet<(String, String)> {
     ROUTE_SOURCES
         .iter()
         .flat_map(|(file, source)| registered_in(file, source))
+        .collect()
+}
+
+/// The served operations the spec has to describe.
+fn registered_operations() -> std::collections::BTreeSet<(String, String)> {
+    served_operations()
+        .into_iter()
+        .filter(|(verb, path)| {
+            !UNDOCUMENTED
+                .iter()
+                .any(|(v, p, _)| v == verb && normalise(p) == *path)
+        })
         .collect()
 }
 
@@ -281,32 +370,114 @@ fn the_route_scanner_sees_the_update_routes_and_multi_verb_chains() {
 
 #[test]
 fn router_table_matches_the_files_and_the_nesting() {
-    // Every route file is scanned...
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/api/routes");
-    let mut files: Vec<String> = std::fs::read_dir(dir)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().into_string().unwrap())
-        .filter(|f| f != "mod.rs")
-        .collect();
-    files.sort();
+    // Every file under src/api that registers a route is scanned...
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/src/api");
+    let mut with_routes = Vec::new();
+    let mut pending = vec![std::path::PathBuf::from(root)];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let text = without_comments(&std::fs::read_to_string(&path).unwrap());
+                if text.contains(".route(") {
+                    let relative = path.strip_prefix(root).unwrap();
+                    with_routes.push(relative.to_string_lossy().replace('\\', "/"));
+                }
+                for construct in INVISIBLE_ROUTING {
+                    assert!(
+                        !text.contains(construct),
+                        "{}: `{construct}` registers routes the scanner cannot see",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+    with_routes.sort();
     let mut scanned: Vec<String> = ROUTE_SOURCES
         .iter()
         .map(|(f, _)| (*f).to_string())
         .collect();
     scanned.sort();
-    assert_eq!(files, scanned, "a route file is missing from ROUTE_SOURCES");
+    assert_eq!(
+        with_routes, scanned,
+        "a file with routes is missing from ROUTE_SOURCES (or the reverse)"
+    );
 
     // ...and the prefixes are the ones api/mod.rs nests the routers under.
     let compact: String = API_MOD.chars().filter(|c| !c.is_whitespace()).collect();
     for (file, func, prefix) in ROUTERS {
-        let module = file.trim_end_matches(".rs");
+        if *func == "build_router" {
+            continue;
+        }
+        let module = file.trim_end_matches(".rs").rsplit('/').next().unwrap();
+        let qualified = if file.starts_with("routes/") {
+            format!("routes::{module}::{func}(")
+        } else {
+            format!("{module}::{func}(")
+        };
         assert!(
-            compact.contains(&format!("routes::{module}::{func}(")),
-            "api/mod.rs no longer mounts routes::{module}::{func}"
+            compact.contains(&qualified),
+            "api/mod.rs no longer mounts {qualified}"
         );
+        if !prefix.is_empty() {
+            assert!(
+                compact.contains(&format!(".nest(\"{prefix}\"")),
+                "api/mod.rs no longer nests anything under {prefix}"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_undocumented_route_is_still_served() {
+    let served = served_operations();
+    for (verb, path, why) in UNDOCUMENTED {
         assert!(
-            compact.contains(&format!(".nest(\"{prefix}\"")),
-            "api/mod.rs no longer nests anything under {prefix}"
+            served.contains(&((*verb).to_string(), normalise(path))),
+            "{verb} {path} ({why}) is no longer served: remove it from UNDOCUMENTED"
         );
     }
+}
+
+#[test]
+fn the_scanner_refuses_a_route_it_cannot_classify() {
+    // The mutation that used to pass: an undocumented route in api/mod.rs.
+    let extra = "pub fn build_router() { Router::new().route(\"/api/v1/secret\", get(h)) }";
+    let found = registered_in("mod.rs", extra);
+    assert_eq!(found, [("GET".to_string(), "/api/v1/secret".to_string())]);
+    assert!(
+        !UNDOCUMENTED
+            .iter()
+            .any(|(v, p, _)| *v == "GET" && *p == "/api/v1/secret"),
+        "the extra route must show up as undocumented"
+    );
+
+    let caught = std::panic::catch_unwind(|| {
+        registered_in(
+            "mod.rs",
+            "pub fn build_router() { r.route(\"/x\", any(h)) }",
+        )
+    });
+    assert!(caught.is_err(), "a chain without a known verb is refused");
+    let caught = std::panic::catch_unwind(|| {
+        registered_in("mod.rs", "pub fn build_router() { r.route(PATH, get(h)) }")
+    });
+    assert!(caught.is_err(), "a path that is not a literal is refused");
+    let caught = std::panic::catch_unwind(|| {
+        registered_in(
+            "routes/zones.rs",
+            "pub fn mystery() { r.route(\"/x\", get(h)) }",
+        )
+    });
+    assert!(caught.is_err(), "an unlisted router function is refused");
+
+    // A commented-out route is not a route.
+    let commented = "pub fn build_router() {\n    // .route(\"/old\", get(h))\n}";
+    assert_eq!(
+        registered_in("mod.rs", commented),
+        Vec::<(String, String)>::new()
+    );
 }

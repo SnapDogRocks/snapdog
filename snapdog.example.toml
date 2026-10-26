@@ -66,8 +66,16 @@ base_url = "http://192.168.1.10:5555"
 # Both tls_cert and tls_key must be set together.
 # tls_cert = "/etc/snapdog/tls/fullchain.pem"
 # tls_key = "/etc/snapdog/tls/privkey.pem"
-# Enable embedded Scalar API documentation (only if feature api-docs is compiled in).
+# API documentation (only in builds with the api-docs feature, which the release
+# binaries have; other builds serve none of it).
+# api_docs: serve the OpenAPI document at GET /api/v1/openapi.json. It is protected like
+# the rest of /api/v1: with api_keys set it needs "Authorization: Bearer <key>", without
+# keys it is open, like the API. Default true.
 # api_docs = true
+# api_console: also serve the interactive console at /docs. Off by default. A browser
+# cannot send the Authorization header when it opens a page, so the page is NOT behind
+# api_keys and embeds the whole OpenAPI document. Turn it on only on a network you trust.
+# api_console = false
 
 # ── Snapcast ───────────────────────────────────────────────────────────────
 [snapcast]

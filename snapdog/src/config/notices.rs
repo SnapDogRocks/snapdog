@@ -30,6 +30,7 @@ fn derive(config: &mut AppConfig) {
     #[cfg(feature = "snapcast-embedded")]
     embedded_snapcast(config);
     spotify_name(config);
+    api_console(config);
     #[cfg(not(feature = "ap2"))]
     airplay(config);
 }
@@ -91,6 +92,32 @@ fn embedded_snapcast(config: &mut AppConfig) {
              all interfaces on streaming_port. {hint}",
             snapcast.address
         ));
+    }
+}
+
+/// `[http].api_console` and `api_docs` only act in builds with feature `api-docs`, and
+/// the console page cannot be protected by the API key.
+fn api_console(config: &mut AppConfig) {
+    let http = &config.http;
+    if !http.api_console {
+        return;
+    }
+    if cfg!(not(feature = "api-docs")) {
+        config.warn(
+            "[http].api_console has no effect: this build was compiled without the api-docs \
+             feature and serves no API documentation.",
+        );
+    } else if !http.api_docs {
+        config.warn(
+            "[http].api_console has no effect while [http].api_docs = false: the console \
+             needs the OpenAPI document.",
+        );
+    } else if !http.api_keys.is_empty() {
+        config.warn(
+            "[http].api_console = true serves /docs without the API key, and the page embeds the \
+             whole OpenAPI document. The document at /api/v1/openapi.json stays behind the key. \
+             Turn the console off on networks you do not trust.",
+        );
     }
 }
 
@@ -186,6 +213,46 @@ mod tests {
         let mut config = load("");
         config::override_psk(&mut config, Some(String::new()));
         assert!(config.snapcast.encryption_psk.is_none());
+    }
+
+    #[test]
+    fn api_console_is_silent_unless_it_is_switched_on() {
+        assert!(!mentions(&load(""), "api_console"));
+        assert!(!mentions(
+            &load("[http]\napi_keys = [\"k\"]\napi_console = false"),
+            "api_console"
+        ));
+        // Open API, nothing to protect, nothing to say.
+        #[cfg(feature = "api-docs")]
+        assert!(!mentions(
+            &load("[http]\napi_console = true"),
+            "api_console"
+        ));
+    }
+
+    #[cfg(feature = "api-docs")]
+    #[test]
+    fn api_console_with_keys_warns_that_it_is_not_behind_them() {
+        let config = load("[http]\napi_keys = [\"k\"]\napi_console = true");
+        assert!(mentions(&config, "serves /docs without the API key"));
+        assert!(mentions(
+            &config,
+            "/api/v1/openapi.json stays behind the key"
+        ));
+    }
+
+    #[cfg(feature = "api-docs")]
+    #[test]
+    fn api_console_needs_api_docs() {
+        let config = load("[http]\napi_docs = false\napi_console = true");
+        assert!(mentions(&config, "no effect while [http].api_docs = false"));
+    }
+
+    #[cfg(not(feature = "api-docs"))]
+    #[test]
+    fn api_console_without_the_feature_says_it_does_nothing() {
+        let config = load("[http]\napi_console = true");
+        assert!(mentions(&config, "compiled without the api-docs feature"));
     }
 
     #[test]

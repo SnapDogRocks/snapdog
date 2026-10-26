@@ -39,9 +39,21 @@ fn serve_asset(path: &str) -> Option<Response<Body>> {
     )
 }
 
+/// Paths the single-page app must never answer: an unknown API route or a disabled
+/// API console is a 404, not the web UI's `index.html` with status 200.
+fn is_reserved(path: &str) -> bool {
+    ["api", "docs"]
+        .iter()
+        .any(|root| path == *root || path.strip_prefix(root).is_some_and(|r| r.starts_with('/')))
+}
+
 /// Axum fallback handler: serves embedded `WebUI` assets or SPA index.html.
 pub async fn fallback(req: Request<Body>) -> impl IntoResponse {
     let path = req.uri().path().trim_start_matches('/');
+
+    if is_reserved(path) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
 
     // Try exact file match
     if let Some(resp) = serve_asset(path) {
@@ -50,4 +62,32 @@ pub async fn fallback(req: Request<Body>) -> impl IntoResponse {
 
     // SPA fallback: serve index.html for non-file paths
     serve_asset("index.html").unwrap_or_else(|| StatusCode::NOT_FOUND.into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_reserved;
+
+    #[test]
+    fn api_and_docs_paths_are_never_the_spa() {
+        for path in [
+            "api",
+            "api/v1/nothing",
+            "api/v1/openapi.json",
+            "docs",
+            "docs/x",
+        ] {
+            assert!(is_reserved(path), "{path}");
+        }
+        for path in [
+            "",
+            "index.html",
+            "apis",
+            "docsify",
+            "zones/api",
+            "documents",
+        ] {
+            assert!(!is_reserved(path), "{path}");
+        }
+    }
 }

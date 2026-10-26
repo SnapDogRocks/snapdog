@@ -172,3 +172,21 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
     )
 )]
 pub struct ApiDoc;
+
+/// `GET /api/v1/openapi.json`: the generated `OpenAPI` document. Mounted with the
+/// protected routes in `api/mod.rs`, so it sits behind the API key like they do.
+#[cfg(feature = "api-docs")]
+pub(crate) async fn openapi_json() -> impl axum::response::IntoResponse {
+    use std::sync::OnceLock;
+    static SPEC: OnceLock<String> = OnceLock::new();
+    // Serialising the generated document cannot fail: openapi_contract.rs does it too.
+    let spec = SPEC.get_or_init(|| {
+        ApiDoc::openapi()
+            .to_json()
+            .expect("the OpenAPI document serialises")
+    });
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        spec.clone(),
+    )
+}

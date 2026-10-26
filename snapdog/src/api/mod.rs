@@ -232,6 +232,16 @@ pub fn build_router(state: &SharedState) -> Router {
             routes::speakers::speakers_router(state.clone()),
         );
 
+    // The OpenAPI document lists every route and parameter, so it is served like the
+    // API itself: behind the key when one is configured, open when none is.
+    #[cfg(feature = "api-docs")]
+    if state.config.http.api_docs {
+        protected = protected.route(
+            "/api/v1/openapi.json",
+            axum::routing::get(openapi::openapi_json),
+        );
+    }
+
     if !api_keys.is_empty() {
         tracing::info!(keys = api_keys.len(), "API authentication enabled");
         // Layer order is load-bearing: the LAST `.layer` is the OUTERMOST, so the
@@ -259,10 +269,16 @@ pub fn build_router(state: &SharedState) -> Router {
         .merge(protected)
         .fallback(webui::fallback);
 
+    // The interactive console is opt-in. Its page embeds the whole document and no
+    // key can be sent when a browser opens it, so it is never behind the API key.
     #[cfg(feature = "api-docs")]
-    let app = if state.config.http.api_docs {
+    let app = if state.config.http.api_docs && state.config.http.api_console {
         use utoipa::OpenApi;
         use utoipa_scalar::{Scalar, Servable};
+        tracing::warn!(
+            "API console enabled at /docs: it embeds the OpenAPI document and is served without \
+             the API key"
+        );
         app.merge(Scalar::with_url("/docs", openapi::ApiDoc::openapi()))
     } else {
         app

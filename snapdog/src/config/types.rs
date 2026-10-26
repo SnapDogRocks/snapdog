@@ -553,10 +553,17 @@ pub struct HttpConfig {
     /// Optional API keys. If set, all API endpoints require `Authorization: Bearer <key>`.
     #[serde(default)]
     pub api_keys: Vec<SecretString>,
-    /// Enable embedded Scalar API documentation (only if feature `api-docs` is enabled).
+    /// Serve the `OpenAPI` document at `GET /api/v1/openapi.json`, behind the API key
+    /// like the rest of `/api/v1` (only if feature `api-docs` is enabled).
     /// Default: true.
     #[serde(default = "default_true")]
     pub api_docs: bool,
+    /// Serve the interactive API console (Scalar) at `/docs` (only if feature
+    /// `api-docs` is enabled and `api_docs` is true). The page embeds the whole
+    /// `OpenAPI` document and is served WITHOUT the API key, because a browser
+    /// cannot send the `Authorization` header when opening a page. Default: false.
+    #[serde(default)]
+    pub api_console: bool,
 }
 
 impl Default for HttpConfig {
@@ -569,6 +576,7 @@ impl Default for HttpConfig {
             tls_key: None,
             api_keys: vec![],
             api_docs: true,
+            api_console: false,
         }
     }
 }
