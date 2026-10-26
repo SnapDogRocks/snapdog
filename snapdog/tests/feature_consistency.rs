@@ -193,6 +193,109 @@ fn workflow_build_lines(workflow: &str) -> Vec<String> {
         .collect()
 }
 
+/// The text of one job of a workflow file: from its `  <job>:` line to the next job.
+fn workflow_job(workflow: &str, job: &str) -> String {
+    let header = format!("  {job}:");
+    let mut lines = workflow.lines();
+    assert!(
+        lines.any(|l| l == header),
+        "workflow has no job `{job}` (looked for the line `{header}`)"
+    );
+    let mut body = vec![header];
+    for line in lines {
+        let starts_job = line.starts_with("  ") && !line.starts_with("   ") && line.ends_with(':');
+        let top_level = !line.is_empty() && !line.starts_with(' ') && !line.starts_with('#');
+        if starts_job || top_level {
+            break;
+        }
+        body.push(line.to_owned());
+    }
+    body.join("\n")
+}
+
+#[test]
+fn workflow_job_extracts_one_job() {
+    let workflow = "jobs:\n  a:\n    run: one\n  b:\n    run: two\n    with:\n      x: y\n  c:\n    run: three\n";
+    let b = workflow_job(workflow, "b");
+    assert!(b.contains("two") && b.contains("x: y"));
+    assert!(!b.contains("one") && !b.contains("three"));
+}
+
+/// The path patterns of one `dorny/paths-filter` filter in ci.yml.
+fn filter_paths(workflow: &str, filter: &str) -> Vec<String> {
+    let header = format!("            {filter}:");
+    let mut lines = workflow.lines();
+    assert!(
+        lines.any(|l| l == header),
+        "ci.yml has no paths filter `{filter}`"
+    );
+    lines
+        .map_while(|l| l.strip_prefix("              "))
+        .filter_map(|l| l.strip_prefix("- "))
+        .map(|p| p.trim_matches('\'').to_owned())
+        .collect()
+}
+
+#[test]
+fn filter_paths_reads_one_filter() {
+    let ci = "            a:\n              - 'x/**'\n              # note\n              - 'y'\n            b:\n              - 'z'\n";
+    assert_eq!(filter_paths(ci, "a"), ["x/**", "y"]);
+    assert_eq!(filter_paths(ci, "b"), ["z"]);
+}
+
+/// The release feature set is checked on Windows and macOS only when the path filter says
+/// the change can affect it. The server code that the `full` set compiles (HTTP API,
+/// configuration, logging, receivers) has to trigger the jobs, not only the manifests.
+#[test]
+fn ci_path_filters_cover_the_server_code_the_release_check_compiles() {
+    let ci = workspace_file(".github/workflows/ci.yml");
+    for filter in ["windows", "macos_client"] {
+        let paths = filter_paths(&ci, filter);
+        for needed in [
+            "snapdog/src/api/**",
+            "snapdog/src/config/**",
+            "snapdog/src/receiver/**",
+            "snapdog/src/main.rs",
+        ] {
+            assert!(
+                paths.iter().any(|p| p == needed),
+                "the `{filter}` filter in ci.yml must include `{needed}`, found {paths:?}"
+            );
+        }
+    }
+}
+
+/// The release builds the server for macOS (both architectures) and Windows with
+/// `snapdog/full`. Nothing else compiles that set on those platforms, so CI has to,
+/// or the first failure shows up while a release is being built.
+#[test]
+fn ci_checks_the_release_feature_set_on_windows_and_macos() {
+    let ci = workspace_file(".github/workflows/ci.yml");
+
+    let windows = workflow_job(&ci, "windows-check");
+    assert!(
+        windows
+            .lines()
+            .any(|l| cargo_features(l).contains("snapdog/full") && l.contains("cargo check")),
+        "windows-check must run `cargo check` with `--features snapdog/full`"
+    );
+
+    let macos = workflow_job(&ci, "macos-client-check");
+    assert!(
+        macos
+            .lines()
+            .any(|l| cargo_features(l).contains("snapdog/full") && l.contains("cargo check")),
+        "macos-client-check must run `cargo check` with `--features snapdog/full`"
+    );
+    let targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"];
+    assert!(
+        macos
+            .lines()
+            .any(|l| l.contains("for target in") && targets.iter().all(|t| l.contains(t))),
+        "macos-client-check must loop over both release targets {targets:?} when it checks"
+    );
+}
+
 /// The exact feature set of a release. A change here changes what every released
 /// binary does for every user, so it must not slip through as a side effect of a
 /// feature edit: when this list changes, write the upgrade notes (docs/upgrading.md)

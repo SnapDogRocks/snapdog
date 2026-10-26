@@ -83,6 +83,14 @@ jobs:
               - 'rust-toolchain*'
               - 'snapdog-client/**'
               - 'snapdog-common/**'
+              # the server's release feature set is checked here too
+              - 'snapdog/src/api/**'
+              - 'snapdog/src/audio/**'
+              - 'snapdog/src/config/**'
+              - 'snapdog/src/logging*'
+              - 'snapdog/src/main.rs'
+              - 'snapdog/src/receiver/**'
+              - 'snapdog/src/snapcast/**'
             docker:
               - '.dockerignore'
               - 'Dockerfile'
@@ -105,7 +113,11 @@ jobs:
               - 'rust-toolchain*'
               - 'snapdog-client/**'
               - 'snapdog-common/**'
+              - 'snapdog/src/api/**'
               - 'snapdog/src/audio/**'
+              - 'snapdog/src/config/**'
+              - 'snapdog/src/logging*'
+              - 'snapdog/src/main.rs'
               - 'snapdog/src/receiver/**'
               - 'snapdog/src/snapcast/**'
             workflows:
@@ -424,6 +436,10 @@ jobs:
         shell: bash
         run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
       - run: cargo check --all-targets
+      - name: Check the release feature set (full)
+        # The release job builds the server for this target with `snapdog/full` (ap2,
+        # api-docs, ...). Nothing else compiles that set on Windows before a tag.
+        run: cargo check --locked -p snapdog -p snapdog-client --features snapdog/full
 
   macos-client-check:
     name: macOS Client Check
@@ -446,6 +462,19 @@ jobs:
             echo "::error::macOS client dependencies contain future-incompatible Rust code"
             exit 1
           fi
+      # The release job builds both macOS targets with `snapdog/full` on this runner
+      # type (x86_64 is cross-compiled). Check the same package and feature selection,
+      # so a failure shows up on the pull request and not at release time.
+      - name: Check the release feature set (full) for the release targets
+        shell: bash
+        env:
+          SKIP_WEBUI_BUILD: "1"
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo check --locked -p snapdog -p snapdog-client --features snapdog/full --target "$target"
+          done
 
   # Single required status check. Passes iff every job above succeeded or was
   # skipped (path-filtered), fails if any failed or was cancelled. Branch
