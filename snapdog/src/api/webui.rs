@@ -42,7 +42,7 @@ fn serve_asset(path: &str) -> Option<Response<Body>> {
 /// Paths the single-page app must never answer: an unknown API route or a disabled
 /// API console is a 404, not the web UI's `index.html` with status 200.
 fn is_reserved(path: &str) -> bool {
-    ["api", "docs"]
+    ["api", "api-docs", "docs"]
         .iter()
         .any(|root| path == *root || path.strip_prefix(root).is_some_and(|r| r.starts_with('/')))
 }
@@ -74,6 +74,8 @@ mod tests {
             "api",
             "api/v1/nothing",
             "api/v1/openapi.json",
+            "api-docs",
+            "api-docs/openapi.json",
             "docs",
             "docs/x",
         ] {

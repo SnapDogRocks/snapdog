@@ -165,6 +165,13 @@ mod compiled_out {
 #[tokio::test]
 async fn unknown_api_paths_are_not_answered_with_the_web_ui() {
     let app = app("");
-    let (status, _, _) = get(&app, "/api/v1/no-such-route", None).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    // `/api-docs/openapi.json` is the path utoipa documents for the spec; it is not served here.
+    for path in ["/api/v1/no-such-route", "/api-docs/openapi.json"] {
+        let (status, _, body) = get(&app, path, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        assert!(
+            !body.contains("<html"),
+            "{path} answered with a page: {body}"
+        );
+    }
 }
