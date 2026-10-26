@@ -828,6 +828,56 @@ async fn a_restart_persists_at_once() {
     .expect("persisted by the restart, well before the two-second debounce");
 }
 
+/// A master reset with erase code 7 (ETS "factory reset") wipes tables, application and memory.
+/// The wipe is persisted like a download is: a restart must not bring the old programming back.
+/// Two things were wrong: knx-rs rejects the master reset in the form the specification has, so
+/// nothing was wiped at all (see `repair_master_reset`), and the persist condition skipped an
+/// empty memory, so the file stayed as it was.
+#[tokio::test]
+async fn a_factory_reset_is_persisted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let memory = tmp.path().join("knx-memory.bin");
+    let cfg = ets_style_config("", "");
+    {
+        let dev = start_device(&cfg, memory.clone()).await;
+        let mut ets = connect(&dev).await;
+        ets_download(&mut ets, &ets_links()).await;
+        drain(&mut ets).await;
+        let [hi, lo] = apci_hdr(ApduType::Restart);
+        ets.send(mgmt_frame(managed_ia(), &[hi, lo])).await.unwrap();
+        timeout(Duration::from_secs(3), async {
+            while !memory.exists() {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("persisted by the restart");
+        drain(&mut ets).await;
+        let programmed = std::fs::read(&memory).unwrap();
+
+        // Master reset, erase code 7 (factory reset without the individual address), channel 0.
+        ets.send(mgmt_frame(managed_ia(), &[hi, lo | 1, 7, 0]))
+            .await
+            .unwrap();
+        timeout(Duration::from_secs(3), async {
+            while std::fs::read(&memory).is_ok_and(|now| now == programmed) {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("the reset was written to the memory file");
+        dev.bridge.shutdown().await;
+    }
+
+    // After a restart the old programming is gone: its address no longer reaches a zone.
+    let mut dev = start_device(&cfg, memory.clone()).await;
+    let ets = connect(&dev).await;
+    ets.group_write_value(ga("1/1/1"), DPT_SWITCH, &true.into())
+        .await
+        .unwrap();
+    expect_no_command(dev.zone_rx.get_mut(&1).unwrap()).await;
+}
+
 /// Shutdown returns only after the device task has written the state it holds. The debounce for
 /// a persist after a download is two seconds, so a shutdown right after the download has to
 /// write the file itself, and the bridge has to wait for that.

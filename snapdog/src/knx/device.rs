@@ -1208,9 +1208,9 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
             event = server.recv() => {
                 let Some(event) = event else { break LoopEnd::ServerClosed };
                 let is_tunnel = matches!(event, ServerEvent::TunnelFrame(_));
-                let frame = match event {
+                let frame = repair_master_reset(match event {
                     ServerEvent::TunnelFrame(f) | ServerEvent::RoutingFrame(f) => f,
-                };
+                });
 
                 // Log tunnel client connections
                 if is_tunnel && !tunnel_active {
@@ -1285,8 +1285,13 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                     tunnel_active = false;
                     // Persist SYNCHRONOUSLY here: if we restart below, the re-exec
                     // abandons any spawned task, so the write must complete first.
+                    // An empty memory is no reason to skip the write when a file from an
+                    // earlier programming exists: a factory reset wipes the memory, and the
+                    // file must say so, or the next start brings the old programming back.
                     if let Some(path) = persist_path.as_ref()
-                        && (!bau.memory_area().is_empty() || bau.individual_address().raw() != *config_ia) {
+                        && (!bau.memory_area().is_empty()
+                            || bau.individual_address().raw() != *config_ia
+                            || path.exists()) {
                             let state = persisted_state(bau);
                             if let Err(e) = persist_memory(path, &state, ia_record(bau, *config_ia)) {
                                 tracing::warn!(error = %e, "Failed to persist ETS state before restart");
@@ -1788,6 +1793,34 @@ fn is_management_for_device(bau: &Bau, frame: &CemiFrame) -> bool {
         && frame.destination_address_raw() == bau.individual_address().raw()
 }
 
+/// An `A_Restart` with the master reset type (`0x0381`) as the specification has it: the APCI,
+/// the erase code and the channel, four bytes. knx-rs 0.11 strips both APCI bytes and then reads
+/// the erase code at `data[1]`, the layout of the C++ stack's pointer, which still has the low
+/// APCI byte in front. It rejects the four-byte form as too short, so a master reset from a real
+/// ETS (a factory reset, "reset links", "reset application") would never take effect. The low
+/// APCI byte is repeated in front of the erase code, which gives the stack the layout it reads.
+///
+/// Other frames, and a frame that already has the longer form, are returned as they are.
+fn repair_master_reset(frame: CemiFrame) -> CemiFrame {
+    const MASTER_RESET: u16 = 0x0381;
+    let bytes = frame.as_bytes();
+    // msg code, additional info length, ctrl1, ctrl2, source (2), destination (2), length
+    let length_at = 8 + bytes.get(1).map_or(0, |n| usize::from(*n));
+    let tpdu = length_at + 1;
+    let [hi, lo] = match bytes.get(tpdu..tpdu + 2) {
+        Some([hi, lo]) => [*hi, *lo],
+        _ => return frame,
+    };
+    let apci = u16::from_be_bytes([hi & 0x03, lo]);
+    if apci != MASTER_RESET || bytes.len() != tpdu + 4 || usize::from(bytes[length_at]) != 3 {
+        return frame;
+    }
+    let mut patched = bytes.to_vec();
+    patched[length_at] = 4;
+    patched.insert(tpdu + 2, lo);
+    CemiFrame::parse(&patched).unwrap_or(frame)
+}
+
 /// A frame the device stack produced, as the KNXnet/IP server must deliver it.
 ///
 /// The stack builds its outgoing frames as `L_Data.req` (0x11), a request from an application to
@@ -1877,6 +1910,56 @@ fn classify_group_frame(bau: &Bau, frame: &CemiFrame) -> GroupPolicy {
 mod tests {
     use super::group_objects::zone_asap;
     use super::*;
+
+    /// A point-to-point frame from 15.15.177 to 1.1.100 carrying `tpdu` (TPCI and APDU).
+    fn p2p(tpdu: &[u8]) -> CemiFrame {
+        let mut bytes = vec![0x11, 0x00, 0xB0, 0x60, 0xFF, 0xB1, 0x11, 0x64];
+        bytes.push(u8::try_from(tpdu.len() - 1).unwrap());
+        bytes.extend_from_slice(tpdu);
+        CemiFrame::parse(&bytes).unwrap()
+    }
+
+    #[test]
+    fn a_master_reset_in_the_specified_form_reaches_the_device_stack_unnumbered() {
+        let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
+        // erase code 2 (factory reset), channel 0: APCI 0x0381 and two bytes.
+        let frame = p2p(&[0x03, 0x81, 0x02, 0x00]);
+        bau.process_frame(&frame, 0);
+        assert!(!bau.take_restart_pending(), "knx-rs 0.11 rejects the form");
+        bau.process_frame(&repair_master_reset(frame), 0);
+        assert!(bau.take_restart_pending());
+    }
+
+    #[test]
+    fn a_master_reset_in_the_specified_form_reaches_the_device_stack_connected() {
+        let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
+        bau.process_frame(&p2p(&[0x80, 0x00]), 0); // T_Connect
+        // Numbered data, sequence 0.
+        let frame = repair_master_reset(p2p(&[0x43, 0x81, 0x02, 0x00]));
+        bau.process_frame(&frame, 1);
+        bau.poll(2);
+        assert!(bau.take_restart_pending());
+    }
+
+    #[test]
+    fn only_a_four_byte_master_reset_is_repaired() {
+        let same = |tpdu: &[u8]| {
+            let frame = p2p(tpdu);
+            repair_master_reset(frame.clone()).as_bytes() == frame.as_bytes()
+        };
+        assert!(same(&[0x03, 0x80]), "a basic restart");
+        assert!(
+            same(&[0x03, 0x81, 0x02, 0x00, 0x00]),
+            "already the longer form"
+        );
+        assert!(same(&[0x03, 0x82, 0x02, 0x00]), "another service");
+        assert!(same(&[0x00, 0x80]), "a group write");
+        let repaired = repair_master_reset(p2p(&[0x03, 0x81, 0x07, 0x00]));
+        assert_eq!(
+            &repaired.as_bytes()[8..],
+            &[4, 0x03, 0x81, 0x81, 0x07, 0x00]
+        );
+    }
 
     #[test]
     fn text_parameters_are_decoded_as_iso_8859_15() {
