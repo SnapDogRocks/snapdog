@@ -41,7 +41,8 @@ mod mpris {
     /// `.instance10.zoneN`.
     ///
     /// `dbus/snapdog.conf` has to allow sending to every one of these, name by name, for the
-    /// zones up to [`POLICY_MAX_ZONES`] (see the test `policy_file_lists_every_bus_name`).
+    /// zones up to [`POLICY_MAX_ZONES`], and nothing else (see the test
+    /// `policy_file_is_exactly_what_bus_names_requires`).
     fn bus_names(zone_index: usize) -> impl Iterator<Item = String> {
         std::iter::once(format!("{BUS_NAME_PREFIX}.zone{zone_index}")).chain(
             (2..=MAX_INSTANCE)

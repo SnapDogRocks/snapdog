@@ -33,7 +33,7 @@ const MAX_INSTANCE: u32 = 10;
 /// Bus names to request in order: the plain name, then `.instance2` to `.instance10`.
 ///
 /// `dbus/snapdog-client.conf` has to allow sending to every one of these, name by name
-/// (see the test `policy_file_lists_every_bus_name`).
+/// (see the test `policy_file_is_exactly_what_bus_names_requires`).
 fn bus_names() -> impl Iterator<Item = String> {
     std::iter::once(BUS_NAME_PREFIX.to_owned())
         .chain((2..=MAX_INSTANCE).map(|i| format!("{BUS_NAME_PREFIX}.instance{i}")))
