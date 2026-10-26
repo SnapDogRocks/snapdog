@@ -57,6 +57,16 @@ pub enum Route {
     ClientZone,
 }
 
+impl Route {
+    /// Whether the command sets a value (volume, mute, a position, ...), as opposed
+    /// to triggering an event (`play`, `next`, ...). Only the latest of several
+    /// values is worth delivering; every event counts.
+    #[must_use]
+    pub const fn is_level(self) -> bool {
+        !matches!(self, Self::ZoneControl)
+    }
+}
+
 /// Every command topic: `{base}{scope}/{index}/{tail}`.
 ///
 /// `zones/{index}/position/set` and `zones/{index}/track/position/set` are two

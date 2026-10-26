@@ -504,6 +504,71 @@ async fn mqtt_tier2_oversized_retained_command_does_not_disable_mqtt() {
     assert!(rig.zone_rx.try_recv().is_err(), "nothing else may run");
 }
 
+/// F5: a burst of commands for one setting (a dragged slider) loses its
+/// intermediate values but not its last one, however full the zone's channel is.
+#[tokio::test(flavor = "multi_thread")]
+async fn mqtt_tier2_the_last_value_of_a_burst_arrives() {
+    let Some(broker) = start_broker("IT-T32 burst").await else {
+        return;
+    };
+    let (host, port) = (broker.host.clone(), broker.port);
+    let mut rig = start_bridge(&host, port).await;
+    assert!(rig.bridge.wait_connected(Duration::from_secs(20)).await);
+    // Warm up: the subscription is live once a command gets through.
+    let warm = publish_until_received(
+        &host,
+        port,
+        "snapdog/zones/1/volume/set",
+        "10",
+        &mut rig.zone_rx,
+        20,
+    )
+    .await;
+    assert!(matches!(warm, Some(ZoneCommand::SetVolume(10))), "{warm:?}");
+
+    // 300 values in one go (more than the burst budget and the channel of 16 take,
+    // nobody is receiving yet), the last one being 77.
+    let mut opts = MqttOptions::new("it-t32-burst", &host, port);
+    opts.set_keep_alive(Duration::from_secs(5));
+    let (client, mut eventloop) = AsyncClient::new(opts, 512);
+    let driver = tokio::spawn(async move {
+        loop {
+            if eventloop.poll().await.is_err() {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    });
+    for i in 0..299 {
+        client
+            .publish(
+                "snapdog/zones/1/volume/set",
+                QoS::AtMostOnce,
+                false,
+                format!("{}", 20 + i % 50),
+            )
+            .await
+            .expect("queue");
+    }
+    client
+        .publish("snapdog/zones/1/volume/set", QoS::AtMostOnce, false, "77")
+        .await
+        .expect("queue");
+    // Let the whole burst reach the bridge before anything is received.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let mut last = None;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(1500), rig.zone_rx.recv()).await {
+            Ok(Some(ZoneCommand::SetVolume(v))) => last = Some(v),
+            Ok(Some(_)) => {}
+            // Quiet for 1.5 s: everything that was coming has come.
+            Ok(None) | Err(_) => break,
+        }
+    }
+    driver.abort();
+    assert_eq!(last, Some(77), "the last value of the burst must arrive");
+}
+
 /// SnapDog used to publish `media_player` discovery configs, a platform that Home
 /// Assistant's MQTT integration does not have. Those retained messages (and the
 /// stale double-slash status) must be cleared, and nothing under `homeassistant/`

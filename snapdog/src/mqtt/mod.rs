@@ -41,7 +41,7 @@ mod transport;
 use commands::CommandHandler;
 use limits::LogThrottle;
 use publisher::{Publisher, request_capacity};
-use runner::{Session, run_connection, run_state_publisher};
+use runner::{Session, run_backlog_flusher, run_connection, run_state_publisher};
 use topics::Topics;
 use transport::mqtt_options;
 
@@ -111,14 +111,15 @@ impl MqttBridge {
         let (connected_tx, connected_rx) = watch::channel(false);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
+        let handler = CommandHandler::new(
+            topics,
+            runtime.zone_commands,
+            runtime.state.clone(),
+            runtime.snap_tx,
+        );
         let session = Session {
             publisher: publisher.clone(),
-            handler: CommandHandler::new(
-                topics,
-                runtime.zone_commands,
-                runtime.state.clone(),
-                runtime.snap_tx,
-            ),
+            handler: handler.clone(),
             store: runtime.state.clone(),
             connected: connected_tx,
             shutdown: shutdown_rx.clone(),
@@ -126,6 +127,7 @@ impl MqttBridge {
         };
         let tasks = vec![
             tokio::spawn(run_connection(eventloop, session)),
+            tokio::spawn(run_backlog_flusher(handler, shutdown_rx.clone())),
             tokio::spawn(run_state_publisher(
                 publisher.clone(),
                 runtime.state,

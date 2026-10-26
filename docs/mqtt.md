@@ -51,6 +51,23 @@ message_size_limit 262144     # bytes; 0 (the default) means no limit
 and restrict who may publish to the `.../set` topics with an ACL (see
 `snapdog.example.toml`). Other brokers have an equivalent setting under another name.
 
+## Command flood
+
+Every zone and every client may take 20 commands per second (a burst of 30), and all
+together 100 per second (a burst of 100). A slider drag sends about ten.
+
+Beyond that nothing is lost but the intermediate values. A command that sets a value
+(volume, mute, shuffle, repeat, position, track, playlist, presence, latency, client
+zone) and cannot be delivered right now, because its budget is used up or the zone
+player's channel is full, waits in a backlog that keeps the **latest** value per zone
+or client and setting. It is delivered as soon as there is room (checked every 50 ms),
+so the last position of a dragged slider is the one that arrives. A value that waited
+longer than 5 seconds is dropped as stale: it is not what anybody wants applied
+any more. The log says "Delaying MQTT commands" (at most once every 10 seconds).
+
+Transport commands (`play`, `pause`, `stop`, `next`, `previous` on `control/set`) are
+events: two `next` are not one. Beyond the budget they are dropped, as before.
+
 ## Configuration errors
 
 A wrong `[mqtt]` section switches MQTT off. It does not stop the server: audio and

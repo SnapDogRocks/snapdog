@@ -207,7 +207,17 @@ impl Session {
             .handle(&msg.topic, &msg.payload, msg.retain)
             .await;
         let (category, outcome) = match result {
-            Ok(Handled::Dispatched | Handled::NotACommand | Handled::ClientOffline) => return,
+            Ok(Handled::Dispatched | Handled::NotACommand) => return,
+            Ok(Handled::ClientOffline) => {
+                tracing::debug!(topic = ?msg.topic, "MQTT command for a client that is not connected, ignored");
+                return;
+            }
+            Ok(Handled::Deferred) => (
+                "deferred",
+                "Delaying MQTT commands: more arrive than one zone or client can take. The latest \
+                 value of each setting is delivered as soon as there is room"
+                    .to_string(),
+            ),
             Ok(Handled::IgnoredRetained) => (
                 "ignored: retained",
                 "Ignoring a retained message on a command topic: retained commands are never \
@@ -301,6 +311,28 @@ fn log_connection_error(error: &ConnectionError, retry_in: Duration) {
     }
 }
 
+/// How often the backlog is retried while it is not empty.
+const BACKLOG_TICK: Duration = Duration::from_millis(50);
+
+/// Deliver the values that could not be delivered at once (see
+/// [`CommandHandler::flush_backlog`]) until shutdown. Sleeps while there is
+/// nothing to deliver.
+pub async fn run_backlog_flusher(handler: CommandHandler, mut shutdown: watch::Receiver<bool>) {
+    loop {
+        tokio::select! {
+            () = shutdown_requested(&mut shutdown) => return,
+            () = handler.backlog_added() => {}
+        }
+        while handler.has_backlog() {
+            tokio::select! {
+                () = shutdown_requested(&mut shutdown) => return,
+                () = tokio::time::sleep(BACKLOG_TICK) => {}
+            }
+            handler.flush_backlog(Instant::now()).await;
+        }
+    }
+}
+
 /// Publish retained state when zones or clients change.
 ///
 /// While the broker is away nothing is queued: the snapshot after the next
@@ -379,6 +411,47 @@ mod tests {
             oversized_packet(&ConnectionError::MqttState(StateError::AwaitPingResp)),
             None
         );
+    }
+
+    /// The flusher task delivers the value that waited, without any further message
+    /// arriving to nudge it (the event loop may be idle for a minute).
+    #[tokio::test]
+    async fn the_flusher_task_delivers_a_deferred_value_by_itself() {
+        use crate::mqtt::test_support::{snap_channel, test_state_with_client, zone_channels_with};
+        use crate::mqtt::topics::Topics;
+        use crate::player::ZoneCommand;
+
+        let (snap_tx, _snap_rx) = snap_channel();
+        let (cmds, mut rx) = zone_channels_with(1);
+        let handler = CommandHandler::new(
+            Topics::new("snapdog/"),
+            cmds,
+            test_state_with_client(),
+            snap_tx,
+        );
+        let (stop, shutdown) = watch::channel(false);
+        let task = tokio::spawn(run_backlog_flusher(handler.clone(), shutdown));
+
+        handler
+            .handle("snapdog/zones/1/volume/set", b"10", false)
+            .await
+            .unwrap();
+        let deferred = handler
+            .handle("snapdog/zones/1/volume/set", b"20", false)
+            .await;
+        assert_eq!(deferred, Ok(crate::mqtt::commands::Handled::Deferred));
+        assert!(matches!(rx.recv().await, Some(ZoneCommand::SetVolume(10))));
+        // Room is free now; the flusher notices on its own.
+        let next = tokio::time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("the deferred value arrives");
+        assert!(matches!(next, Some(ZoneCommand::SetVolume(20))), "{next:?}");
+
+        stop.send_replace(true);
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("the flusher stops on shutdown")
+            .unwrap();
     }
 
     #[test]
