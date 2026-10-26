@@ -84,16 +84,10 @@ const EXAMPLE: &str = include_str!("../../snapdog.example.toml");
 /// Table paths that are TOML arrays of tables in `FileConfig`.
 const ARRAY_TABLES: &[&str] = &["zone", "client", "radio", "zone.presence.schedule"];
 
-/// Unknown key paths for a snippet. Required fields may be missing in a snippet,
-/// so a final deserialisation error is irrelevant: only the keys seen matter.
+/// Unknown key paths for a snippet, found by the same code that warns at startup.
 fn unknown_in(snippet: &str) -> Vec<String> {
-    let mut unknown = Vec::new();
-    let deserializer = toml::Deserializer::parse(snippet)
-        .unwrap_or_else(|e| panic!("snippet is not valid TOML: {e}\n{snippet}"));
-    let _: Result<config::FileConfig, _> = serde_ignored::deserialize(deserializer, |path| {
-        unknown.push(config::display_key_path(&path.to_string()));
-    });
-    unknown
+    config::unknown_keys_in_fragment(snippet)
+        .unwrap_or_else(|e| panic!("snippet is not valid TOML: {e}\n{snippet}"))
 }
 
 /// `[zone.presence.schedule]` → the header lines that make it a valid snippet

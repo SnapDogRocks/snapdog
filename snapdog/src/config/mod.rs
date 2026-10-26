@@ -18,13 +18,19 @@ use anyhow::{Context, Result};
 
 /// Load, validate, and resolve configuration from a TOML file.
 ///
+/// A file that is not valid TOML fails with "Failed to parse <path>". A valid file
+/// with a bad value (sample rate, duplicate zone, ...) fails with that message alone,
+/// as it always did.
+///
 /// # Errors
 ///
 /// Returns an error if the file cannot be read or contains invalid TOML/config.
 pub fn load(path: &Path) -> Result<AppConfig> {
     let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
         .with_context(|| format!("Failed to read {}", path.display()))?;
-    load_str(&content).with_context(|| format!("Failed to parse {}", path.display()))
+    let (raw, unknown) =
+        parse(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
+    resolve(raw, unknown)
 }
 
 /// Like [`load`], but takes the TOML text. Keys that no config struct knows
@@ -35,11 +41,21 @@ pub fn load(path: &Path) -> Result<AppConfig> {
 ///
 /// Returns an error if the text is not valid TOML or the configuration is invalid.
 pub fn load_str(content: &str) -> Result<AppConfig> {
+    let (raw, unknown) = parse(content)?;
+    resolve(raw, unknown)
+}
+
+/// Parse TOML text into the raw file structure and the paths of keys it ignored.
+fn parse(content: &str) -> Result<(FileConfig, Vec<String>)> {
     let mut unknown = Vec::new();
     let raw: FileConfig =
         serde_ignored::deserialize(toml::Deserializer::parse(content)?, |path| {
             unknown.push(path.to_string());
         })?;
+    Ok((raw, unknown))
+}
+
+fn resolve(raw: FileConfig, unknown: Vec<String>) -> Result<AppConfig> {
     let mut config = load_raw(raw)?;
     for key in unknown {
         config.warn(format!(
@@ -57,10 +73,24 @@ pub fn load_str(content: &str) -> Result<AppConfig> {
 ///
 /// Returns an error if the text cannot be parsed into the config structure.
 pub fn unknown_keys(content: &str) -> Result<Vec<String>> {
+    let (_, unknown) = parse(content)?;
+    Ok(unknown.iter().map(|k| display_key_path(k)).collect())
+}
+
+/// Like [`unknown_keys`] for a fragment of a file.
+///
+/// Required keys may be missing, so a failure to build the full structure is not an
+/// error. Only the keys seen before it count. Tests use this to check snippets of the example.
+///
+/// # Errors
+///
+/// Returns an error if the text is not valid TOML.
+pub fn unknown_keys_in_fragment(content: &str) -> Result<Vec<String>> {
     let mut unknown = Vec::new();
-    let _: FileConfig = serde_ignored::deserialize(toml::Deserializer::parse(content)?, |path| {
-        unknown.push(display_key_path(&path.to_string()));
-    })?;
+    let _: std::result::Result<FileConfig, _> =
+        serde_ignored::deserialize(toml::Deserializer::parse(content)?, |path| {
+            unknown.push(display_key_path(&path.to_string()));
+        });
     Ok(unknown)
 }
 
@@ -245,10 +275,12 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
     Ok(config)
 }
 
-/// Cross-field validation and normalization. Runs after all overrides are applied,
-/// and again after command-line overrides (see `main`), so it must be idempotent.
-/// It also recomputes the notices that depend on the resolved settings
-/// (default encryption key, keys this build ignores), so those reflect the final values.
+/// Cross-field validation and normalization.
+///
+/// Runs after all overrides are applied, and again after command-line overrides (see
+/// `main`), so it must be idempotent. It also recomputes the notices that depend on the
+/// resolved settings (default encryption key, keys this build ignores), so those reflect
+/// the final values.
 ///
 /// # Errors
 ///
@@ -1186,6 +1218,34 @@ mod tests {
         .unwrap();
         assert_eq!(config.audio.bit_depth, 24);
         assert!(config.notices.iter().any(|n| n.message.contains("FLAC")));
+    }
+
+    #[test]
+    fn error_text_of_a_bad_value_is_the_bare_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snapdog.toml");
+        std::fs::write(
+            &path,
+            "[audio]\nsample_rate = 12345\n[[zone]]\nname = \"A\"",
+        )
+        .unwrap();
+        let error = load(&path).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Unsupported sample rate: 12345"),
+            "{error:#}"
+        );
+
+        std::fs::write(&path, "[[zone]]\nname = ").unwrap();
+        let error = load(&path).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("Failed to parse {}", path.display())
+        );
+
+        let error = load(&dir.path().join("missing.toml")).unwrap_err();
+        assert!(error.to_string().starts_with("Failed to read"), "{error:#}");
     }
 
     #[test]
