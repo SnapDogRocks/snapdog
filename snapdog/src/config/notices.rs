@@ -142,12 +142,22 @@ fn api_console(config: &mut AppConfig) {
             "[http].api_console has no effect while [http].api_docs = false: the console \
              needs the OpenAPI document.",
         );
-    } else if !http.api_keys.is_empty() {
-        config.warn(
-            "[http].api_console = true serves /docs without the API key, and the page embeds the \
-             whole OpenAPI document. The document at /api/v1/openapi.json stays behind the key. \
-             Turn the console off on networks you do not trust.",
-        );
+    } else {
+        let keys = if http.api_keys.is_empty() {
+            "No API key is configured, so the whole API is open anyway."
+        } else {
+            "The document at /api/v1/openapi.json stays behind the key, but the console page \
+             embeds all of it and is not."
+        };
+        config.warn(format!(
+            "[http].api_console = true serves /docs. The page is not behind [http].api_keys, \
+             because a browser cannot send the Authorization header when it opens a page. {keys} \
+             The page also loads its script from cdn.jsdelivr.net, without a pinned version or \
+             an integrity hash, and it shares the origin of the web UI, which keeps its API key \
+             in the browser session: whoever controls that script could read the key. The \
+             console does not work without internet access. Enable it only on a network you \
+             trust, and do not use the web UI in the same browser at the same time."
+        ));
     }
 }
 
@@ -287,23 +297,36 @@ mod tests {
             &load("[http]\napi_keys = [\"k\"]\napi_console = false"),
             "api_console"
         ));
-        // Open API, nothing to protect, nothing to say.
-        #[cfg(feature = "api-docs")]
-        assert!(!mentions(
-            &load("[http]\napi_console = true"),
-            "api_console"
-        ));
     }
 
     #[cfg(feature = "api-docs")]
     #[test]
-    fn api_console_with_keys_warns_that_it_is_not_behind_them() {
+    fn api_console_warns_about_keys_and_the_cdn_script() {
         let config = load("[http]\napi_keys = [\"k\"]\napi_console = true");
-        assert!(mentions(&config, "serves /docs without the API key"));
+        assert!(mentions(&config, "is not behind [http].api_keys"));
         assert!(mentions(
             &config,
             "/api/v1/openapi.json stays behind the key"
         ));
+        assert!(mentions(&config, "cdn.jsdelivr.net"));
+        assert!(mentions(
+            &config,
+            "without a pinned version or an integrity hash"
+        ));
+        assert!(mentions(
+            &config,
+            "keeps its API key in the browser session"
+        ));
+        // One message, however the console got switched on.
+        let count = warnings(&config)
+            .iter()
+            .filter(|m| m.contains("api_console"))
+            .count();
+        assert_eq!(count, 1);
+
+        let open = load("[http]\napi_console = true");
+        assert!(mentions(&open, "whole API is open anyway"));
+        assert!(mentions(&open, "cdn.jsdelivr.net"));
     }
 
     #[cfg(feature = "api-docs")]

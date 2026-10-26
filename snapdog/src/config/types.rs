@@ -560,7 +560,9 @@ pub struct HttpConfig {
     /// Serve the interactive API console (Scalar) at `/docs` (only if feature
     /// `api-docs` is enabled and `api_docs` is true). The page embeds the whole
     /// `OpenAPI` document and is served WITHOUT the API key, because a browser
-    /// cannot send the `Authorization` header when opening a page. Default: false.
+    /// cannot send the `Authorization` header when opening a page. It loads the
+    /// Scalar script from `cdn.jsdelivr.net`, unpinned and without an integrity hash,
+    /// on the origin of the web UI. Default: false.
     #[serde(default)]
     pub api_console: bool,
 }

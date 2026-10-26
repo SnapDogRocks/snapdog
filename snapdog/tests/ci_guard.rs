@@ -15,7 +15,7 @@ fn active_lines() -> impl Iterator<Item = &'static str> {
 
 #[test]
 fn ci_runs_the_api_docs_guards_with_the_full_feature_set() {
-    for required in ["api_docs", "openapi_contract"] {
+    for required in ["api_docs", "api_console_warning", "openapi_contract"] {
         let found = active_lines().any(|line| {
             line.contains("cargo test")
                 && line.contains("-p snapdog")

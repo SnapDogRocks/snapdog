@@ -379,8 +379,12 @@ feature serve no API documentation at all.
 
 The interactive console (Scalar) at `/docs` is off by default. `[http].api_console = true` turns it on. A
 browser cannot send the `Authorization` header when it opens a page, so the console is not behind the API key,
-and the page contains the whole OpenAPI document. SnapDog logs a warning at startup when the console is on
-while keys are configured. Enable it only on a network you trust.
+and the page contains the whole OpenAPI document. The page also loads its script (Scalar) from `cdn.jsdelivr.net`
+without a pinned version or an integrity hash (the template of `utoipa-scalar`), and it shares the origin of the web
+UI, which keeps its API key in the browser session. Whoever controls that script could read the key, and the console
+does not work without internet access. SnapDog logs one warning at startup when the console is on. Enable it only on
+a network you trust, and do not use the web UI in the same browser while you do. Pinning the script with an
+integrity hash, or serving it from the binary, would need the script file in the repository; that is not done.
 
 ```bash
 curl -H "Authorization: Bearer $SNAPDOG_KEY" http://localhost:5555/api/v1/openapi.json
