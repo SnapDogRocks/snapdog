@@ -221,6 +221,24 @@ fn workflow_job_extracts_one_job() {
     assert!(!b.contains("one") && !b.contains("three"));
 }
 
+/// Tests behind `ap2` and `api-docs` only compile with those features. The default test
+/// runs never see them, so one CI step has to run the suite with the release feature set.
+#[test]
+fn ci_runs_the_server_tests_with_the_release_feature_set() {
+    let ci = workspace_file(".github/workflows/ci.yml");
+    let core = workflow_job(&ci, "rust-core");
+    assert!(
+        core.lines().any(|l| {
+            let features = cargo_features(l);
+            l.contains("cargo test -p snapdog")
+                && !l.contains("--test ")
+                && !l.contains("--lib")
+                && (features.contains("full") || features.contains("snapdog/full"))
+        }),
+        "rust-core must run the whole `cargo test -p snapdog` suite with `--features full`"
+    );
+}
+
 /// The path patterns of one `dorny/paths-filter` filter in ci.yml.
 fn filter_paths(workflow: &str, filter: &str) -> Vec<String> {
     let header = format!("            {filter}:");

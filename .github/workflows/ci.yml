@@ -243,6 +243,10 @@ jobs:
         # enabled, so this mirrors the clippy matrix above instead — one nextest
         # run per feature combination.
         run: cargo nextest run --workspace --locked
+      - name: Server tests (full / release feature set)
+        # Tests behind `ap2` and `api-docs` run in no other step with the whole suite;
+        # the default run above never compiles them. Releases ship exactly this set.
+        run: cargo test -p snapdog --features full --locked
       - name: Workspace tests (process mode)
         run: cargo nextest run -p snapdog --no-default-features --features snapcast-process --locked
       - name: Test-harness zone-player tests
