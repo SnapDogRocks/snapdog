@@ -22,12 +22,18 @@ global keys in `[knx]`.
 - A group read on a status address is answered with the value last sent to it. When
   nothing was sent to that address yet (the first write failed), the current values are
   offered again and the one for that address goes out as the response. Reads on other
-  addresses, command addresses included, are not answered.
+  addresses, command addresses included, are not answered. Two status objects on one
+  address answer with the one that comes first (zones, then clients, then the global
+  objects, each by number); the start warns about such an address. The same address read
+  more often than twice a second is answered once per half second, and reads that the
+  publisher has not got to yet wait in a queue of 64, the rest is dropped.
 - The URL is `udp://`, `tunnel://` or `router://` plus `host:port`; the syntax is checked
   when the configuration loads (`--check-config`). `udp://` selects routing for a
   multicast address and tunnelling otherwise. A host name is resolved on every connection
-  attempt (IPv4 preferred), an IPv6 literal is written in brackets. KNXnet/IP over TCP and
-  KNX IP Secure are not supported.
+  attempt (IPv4 preferred), an IPv6 literal is written in brackets. Port 0, a user name
+  (`user@host`), a host name with characters DNS does not have and a dotted number that is
+  no IPv4 address (`256.1.1.1`) are rejected when the configuration loads. KNXnet/IP over
+  TCP and KNX IP Secure are not supported.
 - There is no limit on zones and clients. State kept per object (what was sent last) is
   keyed by `ObjectKey` (zone or client index plus object kind), not by ASAP number, which
   exists only for 10 zones and 30 clients.
@@ -52,12 +58,20 @@ addresses of a zone above 10 or a client above 30 are ignored with a warning.
   (ETS is reloading a table and the address and association tables disagree), and handles
   a write to an address that only status objects send to: the write is not applied and the
   status object sends its actual value again, so the bus does not keep a foreign value.
-  An address that a writable object listens to as well is that object's business.
+  An address that a writable object listens to as well is that object's business. The
+  flags are compiled in: flag settings changed in ETS for these objects are not read and
+  have no effect.
+- A master reset (`A_Restart` with erase code 1 to 7, ETS "reset device") is repaired
+  before it reaches the stack: knx-rs 0.11 rejects the four-byte form the specification
+  has (APCI, erase code, channel), so the BAU task repeats the low APCI byte in front of
+  the erase code (`repair_master_reset`). The reset is persisted (see below).
 - Status values are written to the object. The stack sends to the first association of
   an object in the association table; further associations are listening addresses. When
   an object has a command and a status address in TOML (`presence_enable`/
   `presence_enable_status`, `all_mute`/`all_mute_status`) the status address is installed
-  first. Which association ETS writes first is not verified against a real ETS.
+  first. Which association ETS writes first is not verified against a real ETS. A read of
+  an address with several objects is answered by the first of them in the association
+  table that is readable and has a value.
 - An object keeps the value it was last given also when it has no address yet, so a read
   after the download is answered with the actual value. The three track strings are
   published empty, and the progress as 0, when there is no track.
@@ -71,23 +85,52 @@ addresses of a zone above 10 or a client above 30 are ignored with a warning.
   do not.
 - ETS-assigned individual addresses are kept in `knx-memory.bin` together with the
   programming (see below).
+- **Limit:** the stack takes the address table and the association table as they are. An
+  ETS download that replaces only the address table with one whose entries moved, and does
+  not load the association table again, leaves associations that point at the wrong
+  addresses (a write to the Play address can arrive as SetVolume). ETS loads both tables
+  together when addresses change, so this is not a state ETS produces, and there is no
+  guard against it. Dispatch is held back while a table is being loaded (the device is
+  not configured), not afterwards.
 
 ## Status traffic
 
 `StatusSink` (`sink.rs`) passes a status value on only when it differs from the one sent
-last for that group object. The cyclic `server_online` heartbeat is the exception.
-Playback progress is rounded to whole percent and sent at most every two seconds. A
-position that moves back (the next track) goes out at once, and a value held back by the
-limit is sent when the two seconds are over, so the last position before a pause arrives.
-Everything is sent again after a reconnect, after the device server restarted, after a
-download changed the associations and after the notification channel lagged.
+last for that group object. The cyclic `server_online` heartbeat is the exception (a late
+tick is sent late, not repeated). Playback progress is rounded to whole percent and sent at
+most every two seconds. A position that moves back (the next track) goes out at once, and a
+value held back by the limit is sent when the two seconds are over, so the last position
+before a pause arrives.
+
+Everything is sent again after a reconnect, after the device server restarted, once a
+download has made the device configured and after the notification channel lagged (the
+publisher then offers all status values again, and only the ones that changed go out). The
+publisher answers requests for such a burst after 250 ms without a new one (2 s at the
+latest), so the steps of a download make one burst: every status telegram goes out once.
+A value for an object without an association, or handed over while the device is not
+configured, is not stored in the group object; the burst after the download delivers it.
+
+**Device mode, outbound path.** The BAU task never waits for the KNXnet/IP server. Frames
+go through a queue (`outbound.rs`) that sends one frame per 25 ms, replaces a queued group
+telegram for the same destination and service by the newer one (the latest value per
+group address wins), keeps management frames (answers to ETS) in order, and holds at most
+512 group and 256 management frames (the oldest are dropped, counted and logged). The
+server waits up to three seconds per telegram for a tunnel client that does not
+acknowledge, so it takes frames slowly. A server whose command channel stays full for 10 s
+while it takes fewer than ten frames is considered stuck and restarted (which drops its
+tunnel clients); a slow one is left alone. Frames leave as `L_Data.ind` (0x29), as a server tells its clients about a
+telegram; the stack builds them as `L_Data.req` and they are rewritten before they are sent.
+Telegrams that go to a zone or client channel that is full are dropped, not waited for.
+Corrections of foreign writes use the same queue, so a device that writes a wrong value in
+a loop gets a correction per 25 ms at most, and a pending one is replaced.
 
 ## Supervision
 
 - **Client:** `run_client` (`supervisor.rs`) connects, runs the bridge, and connects again
   when the connection ends, until `KnxBridge::shutdown`. An unreachable gateway at
   startup is not an error. Delays grow 1 s, 2 s, 4 s, ... to 60 s with jitter (50 to
-  100 % of the nominal delay) and start over once a connection lasted 30 s. The first three
+  100 % of the nominal delay) and start over once a connection lasted 30 s; a connection
+  that drops sooner keeps the delays growing. The first three
   failures and every tenth log at warn level, the others at debug, the recovery at info.
   The loss is detected when the tunnel reports closed, when a write fails at the socket or
   is rejected by the gateway, or when two writes in a row stay unacknowledged.
@@ -96,11 +139,13 @@ download changed the associations and after the notification channel lagged.
   two to three minutes; until then group telegrams do not arrive and nothing is lost that a
   republish after the reconnect does not restore. There is no keepalive write.
 - **Device:** a failing bind (port taken, no multicast route yet) or a stopped server is
-  retried the same way. The device state stays in memory and the programming-mode requests
-  are still answered while there is no server.
+  retried the same way, and a server that comes up and goes down again within 30 s keeps
+  the delays growing. The device state stays in memory and the programming-mode requests
+  are still answered while there is no server. The programming-mode calls of the API wait
+  two seconds for the device task and then report the device as unavailable (HTTP 503).
 - **Shutdown:** `KnxBridge::shutdown` waits for the client loop, and for the device task,
   which writes the state on its way out and first waits for a debounced write that is still
-  running.
+  running. A task that does not end within two seconds is aborted.
 
 ## Persistence
 
@@ -125,6 +170,10 @@ has to program the device again. Keep a copy of the file before a downgrade.
   so the live memory grows by about 12 KB each time until the restart that ends the download),
   laid out as a first download would leave them. The stack ignores writes beyond 256 KB, which
   about 20 downloads reach; with `restart_after_ets = false` a restart is needed after that.
+- A master reset that wipes the memory (factory reset) is written like a download: the file
+  is replaced, not left as it was, so the next start does not bring the old programming
+  back. A leftover temp file of the same name (a crashed process with the same process id)
+  is replaced.
 - **Change from earlier releases:** the parameters are read from the segment the last download
   wrote. Earlier releases read the start of the memory, which is where the first download put
   them, so a device kept applying the parameters of its first download. After the upgrade a
@@ -134,6 +183,13 @@ has to program the device again. Keep a copy of the file before a downgrade.
   only the address. Programming mode is not persisted.
 
 ## Not verified
+
+Everything here ran on loopback only; nothing was tried against ETS, a real gateway or a
+router. The `L_Data.ind` code of device-mode telegrams is asserted on the wire of the test
+tunnel and routing socket, but whether a given router or client treats `0x11` and `0x29`
+differently is not known, and neither is how a real gateway paces its acknowledgements
+against the 25 ms spacing. The master reset repair is tested against the device stack
+(connected and unnumbered form) and an ETS-style frame over the tunnel, not against ETS.
 
 The ETS download is simulated with the management frames of knx-rs's own test harness over a
 loopback tunnel: connectionless services, the application segment allocated first, `Unload`
