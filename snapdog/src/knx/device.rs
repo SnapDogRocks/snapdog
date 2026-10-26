@@ -21,7 +21,7 @@ use knx_rs_ip::tunnel_server::{DeviceServer, ServerEvent};
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 use super::group_objects::mem;
-use super::outbound::{Outbound, Throttle};
+use super::outbound::{Outbound, OutboundStats, StallEvent, Throttle};
 use super::supervisor::{
     BACKOFF_BASE, BACKOFF_CAP, Backoff, delay_after_session, stop_requested, warn_on_failure,
 };
@@ -715,6 +715,7 @@ pub struct DevicePublisher {
     cmd_tx: mpsc::Sender<BauCmd>,
     local_addr: watch::Receiver<Option<std::net::SocketAddr>>,
     resync: Arc<Notify>,
+    outbound_stats: Arc<OutboundStats>,
 }
 
 /// How long a management call (programming mode) and a status write wait for the device task.
@@ -725,6 +726,13 @@ impl DevicePublisher {
     #[must_use]
     pub fn local_addr(&self) -> Option<std::net::SocketAddr> {
         *self.local_addr.borrow()
+    }
+
+    /// What the outbound queue to the KNXnet/IP server counted: frames dropped or coalesced, and
+    /// whether (and for how long) the server was stalled.
+    #[must_use]
+    pub fn outbound_stats(&self) -> Arc<OutboundStats> {
+        Arc::clone(&self.outbound_stats)
     }
 
     /// Queue a command for the device task; `false` when it does not take it in time.
@@ -985,6 +993,7 @@ pub async fn start_device_transport(
     };
 
     let resync = Arc::new(Notify::new());
+    let outbound_stats = Arc::new(OutboundStats::default());
     let task = tokio::spawn(device_supervisor(
         DeviceTask {
             bau,
@@ -996,6 +1005,7 @@ pub async fn start_device_transport(
             bind: options.bind,
             addr_tx,
             resync: Arc::clone(&resync),
+            outbound_stats: Arc::clone(&outbound_stats),
             shutdown,
             pending_persist: None,
         },
@@ -1009,6 +1019,7 @@ pub async fn start_device_transport(
             cmd_tx,
             local_addr: addr_rx,
             resync,
+            outbound_stats,
         },
         listener: DeviceListener { update_rx },
         task,
@@ -1057,6 +1068,7 @@ struct DeviceTask {
     bind: Option<std::net::SocketAddr>,
     addr_tx: watch::Sender<Option<std::net::SocketAddr>>,
     resync: Arc<Notify>,
+    outbound_stats: Arc<OutboundStats>,
     shutdown: watch::Receiver<bool>,
     /// The debounced write that may still be running; shutdown waits for it.
     pending_persist: Option<tokio::task::JoinHandle<()>>,
@@ -1222,6 +1234,7 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
         config_ia,
         shutdown,
         resync,
+        outbound_stats,
         pending_persist,
         ..
     } = task;
@@ -1233,8 +1246,9 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
 
     // Frames for the server wait here and are handed over without ever waiting for it (see
     // `outbound`): a device task that waits for the server can deadlock with it.
-    let mut outbound = Outbound::new();
+    let mut outbound = Outbound::with_stats(Arc::clone(outbound_stats));
     let mut drops = Throttle::default();
+    let mut outbound_drops = Throttle::default();
 
     // Values written while there was no server wait in their group objects.
     bau.poll(now_ms());
@@ -1390,19 +1404,28 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
                 }
             } => {
                 let now = tokio::time::Instant::now();
-                if outbound.stalled(now) {
-                    tracing::warn!(
-                        waiting = outbound.len(),
-                        "KNX device server takes no frames (a tunnel client that does not acknowledge?) — restarting it"
-                    );
-                    break LoopEnd::ServerClosed;
-                }
                 if outbound.flush(&server, now) {
                     break LoopEnd::ServerClosed;
                 }
-                let dropped = outbound.take_dropped();
-                if dropped > 0 && drops.allow(std::time::Duration::from_secs(5)) {
-                    tracing::warn!(dropped, "KNX device server cannot keep up, oldest frames dropped");
+                match outbound.poll_stall(now) {
+                    Some(StallEvent::Stalled { seconds, waiting, dropped, coalesced }) => {
+                        // Not restarted: see `outbound`. The queue is bounded, so the device
+                        // task keeps working; what is lost is the freshness of the status.
+                        tracing::error!(
+                            seconds,
+                            waiting,
+                            dropped,
+                            coalesced,
+                            "KNX device server takes frames far too slowly (a tunnel client that does not acknowledge?): status telegrams are late, newer values replace older ones"
+                        );
+                    }
+                    Some(StallEvent::Recovered { seconds }) => {
+                        tracing::warn!(seconds, "KNX device server keeps up again");
+                    }
+                    None => {}
+                }
+                if let Some(n) = outbound_drops.add(outbound.take_dropped(), std::time::Duration::from_secs(5)) {
+                    tracing::warn!(dropped = n, "KNX device server cannot keep up, oldest frames dropped");
                 }
             }
             () = stop_requested(shutdown) => break LoopEnd::Stopped,
@@ -1816,11 +1839,12 @@ fn dispatch_updated_gos(
         if let Some(data) = data
             && configured
             && update_tx.try_send((asap, data)).is_err()
-            && drops.allow(std::time::Duration::from_secs(5))
+            && let Some(dropped) = drops.add(1, std::time::Duration::from_secs(5))
         {
             tracing::warn!(
                 asap,
-                "KNX command queue is full or closed, telegram dropped"
+                dropped,
+                "KNX command queue is full or closed, telegrams dropped (one warning per 5 s; a slow zone blocks the listener of all zones, see docs/knx-bridge.md)"
             );
         }
     }
@@ -3002,6 +3026,7 @@ mod tests {
             bind: Some(bind),
             addr_tx,
             resync: Arc::clone(&resync),
+            outbound_stats: Arc::new(OutboundStats::default()),
             shutdown,
             pending_persist: None,
         };

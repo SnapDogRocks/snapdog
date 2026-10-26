@@ -564,21 +564,13 @@ async fn ets_programmed_device_sends_status_on_programmed_addresses() {
     assert!(dpt::decode(DPT_SWITCH, &muted).unwrap().as_bool().unwrap());
 }
 
-/// ETS loads the tables in steps and the device is configured at the end of the last one. Every
-/// status telegram goes out once for that download, not once per step (it used to be twice:
-/// 52 telegrams for 26 addresses), and the telegrams are paced rather than sent in one burst.
-#[tokio::test]
-async fn a_download_publishes_each_status_address_once() {
+/// `ets_links()` and the 24 further status objects of both zones, each on an address of its own.
+fn all_status_links() -> Programming {
     use snapdog::knx::group_objects::{
         ZGO_CONTROL_STATUS, ZGO_PLAYLIST_STATUS, ZGO_REPEAT_STATUS, ZGO_SHUFFLE_STATUS,
         ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_PLAYING, ZGO_TRACK_PROGRESS,
         ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_TITLE,
     };
-    let tmp = tempfile::tempdir().unwrap();
-    let cfg = ets_style_config("", "");
-    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
-    let mut ets = connect(&dev).await;
-
     let mut programming = ets_links();
     let mut n = 0u32;
     for zone in 1..=2usize {
@@ -601,6 +593,19 @@ async fn a_download_publishes_each_status_address_once() {
             programming.links.push((address, zone_asap(zone, go)));
         }
     }
+    programming
+}
+
+/// ETS loads the tables in steps and the device is configured at the end of the last one. Every
+/// status telegram goes out once for that download, not once per step (it used to be twice:
+/// 52 telegrams for 26 addresses), and the telegrams are paced rather than sent in one burst.
+#[tokio::test]
+async fn a_download_publishes_each_status_address_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    let programming = all_status_links();
     let started = std::time::Instant::now();
     let mut frames = ets_download(&mut ets, &programming).await;
     // The burst starts a moment after the download and lasts a while: wait until it is over.
@@ -1227,6 +1232,62 @@ async fn a_flood_of_foreign_writes_is_corrected_at_a_bounded_rate() {
             "every correction carries the real volume"
         );
     }
+}
+
+/// A server that cannot keep up (a tunnel client that never acknowledges costs it three seconds
+/// per telegram) is reported, loudly and with counters, and left alone: dropping a knx-rs
+/// `DeviceServer` does not free its port, so a restart would lock everybody out. The device task
+/// goes on answering, and shutdown returns.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_server_that_cannot_keep_up_is_reported_and_not_restarted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = ets_style_config("", "");
+    let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
+    let mut ets = connect(&dev).await;
+    ets_download(&mut ets, &all_status_links()).await;
+    // The burst of status telegrams starts a moment after the download. A client that does not
+    // acknowledge joins now, and from then on every telegram costs the server three seconds.
+    let server = dev.handle.local_addr().expect("server up");
+    let ets_acks = tokio::spawn(async move { while ets.recv().await.is_some() {} });
+    let _silent = connect_and_go_silent(server).await;
+
+    let stats = dev.handle.outbound_stats();
+    let started = std::time::Instant::now();
+    timeout(Duration::from_secs(25), async {
+        while !stats.stalled.load(std::sync::atomic::Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the stall is detected");
+    let detected_after = started.elapsed();
+    assert!(
+        detected_after >= Duration::from_secs(8),
+        "not before the limit: {detected_after:?}"
+    );
+    assert_eq!(stats.stalls.load(std::sync::atomic::Ordering::Relaxed), 1);
+    assert!(
+        stats
+            .stalled_seconds
+            .load(std::sync::atomic::Ordering::Relaxed)
+            >= 10
+    );
+
+    // Nothing was restarted: the same server answers, and the device task takes commands.
+    assert_eq!(dev.handle.local_addr(), Some(server));
+    let prog = timeout(Duration::from_secs(4), dev.handle.get_prog_mode())
+        .await
+        .expect("the programming-mode call returns");
+    assert!(prog.is_ok(), "{prog:?}");
+
+    let t = std::time::Instant::now();
+    dev.bridge.shutdown().await;
+    assert!(
+        t.elapsed() < Duration::from_secs(3),
+        "shutdown took {:?}",
+        t.elapsed()
+    );
+    ets_acks.abort();
 }
 
 /// A tunnel client that stops acknowledging (a hung visualisation, a half-open NAT mapping), a burst

@@ -18,13 +18,24 @@
 //! - **Group telegrams** are paced, one per [`PACE`] (about the rate of a TP line), and
 //!   coalesced: a telegram for a group address and service replaces a still queued one, so the
 //!   latest value per address wins and a burst of changes costs one telegram per address.
+//! - Frames for destination 0 (broadcasts such as the answer to an individual address read) and
+//!   all point-to-point frames count as management: ordered, not paced.
+//! - A newer write to a group address retires the queued responses for it (they carry a value
+//!   the write has made stale), and a response queues behind a write for the same address, so
+//!   the order on the wire is the order of events.
 //! - Both queues are bounded. When one is full, the oldest frame is dropped.
-//! - When the server keeps its command channel full for [`STALL_LIMIT`] and takes fewer than
-//!   [`STALL_MIN_SENT`] frames in that time, it is considered stuck and the caller restarts it,
-//!   which also drops its tunnel clients. (A tunnel client that does not acknowledge costs the
-//!   server three seconds per frame: slow, not stopped, and never dropped by the server itself.)
+//! - When the server cannot keep up (its command channel stays full and the queue does not
+//!   drain) for [`STALL_LIMIT`], [`Outbound::poll_stall`] says so, rate limited, and the counters in
+//!   [`OutboundStats`] tell how many frames were dropped or coalesced and for how long the
+//!   server was behind. Nothing restarts the server: dropping a `DeviceServer` does not stop its
+//!   task in knx-rs (it keeps sending what is queued, to clients that never acknowledge, and holds
+//!   the port for minutes), so a restart would only make things worse. The bounded queue is what
+//!   protects the device task. (A tunnel client that does not acknowledge costs the server three
+//!   seconds per frame: slow, not stopped, and never dropped by the server itself.)
 
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use knx_rs_core::cemi::CemiFrame;
@@ -34,12 +45,12 @@ use tokio::time::Instant;
 /// Shortest time between two group telegrams handed to the server (40 per second).
 pub const PACE: Duration = Duration::from_millis(25);
 
-/// How long the server may keep its command channel full while it takes almost nothing before it
-/// counts as stuck.
+/// How long the server may stay behind (its command channel full, the queue not draining)
+/// before it counts as stalled.
 pub const STALL_LIMIT: Duration = Duration::from_secs(10);
 
-/// Frames the server must take in [`STALL_LIMIT`] of a full channel to count as slow, not stuck.
-pub const STALL_MIN_SENT: u32 = 10;
+/// A server that stays stalled is reported again after this long.
+pub const STALL_REPORT_EVERY: Duration = Duration::from_secs(60);
 
 /// Consecutive hand-overs after which the server counts as keeping up again.
 const RECOVERED_AFTER: u32 = 4;
@@ -79,6 +90,35 @@ impl FrameSink for knx_rs_ip::tunnel_server::DeviceServer {
     }
 }
 
+/// What the outbound queue counted, readable from other tasks.
+#[derive(Debug, Default)]
+pub struct OutboundStats {
+    /// Frames dropped because a queue was full.
+    pub dropped: AtomicU64,
+    /// Queued group telegrams replaced or retired by a newer one.
+    pub coalesced: AtomicU64,
+    /// Seconds the server spent stalled, completed stalls and the current one.
+    pub stalled_seconds: AtomicU64,
+    /// Number of stalls detected.
+    pub stalls: AtomicU64,
+    /// Whether the server is stalled now.
+    pub stalled: AtomicBool,
+}
+
+/// A change in how well the server keeps up, for the caller to log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StallEvent {
+    /// The server has been behind for `seconds` and `waiting` frames wait.
+    Stalled {
+        seconds: u64,
+        waiting: usize,
+        dropped: u64,
+        coalesced: u64,
+    },
+    /// The queue drained again after a stall of `seconds`.
+    Recovered { seconds: u64 },
+}
+
 /// What distinguishes two group telegrams that may replace each other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GroupKey {
@@ -88,7 +128,9 @@ struct GroupKey {
 
 fn group_key(frame: &CemiFrame) -> Option<GroupKey> {
     use knx_rs_core::types::AddressType;
-    if frame.address_type() != AddressType::Group {
+    // Destination 0 is the broadcast address (the answer to an individual address read, say):
+    // it is no group telegram and must not wait behind a burst of them.
+    if frame.address_type() != AddressType::Group || frame.destination_address_raw() == 0 {
         return None;
     }
     Some(GroupKey {
@@ -106,14 +148,22 @@ pub struct Outbound {
     next_group_at: Instant,
     /// The server was full until this time (retry then).
     blocked_until: Option<Instant>,
-    /// Since when the server's channel has been full, while it took fewer than the minimum.
-    pressure_since: Option<Instant>,
-    /// Frames the server took since `pressure_since`.
-    pressure_sent: u32,
+    /// Since when the server has been behind: its channel was full and the queue has not
+    /// drained since. Cleared when the queue is empty and after a run of hand-overs.
+    behind_since: Option<Instant>,
+    /// Frames the server took since `behind_since`.
+    behind_sent: u64,
+    /// When the stall was last reported (or when it ended, for the recovery to be reported).
+    last_report: Option<Instant>,
+    /// A stall was reported and the queue has drained since: the recovery waits to be reported.
+    recovered: Option<u64>,
     /// Hand-overs in a row without finding the channel full.
     consecutive_sent: u32,
-    /// Frames dropped because a queue was full, since the last report.
+    /// Frames dropped because a queue was full, since the last call of `take_dropped`.
     dropped: u64,
+    /// Time of the completed stalls.
+    stalled_total: Duration,
+    stats: Arc<OutboundStats>,
 }
 
 impl Default for Outbound {
@@ -126,15 +176,25 @@ impl Outbound {
     /// Empty queues.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_stats(Arc::new(OutboundStats::default()))
+    }
+
+    /// Empty queues that count into `stats`.
+    #[must_use]
+    pub fn with_stats(stats: Arc<OutboundStats>) -> Self {
         Self {
             management: VecDeque::new(),
             groups: VecDeque::new(),
             next_group_at: Instant::now(),
             blocked_until: None,
-            pressure_since: None,
-            pressure_sent: 0,
+            behind_since: None,
+            behind_sent: 0,
+            last_report: None,
+            recovered: None,
             consecutive_sent: 0,
             dropped: 0,
+            stalled_total: Duration::ZERO,
+            stats,
         }
     }
 
@@ -157,25 +217,66 @@ impl Outbound {
         std::mem::take(&mut self.dropped)
     }
 
-    /// Queue `frame`. A group telegram replaces a queued one for the same address and service.
+    /// Queue `frame`. A group telegram replaces a queued one for the same address and service,
+    /// a write retires the queued responses for its address, and a response queues behind a
+    /// write for the same address.
     pub fn push(&mut self, frame: CemiFrame) {
         let Some(key) = group_key(&frame) else {
             if self.management.len() >= MAX_MANAGEMENT_FRAMES {
                 self.management.pop_front();
-                self.dropped += 1;
+                self.count_drop();
             }
             self.management.push_back(frame);
             return;
         };
-        if let Some(queued) = self.groups.iter_mut().find(|f| group_key(f) == Some(key)) {
+        let is_response = |f: &CemiFrame| {
+            group_key(f).is_some_and(|k| {
+                k.destination == key.destination && k.service == Some(ApduType::GroupValueResponse)
+            })
+        };
+        let has_write = self.groups.iter().any(|f| {
+            group_key(f).is_some_and(|k| {
+                k.destination == key.destination && k.service == Some(ApduType::GroupValueWrite)
+            })
+        });
+        match key.service {
+            Some(ApduType::GroupValueWrite) => {
+                // Responses queued for this address carry the value this write replaces.
+                let before = self.groups.len();
+                self.groups.retain(|f| !is_response(f));
+                self.count_coalesced((before - self.groups.len()) as u64);
+            }
+            Some(ApduType::GroupValueResponse) if has_write => {
+                // Behind the write: the reader must see the response after the value.
+                let before = self.groups.len();
+                self.groups.retain(|f| !is_response(f));
+                self.count_coalesced((before - self.groups.len()) as u64);
+            }
+            _ => {}
+        }
+        let in_place = !(key.service == Some(ApduType::GroupValueResponse) && has_write);
+        if in_place && let Some(queued) = self.groups.iter_mut().find(|f| group_key(f) == Some(key))
+        {
             *queued = frame;
+            self.count_coalesced(1);
             return;
         }
         if self.groups.len() >= MAX_GROUP_FRAMES {
             self.groups.pop_front();
-            self.dropped += 1;
+            self.count_drop();
         }
         self.groups.push_back(frame);
+    }
+
+    fn count_drop(&mut self) {
+        self.dropped += 1;
+        self.stats.dropped.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn count_coalesced(&self, n: u64) {
+        if n > 0 {
+            self.stats.coalesced.fetch_add(n, Ordering::Relaxed);
+        }
     }
 
     /// Hand over what may go now. Returns `true` when the server has ended.
@@ -209,36 +310,51 @@ impl Outbound {
                 SendResult::Closed => return true,
             }
         }
+        if self.management.is_empty() && self.groups.is_empty() {
+            self.end_behind(now);
+        }
         false
     }
 
     fn sent(&mut self, now: Instant) {
         self.blocked_until = None;
         self.consecutive_sent += 1;
-        if self.pressure_since.is_some() {
-            self.pressure_sent += 1;
-            if self.consecutive_sent >= RECOVERED_AFTER {
-                self.pressure_since = None;
-                self.pressure_sent = 0;
-            } else if self
-                .pressure_since
-                .is_some_and(|since| now.duration_since(since) >= STALL_LIMIT)
-                && self.pressure_sent >= STALL_MIN_SENT
-            {
-                // Busy, not stuck: start measuring again.
-                self.pressure_since = Some(now);
-                self.pressure_sent = 0;
-            }
+        if self.behind_since.is_some() {
+            self.behind_sent += 1;
+        }
+        if self.consecutive_sent >= RECOVERED_AFTER {
+            self.end_behind(now);
         }
     }
 
     fn block(&mut self, now: Instant) {
         self.consecutive_sent = 0;
-        self.pressure_since.get_or_insert(now);
+        if self.behind_since.is_none() {
+            self.behind_since = Some(now);
+            self.behind_sent = 0;
+        }
         self.blocked_until = Some(now + PACE);
     }
 
-    /// When [`flush`](Self::flush) has something to do next, `None` when nothing waits.
+    /// The queue is empty, or the server took a run of frames: whatever held it back is over.
+    fn end_behind(&mut self, now: Instant) {
+        self.behind_sent = 0;
+        if let Some(since) = self.behind_since.take()
+            && self.last_report.is_some()
+        {
+            let lasted = now.duration_since(since);
+            self.stalled_total += lasted;
+            self.stats
+                .stalled_seconds
+                .store(self.stalled_total.as_secs(), Ordering::Relaxed);
+            self.stats.stalled.store(false, Ordering::Relaxed);
+            self.recovered = Some(lasted.as_secs());
+        }
+        self.last_report = None;
+    }
+
+    /// When [`flush`](Self::flush) or [`poll_stall`](Self::poll_stall) has something to do next,
+    /// `None` when nothing waits.
     #[must_use]
     pub fn next_wake(&self) -> Option<Instant> {
         let retry = self.blocked_until;
@@ -251,33 +367,74 @@ impl Outbound {
             let at = retry.map_or(self.next_group_at, |r| r.max(self.next_group_at));
             wake = Some(wake.map_or(at, |w| w.min(at)));
         }
+        if let Some(since) = self.behind_since {
+            let at = self
+                .last_report
+                .map_or(since + STALL_LIMIT, |r| r + STALL_REPORT_EVERY);
+            wake = Some(wake.map_or(at, |w| w.min(at)));
+        }
         wake
     }
 
-    /// Whether the server kept its channel full for [`STALL_LIMIT`] and took almost nothing.
-    #[must_use]
-    pub fn stalled(&self, now: Instant) -> bool {
-        self.pressure_since.is_some_and(|since| {
-            now.duration_since(since) >= STALL_LIMIT && self.pressure_sent < STALL_MIN_SENT
+    /// Whether the server has been behind for [`STALL_LIMIT`] and has not been reported for
+    /// [`STALL_REPORT_EVERY`] (or at all), or has caught up after a reported stall.
+    pub fn poll_stall(&mut self, now: Instant) -> Option<StallEvent> {
+        if let Some(seconds) = self.recovered.take() {
+            return Some(StallEvent::Recovered { seconds });
+        }
+        let since = self.behind_since?;
+        let lasted = now.duration_since(since);
+        if lasted < STALL_LIMIT {
+            return None;
+        }
+        // A server that takes at least a frame a second is slow or busy, not stalled: start
+        // looking again from now.
+        if self.behind_sent >= lasted.as_secs() {
+            self.end_behind(now);
+            self.behind_since = Some(now);
+            return None;
+        }
+        if self
+            .last_report
+            .is_some_and(|r| now.duration_since(r) < STALL_REPORT_EVERY)
+        {
+            return None;
+        }
+        if self.last_report.is_none() {
+            self.stats.stalls.fetch_add(1, Ordering::Relaxed);
+        }
+        self.last_report = Some(now);
+        self.stats.stalled.store(true, Ordering::Relaxed);
+        self.stats
+            .stalled_seconds
+            .store((self.stalled_total + lasted).as_secs(), Ordering::Relaxed);
+        Some(StallEvent::Stalled {
+            seconds: lasted.as_secs(),
+            waiting: self.len(),
+            dropped: self.stats.dropped.load(Ordering::Relaxed),
+            coalesced: self.stats.coalesced.load(Ordering::Relaxed),
         })
     }
 }
 
-/// Lets a message through at most once per interval.
+/// Lets a message through at most once per interval and counts what it held back.
 #[derive(Debug, Default)]
 pub struct Throttle {
     last: Option<Instant>,
+    pending: u64,
 }
 
 impl Throttle {
-    /// `true` when the last allowed call is at least `every` ago (or there was none).
-    pub fn allow(&mut self, every: Duration) -> bool {
+    /// Record `n` events. Returns the number of events since the last message when one may go
+    /// out now (the first event, then at most one message per `every`), `None` otherwise.
+    pub fn add(&mut self, n: u64, every: Duration) -> Option<u64> {
+        self.pending += n;
         let now = Instant::now();
-        if self.last.is_none_or(|t| now.duration_since(t) >= every) {
+        if self.pending > 0 && self.last.is_none_or(|t| now.duration_since(t) >= every) {
             self.last = Some(now);
-            return true;
+            return Some(std::mem::take(&mut self.pending));
         }
-        false
+        None
     }
 }
 
@@ -428,14 +585,14 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn queues_are_bounded_and_drop_the_oldest() {
         let mut out = Outbound::new();
-        for dst in 0..(MAX_GROUP_FRAMES as u16 + 10) {
+        for dst in 1..=(MAX_GROUP_FRAMES as u16 + 10) {
             out.push(write(dst, 1));
         }
         assert_eq!(out.len(), MAX_GROUP_FRAMES);
         assert_eq!(out.take_dropped(), 10);
         let server = Server::with_room(1);
         out.flush(&server, Instant::now());
-        assert_eq!(server.destinations(), vec![10], "the ten oldest are gone");
+        assert_eq!(server.destinations(), vec![11], "the ten oldest are gone");
         for _ in 0..(MAX_MANAGEMENT_FRAMES + 3) {
             out.push(management());
         }
@@ -443,7 +600,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_full_server_is_never_waited_for_and_counts_as_stuck_after_the_limit() {
+    async fn a_full_server_is_never_waited_for_and_reported_as_stalled_after_the_limit() {
         let mut out = Outbound::new();
         let server = Server::with_room(0);
         out.push(write(1, 1));
@@ -451,36 +608,85 @@ mod tests {
         let t0 = Instant::now();
         // The call returns at once and says the server is not closed.
         assert!(!out.flush(&server, t0));
-        assert!(!out.stalled(t0));
+        assert_eq!(out.poll_stall(t0), None);
         assert_eq!(out.len(), 2, "nothing is lost while the server is full");
         assert!(out.next_wake().is_some(), "it retries on its own schedule");
         tokio::time::advance(STALL_LIMIT.saturating_sub(Duration::from_millis(100))).await;
         out.flush(&server, Instant::now());
-        assert!(!out.stalled(Instant::now()));
+        assert_eq!(out.poll_stall(Instant::now()), None, "not yet");
         tokio::time::advance(Duration::from_millis(200)).await;
         out.flush(&server, Instant::now());
+        let event = out.poll_stall(Instant::now());
         assert!(
-            out.stalled(Instant::now()),
-            "full for the whole limit, nothing taken"
+            matches!(
+                event,
+                Some(StallEvent::Stalled {
+                    seconds: 10,
+                    waiting: 2,
+                    ..
+                })
+            ),
+            "{event:?}"
         );
+        assert!(out.stats.stalled.load(Ordering::Relaxed));
+        assert_eq!(out.stats.stalls.load(Ordering::Relaxed), 1);
+        assert_eq!(out.stats.stalled_seconds.load(Ordering::Relaxed), 10);
+    }
+
+    /// The report comes once, then again every `STALL_REPORT_EVERY` while the stall lasts, so a
+    /// server that is stuck for a day does not fill the log; `next_wake` knows when to look.
+    #[tokio::test(start_paused = true)]
+    async fn a_stall_is_reported_at_a_limited_rate_and_the_recovery_once() {
+        let mut out = Outbound::new();
+        let server = Server::with_room(0);
+        out.push(write(1, 1));
+        out.flush(&server, Instant::now());
+        let started = Instant::now();
+        assert_eq!(
+            out.next_wake().map(|w| w.duration_since(started)),
+            Some(PACE)
+        );
+        let mut reports = Vec::new();
+        while started.elapsed() < Duration::from_secs(200) {
+            let now = Instant::now();
+            out.flush(&server, now);
+            if let Some(StallEvent::Stalled { seconds, .. }) = out.poll_stall(now) {
+                reports.push(seconds);
+            }
+            tokio::time::sleep_until(out.next_wake().unwrap()).await;
+        }
+        // At 10 s, 70 s, 130 s, 190 s.
+        assert_eq!(reports, vec![10, 70, 130, 190]);
+        // The server takes the frame: the queue is empty and the recovery is reported once.
+        server.room.set(1);
+        tokio::time::advance(PACE).await;
+        out.flush(&server, Instant::now());
+        assert!(matches!(
+            out.poll_stall(Instant::now()),
+            Some(StallEvent::Recovered { seconds: 200..=201 })
+        ));
+        assert_eq!(out.poll_stall(Instant::now()), None);
+        assert!(!out.stats.stalled.load(Ordering::Relaxed));
+        assert!(out.stats.stalled_seconds.load(Ordering::Relaxed) >= 200);
     }
 
     /// A server that takes one frame per three seconds (a tunnel client that does not
-    /// acknowledge) is stuck for our purposes, although it is not silent.
+    /// acknowledge) is behind although it is not silent: the report says so, and it is not
+    /// restarted by anyone.
     #[tokio::test(start_paused = true)]
-    async fn a_server_that_takes_one_frame_in_three_seconds_counts_as_stuck() {
+    async fn a_server_that_takes_one_frame_in_three_seconds_is_reported_as_behind() {
         let mut out = Outbound::new();
         let server = Server::with_room(2);
-        for dst in 0..100 {
+        for dst in 1..=100 {
             out.push(write(dst, 1));
         }
         let start = Instant::now();
-        let mut stalled_at = None;
+        let mut reported_at = None;
         while start.elapsed() < Duration::from_secs(60) {
             let now = Instant::now();
             out.flush(&server, now);
-            if out.stalled(now) {
-                stalled_at = Some(start.elapsed());
+            if matches!(out.poll_stall(now), Some(StallEvent::Stalled { .. })) {
+                reported_at = Some(start.elapsed());
                 break;
             }
             // The server frees a place every three seconds.
@@ -489,7 +695,7 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-        let at = stalled_at.expect("a server that takes a frame per 3 s is stuck");
+        let at = reported_at.expect("a server that takes a frame per 3 s is behind");
         assert!(
             at >= STALL_LIMIT && at < STALL_LIMIT + Duration::from_secs(4),
             "{at:?}"
@@ -497,12 +703,12 @@ mod tests {
     }
 
     /// A server that takes a frame every 25 ms but sometimes reports full (a burst, a busy
-    /// gateway) is not stuck.
+    /// gateway) is not behind.
     #[tokio::test(start_paused = true)]
-    async fn a_busy_server_is_not_stuck() {
+    async fn a_busy_server_is_not_reported() {
         let mut out = Outbound::new();
         let server = Server::with_room(0);
-        for dst in 0..2000u16 {
+        for dst in 1..=2000u16 {
             out.push(write(dst, 1));
         }
         let start = Instant::now();
@@ -515,10 +721,123 @@ mod tests {
             i += 1;
             let now = Instant::now();
             out.flush(&server, now);
-            assert!(!out.stalled(now), "stuck at {:?}", start.elapsed());
+            assert_eq!(
+                out.poll_stall(now),
+                None,
+                "reported at {:?}",
+                start.elapsed()
+            );
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
         assert!(server.taken.borrow().len() > 100);
+    }
+
+    /// A short stall that heals leaves nothing behind: two minutes later an ordinary change of
+    /// three telegrams is not mistaken for a server that is stuck (the old state survived the
+    /// recovery and the first look after the change found it "stalled").
+    #[tokio::test(start_paused = true)]
+    async fn an_old_stall_that_healed_does_not_make_a_healthy_server_look_stuck() {
+        let mut out = Outbound::new();
+        let server = Server::with_room(0);
+        out.push(write(1, 1));
+        out.push(write(2, 1));
+        out.flush(&server, Instant::now()); // full: behind
+        tokio::time::advance(Duration::from_secs(5)).await;
+        server.room.set(10); // the client acknowledges again
+        for _ in 0..4 {
+            tokio::time::advance(PACE).await;
+            out.flush(&server, Instant::now());
+        }
+        assert!(out.is_empty());
+        tokio::time::advance(Duration::from_secs(120)).await;
+        for dst in 3..6 {
+            out.push(write(dst, 1));
+        }
+        out.flush(&server, Instant::now());
+        tokio::time::advance(PACE).await;
+        assert_eq!(out.poll_stall(Instant::now()), None);
+        assert_eq!(
+            out.next_wake().map(|w| w.duration_since(Instant::now())),
+            Some(Duration::ZERO)
+        );
+    }
+
+    /// The counters count what the queue dropped and coalesced.
+    #[tokio::test(start_paused = true)]
+    async fn drops_and_coalesced_frames_are_counted() {
+        let mut out = Outbound::new();
+        for v in 0..5u8 {
+            out.push(write(7, v % 2));
+        }
+        assert_eq!(out.stats.coalesced.load(Ordering::Relaxed), 4);
+        for dst in 100..(100 + MAX_GROUP_FRAMES as u16 + 2) {
+            out.push(write(dst, 1));
+        }
+        assert_eq!(out.stats.dropped.load(Ordering::Relaxed), 3);
+    }
+
+    /// write(A,1), response(A,1), write(A,0): the reader must end up with 0. (Replacing the
+    /// write in place put it in front of the response, which then told the reader 1.)
+    #[tokio::test(start_paused = true)]
+    async fn a_newer_write_retires_the_queued_responses_for_its_address() {
+        let mut out = Outbound::new();
+        out.push(write(9, 1));
+        out.push(group(9, [0x00, 0x41])); // response, value 1
+        out.push(write(9, 0));
+        let server = Server::with_room(10);
+        out.flush(&server, Instant::now());
+        tokio::time::advance(PACE).await;
+        out.flush(&server, Instant::now());
+        let taken = server.taken.borrow();
+        assert_eq!(taken.len(), 1, "the stale response is gone");
+        assert_eq!(taken[0].as_group_write().unwrap().1, vec![0]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_response_queues_behind_the_write_for_its_address() {
+        let mut out = Outbound::new();
+        out.push(write(9, 1));
+        out.push(write(10, 1));
+        out.push(group(9, [0x00, 0x40])); // response, value 0
+        out.push(group(9, [0x00, 0x41])); // a newer response replaces it, at the end
+        let server = Server::with_room(10);
+        for _ in 0..5 {
+            out.flush(&server, Instant::now());
+            tokio::time::advance(PACE).await;
+        }
+        let services: Vec<(u16, bool)> = server
+            .taken
+            .borrow()
+            .iter()
+            .map(|f| {
+                let service = f.tpdu().and_then(|t| t.apdu().map(|a| a.apdu_type));
+                (
+                    f.destination_address_raw(),
+                    service == Some(ApduType::GroupValueWrite),
+                )
+            })
+            .collect();
+        assert_eq!(services, vec![(9, true), (10, true), (9, false)]);
+    }
+
+    /// The answer to an individual address read goes to the broadcast address: it is not
+    /// delayed by a burst of group telegrams.
+    #[tokio::test(start_paused = true)]
+    async fn a_broadcast_is_handled_like_a_management_frame() {
+        let mut out = Outbound::new();
+        let server = Server::with_room(100);
+        for dst in 1..=30 {
+            out.push(write(dst, 1));
+        }
+        // A_IndividualAddress_Response: to group address 0.
+        out.push(group(0, [0x01, 0x40]));
+        out.flush(&server, Instant::now());
+        let destinations = server.destinations();
+        assert!(
+            destinations.contains(&0),
+            "sent at once, not behind 30 paced telegrams: {destinations:?}"
+        );
+        assert_eq!(destinations[0], 0, "ahead of the burst");
     }
 
     #[tokio::test(start_paused = true)]
@@ -543,9 +862,12 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_throttle_lets_one_message_through_per_interval() {
         let mut t = Throttle::default();
-        assert!(t.allow(Duration::from_secs(5)));
-        assert!(!t.allow(Duration::from_secs(5)));
-        tokio::time::advance(Duration::from_secs(5)).await;
-        assert!(t.allow(Duration::from_secs(5)));
+        let every = Duration::from_secs(5);
+        assert_eq!(t.add(1, every), Some(1));
+        assert_eq!(t.add(1, every), None);
+        assert_eq!(t.add(3, every), None);
+        tokio::time::advance(every).await;
+        assert_eq!(t.add(1, every), Some(5), "what was held back is counted");
+        assert_eq!(t.add(0, every), None, "nothing to say");
     }
 }
