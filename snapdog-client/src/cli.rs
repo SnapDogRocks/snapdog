@@ -134,6 +134,13 @@ pub enum Issue {
     Warning(String),
 }
 
+/// `default`, in any case, or nothing: the values that name no particular device.
+/// `player::DeviceSelector` reads them the same way.
+fn is_default_soundcard(value: &str) -> bool {
+    let value = value.trim();
+    value.is_empty() || value.eq_ignore_ascii_case("default")
+}
+
 impl Cli {
     /// Check the command line for flags this client cannot honour. Nothing a user
     /// types is silently dropped: it either works, is rejected here, or is
@@ -168,7 +175,7 @@ impl Cli {
                 self.player
             )));
         }
-        if player == "null" && self.soundcard != "default" {
+        if player == "null" && !is_default_soundcard(&self.soundcard) {
             issues.push(Issue::Warning(format!(
                 "--soundcard {} is ignored with --player null: no audio device is opened.",
                 self.soundcard
@@ -570,6 +577,15 @@ mod tests {
     fn soundcard_with_null_player_is_reported() {
         let found = issues(&["--player", "null", "--soundcard", "hw:1"]);
         assert!(only(&found).contains("--soundcard hw:1 is ignored"));
+    }
+
+    #[test]
+    fn the_default_soundcard_is_not_reported_in_any_spelling() {
+        for default in ["default", "DEFAULT", "Default", " default ", ""] {
+            assert_clean(&["--player", "null", "--soundcard", default]);
+        }
+        let found = issues(&["--player", "null", "--soundcard", "Hw:1"]);
+        assert!(only(&found).contains("--soundcard Hw:1 is ignored"));
     }
 
     #[test]

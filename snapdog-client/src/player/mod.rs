@@ -451,15 +451,30 @@ impl<'a> DeviceSelector<'a> {
             )),
             Self::Name(part) => {
                 let needle = part.to_lowercase();
-                let matches: Vec<usize> = devices
+                let exact: Vec<usize> = devices
                     .iter()
                     .enumerate()
-                    .filter(|(_, d)| {
-                        d.name.to_lowercase().contains(&needle)
-                            || d.id.to_lowercase().contains(&needle)
-                    })
+                    .filter(|(_, d)| d.is_called(&needle))
                     .map(|(i, _)| i)
                     .collect();
+                // A name that is a device's whole name or id wins over longer ones that
+                // merely contain it: `hw:CARD=X,DEV=0` is part of `plughw:CARD=X,DEV=0`.
+                if let [one] = exact.as_slice() {
+                    return Ok(Some(*one));
+                }
+                let matches: Vec<usize> = if exact.is_empty() {
+                    devices
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, d)| {
+                            d.name.to_lowercase().contains(&needle)
+                                || d.id.to_lowercase().contains(&needle)
+                        })
+                        .map(|(i, _)| i)
+                        .collect()
+                } else {
+                    exact
+                };
                 match matches.as_slice() {
                     [one] => Ok(Some(*one)),
                     [] => Err(format!(
@@ -472,13 +487,13 @@ impl<'a> DeviceSelector<'a> {
                         }
                     )),
                     several => Err(format!(
-                        "'{part}' matches {} output devices ({}), be more specific or use the index",
+                        "'{part}' matches {} output devices, be more specific or use the index: {}",
                         several.len(),
                         several
                             .iter()
-                            .map(ToString::to_string)
+                            .map(|i| format!("{i}: {}", devices[*i].label()))
                             .collect::<Vec<_>>()
-                            .join(", ")
+                            .join("; ")
                     )),
                 }
             }
@@ -530,6 +545,15 @@ fn device_list(devices: &[OutputDevice]) -> String {
 }
 
 impl OutputDevice {
+    /// Whether `lowercase` (already lower-cased) is this device's whole name or whole id,
+    /// the id also without its audio-host prefix (`alsa:`).
+    fn is_called(&self, lowercase: &str) -> bool {
+        let id = self.id.to_lowercase();
+        let bare = id.split_once(':').map_or("", |(_, rest)| rest);
+        self.name.to_lowercase() == lowercase
+            || (!id.is_empty() && (id == lowercase || bare == lowercase))
+    }
+
     /// `name [id]`, or just `name` when there is no id.
     fn label(&self) -> String {
         if self.id.is_empty() {
@@ -970,6 +994,55 @@ mod tests {
         ]);
         assert_eq!(DeviceSelector::Name("hw:CARD=B").pick(&list), Ok(Some(1)));
         assert_eq!(DeviceSelector::Name("hw:card=a").pick(&list), Ok(Some(0)));
+    }
+
+    #[test]
+    fn a_whole_id_beats_the_longer_ids_that_contain_it() {
+        let list = devices(&[
+            ("Card X", "alsa:plughw:CARD=X,DEV=0"),
+            ("Card X", "alsa:hw:CARD=X,DEV=0"),
+            ("Card X", "alsa:hw:CARD=X,DEV=1"),
+        ]);
+        // `hw:CARD=X,DEV=0` is a substring of the plughw id as well, but equals one id
+        // once the host prefix is left off.
+        assert_eq!(
+            DeviceSelector::Name("hw:CARD=X,DEV=0").pick(&list),
+            Ok(Some(1))
+        );
+        assert_eq!(
+            DeviceSelector::Name("alsa:hw:CARD=X,DEV=0").pick(&list),
+            Ok(Some(1))
+        );
+        assert_eq!(
+            DeviceSelector::Name("ALSA:PLUGHW:card=x,dev=0").pick(&list),
+            Ok(Some(0))
+        );
+        // A part that fits several is refused, and the error lists them with their ids.
+        let error = DeviceSelector::Name("CARD=X").pick(&list).unwrap_err();
+        assert!(error.contains("matches 3 output devices"), "{error}");
+        assert!(
+            error.contains("0: Card X [alsa:plughw:CARD=X,DEV=0]"),
+            "{error}"
+        );
+        assert!(
+            error.contains("2: Card X [alsa:hw:CARD=X,DEV=1]"),
+            "{error}"
+        );
+        let error = DeviceSelector::Name("hw:CARD=X,DEV=")
+            .pick(&list)
+            .unwrap_err();
+        assert!(error.contains("matches 3 output devices"), "{error}");
+    }
+
+    #[test]
+    fn two_devices_with_the_same_whole_name_are_still_ambiguous() {
+        let list = devices(&[("Speakers", "a:1"), ("Speakers", "a:2")]);
+        let error = DeviceSelector::Name("speakers").pick(&list).unwrap_err();
+        assert!(error.contains("matches 2 output devices"), "{error}");
+        assert!(
+            error.contains("0: Speakers [a:1]; 1: Speakers [a:2]"),
+            "{error}"
+        );
     }
 
     #[test]
