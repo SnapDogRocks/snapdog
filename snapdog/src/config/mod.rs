@@ -25,9 +25,74 @@ use anyhow::{Context, Result};
 pub fn load(path: &Path) -> Result<AppConfig> {
     let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
         .with_context(|| format!("Failed to read {}", path.display()))?;
-    let raw: FileConfig =
-        toml::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
-    load_raw(raw)
+    let (raw, mqtt_problem) = parse_file(&content, path)?;
+    let mut config = load_raw(raw)?;
+    if mqtt_problem.is_some() {
+        config.mqtt_problem = mqtt_problem;
+    }
+    Ok(config)
+}
+
+/// Parse the config file. A value of the wrong type inside `[mqtt]` (`broker = 5`,
+/// `discovery = "yes"`) does not stop the start-up: like any other wrong `[mqtt]`
+/// setting it switches MQTT off, and the problem is returned for the log and for
+/// `--check-config`. Anything else that does not parse is an error, with the position
+/// TOML reports.
+fn parse_file(content: &str, path: &Path) -> Result<(FileConfig, Option<String>)> {
+    let original = match toml::from_str::<FileConfig>(content) {
+        Ok(raw) => return Ok((raw, None)),
+        Err(e) => e,
+    };
+    // Is the [mqtt] section what is wrong? Take it out and try again.
+    if let Ok(mut table) = toml::from_str::<toml::Table>(content)
+        && let Some(section) = table.remove("mqtt")
+        && let Err(problem) = section.try_into::<MqttConfig>()
+        && let Ok(raw) = table.try_into::<FileConfig>()
+    {
+        let place = original
+            .span()
+            .map(|span| key_and_line(content, span.start))
+            .unwrap_or_default();
+        return Ok((
+            raw,
+            Some(format!(
+                "[mqtt]{place} {}",
+                without_values(problem.message())
+            )),
+        ));
+    }
+    Err(original).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
+/// ` key `broker` (line 2):` for the value at byte `offset`, taken from its line.
+fn key_and_line(content: &str, offset: usize) -> String {
+    let before = &content[..offset.min(content.len())];
+    let line = before.matches('\n').count() + 1;
+    let key = before
+        .rsplit('\n')
+        .next()
+        .and_then(|text| text.split('=').next())
+        .map(str::trim)
+        .filter(|key| !key.is_empty() && key.len() < 64);
+    key.map_or_else(
+        || format!(" line {line}:"),
+        |key| format!(" key `{key}` (line {line}):"),
+    )
+}
+
+/// A TOML type error says which value it found ("integer 5", "string yes"). The
+/// section may hold a password, so the found value is left out: the kind stays.
+fn without_values(message: &str) -> String {
+    let Some(rest) = message.strip_prefix("invalid type: ") else {
+        return message.to_string();
+    };
+    let (found, expected) = rest.split_once(", expected").unwrap_or((rest, ""));
+    let kind = found.split(['`', '"']).next().unwrap_or(found).trim_end();
+    if expected.is_empty() {
+        format!("invalid type: {kind}")
+    } else {
+        format!("invalid type: {kind}, expected{expected}")
+    }
 }
 
 /// Resolve raw TOML config into fully populated `AppConfig` with conventions applied.
@@ -528,6 +593,69 @@ mod tests {
             // The rest of the configuration is untouched.
             assert_eq!(c.zones.len(), 1);
         }
+    }
+
+    /// Load `text` the way the server does, from a file.
+    fn load_text(text: &str) -> Result<AppConfig> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snapdog.toml");
+        std::fs::write(&path, text).unwrap();
+        load(&path)
+    }
+
+    /// Review finding m4: a value of the wrong type inside `[mqtt]` made the file not
+    /// parse and stopped the whole server, unlike every other wrong `[mqtt]` setting.
+    #[test]
+    fn a_value_of_the_wrong_type_in_mqtt_switches_mqtt_off_too() {
+        for (section, key, kind) in [
+            ("broker = 5", "broker", "integer"),
+            (
+                "broker = \"b:1883\"\npassword = 12345\nusername = \"u\"\nclient_id = true",
+                "client_id",
+                "boolean",
+            ),
+            (
+                "broker = \"b:1883\"\n[mqtt.homeassistant]\ndiscovery = \"yes\"",
+                "discovery",
+                "string",
+            ),
+            (
+                "broker = \"b:1883\"\nclear_legacy_topics = \"true\"",
+                "clear_legacy_topics",
+                "string",
+            ),
+        ] {
+            let text = format!("[mqtt]\n{section}\n[[zone]]\nname = \"Z\"\n");
+            let config =
+                load_text(&text).unwrap_or_else(|e| panic!("{section}: stopped the start: {e:#}"));
+            assert!(config.mqtt.is_none(), "{section}");
+            let problem = config.mqtt_problem.expect(section);
+            assert!(
+                problem.contains(&format!("`{key}`")),
+                "{section}: {problem}"
+            );
+            assert!(problem.contains(kind), "{section}: {problem}");
+            assert!(
+                !problem.contains("12345"),
+                "a value must not be echoed: {problem}"
+            );
+            assert_eq!(config.zones.len(), 1, "the rest of the file loads");
+        }
+    }
+
+    #[test]
+    fn a_type_error_outside_mqtt_still_stops_the_start_with_its_position() {
+        let err = format!(
+            "{:#}",
+            load_text("[audio]\nsample_rate = \"x\"\n[mqtt]\nbroker = 5\n[[zone]]\nname = \"Z\"\n")
+                .unwrap_err()
+        );
+        assert!(
+            err.contains("sample_rate") && err.contains("line 2"),
+            "{err}"
+        );
+        // TOML that does not parse at all is an error as before.
+        assert!(load_text("[mqtt\nbroker = ").is_err());
     }
 
     #[test]

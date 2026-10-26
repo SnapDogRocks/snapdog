@@ -188,11 +188,13 @@ without MQTT; fix the section and restart (snapdog --check-config reports it) pr
 with the reason. `snapdog --config snapdog.toml --check-config` reports the same
 problem as an error (`Invalid [mqtt] section, the server would start without MQTT: ...`)
 and exits with a non-zero status, so a deployment script or a CI job catches it before
-the restart. A section that is not valid TOML (a value of the wrong type, say), or a wrong value elsewhere in the file,
-still stops the start as before.
+the restart. A value of the wrong type inside `[mqtt]` (`broker = 5`, `discovery = "yes"`)
+counts too (the message names the key and the line, never the value). A file that is not
+valid TOML, or a wrong value outside `[mqtt]`, still stops the start as before.
 
 What counts as wrong (the message names the key):
 
+- a value of the wrong type;
 - an unknown key (a misspelt `ca_flie` would otherwise silently fall back to the
   system trust store);
 - a password without a username, `password` together with `password_file`;

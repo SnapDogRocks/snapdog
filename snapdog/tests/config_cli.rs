@@ -130,3 +130,29 @@ fn check_config_accepts_a_valid_mqtt_section() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A value of the wrong type in `[mqtt]` is reported like any other wrong `[mqtt]`
+/// setting: an error and a non-zero exit from `--check-config` that names the key,
+/// not a TOML parse error that also would stop the server.
+#[test]
+fn check_config_flags_a_wrong_type_in_mqtt_and_names_the_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("snapdog.toml");
+    std::fs::write(
+        &path,
+        "[mqtt]\nbroker = \"b:1883\"\n[mqtt.homeassistant]\ndiscovery = \"yes\"\n\n[[zone]]\nname = \"Living\"\n",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_snapdog"))
+        .args(["--config", path.to_str().unwrap(), "--check-config"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid [mqtt] section"), "{stderr}");
+    assert!(
+        stderr.contains("`discovery`") && stderr.contains("boolean"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("without MQTT"), "{stderr}");
+}
