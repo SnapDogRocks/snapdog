@@ -374,6 +374,10 @@ alternative is named.
   which is for a server that shuts down. The web UI reconnects on any close and is not affected. A client that
   treated 1001 as "stop reconnecting" will now reconnect, which is what it should do for a lagging connection;
   one that expects 1001 for lag has to accept 1013.
+- **The interactive API console at `/docs` is off by default.** It used to be on, and its page embedded the
+  whole OpenAPI document without any API key. Set `[http].api_console = true` to get it back (see
+  "API documentation (OpenAPI)" below for what that costs). The OpenAPI document is served on its own at
+  `GET /api/v1/openapi.json`, and that route needs the key when `api_keys` is set.
 
 <details>
 <summary><strong>Home Assistant Integration</strong></summary>
@@ -416,8 +420,6 @@ integrity hash, or serving it from the binary, would need the script file in the
 ```bash
 curl -H "Authorization: Bearer $SNAPDOG_KEY" http://localhost:5555/api/v1/openapi.json
 ```
-
-Before this change `/docs` was on by default and embedded the document without any key.
 
 </details>
 
