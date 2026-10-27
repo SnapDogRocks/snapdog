@@ -199,10 +199,11 @@ base_topic = "snapdog"
 # presence; per client volume, mute, latency, zone, connected. (Home Assistant's MQTT
 # integration has no media_player, so a zone cannot be announced as one.) It is sent after every
 # connect, when a client is added, and again after Home Assistant's birth message.
-#   discovery = true    announce
-#   discovery = false   announce nothing and DELETE the device message of an earlier run
-#                       (how to take the entities out of Home Assistant again)
-#   not set             off; nothing is written to the discovery topic
+# The values of `discovery`:
+#   true       announce
+#   false      announce nothing and DELETE the device message of an earlier run
+#              (how to take the entities out of Home Assistant again)
+#   not set    off; nothing is written to the discovery topic
 # Entity ids follow the position of the [[zone]] / [[client]] in this file: moving one moves
 # its entities onto another zone. No cover art is announced (Home Assistant's image entity
 # logs an error for every state without a cover URL). Needs, besides the ACL below: write on
