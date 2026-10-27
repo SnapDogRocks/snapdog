@@ -183,8 +183,10 @@ base_topic = "snapdog"
 # Role: "client" (connect to gateway) or "device" (ETS-programmable)
 # role = "client"
 # KNX/IP gateway URL, required in client mode and not used in device mode.
-# Must be scheme://IP:port (no host names): udp:// picks tunnelling for a unicast
-# address and routing for a multicast one; tunnel:// and router:// force a mode.
+# Written scheme://host:port. The host is an IPv4 address, an IPv6 address in brackets or
+# a host name (udp://gateway.local:3671; a trailing dot, as in gateway.example.org., is
+# fine). An IPv6 zone id ([fe80::1%eth0]) is not supported. udp:// picks tunnelling for
+# a unicast address and routing for a multicast one; tunnel:// and router:// force a mode.
 # url = "udp://192.168.1.50:3671"
 # Device mode only: KNX individual address assigned by ETS
 # individual_address = "1.1.100"
