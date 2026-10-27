@@ -58,7 +58,7 @@ EOF
     scenarios=${SNAPDOG_LIFECYCLE_SCENARIOS:-$(sh "$0" --inside --list)}
     failed=0
     for scenario in $scenarios; do
-        case $scenario in upgrade_from_old_*) [ -n "$old_dir" ] || continue ;; esac
+        case $scenario in upgrade_from_old_* | install_after_removing_old_*) [ -n "$old_dir" ] || continue ;; esac
         name=snapdog-deb-lifecycle-$$
         trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
         docker run -d --name "$name" --privileged --cgroupns=host \
@@ -112,8 +112,12 @@ purge_removes_state
 purge_while_running
 purge_after_remove
 upgrade_from_old_release
+upgrade_from_old_release_with_client_enabled_by_hand
+upgrade_from_old_release_with_client_disabled_again
 upgrade_from_old_release_with_enabled_server
-upgrade_from_old_release_with_masked_client"
+upgrade_from_old_release_with_masked_client
+upgrade_from_old_release_with_masked_server
+install_after_removing_old_release"
 
 if [ "${2:-}" = --list ]; then
     echo "$scenario_list"
@@ -484,18 +488,55 @@ scenario_purge_after_remove() {
     absent /var/lib/private/snapdog /var/lib/snapdog
 }
 
+# 0.28.2-1 is the last release without maintainer scripts. An upgrade from it leaves the
+# client as the administrator left it: nothing recorded whether it was ever enabled, so the
+# client's postinst records the current state before the generated code decides.
 scenario_upgrade_from_old_release() {
     step "install the old release (no maintainer scripts)"
     install_ "$old_server" "$old_client"
     state snapdog disabled inactive
     state snapdog-client disabled inactive
-    step "first upgrade to the release with scripts: the client is enabled and started"
+    step "first upgrade to the release with scripts: the client stays disabled"
     install_ "$new_server" "$new_client"
     state snapdog disabled inactive
-    state snapdog-client enabled active
-    step "later upgrades respect what the administrator does"
-    systemctl disable --now snapdog-client >/dev/null 2>&1
+    state snapdog-client disabled inactive
+    absent /etc/systemd/system/multi-user.target.wants/snapdog-client.service
+    step "a second upgrade does not enable it either"
     reinstall "$new_server" "$new_client"
+    state snapdog disabled inactive
+    state snapdog-client disabled inactive
+    step "once the administrator enables it, upgrades keep it enabled and running"
+    systemctl enable --now snapdog-client >/dev/null 2>&1
+    c=$(pid snapdog-client)
+    reinstall "$new_server" "$new_client"
+    state snapdog-client enabled active
+    changed_pid snapdog-client "$c"
+}
+
+scenario_upgrade_from_old_release_with_client_enabled_by_hand() {
+    install_ "$old_server" "$old_client"
+    systemctl enable --now snapdog-client >/dev/null 2>&1
+    state snapdog-client enabled active
+    c=$(pid snapdog-client)
+    step "first upgrade with the client enabled and running by hand"
+    install_ "$new_server" "$new_client"
+    state snapdog-client enabled active
+    changed_pid snapdog-client "$c"
+    state snapdog disabled inactive
+    c=$(pid snapdog-client)
+    step "second upgrade"
+    reinstall "$new_server" "$new_client"
+    state snapdog-client enabled active
+    changed_pid snapdog-client "$c"
+}
+
+scenario_upgrade_from_old_release_with_client_disabled_again() {
+    install_ "$old_server" "$old_client"
+    systemctl enable --now snapdog-client >/dev/null 2>&1
+    systemctl disable --now snapdog-client >/dev/null 2>&1
+    state snapdog-client disabled inactive
+    step "first upgrade with the client enabled once and disabled again"
+    install_ "$new_server" "$new_client"
     state snapdog-client disabled inactive
 }
 
@@ -508,7 +549,7 @@ scenario_upgrade_from_old_release_with_enabled_server() {
     install_ "$new_server" "$new_client"
     state snapdog enabled active
     changed_pid snapdog "$s"
-    state snapdog-client enabled active
+    state snapdog-client disabled inactive
 }
 
 scenario_upgrade_from_old_release_with_masked_client() {
@@ -519,6 +560,27 @@ scenario_upgrade_from_old_release_with_masked_client() {
     install_ "$new_server" "$new_client"
     state snapdog-client masked inactive
     state snapdog disabled inactive
+}
+
+# Removed without being purged, an old release leaves its version in dpkg's records, so
+# installing the new one counts as an upgrade from it.
+scenario_install_after_removing_old_release() {
+    install_ "$old_server" "$old_client"
+    remove snapdog snapdog-client
+    step "install the new release after removing (not purging) the old one"
+    install_ "$new_server" "$new_client"
+    state snapdog disabled inactive
+    state snapdog-client disabled inactive
+}
+
+scenario_upgrade_from_old_release_with_masked_server() {
+    install_ "$old_server" "$old_client"
+    systemctl mask snapdog >/dev/null 2>&1
+    state snapdog masked inactive
+    step "first upgrade with the server masked beforehand"
+    install_ "$new_server" "$new_client"
+    state snapdog masked inactive
+    state snapdog-client disabled inactive
 }
 
 echo "== ${2}"
