@@ -145,9 +145,13 @@ the configuration and CLI fixes:
   `snapdog.2026-10-25.log` and keeps 14 of them. The retention deletes older files in that
   directory with the same prefix and suffix, so give SnapDog a directory of its own. The
   packaged unit has `LogsDirectory=snapdog`.
-- **Empty encryption key.** An empty `SNAPDOG_SNAPCAST_ENCRYPTION_PSK` counts as not set.
-  With codec `f32lz4e` the built-in public key is used then, and startup warns. Set a real
-  key on the server and the clients if you relied on an empty one.
+- **Empty encryption key.** An empty key is a secret that did not arrive, never a request
+  for the public built-in key. With codec `f32lz4e`, an empty `encryption_psk` in the file,
+  or an empty `SNAPDOG_SNAPCAST_ENCRYPTION_PSK` and no key in the file, stops startup with
+  a message that names both settings. An empty variable never replaces a key from the file,
+  and it always logs a warning. With a codec that does not encrypt, an empty key is ignored.
+  Give the server and the clients the real key. If you want the built-in key (public,
+  protects nothing, startup warns), remove the setting instead of leaving it empty.
 - **WebSocket.** A client that reads too slowly is closed with code 1013 (try again later)
   instead of 1001, which the web UI showed as a stopping server.
 - **Startup notices.** Unknown keys, keys a build ignores and the default encryption key
