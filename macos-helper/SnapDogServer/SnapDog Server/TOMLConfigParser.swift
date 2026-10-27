@@ -24,7 +24,10 @@ enum TOMLConfigParser {
         // Spotify
         if let sp = table["spotify"]?.table {
             model.spotify.enabled = true
-            model.spotify.name = sp["name"]?.string ?? "SnapDog"
+            // A missing key stays empty: the server then names each device after its zone.
+            // Defaulting to "SnapDog" here would rename every zone's Spotify device the
+            // next time the settings are saved, now that the server honours the key.
+            model.spotify.name = sp["name"]?.string ?? ""
             model.spotify.bitrate = sp["bitrate"]?.int ?? 320
         }
 
@@ -90,6 +93,8 @@ enum TOMLConfigParser {
                     icon: z["icon"]?.string ?? "🏠"
                 )
                 entry.knx = readKnx(z["knx"]?.table)
+                entry.spotifyName = z["spotify_name"]?.string ?? ""
+                entry.fileName = entry.name
                 return entry
             }
         }
@@ -177,9 +182,19 @@ enum TOMLConfigParser {
         }
 
         // Spotify
-        if model.spotify.enabled && !model.spotify.name.isEmpty {
+        // The section is present when Spotify is enabled, whatever the name. The name is
+        // written only when set: it names the Spotify device (the server adds the zone name
+        // as a suffix when there are several zones), and an empty one means "zone name".
+        if model.spotify.enabled {
             let sp = existing["spotify"]?.table ?? TOMLTable()
-            sp["name"] = model.spotify.name
+            let name = model.spotify.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            // TOMLKit 0.6 ignores `table[key] = nil`, so an emptied name has to be removed
+            // explicitly, or the old one would stay in the file.
+            if name.isEmpty {
+                sp.remove(at: "name")
+            } else {
+                sp["name"] = name
+            }
             sp["bitrate"] = model.spotify.bitrate
             existing["spotify"] = sp
         } else {
@@ -225,8 +240,9 @@ enum TOMLConfigParser {
         }
 
         // Zones — preserve keys the app doesn't model (`.knx` GAs, `sink`, `airplay_name`,
-        // `presence`, per-zone `group_volume_mode`) by reusing the existing table with the
-        // same name; only name/icon are overwritten. Renamed/removed zones lose their extras.
+        // `presence`, per-zone `group_volume_mode`) by reusing the existing table of the zone
+        // (found under the name it had in the file, so a rename keeps them); name, icon and
+        // `spotify_name` are overwritten. Removed zones lose their extras.
         var existingZones: [String: TOMLTable] = [:]
         if let arr = existing["zone"]?.array {
             for item in arr {
@@ -238,9 +254,17 @@ enum TOMLConfigParser {
         existing["zone"] = nil
         let zonesArr = TOMLArray()
         for zone in model.zones where !zone.name.isEmpty {
-            let z = existingZones[zone.name] ?? TOMLTable()
+            // A renamed zone keeps its table: look it up under the name it had in the file first.
+            let z = zone.fileName.flatMap { existingZones[$0] } ?? existingZones[zone.name] ?? TOMLTable()
             z["name"] = zone.name
             z["icon"] = zone.icon
+            // TOMLKit 0.6 ignores `table[key] = nil`, so a cleared name is removed explicitly.
+            let ownSpotifyName = zone.spotifyName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if ownSpotifyName.isEmpty {
+                z.remove(at: "spotify_name")
+            } else {
+                z["spotify_name"] = ownSpotifyName
+            }
             writeKnx(zone.knx, into: z)
             zonesArr.append(z)
         }
