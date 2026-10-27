@@ -473,6 +473,10 @@ fn the_readme_documents_every_change_that_can_stop_a_start_or_move_data() {
             ][..],
         ),
         ("websocket close code", &["1013", "1001"][..]),
+        (
+            "spotify device name",
+            &["[spotify].name", "\"<name> <zone name>\"", "new devices"][..],
+        ),
     ] {
         for needle in needles {
             assert!(
@@ -495,4 +499,31 @@ fn the_documented_command_line_values_are_the_ones_the_code_accepts() {
     for rate in [32000, 8000] {
         assert!(!accepts(rate), "{rate}");
     }
+}
+
+#[test]
+fn the_example_and_the_readme_describe_what_spotify_name_does() {
+    let example = include_str!("../../snapdog.example.toml");
+    assert!(
+        !example.contains("key is ignored"),
+        "the example still calls [spotify].name ignored"
+    );
+    for needle in [
+        "# name = \"Home\"",
+        "\"<name> <zone name>\"",
+        "spotify_name always wins",
+    ] {
+        assert!(example.contains(needle), "example lacks {needle:?}");
+    }
+    // What the example says is what the code does.
+    let one = config::load_str("[spotify]\nname = \"Home\"\n[[zone]]\nname = \"A\"\n").unwrap();
+    assert_eq!(one.zones[0].spotify_name, "Home");
+    let two = config::load_str(
+        "[spotify]\nname = \"Home\"\n[[zone]]\nname = \"A\"\n[[zone]]\nname = \"B\"\n",
+    )
+    .unwrap();
+    assert_eq!(two.zones[1].spotify_name, "Home B");
+    // And the example file itself still loads without warnings (checked above), so the
+    // commented `# name` line is a real key.
+    assert!(config::load_str("[spotify]\nname = \"x\"\n[[zone]]\nname = \"A\"\n").is_ok());
 }

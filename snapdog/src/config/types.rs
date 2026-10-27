@@ -750,9 +750,12 @@ pub struct AirplayConfig {
 /// Spotify Connect receiver settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SpotifyConfig {
-    /// Deprecated and ignored. The name shown in the Spotify app is set per
-    /// zone with `[[zone]].spotify_name` (default: the zone name). Setting this
-    /// key only produces a warning at startup.
+    /// The name of the Spotify Connect device, for every zone that does not set
+    /// `[[zone]].spotify_name`. With one zone the device is named exactly this; with
+    /// several zones each gets `"<name> <zone name>"`, because every zone runs its own
+    /// device and Spotify lists devices by name. Unset or blank: the zone name.
+    /// A zone's own `spotify_name` always wins. Changing a name makes the device appear
+    /// as a new one in the Spotify app (its Zeroconf id is derived from the name).
     #[serde(default)]
     pub name: String,
     /// Audio bitrate: 96, 160, or 320 kbps. Default: 320.
@@ -761,7 +764,8 @@ pub struct SpotifyConfig {
 }
 
 impl SpotifyConfig {
-    /// Stable device ID derived from the name (for Zeroconf).
+    /// Stable device ID derived from the name (for Zeroconf). Each zone has its own
+    /// receiver with its own name, so the ids differ as long as the names do.
     #[must_use]
     pub fn device_id(&self) -> String {
         format!("{:x}", md5::compute(self.name.as_bytes()))

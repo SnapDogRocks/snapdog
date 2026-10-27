@@ -30,7 +30,6 @@ fn derive(config: &mut AppConfig) {
     float_codec(config);
     #[cfg(feature = "snapcast-embedded")]
     embedded_snapcast(config);
-    spotify_name(config);
     api_console(config);
     streaming_port(config);
     #[cfg(not(feature = "ap2"))]
@@ -156,16 +155,6 @@ fn api_console(config: &mut AppConfig) {
              the page runs on the same origin as the web UI. Enable it only on a network you \
              trust."
         ));
-    }
-}
-
-/// `[spotify].name` is superseded by the per-zone name.
-fn spotify_name(config: &mut AppConfig) {
-    if config.spotify.as_ref().is_some_and(|s| !s.name.is_empty()) {
-        config.warn(
-            "[spotify].name is ignored. Each zone advertises its own [[zone]].spotify_name \
-             (default: the zone name). Remove the key or set spotify_name per zone.",
-        );
     }
 }
 
@@ -391,11 +380,22 @@ mod tests {
     }
 
     #[test]
-    fn spotify_name_is_reported_as_ignored() {
-        let config = load("[spotify]\nname = \"SnapDog\"");
-        assert!(mentions(&config, "[spotify].name is ignored"));
-        let config = load("[spotify]\nbitrate = 160");
-        assert!(!mentions(&config, "[spotify].name"));
+    fn spotify_name_is_no_longer_reported_as_ignored() {
+        for toml in [
+            "[spotify]\nname = \"SnapDog\"",
+            "[spotify]\nbitrate = 160",
+            "[spotify]\nname = \"\"",
+        ] {
+            let config = load(toml);
+            assert!(!mentions(&config, "is ignored"), "{toml}");
+            assert!(
+                !config
+                    .notices
+                    .iter()
+                    .any(|n| n.message.contains("[spotify].name is ignored")),
+                "{toml}"
+            );
+        }
     }
 
     #[test]

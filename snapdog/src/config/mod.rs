@@ -222,28 +222,20 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
     // ── Uniqueness & format validation ─────────────────────────
     validate_raw_inputs(&raw)?;
 
-    // ── KNX address validation ───────────────────────────────
-    if let Some(ref knx) = raw.knx
-        && let Some(ref addr) = knx.individual_address
-    {
-        validate_knx_ia(addr).context("Invalid KNX individual address")?;
-    }
-    for zone in &raw.zone {
-        validate_zone_knx(&zone.knx).with_context(|| format!("Zone '{}' KNX error", zone.name))?;
-    }
-    for client in &raw.client {
-        validate_client_knx(&client.knx)
-            .with_context(|| format!("Client '{}' KNX error", client.name))?;
-    }
+    validate_knx_addresses(&raw)?;
 
     // Resolving clamps the volume limits, so what the file said has to be reported first.
     let volume_notices = volume_range_notices(&raw.client);
+
+    // `[spotify].name` names the Spotify device of a zone that sets no spotify_name.
+    let spotify_naming = convention::SpotifyNaming::new(raw.spotify.as_ref(), raw.zone.len());
+    let spotify_notices = spotify_name_notices(&raw.zone, spotify_naming);
 
     let zones: Vec<ZoneConfig> = raw
         .zone
         .into_iter()
         .enumerate()
-        .map(|(i, z)| convention::resolve_zone(i + 1, z, &raw.audio, &raw.snapcast))
+        .map(|(i, z)| convention::resolve_zone(i + 1, z, &raw.audio, &raw.snapcast, spotify_naming))
         .collect::<Vec<_>>();
 
     let zone_names: Vec<&str> = zones.iter().map(|z| z.name.as_str()).collect();
@@ -309,13 +301,96 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         notices: Vec::new(),
     };
 
-    for message in volume_notices.into_iter().chain(path_notices) {
-        config.warn(message);
+    let duplicates = duplicate_spotify_names(&config.zones).map(|m| (NoticeLevel::Warn, m));
+    let load_notices = volume_notices
+        .into_iter()
+        .chain(path_notices)
+        .map(|m| (NoticeLevel::Warn, m))
+        .chain(spotify_notices)
+        .chain(duplicates);
+    for (level, message) in load_notices {
+        match level {
+            NoticeLevel::Info => config.info(message),
+            NoticeLevel::Warn => config.warn(message),
+        }
     }
     apply_env_overrides(&mut config);
     validate(&mut config)?;
 
     Ok(config)
+}
+
+/// Check the individual address and every group address in the file.
+fn validate_knx_addresses(raw: &FileConfig) -> Result<()> {
+    if let Some(ref knx) = raw.knx
+        && let Some(ref addr) = knx.individual_address
+    {
+        validate_knx_ia(addr).context("Invalid KNX individual address")?;
+    }
+    for zone in &raw.zone {
+        validate_zone_knx(&zone.knx).with_context(|| format!("Zone '{}' KNX error", zone.name))?;
+    }
+    for client in &raw.client {
+        validate_client_knx(&client.knx)
+            .with_context(|| format!("Client '{}' KNX error", client.name))?;
+    }
+    Ok(())
+}
+
+/// What `[spotify].name` does for these zones, when it is set: it names the Spotify
+/// device of every zone without a `spotify_name`, or it has no effect at all.
+fn spotify_name_notices(
+    zones: &[RawZoneConfig],
+    naming: convention::SpotifyNaming<'_>,
+) -> Vec<(NoticeLevel, String)> {
+    let Some(base) = naming.base else {
+        return Vec::new();
+    };
+    let named: Vec<&RawZoneConfig> = zones.iter().filter(|z| z.spotify_name.is_none()).collect();
+    if named.is_empty() {
+        return vec![(
+            NoticeLevel::Info,
+            format!(
+                "[spotify].name = {base:?} has no effect: every zone sets its own \
+                 [[zone]].spotify_name."
+            ),
+        )];
+    }
+    if naming.zone_count > 1 {
+        let shown: Vec<String> = named.iter().map(|z| naming.device_name(&z.name)).collect();
+        return vec![(
+            NoticeLevel::Info,
+            format!(
+                "[spotify].name = {base:?} is a prefix because there are several zones: the \
+                 Spotify devices are {}.",
+                shown.join(", ")
+            ),
+        )];
+    }
+    Vec::new()
+}
+
+/// Two zones with the same Spotify device name run two receivers that Spotify cannot tell
+/// apart (they also derive the same Zeroconf id). Reported once, naming the zones.
+fn duplicate_spotify_names(zones: &[ZoneConfig]) -> Option<String> {
+    let mut seen: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+    for zone in zones {
+        seen.entry(zone.spotify_name.as_str())
+            .or_default()
+            .push(zone.name.as_str());
+    }
+    let clashes: Vec<String> = seen
+        .into_iter()
+        .filter(|(_, names)| names.len() > 1)
+        .map(|(name, names)| format!("{name:?} (zones {})", names.join(", ")))
+        .collect();
+    (!clashes.is_empty()).then(|| {
+        format!(
+            "Several zones would show the same Spotify device name: {}. Set a different \
+             [[zone]].spotify_name for each.",
+            clashes.join("; ")
+        )
+    })
 }
 
 /// Notices for `max_volume` and `default_volume` values outside 0 to 100, which
@@ -1334,6 +1409,156 @@ mod tests {
         assert!(!address_is_not_local("0.0.0.0".parse().unwrap()));
         // TEST-NET-1 is reserved for documentation: no interface has it.
         assert!(address_is_not_local("192.0.2.1".parse().unwrap()));
+    }
+
+    // ── [spotify].name names the Spotify Connect device ─────────
+
+    fn spotify_names(toml: &str) -> Vec<String> {
+        load_str(toml)
+            .unwrap()
+            .zones
+            .iter()
+            .map(|z| z.spotify_name.clone())
+            .collect()
+    }
+
+    fn zones(names: &[&str]) -> String {
+        names.iter().fold(String::new(), |mut toml, name| {
+            use std::fmt::Write;
+            let _ = writeln!(toml, "[[zone]]\nname = \"{name}\"");
+            toml
+        })
+    }
+
+    #[test]
+    fn one_zone_gets_exactly_the_spotify_name() {
+        let toml = format!("[spotify]\nname = \"Home\"\n{}", zones(&["Living"]));
+        assert_eq!(spotify_names(&toml), ["Home"]);
+    }
+
+    #[test]
+    fn several_zones_get_the_name_as_a_prefix() {
+        let toml = format!(
+            "[spotify]\nname = \"Home\"\n{}",
+            zones(&["Living", "Kitchen"])
+        );
+        assert_eq!(spotify_names(&toml), ["Home Living", "Home Kitchen"]);
+    }
+
+    #[test]
+    fn a_zones_own_spotify_name_wins_over_the_global_name() {
+        let toml = "[spotify]\nname = \"Home\"\n\
+                    [[zone]]\nname = \"Living\"\nspotify_name = \"Sofa\"\n\
+                    [[zone]]\nname = \"Kitchen\"\n";
+        assert_eq!(spotify_names(toml), ["Sofa", "Home Kitchen"]);
+        // One zone: the explicit name still wins.
+        let toml =
+            "[spotify]\nname = \"Home\"\n[[zone]]\nname = \"Living\"\nspotify_name = \"Sofa\"\n";
+        assert_eq!(spotify_names(toml), ["Sofa"]);
+    }
+
+    #[test]
+    fn without_a_usable_name_the_zone_name_is_the_device_name() {
+        for head in [
+            "",
+            "[spotify]\n",
+            "[spotify]\nname = \"\"\n",
+            "[spotify]\nname = \"   \"\n",
+        ] {
+            let toml = format!("{head}{}", zones(&["Living", "Kitchen"]));
+            assert_eq!(spotify_names(&toml), ["Living", "Kitchen"], "{head:?}");
+        }
+        let toml = format!("[spotify]\nbitrate = 160\n{}", zones(&["Living"]));
+        assert_eq!(spotify_names(&toml), ["Living"]);
+    }
+
+    #[test]
+    fn the_name_is_trimmed() {
+        let toml = format!(
+            "[spotify]\nname = \"  Home \"\n{}",
+            zones(&["Living", "Kitchen"])
+        );
+        assert_eq!(spotify_names(&toml), ["Home Living", "Home Kitchen"]);
+    }
+
+    #[test]
+    fn every_zone_keeps_its_own_stable_zeroconf_id() {
+        let toml = format!(
+            "[spotify]\nname = \"Home\"\n{}",
+            zones(&["Living", "Kitchen", "Bath"])
+        );
+        let ids = |toml: &str| -> Vec<String> {
+            spotify_names(toml)
+                .into_iter()
+                .map(|name| SpotifyConfig { name, bitrate: 320 }.device_id())
+                .collect()
+        };
+        let first = ids(&toml);
+        let distinct: std::collections::BTreeSet<_> = first.iter().collect();
+        assert_eq!(distinct.len(), 3, "{first:?}");
+        assert_eq!(first, ids(&toml), "the same names give the same ids");
+    }
+
+    #[test]
+    fn spotify_name_notices_say_what_the_name_does() {
+        let text = |toml: &str| -> Vec<String> {
+            load_str(toml)
+                .unwrap()
+                .notices
+                .into_iter()
+                .filter(|n| n.message.contains("[spotify].name"))
+                .map(|n| n.message)
+                .collect()
+        };
+        // Takes effect for the only zone: nothing to say.
+        let silent = |toml: String| assert_eq!(text(&toml), Vec::<String>::new());
+        silent(format!("[spotify]\nname = \"Home\"\n{}", zones(&["A"])));
+        // No name: nothing to say.
+        silent(format!("[spotify]\n{}", zones(&["A", "B"])));
+        // Several zones: the prefix, with the resulting names, in one line.
+        let prefix = text(&format!(
+            "[spotify]\nname = \"Home\"\n{}",
+            zones(&["A", "B"])
+        ));
+        assert_eq!(prefix.len(), 1, "{prefix:?}");
+        assert!(prefix[0].contains("is a prefix"), "{prefix:?}");
+        assert!(prefix[0].contains("Home A, Home B"), "{prefix:?}");
+        // Every zone has its own name: the setting does nothing.
+        let none = text(
+            "[spotify]\nname = \"Home\"\n\
+             [[zone]]\nname = \"A\"\nspotify_name = \"X\"\n\
+             [[zone]]\nname = \"B\"\nspotify_name = \"Y\"\n",
+        );
+        assert_eq!(none.len(), 1, "{none:?}");
+        assert!(none[0].contains("has no effect"), "{none:?}");
+    }
+
+    #[test]
+    fn two_zones_with_the_same_spotify_name_are_reported() {
+        let config = load_str(
+            "[[zone]]\nname = \"A\"\nspotify_name = \"Same\"\n\
+             [[zone]]\nname = \"B\"\nspotify_name = \"Same\"\n",
+        )
+        .unwrap();
+        let hits: Vec<_> = config
+            .notices
+            .iter()
+            .filter(|n| n.message.contains("same Spotify device name"))
+            .collect();
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].message.contains("\"Same\" (zones A, B)"));
+        assert_eq!(hits[0].level, NoticeLevel::Warn);
+        // The global prefix cannot cause it, zone names are unique.
+        let ok = load_str(&format!(
+            "[spotify]\nname = \"Home\"\n{}",
+            zones(&["A", "B"])
+        ))
+        .unwrap();
+        assert!(
+            !ok.notices
+                .iter()
+                .any(|n| n.message.contains("same Spotify"))
+        );
     }
 
     #[test]

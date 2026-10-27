@@ -93,7 +93,8 @@ fn check_config_prints_warnings_on_stderr_and_keeps_stdout_clean() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("warning: Unknown configuration key `snapcast.streaming_prot`"));
     assert!(stderr.contains("built-in default key"), "{stderr}");
-    assert!(stderr.contains("[spotify].name is ignored"), "{stderr}");
+    // [spotify].name used to be reported as ignored; it names the Spotify device now.
+    assert!(!stderr.contains("[spotify].name is ignored"), "{stderr}");
 }
 
 #[test]
@@ -330,4 +331,30 @@ fn check_config_warns_about_a_streaming_bind_that_no_interface_has() {
     let output = run_check(&config("127.0.0.1"), &[]);
     assert!(output.status.success());
     assert!(!String::from_utf8_lossy(&output.stderr).contains("is not an address of this host"));
+}
+
+#[test]
+fn check_config_says_what_the_spotify_name_does() {
+    let stderr = |toml: &str| String::from_utf8_lossy(&run_check(toml, &[]).stderr).into_owned();
+
+    // One zone: the name is the device name, nothing to report.
+    let one = stderr("[spotify]\nname = \"Home\"\n[[zone]]\nname = \"Living\"\n");
+    assert!(!one.contains("[spotify].name"), "{one}");
+
+    // Several zones: a prefix, and the resulting device names.
+    let several = stderr(
+        "[spotify]\nname = \"Home\"\n[[zone]]\nname = \"Living\"\n[[zone]]\nname = \"Kitchen\"\n",
+    );
+    assert!(
+        several.contains("note: [spotify].name = \"Home\" is a prefix"),
+        "{several}"
+    );
+    assert!(several.contains("Home Living, Home Kitchen"), "{several}");
+
+    // Every zone has its own name: the setting does nothing.
+    let none = stderr("[spotify]\nname = \"Home\"\n[[zone]]\nname = \"A\"\nspotify_name = \"X\"\n");
+    assert!(
+        none.contains("note: [spotify].name = \"Home\" has no effect"),
+        "{none}"
+    );
 }

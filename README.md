@@ -309,6 +309,9 @@ default_zone = "Living Room"         # Zone for unknown clients (accept only)
 # mode = "airplay2"                  # airplay1 | airplay2 (airplay2 needs a build with feature ap2)
 # password = "1234"
 
+[spotify]
+# name = "Home"                      # Spotify device name: exactly this with one zone, "<name> <zone>" with several
+
 [mqtt]
 broker = "192.168.1.10:1883"
 # client_id = "snapdog"              # Must be unique per broker
@@ -365,6 +368,14 @@ alternative is named.
   (`zones.json`, `eq.json`, `server_id`, `airplay-pairing`) is no longer read. If such a directory still exists,
   SnapDog says so at startup and in `--check-config`; move its contents to the real path. Writing the old
   literal path was never what anybody meant, so the literal reading was not kept.
+- **`[spotify].name` names the Spotify Connect device.** It used to be ignored (with a warning); the name in the
+  Spotify app was always the zone's `spotify_name`, by default the zone name. Now a zone without its own
+  `spotify_name` is called `[spotify].name` when there is exactly one zone, and `"<name> <zone name>"` when there are
+  several, because every zone runs its own device and Spotify lists devices by name. A zone's own `spotify_name`
+  always wins, and without a name (or with a blank one) the zone name is used as before. This is visible for every
+  configuration that already has the key, among them those the macOS Settings app wrote: the device names in the
+  Spotify app change from the zone names to the new ones, and the Spotify app may list them as new devices (the
+  Zeroconf id is derived from the name). Remove the key, or set `spotify_name` per zone, to keep the old names.
 - **An empty encryption key is never a key.** `SNAPDOG_SNAPCAST_ENCRYPTION_PSK` set to nothing (for example
   `${PSK:-}` in a compose file whose secret did not arrive) used to be used as the key. It is now ignored with a
   warning, a key from the file stays, and with `codec = "f32lz4e"` and no other key SnapDog refuses to start

@@ -145,8 +145,12 @@ default_zone = "Ground Floor"
 # ── Spotify Connect ────────────────────────────────────────────────────────
 # Remove this section entirely to disable Spotify Connect.
 [spotify]
-# The device name in the Spotify app is the zone's spotify_name (default: the zone name),
-# set per [[zone]] below. A [spotify].name key is ignored.
+# Name of the Spotify Connect device in the Spotify app, for every zone that does not set
+# its own spotify_name below. With one zone the device is named exactly this. With several
+# zones each device is called "<name> <zone name>", because every zone runs its own device
+# and Spotify lists devices by name. Unset or blank: the zone name. A zone's own
+# spotify_name always wins. Changing a name makes the device show up as a new one.
+# name = "Home"
 # Spotify streaming bitrate: 96, 160, or 320 kbps
 bitrate = 320
 
@@ -221,7 +225,8 @@ icon = "🏠"
 # sink = "/snapsinks/zone1"
 # Override auto-generated AirPlay receiver name:
 # airplay_name = "Ground Floor (AirPlay)"
-# Name shown in the Spotify app (default: the zone name):
+# Name shown in the Spotify app. Default: [spotify].name (a prefix when there are several
+# zones, see above), without it the zone name:
 # spotify_name = "Ground Floor (Spotify)"
 
 # Optional: presence-triggered playback

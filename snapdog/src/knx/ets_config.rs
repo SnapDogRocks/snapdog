@@ -326,4 +326,41 @@ mod tests {
         assert_eq!(app.clients.len(), 1);
         assert_eq!(app.clients[0].zone_index, 1, "client bound to zone 1");
     }
+
+    /// The ETS path resolves Spotify names through the same pipeline as a file: an explicit
+    /// ETS spotify name wins, `[spotify].name` of the base configuration names the rest, and
+    /// without it (device mode with nothing but ETS) the device is named like the zone.
+    #[test]
+    fn ets_zones_follow_the_spotify_name_rules() {
+        let mut ets = EtsParams::default();
+        for (i, name) in ["Living", "Kitchen"].iter().enumerate() {
+            ets.zone_active[i] = true;
+            ets.zone_names[i] = (*name).into();
+        }
+        ets.zone_spotify_names[0] = "Sofa".into();
+        let spotify_names = |ets: &EtsParams, base: FileConfig| -> Vec<String> {
+            let cfg = ets_params_to_file_config(ets, base);
+            crate::config::load_raw_no_validate(cfg)
+                .expect("ETS config resolves")
+                .zones
+                .iter()
+                .map(|z| z.spotify_name.clone())
+                .collect()
+        };
+
+        let base: FileConfig = toml::from_str("[spotify]\nname = \"Home\"\n").unwrap();
+        assert_eq!(spotify_names(&ets, base), ["Sofa", "Home Kitchen"]);
+
+        // Device mode: no [spotify] section, nothing from ETS but the zone parameters.
+        assert_eq!(
+            spotify_names(&ets, FileConfig::default()),
+            ["Sofa", "Kitchen"]
+        );
+
+        // A single ETS zone takes the name exactly.
+        ets.zone_active[1] = false;
+        ets.zone_spotify_names[0] = String::new();
+        let base: FileConfig = toml::from_str("[spotify]\nname = \"Home\"\n").unwrap();
+        assert_eq!(spotify_names(&ets, base), ["Home"]);
+    }
 }
