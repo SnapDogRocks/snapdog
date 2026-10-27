@@ -15,12 +15,19 @@ fn active_lines() -> impl Iterator<Item = &'static str> {
 
 #[test]
 fn ci_runs_the_api_docs_guards_with_the_full_feature_set() {
-    for required in ["api_docs", "api_console_warning", "openapi_contract"] {
+    for required in [
+        "api_docs",
+        "api_console",
+        "api_console_warning",
+        "openapi_contract",
+    ] {
         let found = active_lines().any(|line| {
+            let words: Vec<&str> = line.split_whitespace().collect();
             line.contains("cargo test")
                 && line.contains("-p snapdog")
                 && line.contains("--features full")
-                && line.contains(&format!("--test {required}"))
+                // A whole word: `--test api_console` is not `--test api_console_warning`.
+                && words.windows(2).any(|w| w == ["--test", required])
         });
         assert!(
             found,
@@ -35,6 +42,8 @@ fn the_test_files_the_step_names_exist() {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests");
     for name in [
         "api_docs",
+        "api_console",
+        "api_console_warning",
         "openapi_contract",
         "config_contract",
         "config_cli",

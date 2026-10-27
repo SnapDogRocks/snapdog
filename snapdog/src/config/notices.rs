@@ -152,11 +152,9 @@ fn api_console(config: &mut AppConfig) {
         config.warn(format!(
             "[http].api_console = true serves /docs. The page is not behind [http].api_keys, \
              because a browser cannot send the Authorization header when it opens a page. {keys} \
-             The page also loads its script from cdn.jsdelivr.net, without a pinned version or \
-             an integrity hash, and it shares the origin of the web UI, which keeps its API key \
-             in the browser session: whoever controls that script could read the key. The \
-             console does not work without internet access. Enable it only on a network you \
-             trust, and do not use the web UI in the same browser at the same time."
+             The page and its script are served by SnapDog itself and contact no other host, and \
+             the page runs on the same origin as the web UI. Enable it only on a network you \
+             trust."
         ));
     }
 }
@@ -301,22 +299,20 @@ mod tests {
 
     #[cfg(feature = "api-docs")]
     #[test]
-    fn api_console_warns_about_keys_and_the_cdn_script() {
+    fn api_console_warns_about_keys_and_the_origin() {
         let config = load("[http]\napi_keys = [\"k\"]\napi_console = true");
         assert!(mentions(&config, "is not behind [http].api_keys"));
         assert!(mentions(
             &config,
             "/api/v1/openapi.json stays behind the key"
         ));
-        assert!(mentions(&config, "cdn.jsdelivr.net"));
+        // The script no longer comes from a CDN, and the warning must not claim it does.
+        assert!(!mentions(&config, "cdn.jsdelivr.net"));
         assert!(mentions(
             &config,
-            "without a pinned version or an integrity hash"
+            "served by SnapDog itself and contact no other host"
         ));
-        assert!(mentions(
-            &config,
-            "keeps its API key in the browser session"
-        ));
+        assert!(mentions(&config, "same origin as the web UI"));
         // One message, however the console got switched on.
         let count = warnings(&config)
             .iter()
@@ -326,7 +322,6 @@ mod tests {
 
         let open = load("[http]\napi_console = true");
         assert!(mentions(&open, "whole API is open anyway"));
-        assert!(mentions(&open, "cdn.jsdelivr.net"));
     }
 
     #[cfg(feature = "api-docs")]

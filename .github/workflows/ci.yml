@@ -242,7 +242,7 @@ jobs:
         # with the api-docs feature, so the default-feature runs above cannot reach it.
         # tests/ci_guard.rs fails if this step goes missing.
         run: |
-          cargo test -p snapdog --locked --features full --test api_docs --test api_console_warning --test openapi_contract --test config_contract --test config_cli
+          cargo test -p snapdog --locked --features full --test api_docs --test api_console --test api_console_warning --test openapi_contract --test config_contract --test config_cli
           cargo test -p snapdog --locked --features full --lib config::
       - name: Coverage (workspace, gate on threshold)
         # Default features (snapcast-embedded). Threshold is a regression guard set

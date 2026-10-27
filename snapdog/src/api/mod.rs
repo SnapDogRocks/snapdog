@@ -4,6 +4,8 @@
 //! REST API and WebSocket server via axum.
 
 mod auth;
+#[cfg(feature = "api-docs")]
+pub mod console;
 pub mod error;
 mod health;
 pub mod openapi;
@@ -271,14 +273,12 @@ pub fn build_router(state: &SharedState) -> Router {
 
     // The interactive console is opt-in. Its page embeds the whole document and no
     // key can be sent when a browser opens it, so it is never behind the API key. The
-    // page also loads the Scalar script from cdn.jsdelivr.net, unpinned and without an
-    // integrity hash (utoipa-scalar's template). The config notice for api_console says
-    // so at startup (config/notices.rs), so there is no second warning here.
+    // page and its script are served from the binary (console.rs). The config notice
+    // for api_console says so at startup (config/notices.rs), so there is no second
+    // warning here.
     #[cfg(feature = "api-docs")]
     let app = if state.config.http.api_docs && state.config.http.api_console {
-        use utoipa::OpenApi;
-        use utoipa_scalar::{Scalar, Servable};
-        app.merge(Scalar::with_url("/docs", openapi::ApiDoc::openapi()))
+        app.merge(console::router())
     } else {
         app
     };

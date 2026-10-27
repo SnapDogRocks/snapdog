@@ -410,12 +410,13 @@ feature serve no API documentation at all.
 
 The interactive console (Scalar) at `/docs` is off by default. `[http].api_console = true` turns it on. A
 browser cannot send the `Authorization` header when it opens a page, so the console is not behind the API key,
-and the page contains the whole OpenAPI document. The page also loads its script (Scalar) from `cdn.jsdelivr.net`
-without a pinned version or an integrity hash (the template of `utoipa-scalar`), and it shares the origin of the web
-UI, which keeps its API key in the browser session. Whoever controls that script could read the key, and the console
-does not work without internet access. SnapDog logs one warning at startup when the console is on. Enable it only on
-a network you trust, and do not use the web UI in the same browser while you do. Pinning the script with an
-integrity hash, or serving it from the binary, would need the script file in the repository; that is not done.
+and the page contains the whole OpenAPI document. The page and its script are served by SnapDog itself: a pinned,
+vendored copy of Scalar (`@scalar/api-reference` 1.74.0, MIT, about 1.3 MB gzip-compressed in the binary, licence at
+`/docs/assets/NOTICE.md`) at `/docs/assets/scalar.js`. No other host is contacted, so the console also works
+without internet access, and a Content-Security-Policy keeps the page to its own origin. Scalar's fonts, telemetry,
+AI agent and MCP features are switched off. The page runs on the same origin as the web UI, and SnapDog logs one
+warning at startup when the console is on. Enable it only on a network you trust. The script is sent compressed
+(`Content-Encoding: gzip`); a client that does not accept gzip gets 406, which no browser does.
 
 ```bash
 curl -H "Authorization: Bearer $SNAPDOG_KEY" http://localhost:5555/api/v1/openapi.json

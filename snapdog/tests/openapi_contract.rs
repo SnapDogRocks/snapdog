@@ -102,6 +102,7 @@ const ROUTERS: &[(&str, &str, &str)] = &[
     // Merged at the root, not nested.
     ("health.rs", "router", ""),
     ("ws.rs", "router", ""),
+    ("console.rs", "router", ""),
     ("mod.rs", "build_router", ""),
 ];
 
@@ -120,6 +121,21 @@ const UNDOCUMENTED: &[(&str, &str, &str)] = &[
         "GET",
         "/api/v1/openapi.json",
         "the document itself (feature api-docs)",
+    ),
+    (
+        "GET",
+        "/docs",
+        "the API console page (feature api-docs, opt-in)",
+    ),
+    (
+        "GET",
+        "/docs/assets/scalar.js",
+        "the console's script (feature api-docs, opt-in)",
+    ),
+    (
+        "GET",
+        "/docs/assets/NOTICE.md",
+        "licence of the console's script (feature api-docs, opt-in)",
     ),
 ];
 
@@ -152,6 +168,7 @@ const ROUTE_SOURCES: &[(&str, &str)] = &[
     ("routes/knx.rs", include_str!("../src/api/routes/knx.rs")),
     ("health.rs", include_str!("../src/api/health.rs")),
     ("ws.rs", include_str!("../src/api/ws.rs")),
+    ("console.rs", include_str!("../src/api/console.rs")),
     ("mod.rs", include_str!("../src/api/mod.rs")),
 ];
 

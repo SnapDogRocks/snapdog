@@ -72,12 +72,12 @@ base_url = "http://192.168.1.10:5555"
 # the rest of /api/v1: with api_keys set it needs "Authorization: Bearer <key>", without
 # keys it is open, like the API. Default true.
 # api_docs = true
-# api_console: also serve the interactive console at /docs. Off by default. A browser
-# cannot send the Authorization header when it opens a page, so the page is NOT behind
-# api_keys and embeds the whole OpenAPI document. The page loads its script (Scalar) from
-# cdn.jsdelivr.net, without a pinned version or an integrity hash, and it shares the origin
-# of the web UI, which keeps its API key in the browser session. It does not work without
-# internet access. Turn it on only on a network you trust.
+# api_console: also serve the interactive console (Scalar) at /docs. Off by default. A
+# browser cannot send the Authorization header when it opens a page, so the page is NOT
+# behind api_keys and embeds the whole OpenAPI document. The page and its script come from
+# SnapDog itself (a pinned copy of Scalar inside the binary, about 1.3 MB) and contact no
+# other host, so it also works without internet access. It runs on the same origin as the
+# web UI. Turn it on only on a network you trust.
 # api_console = false
 
 # ── Snapcast ───────────────────────────────────────────────────────────────
