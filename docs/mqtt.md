@@ -329,9 +329,8 @@ no key was removed or changed. A cover URL that needs more than 1024 bytes as JS
 text is now left out of the state; before it was cut, which gave a URL that points
 nowhere.
 
-**Configuration.** A wrong `[mqtt]` section switches MQTT off and logs why, where an
-earlier build of this branch stopped the server and releases before it disabled MQTT
-without a clear message. New keys: `password_file`, `ca_file`, `client_cert`,
+**Configuration.** A wrong `[mqtt]` section switches MQTT off and logs why. Releases
+before this one disabled MQTT without a clear message. New keys: `password_file`, `ca_file`, `client_cert`,
 `client_key`, `clear_legacy_topics`; `broker` takes `mqtts://`. Unknown keys, a password
 without a username, wildcards or a leading `$` in `base_topic`, and TLS options on a
 plaintext address are now errors (MQTT off). `SNAPDOG_MQTT_USERNAME` and the TLS path
