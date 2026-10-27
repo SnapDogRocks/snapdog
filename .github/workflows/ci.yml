@@ -91,6 +91,7 @@ jobs:
             integration:
               - '.config/nextest.toml'
               - 'snapdog/src/mqtt/**'
+              - 'snapdog/src/config/mqtt.rs'
               - 'snapdog/src/subsonic/**'
               - 'snapdog/src/snapcast/**'
               - 'snapdog/tests/integration.rs'
