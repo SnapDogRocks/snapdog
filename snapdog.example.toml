@@ -156,7 +156,9 @@ broker = "192.168.1.10:1883"
 #                                  # then take turns (the log says so after a few rounds).
 
 # A wrong [mqtt] section switches MQTT off (and logs why); the server keeps running.
-# `snapdog --check-config` reports it as an error. Unknown keys count as wrong.
+# `snapdog --check-config` reports it as an error and exits with status 1. A misspelt or
+# unknown key in [mqtt] or [mqtt.homeassistant] counts as wrong. (An unknown key anywhere
+# else in the file stops nothing: it is ignored, at most with a warning.)
 #
 # Credentials. A password needs a username. In order of preference:
 #   - password_file: a file holding the password alone, one line (Docker/Kubernetes

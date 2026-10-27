@@ -206,6 +206,18 @@ the restart. A value of the wrong type inside `[mqtt]` (`broker = 5`, `discovery
 counts too (the message names the key and the line, never the value). A file that is not
 valid TOML, or a wrong value outside `[mqtt]`, still stops the start as before.
 
+An unknown or misspelt key is treated more strictly here than in the rest of the file.
+Inside `[mqtt]` and `[mqtt.homeassistant]` (`ca_flie`, `discovry`) it switches MQTT off
+with an error, and `--check-config` exits with status 1. An unknown key in any other
+section is ignored (a release that checks the rest of the file reports it as a warning)
+and `--check-config` still exits with status 0. The difference is deliberate: a
+misspelt TLS or credential key would otherwise fall back to a weaker default unnoticed.
+
+The check of the rest of the file, and the test that scans `snapdog.example.toml` with
+it, cannot see a misspelt key inside `[mqtt]`: the section collects its unknown keys
+itself (a flattened field), so nothing is left over to report. A typo in a commented
+`[mqtt]` example line is therefore not caught by that test.
+
 What counts as wrong (the message names the key):
 
 - a value of the wrong type;
@@ -324,6 +336,11 @@ without a clear message. New keys: `password_file`, `ca_file`, `client_cert`,
 without a username, wildcards or a leading `$` in `base_topic`, and TLS options on a
 plaintext address are now errors (MQTT off). `SNAPDOG_MQTT_USERNAME` and the TLS path
 variables are new; an empty `SNAPDOG_MQTT_PASSWORD` or `SNAPDOG_MQTT_USERNAME` is ignored.
+Check a file you carry over for stray or misspelt keys before the update: an unknown key
+in `[mqtt]` or `[mqtt.homeassistant]` switches MQTT off with an error and makes
+`snapdog --check-config` exit with status 1, whereas an unknown key in any other section
+is only ignored (at most a warning, exit status 0). See
+[Configuration errors](#configuration-errors).
 
 **Reconnects.** The client id, keep-alive (60 s), last will (`offline`, retained, QoS 1)
 and the topics are unchanged. After a reconnect SnapDog now subscribes again and
