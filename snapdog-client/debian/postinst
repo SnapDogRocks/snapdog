@@ -1,0 +1,19 @@
+#!/bin/sh
+# Maintainer script of the snapdog-client package. cargo-deb inserts the systemd handling
+# it generates from the unit (enable on first install, start or restart) where the
+# DEBHELPER marker is.
+set -e
+
+# Packages up to 0.28.2-1 shipped the unit without maintainer scripts, so nothing recorded
+# whether the client was ever enabled. The generated code treats a unit without a record
+# as new and enables it. Record what is true now, before it runs: enabled stays enabled,
+# disabled, masked or never enabled stays as it is. Only a fresh install enables the
+# client. 0.28.2-1 is the last release without scripts; the ~ of a prerelease of it sorts
+# below it, so those are covered as well.
+if [ "$1" = configure ] && [ -n "${2:-}" ] && dpkg --compare-versions "$2" le 0.28.2-1; then
+    deb-systemd-helper update-state snapdog-client.service >/dev/null || true
+fi
+
+#DEBHELPER#
+
+exit 0

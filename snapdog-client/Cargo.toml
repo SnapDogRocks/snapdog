@@ -56,7 +56,8 @@ assets = [
 ]
 # cargo-deb only writes the systemd maintainer scripts when maintainer-scripts is
 # set. The client finds its server via mDNS, so it is enabled and started on
-# install, restarted on upgrade and stopped on removal.
+# install, restarted on upgrade and stopped on removal. debian/postinst keeps an
+# upgrade from 0.28.2-1 or older, which had no scripts, from enabling it.
 maintainer-scripts = "debian/"
 systemd-units = { unit-name = "snapdog-client", unit-scripts = "systemd/", enable = true, start = true }
 
