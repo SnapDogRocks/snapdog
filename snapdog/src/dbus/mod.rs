@@ -550,16 +550,26 @@ mod mpris {
                     (*s, *n, *p) = (seekable, next, prev);
                 }
                 publish(&tx, &flags);
+                // Wait for all three: the flags change one after the other, and one of
+                // them may already have the wanted value before the update arrives.
                 let deadline = tokio::time::Instant::now() + DEADLINE;
-                while get_bool(&f.caller, "CanGoNext").await != next {
+                loop {
+                    let seen = (
+                        get_bool(&f.caller, "CanSeek").await,
+                        get_bool(&f.caller, "CanGoNext").await,
+                        get_bool(&f.caller, "CanGoPrevious").await,
+                    );
+                    if seen == (seekable, next, prev) {
+                        break;
+                    }
                     assert!(
                         tokio::time::Instant::now() < deadline,
-                        "CanGoNext never became {next}"
+                        "(CanSeek, CanGoNext, CanGoPrevious) is {seen:?}, \
+                         expected {:?}",
+                        (seekable, next, prev)
                     );
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                assert_eq!(get_bool(&f.caller, "CanGoPrevious").await, prev);
-                assert_eq!(get_bool(&f.caller, "CanSeek").await, seekable);
             }
         }
 
