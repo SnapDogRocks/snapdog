@@ -236,6 +236,14 @@ jobs:
         run: cargo test -p snapdog --test openapi_contract --test config_contract
       - name: AirPlay receiver firewall
         run: cargo test -p snapdog --features ap2 --lib receiver::airplay
+      - name: Feature-gated tests (full)
+        # Released binaries are built with `full`. The positive side of the API
+        # documentation guards (OpenAPI behind the key, console opt-in) is compiled only
+        # with the api-docs feature, so the default-feature runs above cannot reach it.
+        # tests/ci_guard.rs fails if this step goes missing.
+        run: |
+          cargo test -p snapdog --locked --features full --test api_docs --test api_console --test api_console_warning --test openapi_contract --test config_contract --test config_cli
+          cargo test -p snapdog --locked --features full --lib config::
       - name: Coverage (workspace, gate on threshold)
         # Default features (snapcast-embedded). Threshold is a regression guard set
         # a few points below the measured current workspace-wide line coverage

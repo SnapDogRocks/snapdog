@@ -25,8 +25,20 @@ fn main() -> anyhow::Result<()> {
 
     logging::init(&cli.logsink, &cli.logfilter)?;
 
+    // Flags that cannot work stop the client here; flags that are ignored are said so once.
+    let mut errors = Vec::new();
+    for issue in cli.issues() {
+        match issue {
+            cli::Issue::Warning(message) => tracing::warn!("{message}"),
+            cli::Issue::Error(message) => errors.push(message),
+        }
+    }
+    if !errors.is_empty() {
+        anyhow::bail!("{}", errors.join("\n"));
+    }
+
     if cli.list {
-        list_devices(&cli.player);
+        player::list_output_devices()?;
         return Ok(());
     }
 
@@ -38,6 +50,11 @@ fn main() -> anyhow::Result<()> {
     #[cfg(feature = "encryption")]
     let encryption_psk = cli.encryption_psk.clone();
     let null_player = cli.player == "null";
+    let soundcard: std::sync::Arc<str> = cli.soundcard.as_str().into();
+    if !null_player {
+        // Fail now, with the device list, rather than when the first audio arrives.
+        player::check_output_device(&soundcard)?;
+    }
     let mixer_raw = cli.mixer.clone();
     let mixer_sync = cli.mixer_sync;
     let mut settings = cli.into_settings()?;
@@ -149,6 +166,7 @@ fn main() -> anyhow::Result<()> {
         } else {
             tokio::spawn(async move {
                 player::play_audio(
+                    soundcard,
                     audio_rx,
                     player_stream,
                     player_tp,
@@ -387,17 +405,6 @@ fn main() -> anyhow::Result<()> {
 
     tracing::info!("snapdog-client terminated");
     Ok(())
-}
-
-fn list_devices(player: &str) {
-    let player_name = player.split(':').next().unwrap_or("");
-    match player_name {
-        #[cfg(target_os = "macos")]
-        "coreaudio" | "" => {
-            println!("0: Default Output\nCoreAudio default output device\n");
-        }
-        _ => println!("No device listing available for '{player_name}'"),
-    }
 }
 
 #[cfg(unix)]

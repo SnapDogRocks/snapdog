@@ -15,13 +15,12 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use tracing_subscriber::EnvFilter;
 
 #[cfg(all(feature = "dbus", target_os = "linux"))]
 use snapdog::dbus;
 #[cfg(feature = "snapcast-process")]
 use snapdog::process;
-use snapdog::{api, audio, config, knx, mqtt, player, snapcast, state};
+use snapdog::{api, audio, config, knx, logging, mqtt, player, snapcast, state};
 
 /// Multi-zone audio controller with `AirPlay`, Snapcast, MQTT, and KNX integration.
 #[derive(Parser)]
@@ -55,7 +54,7 @@ struct Cli {
     #[arg(short, long)]
     port: Option<u16>,
 
-    /// Bind address (default: 0.0.0.0). Use :: for dual-stack IPv4+IPv6.
+    /// HTTP bind address (default: ::, dual-stack IPv4+IPv6). Use 0.0.0.0 for IPv4 only.
     #[arg(short, long)]
     bind: Option<String>,
 
@@ -67,7 +66,7 @@ struct Cli {
     #[arg(long)]
     tls_key: Option<std::path::PathBuf>,
 
-    /// Audio codec: pcm, flac, f32lz4, f32lz4e
+    /// Snapcast stream codec, overrides [snapcast].codec: pcm, flac, f32lz4, f32lz4e
     #[arg(long)]
     codec: Option<String>,
 
@@ -83,7 +82,8 @@ struct Cli {
     #[arg(long)]
     streaming_port: Option<u16>,
 
-    /// Server display name (`mDNS`, MQTT, KNX). Default: "`SnapDog`"
+    /// Server display name (`mDNS` instance name, Home Assistant device name,
+    /// system version endpoint). Default: "`SnapDog`"
     #[arg(long)]
     name: Option<String>,
 
@@ -106,6 +106,8 @@ const SNAPCAST_CMD_CHANNEL_SIZE: usize = 64;
 const SNAPSERVER_STARTUP_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 /// State file names (relative to `config.system.state_dir`).
 const STATE_FILE: &str = "zones.json";
+/// Individual address of a KNX device started with `--knx-device` and no `--knx-address`.
+const DEFAULT_KNX_DEVICE_ADDRESS: &str = "15.15.255";
 const EQ_FILE: &str = "eq.json";
 
 /// Coalesces rapid volume changes per client within a time window.
@@ -208,7 +210,22 @@ pub async fn run_app() -> Result<()> {
     if cli.knx_device {
         let knx = app_config.knx.get_or_insert_default();
         knx.role = config::KnxRole::Device;
-        knx.individual_address = Some(cli.knx_address.unwrap_or_else(|| "15.15.255".into()));
+        let address = cli
+            .knx_address
+            .clone()
+            .unwrap_or_else(|| DEFAULT_KNX_DEVICE_ADDRESS.into());
+        if let Some(configured) = knx.individual_address.as_ref()
+            && *configured != address
+        {
+            let message = format!(
+                "--knx-device replaces [knx].individual_address = {configured} from the \
+                 configuration file with {address}. Pass --knx-address {configured} to keep the \
+                 file's address."
+            );
+            app_config.warn(message);
+        }
+        let knx = app_config.knx.get_or_insert_default();
+        knx.individual_address = Some(address);
     }
 
     // --knx-prog-mode: set flag for BAU task to activate on start
@@ -270,6 +287,9 @@ pub async fn run_app() -> Result<()> {
         };
     }
 
+    // The command-line overrides above bypass file validation: check them too.
+    config::validate(&mut app_config)?;
+
     // Validate TLS configuration
     match (&app_config.http.tls_cert, &app_config.http.tls_key) {
         (Some(_), None) => anyhow::bail!("tls_cert is set but tls_key is missing"),
@@ -278,6 +298,22 @@ pub async fn run_app() -> Result<()> {
     }
 
     if cli.check_config {
+        if let Some(bind) = app_config.snapcast.streaming_bind
+            && config::address_is_not_local(bind)
+        {
+            app_config.warn(format!(
+                "[snapcast].streaming_bind = {bind} is not an address of this host (or not one \
+                 that can be bound), so the server would not start here. Check the address, or \
+                 ignore this if the configuration is for another machine."
+            ));
+        }
+        for notice in &app_config.notices {
+            let label = match notice.level {
+                config::NoticeLevel::Info => "note",
+                config::NoticeLevel::Warn => "warning",
+            };
+            eprintln!("{label}: {}", notice.message);
+        }
         println!("Configuration is valid");
         return Ok(());
     }
@@ -290,12 +326,23 @@ pub async fn run_app() -> Result<()> {
     let config = Arc::new(app_config);
 
     // ── Initialize logging ────────────────────────────────────
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive(format!("snapdog={}", config.system.log_level).parse()?),
-        )
-        .init();
+    // `log_guard` must live until shutdown: dropping it stops file logging.
+    let logging::LogSetup {
+        subscriber,
+        file_guard: log_guard,
+        file_error: log_file_error,
+    } = logging::build(
+        &config.system.log_level.to_string(),
+        config.system.log_file.as_deref(),
+    )?;
+    logging::install(subscriber)?;
+    if let (Some(error), Some(path)) = (log_file_error, config.system.log_file.as_deref()) {
+        tracing::warn!(
+            path,
+            "log_file is not used, logging to stdout only: {error}"
+        );
+    }
+    config.log_notices();
 
     tracing::info!(
         zones = config.zones.len(),
@@ -311,34 +358,26 @@ pub async fn run_app() -> Result<()> {
     // instead of crashing mid-startup or silently degrading.
 
     // HTTP API listener — passed into api::serve() so no TOCTOU window.
-    let http_addr = format!("{}:{}", config.http.bind, config.http.port);
-    let http_listener = tokio::net::TcpListener::bind(&http_addr)
+    let http_listener = api::bind_http_listener(&config.http.bind, config.http.port)
         .await
-        .with_context(|| {
-            format!(
-                "HTTP API port {} is already in use — is snapdog already running?",
-                config.http.port
-            )
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                anyhow::anyhow!(
+                    "HTTP API port {} is already in use — is snapdog already running?",
+                    config.http.port
+                )
+            } else {
+                anyhow::Error::new(e).context(format!(
+                    "cannot bind the HTTP API to {}:{}",
+                    config.http.bind, config.http.port
+                ))
+            }
         })?;
 
     // Snapcast streaming port — probe-bind then immediately release so the
     // embedded server can bind it a moment later.  Catches conflicts early.
     #[cfg(feature = "snapcast-embedded")]
-    {
-        let snap_addr = format!(
-            "{}:{}",
-            config.snapcast.address, config.snapcast.streaming_port
-        );
-        tokio::net::TcpListener::bind(&snap_addr)
-            .await
-            .with_context(|| {
-                format!(
-                    "Snapcast streaming port {} is already in use — is snapdog already running?",
-                    config.snapcast.streaming_port
-                )
-            })?;
-        // listener dropped here — embedded server will bind it below
-    }
+    snapcast::embedded::check_streaming_port(&config.snapcast)?;
 
     // ── Initialize subsystems ─────────────────────────────────
     let state_dir = PathBuf::from(&config.system.state_dir);
@@ -923,6 +962,8 @@ pub async fn run_app() -> Result<()> {
     snapserver.stop().await?;
 
     tracing::info!("SnapDog server terminated");
+    // `exit` skips destructors: flush the log file explicitly.
+    drop(log_guard);
     std::process::exit(0);
 }
 

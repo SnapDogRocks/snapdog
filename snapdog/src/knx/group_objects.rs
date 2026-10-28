@@ -152,7 +152,7 @@ impl GoFlags {
     }
 }
 
-// ── Zone group objects (35 per zone) ──────────────────────────
+// ── Zone group objects (33 per zone) ──────────────────────────
 
 /// Create a receive-only GO definition.
 const fn go_recv(
@@ -212,7 +212,7 @@ const fn go_bidir(
     }
 }
 
-/// Zone group object definitions (35 per zone).
+/// Zone group object definitions (33 per zone).
 pub const ZONE_GOS: &[GoDefinition] = &[
     go_recv("Play", "Play", "Play", DPT_SWITCH, "DPST-1-1", "1 Bit"),
     go_recv("Pause", "Pause", "Pause", DPT_SWITCH, "DPST-1-1", "1 Bit"),

@@ -7,6 +7,7 @@
 //! Convention over configuration: sensible defaults, auto-generated where possible.
 
 mod convention;
+mod notices;
 mod types;
 
 pub use types::*;
@@ -17,15 +18,172 @@ use anyhow::{Context, Result};
 
 /// Load, validate, and resolve configuration from a TOML file.
 ///
+/// A file that is not valid TOML fails with "Failed to parse <path>". A valid file
+/// with a bad value (sample rate, duplicate zone, ...) fails with that message alone,
+/// as it always did.
+///
 /// # Errors
 ///
 /// Returns an error if the file cannot be read or contains invalid TOML/config.
 pub fn load(path: &Path) -> Result<AppConfig> {
     let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
         .with_context(|| format!("Failed to read {}", path.display()))?;
+    let (raw, unknown) =
+        parse(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
+    resolve(raw, unknown)
+}
+
+/// Like [`load`], but takes the TOML text. Keys that no config struct knows
+/// (typos, removed keys) are accepted, so existing files keep loading, but are
+/// reported through [`AppConfig::notices`].
+///
+/// # Errors
+///
+/// Returns an error if the text is not valid TOML or the configuration is invalid.
+pub fn load_str(content: &str) -> Result<AppConfig> {
+    let (raw, unknown) = parse(content)?;
+    resolve(raw, unknown)
+}
+
+/// Parse TOML text into the raw file structure and the paths of keys it ignored.
+fn parse(content: &str) -> Result<(FileConfig, Vec<String>)> {
+    let mut unknown = Vec::new();
     let raw: FileConfig =
-        toml::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
-    load_raw(raw)
+        serde_ignored::deserialize(toml::Deserializer::parse(content)?, |path| {
+            unknown.push(path.to_string());
+        })?;
+    Ok((raw, unknown))
+}
+
+fn resolve(raw: FileConfig, unknown: Vec<String>) -> Result<AppConfig> {
+    let mut config = load_raw(raw)?;
+    for key in unknown {
+        config.warn(format!(
+            "Unknown configuration key `{}` is ignored. Check the spelling against snapdog.example.toml.",
+            display_key_path(&key)
+        ));
+    }
+    Ok(config)
+}
+
+/// Best effort: whether `ip` is certainly not assigned to any network interface of this host.
+///
+/// Found by binding a TCP socket to it on an ephemeral port. Only the operating system's
+/// "cannot assign requested address" counts. Any other outcome, including a successful
+/// bind and every other error, says nothing, so this never reports a problem that is not one.
+#[must_use]
+pub fn address_is_not_local(ip: std::net::IpAddr) -> bool {
+    matches!(
+        std::net::TcpListener::bind((ip, 0)),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable
+    )
+}
+
+/// Unknown-key list for a TOML text, in the form used in log messages.
+/// Mainly for tests that need to assert a file contains no stale keys.
+///
+/// # Errors
+///
+/// Returns an error if the text cannot be parsed into the config structure.
+pub fn unknown_keys(content: &str) -> Result<Vec<String>> {
+    let (_, unknown) = parse(content)?;
+    Ok(unknown.iter().map(|k| display_key_path(k)).collect())
+}
+
+/// Like [`unknown_keys`] for a fragment of a file.
+///
+/// Required keys may be missing, so a failure to build the full structure is not an
+/// error. Only the keys seen before it count. Tests use this to check snippets of the example.
+///
+/// # Errors
+///
+/// Returns an error if the text is not valid TOML.
+pub fn unknown_keys_in_fragment(content: &str) -> Result<Vec<String>> {
+    let mut unknown = Vec::new();
+    let _: std::result::Result<FileConfig, _> =
+        serde_ignored::deserialize(toml::Deserializer::parse(content)?, |path| {
+            unknown.push(display_key_path(&path.to_string()));
+        });
+    Ok(unknown)
+}
+
+/// Make a `serde_ignored` path readable: `zone.0.knx.foo` becomes `zone[0].knx.foo`
+/// and the `?` that marks an `Option` is dropped (`spotify.?.name` becomes `spotify.name`).
+#[must_use]
+pub fn display_key_path(path: &str) -> String {
+    let mut out = String::new();
+    for segment in path.split('.').filter(|s| !s.is_empty() && *s != "?") {
+        if segment.bytes().all(|b| b.is_ascii_digit()) {
+            out.push('[');
+            out.push_str(segment);
+            out.push(']');
+        } else {
+            if !out.is_empty() {
+                out.push('.');
+            }
+            out.push_str(segment);
+        }
+    }
+    out
+}
+
+/// Expand a leading `~` or `~/` to the user's home directory. Other forms
+/// (`~user`, a `~` elsewhere) and a missing home directory leave the text unchanged.
+#[must_use]
+pub fn expand_tilde(path: &str) -> String {
+    let home = || {
+        std::env::var("HOME")
+            .ok()
+            .or_else(|| std::env::var("USERPROFILE").ok())
+            .filter(|h| !h.is_empty())
+    };
+    if path == "~" {
+        return home().unwrap_or_else(|| path.to_string());
+    }
+    match (path.strip_prefix("~/"), home()) {
+        (Some(rest), Some(home)) => format!("{}/{rest}", home.trim_end_matches('/')),
+        _ => path.to_string(),
+    }
+}
+
+/// Apply `~` expansion to every path-valued key a user writes by hand.
+///
+/// Before the expansion existed a leading `~` was taken literally, as a directory named
+/// `~` under the working directory, so state and files written there are no longer read.
+/// For every key whose value changes and whose old literal path (`exists`) is still there,
+/// a notice says so and where the setting points now.
+fn expand_paths(raw: &mut FileConfig, exists: &dyn Fn(&str) -> bool) -> Vec<String> {
+    let mut notices = Vec::new();
+    let mut expand = |key: &str, value: &str| -> String {
+        let expanded = expand_tilde(value);
+        if expanded != value && exists(value) {
+            notices.push(format!(
+                "[{key} = {value:?} now means {expanded}. A path named {value:?} relative to the \
+                 working directory still exists and is no longer used. If it holds your data \
+                 (state, pairing, logs, cache), move it to {expanded}."
+            ));
+        }
+        expanded
+    };
+
+    raw.system.state_dir = expand("system].state_dir", &raw.system.state_dir.clone());
+    raw.system.log_file = raw
+        .system
+        .log_file
+        .take()
+        .map(|p| expand("system].log_file", &p));
+    if let Some(subsonic) = raw.subsonic.as_mut() {
+        subsonic.cache.path = expand("subsonic.cache].path", &subsonic.cache.path.clone());
+    }
+    for (key, slot) in [
+        ("http].tls_cert", &mut raw.http.tls_cert),
+        ("http].tls_key", &mut raw.http.tls_key),
+    ] {
+        if let Some(path) = slot.as_ref().and_then(|p| p.to_str()) {
+            *slot = Some(std::path::PathBuf::from(expand(key, path)));
+        }
+    }
+    notices
 }
 
 /// Resolve raw TOML config into fully populated `AppConfig` with conventions applied.
@@ -46,7 +204,8 @@ pub fn load_raw_no_validate(raw: FileConfig) -> Result<AppConfig> {
     load_raw_inner(raw, true)
 }
 
-fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConfig> {
+fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<AppConfig> {
+    let path_notices = expand_paths(&mut raw, &|p| Path::new(p).exists());
     if !skip_zone_validation {
         anyhow::ensure!(
             !raw.zone.is_empty(),
@@ -63,25 +222,20 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
     // ── Uniqueness & format validation ─────────────────────────
     validate_raw_inputs(&raw)?;
 
-    // ── KNX address validation ───────────────────────────────
-    if let Some(ref knx) = raw.knx
-        && let Some(ref addr) = knx.individual_address
-    {
-        validate_knx_ia(addr).context("Invalid KNX individual address")?;
-    }
-    for zone in &raw.zone {
-        validate_zone_knx(&zone.knx).with_context(|| format!("Zone '{}' KNX error", zone.name))?;
-    }
-    for client in &raw.client {
-        validate_client_knx(&client.knx)
-            .with_context(|| format!("Client '{}' KNX error", client.name))?;
-    }
+    validate_knx_addresses(&raw)?;
+
+    // Resolving clamps the volume limits, so what the file said has to be reported first.
+    let volume_notices = volume_range_notices(&raw.client);
+
+    // `[spotify].name` names the Spotify device of a zone that sets no spotify_name.
+    let spotify_naming = convention::SpotifyNaming::new(raw.spotify.as_ref(), raw.zone.len());
+    let spotify_notices = spotify_name_notices(&raw.zone, spotify_naming);
 
     let zones: Vec<ZoneConfig> = raw
         .zone
         .into_iter()
         .enumerate()
-        .map(|(i, z)| convention::resolve_zone(i + 1, z, &raw.audio, &raw.snapcast))
+        .map(|(i, z)| convention::resolve_zone(i + 1, z, &raw.audio, &raw.snapcast, spotify_naming))
         .collect::<Vec<_>>();
 
     let zone_names: Vec<&str> = zones.iter().map(|z| z.name.as_str()).collect();
@@ -144,54 +298,162 @@ fn load_raw_inner(raw: FileConfig, skip_zone_validation: bool) -> Result<AppConf
         zones,
         clients,
         radios,
+        notices: Vec::new(),
     };
 
+    let duplicates = duplicate_spotify_names(&config.zones).map(|m| (NoticeLevel::Warn, m));
+    let load_notices = volume_notices
+        .into_iter()
+        .chain(path_notices)
+        .map(|m| (NoticeLevel::Warn, m))
+        .chain(spotify_notices)
+        .chain(duplicates);
+    for (level, message) in load_notices {
+        match level {
+            NoticeLevel::Info => config.info(message),
+            NoticeLevel::Warn => config.warn(message),
+        }
+    }
     apply_env_overrides(&mut config);
     validate(&mut config)?;
 
     Ok(config)
 }
 
-/// Cross-field validation and normalization. Runs after all overrides are applied.
-fn validate(config: &mut AppConfig) -> Result<()> {
+/// Check the individual address and every group address in the file.
+fn validate_knx_addresses(raw: &FileConfig) -> Result<()> {
+    if let Some(ref knx) = raw.knx
+        && let Some(ref addr) = knx.individual_address
+    {
+        validate_knx_ia(addr).context("Invalid KNX individual address")?;
+    }
+    for zone in &raw.zone {
+        validate_zone_knx(&zone.knx).with_context(|| format!("Zone '{}' KNX error", zone.name))?;
+    }
+    for client in &raw.client {
+        validate_client_knx(&client.knx)
+            .with_context(|| format!("Client '{}' KNX error", client.name))?;
+    }
+    Ok(())
+}
+
+/// What `[spotify].name` does for these zones, when it is set: it names the Spotify
+/// device of every zone without a `spotify_name`, or it has no effect at all.
+fn spotify_name_notices(
+    zones: &[RawZoneConfig],
+    naming: convention::SpotifyNaming<'_>,
+) -> Vec<(NoticeLevel, String)> {
+    let Some(base) = naming.base else {
+        return Vec::new();
+    };
+    let named: Vec<&RawZoneConfig> = zones.iter().filter(|z| z.spotify_name.is_none()).collect();
+    if named.is_empty() {
+        return vec![(
+            NoticeLevel::Info,
+            format!(
+                "[spotify].name = {base:?} has no effect: every zone sets its own \
+                 [[zone]].spotify_name."
+            ),
+        )];
+    }
+    if naming.zone_count > 1 {
+        let shown: Vec<String> = named.iter().map(|z| naming.device_name(&z.name)).collect();
+        return vec![(
+            NoticeLevel::Info,
+            format!(
+                "[spotify].name = {base:?} is a prefix because there are several zones: the \
+                 Spotify devices are {}.",
+                shown.join(", ")
+            ),
+        )];
+    }
+    Vec::new()
+}
+
+/// Two zones with the same Spotify device name run two receivers that Spotify cannot tell
+/// apart (they also derive the same Zeroconf id). Reported once, naming the zones.
+fn duplicate_spotify_names(zones: &[ZoneConfig]) -> Option<String> {
+    let mut seen: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+    for zone in zones {
+        seen.entry(zone.spotify_name.as_str())
+            .or_default()
+            .push(zone.name.as_str());
+    }
+    let clashes: Vec<String> = seen
+        .into_iter()
+        .filter(|(_, names)| names.len() > 1)
+        .map(|(name, names)| format!("{name:?} (zones {})", names.join(", ")))
+        .collect();
+    (!clashes.is_empty()).then(|| {
+        format!(
+            "Several zones would show the same Spotify device name: {}. Set a different \
+             [[zone]].spotify_name for each.",
+            clashes.join("; ")
+        )
+    })
+}
+
+/// Notices for `max_volume` and `default_volume` values outside 0 to 100, which
+/// resolving a client clamps. Same wording as the check in [`validate`].
+fn volume_range_notices(clients: &[RawClientConfig]) -> Vec<String> {
+    let mut notices = Vec::new();
+    for client in clients {
+        for (key, value) in [
+            ("max_volume", client.max_volume),
+            ("default_volume", client.default_volume),
+        ] {
+            if value > 100 {
+                notices.push(format!(
+                    "Client '{}': {key} {value} exceeds 100, using 100",
+                    client.name
+                ));
+            } else if value < 0 {
+                notices.push(format!(
+                    "Client '{}': {key} {value} is below 0, using 0",
+                    client.name
+                ));
+            }
+        }
+    }
+    notices
+}
+
+/// Cross-field validation and normalization.
+///
+/// Runs after all overrides are applied, and again after command-line overrides (see
+/// `main`), so it must be idempotent. It also recomputes the notices that depend on the
+/// resolved settings (default encryption key, keys this build ignores), so those reflect
+/// the final values.
+///
+/// # Errors
+///
+/// Returns an error if a value is out of range or two settings contradict each other.
+pub fn validate(config: &mut AppConfig) -> Result<()> {
     // ── Audio format constraints ──────────────────────────────
-    if !(8_000..=384_000).contains(&config.audio.sample_rate) {
-        anyhow::bail!(
-            "sample_rate {} is out of range (8000–384000)",
-            config.audio.sample_rate
-        );
-    }
-    if !matches!(config.audio.bit_depth, 16 | 24 | 32) {
-        anyhow::bail!(
-            "bit_depth {} is invalid (must be 16, 24, or 32)",
-            config.audio.bit_depth
-        );
-    }
-    if !(1..=8).contains(&config.audio.channels) {
-        anyhow::bail!("channels {} is out of range (1–8)", config.audio.channels);
-    }
+    validate_audio_format(&config.audio)?;
 
     // FLAC supports max 24-bit
     if config.snapcast.codec == AudioCodec::Flac && config.audio.bit_depth > 24 {
-        tracing::warn!(
-            bit_depth = config.audio.bit_depth,
-            "FLAC supports max 24-bit, clamping"
-        );
+        config.warn(format!(
+            "bit_depth {} is not supported by FLAC (maximum 24), using 24",
+            config.audio.bit_depth
+        ));
         config.audio.bit_depth = 24;
     }
 
-    // f32lz4 always uses 32-bit float internally — bit_depth is ignored
-    if matches!(
-        config.snapcast.codec,
-        AudioCodec::F32lz4 | AudioCodec::F32lz4e
-    ) && config.audio.bit_depth != 32
-    {
-        tracing::info!(
-            codec = %config.snapcast.codec,
-            configured_bit_depth = config.audio.bit_depth,
-            "f32lz4 uses native 32-bit float — bit_depth setting is ignored"
-        );
-    }
+    // An empty key is a secret that did not arrive (an unset compose variable, a blank
+    // line in the file), not a request for the public built-in key.
+    anyhow::ensure!(
+        config.snapcast.codec != AudioCodec::F32lz4e
+            || !config
+                .snapcast
+                .encryption_psk
+                .as_ref()
+                .is_some_and(|key| key.is_empty()),
+        "codec f32lz4e is configured with an empty encryption key (encryption_psk or \
+         SNAPDOG_SNAPCAST_ENCRYPTION_PSK). Set a real key, or remove the setting to use the \
+         built-in key, which is public and protects nothing"
+    );
 
     // ── Port collision ────────────────────────────────────────
     if config.http.port == config.snapcast.streaming_port {
@@ -203,24 +465,52 @@ fn validate(config: &mut AppConfig) -> Result<()> {
     }
 
     // ── Client max_volume ─────────────────────────────────────
+    let mut clamped = Vec::new();
     for client in &mut config.clients {
         if client.max_volume > 100 {
-            tracing::warn!(
-                client = %client.name,
-                value = client.max_volume,
-                "max_volume exceeds 100, clamping"
-            );
+            clamped.push(format!(
+                "Client '{}': max_volume {} exceeds 100, using 100",
+                client.name, client.max_volume
+            ));
             client.max_volume = 100;
         } else if client.max_volume < 0 {
-            tracing::warn!(
-                client = %client.name,
-                value = client.max_volume,
-                "max_volume below 0, clamping"
-            );
+            clamped.push(format!(
+                "Client '{}': max_volume {} is below 0, using 0",
+                client.name, client.max_volume
+            ));
             client.max_volume = 0;
         }
     }
+    for message in clamped {
+        config.warn(message);
+    }
 
+    notices::collect(config);
+    Ok(())
+}
+
+/// Check sample rate, bit depth and channel count. Shared by file loading and the
+/// re-validation after command-line overrides, so `--sample-rate 12345` fails like
+/// `sample_rate = 12345` does.
+fn validate_audio_format(audio: &AudioConfig) -> Result<()> {
+    anyhow::ensure!(
+        matches!(
+            audio.sample_rate,
+            44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
+        ),
+        "Unsupported sample rate: {}. Use 44100, 48000, 88200, 96000, 176400, or 192000",
+        audio.sample_rate
+    );
+    anyhow::ensure!(
+        matches!(audio.bit_depth, 16 | 24 | 32),
+        "Unsupported bit depth: {}. Use 16, 24, or 32",
+        audio.bit_depth
+    );
+    anyhow::ensure!(
+        audio.channels > 0 && audio.channels <= 8,
+        "Unsupported number of channels: {}. Use 1 to 8",
+        audio.channels
+    );
     Ok(())
 }
 
@@ -247,24 +537,7 @@ fn validate_raw_inputs(raw: &FileConfig) -> Result<()> {
             .with_context(|| format!("Invalid MAC address format: '{}'", client.mac))?;
     }
 
-    anyhow::ensure!(
-        matches!(
-            raw.audio.sample_rate,
-            44100 | 48000 | 88200 | 96000 | 176_400 | 192_000
-        ),
-        "Unsupported sample rate: {}. Use 44100, 48000, 88200, 96000, 176400, or 192000",
-        raw.audio.sample_rate
-    );
-    anyhow::ensure!(
-        matches!(raw.audio.bit_depth, 16 | 24 | 32),
-        "Unsupported bit depth: {}. Use 16, 24, or 32",
-        raw.audio.bit_depth
-    );
-    anyhow::ensure!(
-        raw.audio.channels > 0 && raw.audio.channels <= 8,
-        "Unsupported number of channels: {}. Use 1 to 8",
-        raw.audio.channels
-    );
+    validate_audio_format(&raw.audio)?;
     Ok(())
 }
 
@@ -329,11 +602,7 @@ fn validate_presence(zone: &ZoneConfig, num_radios: usize) -> Result<()> {
 
 /// Apply environment variable overrides to the resolved configuration.
 fn apply_env_overrides(config: &mut AppConfig) {
-    if let Ok(val) = std::env::var("SNAPDOG_HTTP_PORT")
-        && let Ok(port) = val.parse()
-    {
-        config.http.port = port;
-    }
+    override_http_port(config, std::env::var("SNAPDOG_HTTP_PORT").ok());
     if let Ok(val) = std::env::var("SNAPDOG_HTTP_API_KEYS") {
         config.http.api_keys = val
             .split(',')
@@ -352,7 +621,39 @@ fn apply_env_overrides(config: &mut AppConfig) {
     {
         mqtt.password = SecretString::from(val);
     }
-    if let Ok(val) = std::env::var("SNAPDOG_SNAPCAST_ENCRYPTION_PSK") {
+    override_psk(
+        config,
+        std::env::var("SNAPDOG_SNAPCAST_ENCRYPTION_PSK").ok(),
+    );
+}
+
+fn override_http_port(config: &mut AppConfig, value: Option<String>) {
+    let Some(val) = value else { return };
+    match val.trim().parse() {
+        Ok(port) => config.http.port = port,
+        Err(_) => config.warn(format!(
+            "SNAPDOG_HTTP_PORT={val:?} is not a port number and is ignored, using http.port {}",
+            config.http.port
+        )),
+    }
+}
+
+/// A variable that is set and empty (for example `${PSK:-}` in a compose file whose
+/// secret did not arrive) is never used as a key: that would encrypt with an empty,
+/// publicly known secret. A key from the file stays in place, and without one the
+/// empty value is kept as such, so `f32lz4e` refuses to start in [`validate`] instead of
+/// quietly falling back to the public built-in key. Either way a warning names the variable.
+fn override_psk(config: &mut AppConfig, value: Option<String>) {
+    let Some(val) = value else { return };
+    if val.is_empty() {
+        config.warn(
+            "SNAPDOG_SNAPCAST_ENCRYPTION_PSK is set but empty, so it is ignored. An empty key \
+             would encrypt with a secret everyone knows. Set it to a real key or unset it.",
+        );
+        if config.snapcast.encryption_psk.is_none() {
+            config.snapcast.encryption_psk = Some(SecretString::from(val));
+        }
+    } else {
         config.snapcast.encryption_psk = Some(SecretString::from(val));
     }
 }
@@ -965,5 +1266,377 @@ mod tests {
         )
         .unwrap();
         assert!(load_raw(raw).is_ok());
+    }
+
+    // ── `~` expansion, environment overrides, re-validation ──────
+
+    fn home() -> Option<String> {
+        std::env::var("HOME").ok().filter(|h| !h.is_empty())
+    }
+
+    #[test]
+    fn tilde_expands_only_at_the_start() {
+        let Some(home) = home() else { return };
+        assert_eq!(expand_tilde("~"), home);
+        assert_eq!(
+            expand_tilde("~/.cache/snapdog/tracks"),
+            format!("{}/.cache/snapdog/tracks", home.trim_end_matches('/'))
+        );
+        assert_eq!(expand_tilde("/var/~/x"), "/var/~/x");
+        assert_eq!(expand_tilde("~other/x"), "~other/x");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+    }
+
+    #[test]
+    fn a_leftover_literal_tilde_path_is_reported() {
+        let Some(home) = home() else { return };
+        let toml = "[system]\nstate_dir = \"~/state\"\nlog_file = \"/var/log/x.log\"\n\
+                    [[zone]]\nname = \"A\"";
+        let mut raw: FileConfig = toml::from_str(toml).unwrap();
+        // The old literal directory exists: say what changed.
+        let notices = expand_paths(&mut raw, &|p| p == "~/state");
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(
+            notices[0].starts_with("[system].state_dir = \"~/state\" now means"),
+            "{notices:?}"
+        );
+        assert!(
+            notices[0].contains(&format!("{}/state", home.trim_end_matches('/'))),
+            "{notices:?}"
+        );
+        assert!(notices[0].contains("move it"), "{notices:?}");
+        // Nothing left behind, or no tilde at all: nothing to say.
+        let mut raw: FileConfig = toml::from_str(toml).unwrap();
+        assert_eq!(expand_paths(&mut raw, &|_| false), Vec::<String>::new());
+        let mut raw: FileConfig = toml::from_str("[[zone]]\nname = \"A\"").unwrap();
+        assert_eq!(expand_paths(&mut raw, &|_| true), Vec::<String>::new());
+    }
+
+    #[test]
+    fn tilde_is_expanded_in_every_user_written_path() {
+        let Some(home) = home() else { return };
+        let config = load_str(
+            r#"
+            [system]
+            state_dir = "~/state"
+            log_file = "~/snapdog.log"
+            [http]
+            tls_cert = "~/cert.pem"
+            tls_key = "~/key.pem"
+            [subsonic]
+            url = "http://navidrome:4533"
+            username = "u"
+            password = "p"
+            [subsonic.cache]
+            path = "~/.cache/snapdog/tracks"
+            [[zone]]
+            name = "A"
+        "#,
+        )
+        .unwrap();
+        let prefix = home.trim_end_matches('/');
+        assert_eq!(config.system.state_dir, format!("{prefix}/state"));
+        assert_eq!(
+            config.system.log_file.as_deref(),
+            Some(format!("{prefix}/snapdog.log").as_str())
+        );
+        assert_eq!(
+            config.http.tls_cert.as_deref().and_then(|p| p.to_str()),
+            Some(format!("{prefix}/cert.pem").as_str())
+        );
+        assert_eq!(
+            config.subsonic.unwrap().cache.path,
+            format!("{prefix}/.cache/snapdog/tracks")
+        );
+    }
+
+    #[test]
+    fn unparsable_http_port_variable_is_reported() {
+        let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
+        let before = config.http.port;
+        override_http_port(&mut config, Some("not-a-port".into()));
+        assert_eq!(config.http.port, before);
+        assert!(
+            config
+                .notices
+                .iter()
+                .any(|n| n.message.contains("SNAPDOG_HTTP_PORT"))
+        );
+        override_http_port(&mut config, Some(" 8080 ".into()));
+        assert_eq!(config.http.port, 8080);
+        override_http_port(&mut config, None);
+        assert_eq!(config.http.port, 8080);
+    }
+
+    #[test]
+    fn revalidation_catches_values_set_after_loading() {
+        let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
+        assert!(validate(&mut config).is_ok());
+        config.audio.sample_rate = 12345;
+        let error = validate(&mut config).unwrap_err().to_string();
+        assert!(error.contains("Unsupported sample rate"), "{error}");
+
+        let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
+        config.http.port = config.snapcast.streaming_port;
+        assert!(validate(&mut config).is_err());
+    }
+
+    #[test]
+    fn revalidation_does_not_repeat_notices() {
+        let mut config = load_str(
+            "[audio]\nbit_depth = 32\n[snapcast]\ncodec = \"flac\"\n[[zone]]\nname = \"A\"",
+        )
+        .unwrap();
+        let before = config.notices.clone();
+        validate(&mut config).unwrap();
+        assert_eq!(config.notices, before);
+    }
+
+    #[test]
+    fn flac_clamp_is_reported_as_a_notice() {
+        let config = load_str(
+            "[audio]\nbit_depth = 32\n[snapcast]\ncodec = \"flac\"\n[[zone]]\nname = \"A\"",
+        )
+        .unwrap();
+        assert_eq!(config.audio.bit_depth, 24);
+        assert!(config.notices.iter().any(|n| n.message.contains("FLAC")));
+    }
+
+    #[test]
+    fn an_address_that_is_not_ours_is_recognised_without_false_alarms() {
+        // Loopback is always ours, as are the wildcard addresses.
+        assert!(!address_is_not_local("127.0.0.1".parse().unwrap()));
+        assert!(!address_is_not_local("0.0.0.0".parse().unwrap()));
+        // TEST-NET-1 is reserved for documentation: no interface has it.
+        assert!(address_is_not_local("192.0.2.1".parse().unwrap()));
+    }
+
+    // ── [spotify].name names the Spotify Connect device ─────────
+
+    fn spotify_names(toml: &str) -> Vec<String> {
+        load_str(toml)
+            .unwrap()
+            .zones
+            .iter()
+            .map(|z| z.spotify_name.clone())
+            .collect()
+    }
+
+    fn zones(names: &[&str]) -> String {
+        names.iter().fold(String::new(), |mut toml, name| {
+            use std::fmt::Write;
+            let _ = writeln!(toml, "[[zone]]\nname = \"{name}\"");
+            toml
+        })
+    }
+
+    #[test]
+    fn one_zone_gets_exactly_the_spotify_name() {
+        let toml = format!("[spotify]\nname = \"Home\"\n{}", zones(&["Living"]));
+        assert_eq!(spotify_names(&toml), ["Home"]);
+    }
+
+    #[test]
+    fn several_zones_get_the_name_as_a_prefix() {
+        let toml = format!(
+            "[spotify]\nname = \"Home\"\n{}",
+            zones(&["Living", "Kitchen"])
+        );
+        assert_eq!(spotify_names(&toml), ["Home Living", "Home Kitchen"]);
+    }
+
+    #[test]
+    fn a_zones_own_spotify_name_wins_over_the_global_name() {
+        let toml = "[spotify]\nname = \"Home\"\n\
+                    [[zone]]\nname = \"Living\"\nspotify_name = \"Sofa\"\n\
+                    [[zone]]\nname = \"Kitchen\"\n";
+        assert_eq!(spotify_names(toml), ["Sofa", "Home Kitchen"]);
+        // One zone: the explicit name still wins.
+        let toml =
+            "[spotify]\nname = \"Home\"\n[[zone]]\nname = \"Living\"\nspotify_name = \"Sofa\"\n";
+        assert_eq!(spotify_names(toml), ["Sofa"]);
+    }
+
+    #[test]
+    fn without_a_usable_name_the_zone_name_is_the_device_name() {
+        for head in [
+            "",
+            "[spotify]\n",
+            "[spotify]\nname = \"\"\n",
+            "[spotify]\nname = \"   \"\n",
+        ] {
+            let toml = format!("{head}{}", zones(&["Living", "Kitchen"]));
+            assert_eq!(spotify_names(&toml), ["Living", "Kitchen"], "{head:?}");
+        }
+        let toml = format!("[spotify]\nbitrate = 160\n{}", zones(&["Living"]));
+        assert_eq!(spotify_names(&toml), ["Living"]);
+    }
+
+    #[test]
+    fn the_name_is_trimmed() {
+        let toml = format!(
+            "[spotify]\nname = \"  Home \"\n{}",
+            zones(&["Living", "Kitchen"])
+        );
+        assert_eq!(spotify_names(&toml), ["Home Living", "Home Kitchen"]);
+    }
+
+    #[test]
+    fn every_zone_keeps_its_own_stable_zeroconf_id() {
+        let toml = format!(
+            "[spotify]\nname = \"Home\"\n{}",
+            zones(&["Living", "Kitchen", "Bath"])
+        );
+        let ids = |toml: &str| -> Vec<String> {
+            spotify_names(toml)
+                .into_iter()
+                .map(|name| SpotifyConfig { name, bitrate: 320 }.device_id())
+                .collect()
+        };
+        let first = ids(&toml);
+        let distinct: std::collections::BTreeSet<_> = first.iter().collect();
+        assert_eq!(distinct.len(), 3, "{first:?}");
+        assert_eq!(first, ids(&toml), "the same names give the same ids");
+    }
+
+    #[test]
+    fn spotify_name_notices_say_what_the_name_does() {
+        let text = |toml: &str| -> Vec<String> {
+            load_str(toml)
+                .unwrap()
+                .notices
+                .into_iter()
+                .filter(|n| n.message.contains("[spotify].name"))
+                .map(|n| n.message)
+                .collect()
+        };
+        // Takes effect for the only zone: nothing to say.
+        let silent = |toml: String| assert_eq!(text(&toml), Vec::<String>::new());
+        silent(format!("[spotify]\nname = \"Home\"\n{}", zones(&["A"])));
+        // No name: nothing to say.
+        silent(format!("[spotify]\n{}", zones(&["A", "B"])));
+        // Several zones: the prefix, with the resulting names, in one line.
+        let prefix = text(&format!(
+            "[spotify]\nname = \"Home\"\n{}",
+            zones(&["A", "B"])
+        ));
+        assert_eq!(prefix.len(), 1, "{prefix:?}");
+        assert!(prefix[0].contains("is a prefix"), "{prefix:?}");
+        assert!(prefix[0].contains("Home A, Home B"), "{prefix:?}");
+        // Every zone has its own name: the setting does nothing.
+        let none = text(
+            "[spotify]\nname = \"Home\"\n\
+             [[zone]]\nname = \"A\"\nspotify_name = \"X\"\n\
+             [[zone]]\nname = \"B\"\nspotify_name = \"Y\"\n",
+        );
+        assert_eq!(none.len(), 1, "{none:?}");
+        assert!(none[0].contains("has no effect"), "{none:?}");
+    }
+
+    #[test]
+    fn two_zones_with_the_same_spotify_name_are_reported() {
+        let config = load_str(
+            "[[zone]]\nname = \"A\"\nspotify_name = \"Same\"\n\
+             [[zone]]\nname = \"B\"\nspotify_name = \"Same\"\n",
+        )
+        .unwrap();
+        let hits: Vec<_> = config
+            .notices
+            .iter()
+            .filter(|n| n.message.contains("same Spotify device name"))
+            .collect();
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].message.contains("\"Same\" (zones A, B)"));
+        assert_eq!(hits[0].level, NoticeLevel::Warn);
+        // The global prefix cannot cause it, zone names are unique.
+        let ok = load_str(&format!(
+            "[spotify]\nname = \"Home\"\n{}",
+            zones(&["A", "B"])
+        ))
+        .unwrap();
+        assert!(
+            !ok.notices
+                .iter()
+                .any(|n| n.message.contains("same Spotify"))
+        );
+    }
+
+    #[test]
+    fn channel_count_is_limited_to_one_through_eight() {
+        let with = |channels: u8| {
+            load_str(&format!(
+                "[audio]\nchannels = {channels}\n[[zone]]\nname = \"A\""
+            ))
+        };
+        assert!(with(1).is_ok());
+        assert!(with(8).is_ok());
+        for bad in [0, 9, 16] {
+            let error = with(bad).unwrap_err().to_string();
+            assert!(
+                error.contains(&format!("Unsupported number of channels: {bad}")),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn out_of_range_client_volumes_are_reported_as_clamped() {
+        let config = load_str(
+            "[[zone]]\nname = \"A\"\n[[client]]\nname = \"K\"\nmac = \"02:42:ac:11:00:10\"\n\
+             zone = \"A\"\nmax_volume = 120\ndefault_volume = -5\n",
+        )
+        .unwrap();
+        assert_eq!(config.clients[0].max_volume, 100);
+        assert_eq!(config.clients[0].default_volume, 0);
+        let messages: Vec<&str> = config.notices.iter().map(|n| n.message.as_str()).collect();
+        assert!(
+            messages.contains(&"Client 'K': max_volume 120 exceeds 100, using 100"),
+            "{messages:?}"
+        );
+        assert!(
+            messages.contains(&"Client 'K': default_volume -5 is below 0, using 0"),
+            "{messages:?}"
+        );
+        // In range: nothing to report.
+        let quiet = load_str(
+            "[[zone]]\nname = \"A\"\n[[client]]\nname = \"K\"\nmac = \"02:42:ac:11:00:10\"\nzone = \"A\"\n",
+        )
+        .unwrap();
+        assert!(!quiet.notices.iter().any(|n| n.message.contains("volume")));
+    }
+
+    #[test]
+    fn error_text_of_a_bad_value_is_the_bare_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snapdog.toml");
+        std::fs::write(
+            &path,
+            "[audio]\nsample_rate = 12345\n[[zone]]\nname = \"A\"",
+        )
+        .unwrap();
+        let error = load(&path).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Unsupported sample rate: 12345"),
+            "{error:#}"
+        );
+
+        std::fs::write(&path, "[[zone]]\nname = ").unwrap();
+        let error = load(&path).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("Failed to parse {}", path.display())
+        );
+
+        let error = load(&dir.path().join("missing.toml")).unwrap_err();
+        assert!(error.to_string().starts_with("Failed to read"), "{error:#}");
+    }
+
+    #[test]
+    fn unknown_keys_helper_lists_stale_keys() {
+        let keys =
+            unknown_keys("[snapcast]\nbogus = 1\n[[zone]]\nname = \"A\"\nnope = true").unwrap();
+        assert_eq!(keys, ["snapcast.bogus", "zone[0].nope"]);
     }
 }

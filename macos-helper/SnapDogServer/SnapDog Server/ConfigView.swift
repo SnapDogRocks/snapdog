@@ -39,8 +39,25 @@ final class ConfigModel {
 
     struct SpotifySection: Equatable {
         var enabled = false
-        var name = "SnapDog"
+        /// Empty: the server names each Spotify device after its zone.
+        var name = ""
         var bitrate = 320
+    }
+
+    /// The Spotify Connect device names the server derives from `[spotify].name`, the zone
+    /// names and the zones' own `spotify_name`: a zone's own name wins. Otherwise an empty
+    /// `[spotify].name` keeps the zone name, one zone is named exactly `name`, and several
+    /// zones get `"<name> <zone>"`.
+    var spotifyDeviceNames: [String] {
+        let named = zones.filter { !$0.name.isEmpty }
+        let base = spotify.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if named.isEmpty { return base.isEmpty ? [] : [base] }
+        return named.map { zone in
+            let own = zone.spotifyName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !own.isEmpty { return own }
+            if base.isEmpty { return zone.name }
+            return named.count == 1 ? base : "\(base) \(zone.name)"
+        }
     }
 
     /// Global `[knx]` settings only. Per-zone/client group-address matrices
@@ -71,6 +88,11 @@ final class ConfigModel {
     struct ZoneEntry: Identifiable, Equatable {
         let id = UUID()
         var name = ""
+        /// `[[zone]].spotify_name`: the zone's own Spotify Connect device name, empty for none.
+        var spotifyName = ""
+        /// The zone's name as it stands in the file. A renamed zone finds its table (and the
+        /// keys the app does not model) under this name when the file is written.
+        var fileName: String?
         var icon = "🏠"
         /// KNX group addresses (`[[zone]].knx`), keyed by field name. Unknown keys are
         /// preserved so future server fields survive an edit.
@@ -234,7 +256,17 @@ struct ConfigView: View {
         SwiftUI.Section("Spotify") {
             Toggle("Enable Spotify Connect", isOn: $config.spotify.enabled)
             if config.spotify.enabled {
-                TextField("Device name", text: $config.spotify.name, prompt: Text("SnapDog"))
+                TextField("Device name", text: $config.spotify.name, prompt: Text("Uses zone names"))
+                    .help("Name of the Spotify Connect device. With one zone the device is called exactly this; with several zones each is called \"<name> <zone name>\". Leave empty to use the zone names. A zone with its own Spotify name (Zones tab) keeps that name.")
+                let names = config.spotifyDeviceNames
+                if !names.isEmpty {
+                    LabeledContent("Spotify devices") {
+                        Text(names.joined(separator: ", "))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                            .textSelection(.enabled)
+                    }
+                }
                 Picker("Bitrate", selection: $config.spotify.bitrate) {
                     Text("96 kbps").tag(96)
                     Text("160 kbps").tag(160)
@@ -355,6 +387,11 @@ struct ConfigView: View {
                                 NSApp.orderFrontCharacterPalette(nil)
                             }
                         TextField("Zone Name", text: $zone.name)
+                    }
+                    if config.spotify.enabled {
+                        TextField("Spotify name", text: $zone.spotifyName,
+                                  prompt: Text("Optional, replaces the Spotify device name of this zone"))
+                            .font(.callout)
                     }
                     DisclosureGroup("KNX group addresses") {
                         ForEach(ConfigModel.zoneKnxFields, id: \.self) { field in

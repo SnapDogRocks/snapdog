@@ -15,6 +15,7 @@ pub mod config;
 #[cfg(feature = "dbus")]
 pub mod dbus;
 pub mod knx;
+pub mod logging;
 pub mod mqtt;
 pub mod player;
 pub mod process;

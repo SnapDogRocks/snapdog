@@ -1578,6 +1578,186 @@
         }
       }
     },
+    "/api/v1/system/updates": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Read the state of the container updater sidecar.",
+        "description": "Needs `SNAPDOG_UPDATER_URL` and `UPDATER_TOKEN` (see `deploy/docker-compose.yml`);\nwithout them, and outside the Docker deployment, the answer is 503.",
+        "operationId": "update_status",
+        "responses": {
+          "200": {
+            "description": "Updater state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatus"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The updater sidecar did not answer or refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No updater sidecar is configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/updates/apply": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Apply the available update now.",
+        "description": "The sidecar pulls the new image, verifies it and restarts the server, so the\nconnection drops while this runs. Does nothing if no update is available.",
+        "operationId": "apply_update",
+        "responses": {
+          "200": {
+            "description": "Updater state after starting the update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatus"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The updater sidecar did not answer or refused (for example an operation is running)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No updater sidecar is configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/updates/check": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Ask the sidecar to look for a newer release now.",
+        "description": "Answers with the updater state once the check has been started. A check or update\nthat is already running makes the sidecar refuse, which shows up as 502.",
+        "operationId": "check_updates",
+        "responses": {
+          "200": {
+            "description": "Updater state after starting the check",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatus"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The updater sidecar did not answer or refused (for example an operation is running)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No updater sidecar is configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/updates/config": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Change the update mode and maintenance window of the sidecar.",
+        "operationId": "configure_updates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updater state with the new schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed body or unknown field (plain-text rejection)"
+          },
+          "502": {
+            "description": "The updater sidecar did not answer or rejected the schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No updater sidecar is configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/system/version": {
       "get": {
         "tags": [
@@ -4932,6 +5112,118 @@
             "format": "int32",
             "description": "Release year.",
             "minimum": 0
+          }
+        }
+      },
+      "UpdateConfig": {
+        "type": "object",
+        "description": "New update schedule for the container updater sidecar.",
+        "required": [
+          "mode",
+          "maintenanceTime",
+          "timezone"
+        ],
+        "properties": {
+          "maintenanceTime": {
+            "type": "string",
+            "description": "Local time of day for automatic updates, `HH:MM`.",
+            "example": "02:00"
+          },
+          "mode": {
+            "type": "string",
+            "description": "`manual` only checks and applies when asked, `automatic` applies new releases\nat `maintenanceTime`.",
+            "example": "automatic"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the maintenance time is read in.",
+            "example": "Europe/Berlin"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateProgress": {
+        "type": "object",
+        "description": "Progress of a running update.",
+        "required": [
+          "phase"
+        ],
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Further detail about the phase, if any."
+          },
+          "phase": {
+            "type": "string",
+            "description": "Current phase of the update."
+          }
+        }
+      },
+      "UpdateStatus": {
+        "type": "object",
+        "description": "State of the container updater sidecar, as reported by the sidecar itself.\nThe sidecar may add further fields; the ones listed here are what the `WebUI` reads.",
+        "required": [
+          "state",
+          "updateAvailable",
+          "updateMode",
+          "maintenanceTime",
+          "timezone"
+        ],
+        "properties": {
+          "availableVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Newest release found by the last check, if any."
+          },
+          "currentVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Version of the running image, if known."
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Error of the last check or update, if it failed."
+          },
+          "maintenanceTime": {
+            "type": "string",
+            "description": "Local time of day for automatic updates, `HH:MM`."
+          },
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UpdateProgress",
+                "description": "Progress of a running update, `null` when none runs."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "Updater state, for example `idle`, `checking`, `updating`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone for `maintenanceTime`."
+          },
+          "updateAvailable": {
+            "type": "boolean",
+            "description": "Whether `availableVersion` is newer than `currentVersion`."
+          },
+          "updateMode": {
+            "type": "string",
+            "description": "`manual` or `automatic`."
           }
         }
       },

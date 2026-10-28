@@ -12,18 +12,59 @@ use super::types::{
 
 const TCP_SOURCE_BASE_PORT: u16 = 4952;
 
+/// How `[spotify].name` and the number of zones name a zone's Spotify Connect device.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SpotifyNaming<'a> {
+    /// `[spotify].name`, trimmed. `None` when the key is missing or blank.
+    pub base: Option<&'a str>,
+    /// Number of zones. With one zone the device is named exactly `base`.
+    pub zone_count: usize,
+}
+
+impl<'a> SpotifyNaming<'a> {
+    /// The naming rule for `zone_count` zones and the `[spotify]` section, if there is one.
+    /// A blank name counts as none, and the name is trimmed.
+    #[must_use]
+    pub fn new(spotify: Option<&'a super::types::SpotifyConfig>, zone_count: usize) -> Self {
+        Self {
+            base: spotify
+                .map(|s| s.name.trim())
+                .filter(|name| !name.is_empty()),
+            zone_count,
+        }
+    }
+}
+
+impl SpotifyNaming<'_> {
+    /// Name of the Spotify device of the zone called `zone_name` when the zone sets no
+    /// `spotify_name` of its own: `base` for a single zone, `"{base} {zone}"` for several
+    /// (Spotify lists devices by name and every zone runs its own device, so the names
+    /// have to differ), the zone name without a base.
+    #[must_use]
+    pub fn device_name(&self, zone_name: &str) -> String {
+        match self.base {
+            Some(base) if self.zone_count <= 1 => base.to_string(),
+            Some(base) => format!("{base} {zone_name}"),
+            None => zone_name.to_string(),
+        }
+    }
+}
+
 /// Resolve a raw zone config into a fully populated `ZoneConfig`.
 pub fn resolve_zone(
     index: usize,
     raw: RawZoneConfig,
     audio: &AudioConfig,
     snapcast: &super::types::SnapcastConfig,
+    spotify: SpotifyNaming<'_>,
 ) -> ZoneConfig {
     let n = index;
     let _ = audio; // Reserved for future sample format in stream name
 
     let airplay_name = raw.airplay_name.unwrap_or_else(|| raw.name.clone());
-    let spotify_name = raw.spotify_name.unwrap_or_else(|| raw.name.clone());
+    let spotify_name = raw
+        .spotify_name
+        .unwrap_or_else(|| spotify.device_name(&raw.name));
 
     ZoneConfig {
         index,

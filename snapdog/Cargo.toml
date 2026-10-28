@@ -24,6 +24,9 @@ toml = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+# Reports configuration keys no struct recognises (typos, removed keys).
+serde_ignored = "0.1"
 # snapcast-control removed — using own JSON-RPC client (ADR-018)
 symphonia = { workspace = true }
 rubato = { workspace = true }
@@ -101,7 +104,7 @@ depends = "libasound2, libavahi-compat-libdnssd1, libssl3, init-system-helpers (
 conf-files = ["/etc/snapdog/snapdog.toml", "/etc/default/snapdog"]
 assets = [
   ["target/release/snapdog", "usr/bin/", "755"],
-  ["../snapdog.example.toml", "etc/snapdog/snapdog.toml", "644"],
+  ["debian/snapdog.toml", "etc/snapdog/snapdog.toml", "644"],
   ["debian/snapdog.default", "etc/default/snapdog", "644"],
   ["dbus/snapdog.conf", "usr/share/dbus-1/system.d/snapdog.conf", "644"],
 ]

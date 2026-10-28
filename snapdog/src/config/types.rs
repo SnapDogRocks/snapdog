@@ -174,7 +174,8 @@ impl SubsonicFormat {
 /// Root of the TOML config file. Optional fields use defaults.
 #[derive(Debug, Default, Deserialize)]
 pub struct FileConfig {
-    /// Server display name. Used for `mDNS`, MQTT discovery, KNX device name.
+    /// Server display name. Used as the `mDNS` service instance name, the Home
+    /// Assistant device name and the `name` in `GET /api/v1/system/version`.
     /// Default: "`SnapDog`".
     #[serde(default = "default_server_name")]
     pub name: String,
@@ -227,10 +228,16 @@ pub struct SystemConfig {
     /// Tracing log level: trace, debug, info, warn, error.
     #[serde(default)]
     pub log_level: LogLevel,
-    /// Optional log file path (daily rotation).
+    /// Optional log file, written in addition to stdout with daily rotation.
+    /// The date is inserted before the extension (`snapdog.log` becomes
+    /// `snapdog.2026-10-25.log`). `SnapDog` keeps 14 daily files and deletes older
+    /// ones at start and then hourly. Only files named exactly like that are deleted,
+    /// the oldest date first. Days change at midnight UTC. If the file cannot be
+    /// opened, `SnapDog` logs a warning and continues with stdout only.
     pub log_file: Option<String>,
-    /// Directory for persistent state files (zones.json, eq.json, snapcast.json).
-    /// Defaults to platform-appropriate path.
+    /// Directory for persistent state files (`zones.json`, `eq.json`,
+    /// `server_id`, and `airplay-pairing` with the `ap2` feature).
+    /// Defaults to a platform-appropriate path.
     #[serde(default = "default_state_dir")]
     pub state_dir: String,
 }
@@ -528,7 +535,8 @@ pub struct HttpConfig {
     /// Port for the REST API, WebSocket, and embedded `WebUI`.
     #[serde(default = "default_http_port")]
     pub port: u16,
-    /// Bind address. Default: `0.0.0.0`. Use `::` for dual-stack IPv4+IPv6.
+    /// Bind address. Default: `::` (dual-stack IPv4 and IPv6 where the OS
+    /// allows it). Use `0.0.0.0` for IPv4 only.
     #[serde(default = "default_bind_address")]
     pub bind: String,
     /// External base URL (e.g., `http://192.168.2.20:5555` or `https://music.example.com`).
@@ -544,10 +552,19 @@ pub struct HttpConfig {
     /// Optional API keys. If set, all API endpoints require `Authorization: Bearer <key>`.
     #[serde(default)]
     pub api_keys: Vec<SecretString>,
-    /// Enable embedded Scalar API documentation (only if feature `api-docs` is enabled).
+    /// Serve the `OpenAPI` document at `GET /api/v1/openapi.json`, behind the API key
+    /// like the rest of `/api/v1` (only if feature `api-docs` is enabled).
     /// Default: true.
     #[serde(default = "default_true")]
     pub api_docs: bool,
+    /// Serve the interactive API console (Scalar) at `/docs` (only if feature
+    /// `api-docs` is enabled and `api_docs` is true). The page embeds the whole
+    /// `OpenAPI` document and is served WITHOUT the API key, because a browser
+    /// cannot send the `Authorization` header when opening a page. The page and its
+    /// pinned Scalar script come from `SnapDog` itself and contact no other host, on
+    /// the origin of the web UI. Default: false.
+    #[serde(default)]
+    pub api_console: bool,
 }
 
 impl Default for HttpConfig {
@@ -560,6 +577,7 @@ impl Default for HttpConfig {
             tls_key: None,
             api_keys: vec![],
             api_docs: true,
+            api_console: false,
         }
     }
 }
@@ -615,19 +633,40 @@ impl Default for DbusConfig {
 /// Snapcast server connection and management.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SnapcastConfig {
-    /// Snapcast server address (hostname or IP).
+    /// Address of an external `snapserver`. Only used by builds with the
+    /// `snapcast-process` feature. The default embedded server always listens
+    /// on all interfaces, so any other value is ignored there (with a warning).
     #[serde(default = "default_snapcast_address")]
     pub address: String,
-    /// TCP JSON-RPC control port (default: 1705).
+    /// JSON-RPC control port of an external `snapserver` (default: 1705, alias
+    /// `jsonrpc_port`). Only used by builds with the `snapcast-process`
+    /// feature. The embedded server has no JSON-RPC listener, so any other
+    /// value is ignored there (with a warning).
     #[serde(default = "default_jsonrpc_port", alias = "jsonrpc_port")]
     pub jsonrpc_tcp_port: u16,
-    /// Audio streaming port (default: 1704).
+    /// Audio streaming port (default: 1704). Snapcast clients connect here.
+    ///
+    /// This port carries the audio stream and has no authentication: whoever can reach
+    /// it can connect as a client and receive the audio. Restrict it with
+    /// `streaming_bind` and the firewall, and use codec `f32lz4e` with your own
+    /// `encryption_psk` if the stream must not be readable on the network.
     #[serde(default = "default_streaming_port")]
     pub streaming_port: u16,
-    /// Start snapserver as a managed child process.
+    /// Local address the streaming port listens on, for example `192.168.10.5` for one
+    /// interface or `127.0.0.1` for this host only. Unset: all interfaces (`0.0.0.0` in
+    /// the embedded server, what an external `snapserver` does by default otherwise).
+    /// A single address, not a list.
+    #[serde(default)]
+    pub streaming_bind: Option<std::net::IpAddr>,
+    /// Start an external `snapserver` binary as a child process (default:
+    /// true). Only used by builds with the `snapcast-process` feature. The
+    /// embedded Rust server in the default build always runs, so `false` is
+    /// ignored there (with a warning).
     #[serde(default = "default_true")]
     pub managed: bool,
-    /// Show snapserver console output.
+    /// Show the console output of the external `snapserver` child process.
+    /// Only used by builds with the `snapcast-process` feature; ignored (with a
+    /// warning) by the embedded server.
     #[serde(default)]
     pub verbose: bool,
     /// Policy for clients not in the config. Default: `accept`.
@@ -639,12 +678,28 @@ pub struct SnapcastConfig {
     /// Streaming codec: pcm, flac, f32lz4, f32lz4e.
     #[serde(default)]
     pub codec: AudioCodec,
-    /// Pre-shared key for f32lz4e encryption (default: built-in key).
+    /// Pre-shared key for `f32lz4e` encryption. Without a key the built-in
+    /// default key is used, which is public and protects nothing, so set one
+    /// when you use `f32lz4e` (`SnapDog` logs a warning otherwise). Can also be
+    /// set with `SNAPDOG_SNAPCAST_ENCRYPTION_PSK`. An empty key, from the file or
+    /// the variable, is never used: with `f32lz4e` it stops the start, with
+    /// another codec it is ignored (the variable with a warning).
     #[serde(default)]
     pub encryption_psk: Option<SecretString>,
     /// Default group volume mode for all zones.
     #[serde(default)]
     pub group_volume_mode: GroupVolumeMode,
+}
+
+impl SnapcastConfig {
+    /// Socket address the embedded server listens on for the audio stream.
+    #[must_use]
+    pub fn streaming_socket_addr(&self) -> std::net::SocketAddr {
+        let ip = self
+            .streaming_bind
+            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+        std::net::SocketAddr::new(ip, self.streaming_port)
+    }
 }
 
 impl Default for SnapcastConfig {
@@ -653,6 +708,7 @@ impl Default for SnapcastConfig {
             address: default_snapcast_address(),
             jsonrpc_tcp_port: default_jsonrpc_port(),
             streaming_port: default_streaming_port(),
+            streaming_bind: None,
             managed: true,
             verbose: false,
             unknown_clients: UnknownClientPolicy::default(),
@@ -680,17 +736,27 @@ pub enum AirplayMode {
 pub struct AirplayConfig {
     /// Optional password for `AirPlay` connections.
     pub password: Option<String>,
-    /// `AirPlay` protocol mode: `"airplay1"` or `"airplay2"` (default).
+    /// `AirPlay` protocol mode: `"airplay1"` or `"airplay2"` (default). Only
+    /// takes effect in builds with the `ap2` feature; other builds always speak
+    /// `AirPlay` 1.
     #[serde(default)]
     pub mode: AirplayMode,
-    /// Bind to specific addresses (default: all interfaces).
+    /// IP addresses (not interface names) to listen on, for example
+    /// `["192.168.1.10"]`. Default: all interfaces. Only takes effect in
+    /// builds with the `ap2` feature (ignored with a warning otherwise).
     pub bind: Option<Vec<std::net::IpAddr>>,
 }
 
 /// Spotify Connect receiver settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SpotifyConfig {
-    /// Device name shown in Spotify app (e.g., "`SnapDog` Ground Floor").
+    /// The name of the Spotify Connect device, for every zone that does not set
+    /// `[[zone]].spotify_name`. With one zone the device is named exactly this; with
+    /// several zones each gets `"<name> <zone name>"`, because every zone runs its own
+    /// device and Spotify lists devices by name. Unset or blank: the zone name.
+    /// A zone's own `spotify_name` always wins. Changing a name makes the device appear
+    /// as a new one in the Spotify app (its Zeroconf id is derived from the name).
+    #[serde(default)]
     pub name: String,
     /// Audio bitrate: 96, 160, or 320 kbps. Default: 320.
     #[serde(default = "default_spotify_bitrate")]
@@ -698,7 +764,8 @@ pub struct SpotifyConfig {
 }
 
 impl SpotifyConfig {
-    /// Stable device ID derived from the name (for Zeroconf).
+    /// Stable device ID derived from the name (for Zeroconf). Each zone has its own
+    /// receiver with its own name, so the ids differ as long as the names do.
     #[must_use]
     pub fn device_id(&self) -> String {
         format!("{:x}", md5::compute(self.name.as_bytes()))
@@ -1086,6 +1153,32 @@ pub struct AppConfig {
     pub clients: Vec<ClientConfig>,
     /// Radio station list.
     pub radios: Vec<RadioConfig>,
+    /// Messages collected while loading and validating the configuration.
+    /// Logging is not set up yet at that point, so the caller emits them with
+    /// [`AppConfig::log_notices`] once it is.
+    pub notices: Vec<ConfigNotice>,
+}
+
+/// Severity of a [`ConfigNotice`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeLevel {
+    /// Informational, logged at `info`.
+    Info,
+    /// Something in the configuration is ignored, deprecated or unsafe.
+    Warn,
+}
+
+/// A message about the loaded configuration, produced before logging exists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigNotice {
+    /// How serious the message is.
+    pub level: NoticeLevel,
+    /// Human-readable text. Names the key and says what to do instead.
+    pub message: String,
+    /// Computed from the resolved settings (see `notices::collect`) rather than
+    /// recorded while loading. Such notices are recomputed whenever the
+    /// settings change, so a command-line override replaces a stale one.
+    pub derived: bool,
 }
 
 /// Result of resolving a unified playlist index.
@@ -1098,6 +1191,45 @@ pub enum ResolvedPlaylist {
 }
 
 impl AppConfig {
+    /// Record a warning to be logged once logging is set up. Duplicates are dropped.
+    pub fn warn(&mut self, message: impl Into<String>) {
+        self.push_notice(NoticeLevel::Warn, message.into());
+    }
+
+    /// Record an informational message to be logged once logging is set up.
+    pub fn info(&mut self, message: impl Into<String>) {
+        self.push_notice(NoticeLevel::Info, message.into());
+    }
+
+    fn push_notice(&mut self, level: NoticeLevel, message: String) {
+        let notice = ConfigNotice {
+            level,
+            message,
+            derived: false,
+        };
+        if !self
+            .notices
+            .iter()
+            .any(|n| n.level == notice.level && n.message == notice.message)
+        {
+            self.notices.push(notice);
+        }
+    }
+
+    /// Log every collected [`ConfigNotice`]. Call after the tracing subscriber is installed.
+    pub fn log_notices(&self) {
+        for notice in &self.notices {
+            match notice.level {
+                NoticeLevel::Info => {
+                    tracing::info!(target: "snapdog::config", "{}", notice.message);
+                }
+                NoticeLevel::Warn => {
+                    tracing::warn!(target: "snapdog::config", "{}", notice.message);
+                }
+            }
+        }
+    }
+
     /// Whether the radio "playlist" occupies index 0.
     #[must_use]
     pub const fn has_radio_playlist(&self) -> bool {
