@@ -52,13 +52,18 @@ encryption = ["snapcast-client/encryption"]
 [package.metadata.deb]
 section = "sound"
 copyright = "2026 Fabian Schmieder"
-depends = "libasound2, libavahi-compat-libdnssd1"
+depends = "libasound2, libavahi-compat-libdnssd1, init-system-helpers (>= 1.54~)"
 assets = [
   ["target/release/snapdog-client", "usr/bin/", "755"],
   ["debian/snapdog-client.default", "etc/default/snapdog-client", "644"],
   ["dbus/snapdog-client.conf", "usr/share/dbus-1/system.d/snapdog-client.conf", "644"],
 ]
-systemd-units = { unit-name = "snapdog-client", enable = true, start = true }
+# cargo-deb only writes the systemd maintainer scripts when maintainer-scripts is
+# set. The client finds its server via mDNS, so it is enabled and started on
+# install, restarted on upgrade and stopped on removal. debian/postinst keeps an
+# upgrade from 0.28.2-1 or older, which had no scripts, from enabling it.
+maintainer-scripts = "debian/"
+systemd-units = { unit-name = "snapdog-client", unit-scripts = "systemd/", enable = true, start = true }
 
 # This crate's `daemonize()` uses genuine `unsafe` (libc setpriority/fork/setsid),
 # so it cannot inherit the workspace's `unsafe_code = "forbid"` as-is. Cargo's lint

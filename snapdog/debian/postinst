@@ -1,0 +1,22 @@
+#!/bin/sh
+# Maintainer script of the snapdog package. cargo-deb inserts the systemd handling it
+# generates from the unit (enable if it was enabled before, restart on upgrade if it
+# runs) where the DEBHELPER marker is.
+set -e
+
+#DEBHELPER#
+
+# A removal that did not finish (see prerm) leaves a pending note. Forget it.
+rm -f /var/lib/snapdog/.dpkg-was-running.pending || true
+
+# The server was running when the package was removed (see prerm and postrm). Start it
+# again now that it is installed again, unless it has been disabled in the meantime.
+if [ "$1" = configure ] && [ -e /var/lib/snapdog/.dpkg-was-running ]; then
+    rm -f /var/lib/snapdog/.dpkg-was-running || true
+    if [ -d /run/systemd/system ] \
+        && deb-systemd-helper --quiet is-enabled snapdog.service; then
+        deb-systemd-invoke start snapdog.service >/dev/null || true
+    fi
+fi
+
+exit 0

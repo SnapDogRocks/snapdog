@@ -200,6 +200,17 @@ sudo apt install snapdog snapdog-client
 Do not add `trusted=yes`. It disables exactly the check the fingerprint above is
 for.
 
+#### What the packages do
+
+The packages install the systemd units and manage them on install, upgrade and removal.
+
+- **Fresh install:** `snapdog-client` is enabled and started. It finds its server through mDNS. `snapdog` is installed disabled, because it needs a configuration first. Edit `/etc/snapdog/snapdog.toml`, then run `sudo systemctl enable --now snapdog`.
+- **Upgrade:** a service that runs is restarted, which interrupts the audio for a moment. Whether a service is enabled stays as you left it. A stopped `snapdog` stays stopped, and a disabled or masked `snapdog-client` stays that way. A `snapdog-client` that is enabled but stopped is started again, because the package starts it on every upgrade.
+- **Removal:** both services are stopped. If `snapdog` was enabled and running when you removed it, installing it again starts it again, also after a reboot, as long as you did not purge it in between.
+- **Purge:** also deletes what `snapdog` keeps in `/var/lib/snapdog`, such as pairing keys and the ETS and EQ settings. If `snapdog` still runs, because a `policy-rc.d` on the host keeps packages from stopping services, the directory is kept and the purge says so. Stop the service and delete `/var/lib/private/snapdog` and `/var/lib/snapdog` yourself then.
+
+**Upgrading from 0.28.2 or older.** Those packages shipped the unit files but no maintainer scripts, so nothing recorded whether you ever enabled `snapdog-client`. The upgrade therefore leaves it as it is: if you enabled it, it stays enabled and is restarted, and otherwise it stays disabled and stopped. Only a fresh install enables it. The same holds if you removed the old package without purging it and install the new one. `snapdog` is not enabled either, and one you enabled yourself is restarted like any running service, so expect a short gap in the audio.
+
 #### Moving from the old repository
 
 Until September 2026 the packages were served from a branch of this repository
