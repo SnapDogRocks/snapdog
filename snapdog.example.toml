@@ -153,6 +153,14 @@ default_zone = "Ground Floor"
 # name = "Home"
 # Spotify streaming bitrate: 96, 160, or 320 kbps
 bitrate = 320
+# TCP port of the Zeroconf HTTP server (default: 7002). Open it in the firewall
+# when phones are in another VLAN/subnet. Zone n listens on port + n.
+# Zero picks a random port at every start (not firewall-friendly).
+# port = 7002
+# Zeroconf announcement backend: "libmdns" (default, announces on the default
+# route's interface only), "avahi" (host avahi-daemon via system D-Bus, all
+# interfaces; with Docker mount /run/dbus) or "dns-sd".
+# zeroconf_backend = "libmdns"
 
 # ── Subsonic / Navidrome ───────────────────────────────────────────────────
 # Remove this section entirely to disable Subsonic integration.

@@ -128,6 +128,32 @@ impl RemoteControl for SpircRemote {
 
 // ── Main loop ─────────────────────────────────────────────────
 
+/// Port of the Zeroconf HTTP server for a zone: zone indices are 1-based, so the
+/// first zone gets `base` itself.
+fn zone_port(base: u16, zone_index: usize) -> Result<u16> {
+    u16::try_from(zone_index.saturating_sub(1))
+        .ok()
+        .and_then(|n| base.checked_add(n))
+        .ok_or_else(|| anyhow::anyhow!("Spotify port {base} + zone {zone_index} out of range"))
+}
+
+fn launch_discovery(config: &SpotifyConfig, zone_index: usize) -> Result<Discovery> {
+    let backend = librespot_discovery::find(Some(
+        config.zeroconf_backend.as_deref().unwrap_or("libmdns"),
+    ))
+    .map_err(|e| anyhow::anyhow!("Zeroconf backend unavailable: {e}"))?;
+    let device_id = config.device_id();
+    let mut builder = Discovery::builder(&config.name, &device_id)
+        .device_type(DeviceType::Speaker)
+        .zeroconf_backend(backend);
+    if config.port != 0 {
+        builder = builder.port(zone_port(config.port, zone_index)?);
+    }
+    builder
+        .launch()
+        .map_err(|e| anyhow::anyhow!("Discovery failed: {e}"))
+}
+
 async fn run_spotify(
     config: SpotifyConfig,
     zone_index: usize,
@@ -139,11 +165,7 @@ async fn run_spotify(
     loop {
         tracing::info!(zone = zone_index, name = %config.name, "Waiting for Spotify Connect client");
 
-        let device_id = config.device_id();
-        let mut discovery = Discovery::builder(&config.name, &device_id)
-            .device_type(DeviceType::Speaker)
-            .launch()
-            .map_err(|e| anyhow::anyhow!("Discovery failed: {e}"))?;
+        let mut discovery = launch_discovery(&config, zone_index)?;
 
         let Some(credentials) = discovery.next().await else {
             return Ok(());
@@ -524,5 +546,17 @@ mod tests {
         .await;
         assert!(rx.try_recv().is_err(), "Stopped emits no ReceiverEvent");
         assert_eq!(dur, 7, "duration unchanged");
+    }
+
+    #[test]
+    fn zone_port_counts_up_from_the_base() {
+        assert_eq!(zone_port(7002, 1).unwrap(), 7002);
+        assert_eq!(zone_port(7002, 3).unwrap(), 7004);
+    }
+
+    #[test]
+    fn zone_port_rejects_overflow() {
+        assert!(zone_port(u16::MAX, 2).is_err());
+        assert!(zone_port(7002, 70_000).is_err());
     }
 }
