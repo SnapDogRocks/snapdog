@@ -120,7 +120,17 @@ pub fn tls_connector(config: &MqttConfig) -> Result<TlsConnector> {
     apply_policy(&mut builder, load_material(config)?);
     builder
         .build()
-        .context("[mqtt] cannot set up the TLS client")
+        .with_context(|| match (&config.client_cert, &config.client_key) {
+            // OpenSSL only notices a key that does not belong to its certificate here, not
+            // when the identity is read, so the message has to name both files as well.
+            (Some(cert), Some(key)) => format!(
+                "[mqtt] cannot set up the TLS client (client_cert {} and client_key {}: does the \
+             key belong to the certificate?)",
+                cert.display(),
+                key.display()
+            ),
+            _ => "[mqtt] cannot set up the TLS client".to_owned(),
+        })
 }
 
 fn read(path: &std::path::Path, key: &str) -> Result<Vec<u8>> {
