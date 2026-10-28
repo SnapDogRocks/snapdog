@@ -18,6 +18,14 @@ ignore = [
     # Revisit when a new stable librespot release ships.
     { id = "RUSTSEC-2026-0194", reason = "fixed in quick-xml >=0.41 but held <0.41 by librespot-core 0.8; remove once a new stable librespot release ships" },
     { id = "RUSTSEC-2026-0195", reason = "fixed in quick-xml >=0.41 but held <0.41 by librespot-core 0.8; remove once a new stable librespot release ships" },
+
+    # zbus 5 stack (zvariant, zvariant_derive, zbus_names): reported as unmaintained, not
+    # as vulnerable. The crates were merged into zbus 6, which snapdog itself uses.
+    # Pulled by: librespot-discovery 0.8 with the `with-avahi` feature (the avahi
+    # Zeroconf backend, [spotify].zeroconf_backend = "avahi"), which still asks for zbus 5.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant is unmaintained (merged into zbus 6); pulled in only by librespot-discovery's with-avahi through zbus 5; remove once librespot-discovery moves to zbus 6" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names is unmaintained (merged into zbus 6); pulled in only by librespot-discovery's with-avahi through zbus 5; remove once librespot-discovery moves to zbus 6" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive is unmaintained (merged into zbus 6); pulled in only by librespot-discovery's with-avahi through zbus 5; remove once librespot-discovery moves to zbus 6" },
 ]
 
 [licenses]

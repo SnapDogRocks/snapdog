@@ -763,6 +763,18 @@ pub struct SpotifyConfig {
     /// Audio bitrate: 96, 160, or 320 kbps. Default: 320.
     #[serde(default = "default_spotify_bitrate")]
     pub bitrate: u32,
+    /// TCP port of the Zeroconf (Spotify Connect) HTTP server. Default: 7002.
+    ///
+    /// A fixed port keeps firewall rules and monitoring stable. Zone `n` listens on
+    /// `port + n`. `0` picks a random port at every start (not firewall-friendly).
+    #[serde(default = "default_spotify_port")]
+    pub port: u16,
+    /// Zeroconf announcement backend: `"libmdns"` (default), `"avahi"` or `"dns-sd"`.
+    ///
+    /// `libmdns` announces on the default route's interface only; `avahi` hands the
+    /// announcement to the host's avahi-daemon (system D-Bus), which covers all interfaces.
+    #[serde(default)]
+    pub zeroconf_backend: Option<String>,
 }
 
 impl SpotifyConfig {
@@ -787,6 +799,10 @@ impl SpotifyConfig {
 
 const fn default_spotify_bitrate() -> u32 {
     320
+}
+
+const fn default_spotify_port() -> u16 {
+    7002
 }
 
 /// Subsonic/Navidrome server connection.
@@ -1484,4 +1500,25 @@ pub const fn default_volume() -> i32 {
 #[must_use]
 pub const fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod spotify_config_tests {
+    use super::SpotifyConfig;
+
+    #[test]
+    fn spotify_defaults_to_fixed_port_and_default_backend() {
+        let cfg: SpotifyConfig = toml::from_str(r#"name = "Docks""#).unwrap();
+        assert_eq!(cfg.port, 7002);
+        assert_eq!(cfg.bitrate, 320);
+        assert!(cfg.zeroconf_backend.is_none());
+    }
+
+    #[test]
+    fn spotify_port_and_backend_are_configurable() {
+        let cfg: SpotifyConfig =
+            toml::from_str("name = \"Docks\"\nport = 0\nzeroconf_backend = \"avahi\"").unwrap();
+        assert_eq!(cfg.port, 0);
+        assert_eq!(cfg.zeroconf_backend.as_deref(), Some("avahi"));
+    }
 }

@@ -331,6 +331,8 @@ async fn run(
                 crate::config::SpotifyConfig {
                     name: zone_config.spotify_name.clone(),
                     bitrate: sp_config.bitrate,
+                    port: sp_config.port,
+                    zeroconf_backend: sp_config.zeroconf_backend.clone(),
                 },
                 zone_index,
             );

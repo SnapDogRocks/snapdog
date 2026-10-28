@@ -55,7 +55,7 @@ zbus = { version = "6", optional = true, default-features = false, features = ["
 librespot-core = { version = "0.8", optional = true }
 librespot-playback = { version = "0.8", default-features = false, optional = true }
 librespot-connect = { version = "0.8", optional = true }
-librespot-discovery = { version = "0.8", optional = true }
+librespot-discovery = { version = "0.8", optional = true, features = ["with-avahi"] }
 librespot-metadata = { version = "0.8", optional = true }
 
 snapcast-server = { workspace = true, optional = true }

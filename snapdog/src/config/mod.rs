@@ -1832,7 +1832,15 @@ mod tests {
         let ids = |toml: &str| -> Vec<String> {
             spotify_names(toml)
                 .into_iter()
-                .map(|name| SpotifyConfig { name, bitrate: 320 }.device_id())
+                .map(|name| {
+                    SpotifyConfig {
+                        name,
+                        bitrate: 320,
+                        port: 7002,
+                        zeroconf_backend: None,
+                    }
+                    .device_id()
+                })
                 .collect()
         };
         let first = ids(&toml);
