@@ -4,6 +4,8 @@
 //! REST API and WebSocket server via axum.
 
 mod auth;
+#[cfg(feature = "api-docs")]
+pub mod console;
 pub mod error;
 mod health;
 pub mod openapi;
@@ -72,6 +74,54 @@ pub struct AppState {
 
 /// Thread-safe shared reference to [`AppState`].
 pub type SharedState = Arc<AppState>;
+
+/// Bind the HTTP listener for `[http].bind` and `[http].port`.
+///
+/// The default bind address is `::` (dual stack). A kernel with IPv6 compiled out or
+/// disabled with `ipv6.disable=1` cannot create an IPv6 socket at all and the bind fails
+/// with "address family not supported", which would leave the server unable to start
+/// on its defaults. In that one case this falls back to `0.0.0.0` and warns. Every other
+/// error, and every other configured address, is returned unchanged.
+///
+/// # Errors
+///
+/// Returns the I/O error of the bind that failed.
+pub async fn bind_http_listener(bind: &str, port: u16) -> std::io::Result<TcpListener> {
+    bind_with_fallback(
+        bind,
+        port,
+        |addr| async move { TcpListener::bind(addr).await },
+    )
+    .await
+}
+
+async fn bind_with_fallback<T, F, Fut>(bind: &str, port: u16, mut attempt: F) -> std::io::Result<T>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<T>>,
+{
+    match attempt(format!("{bind}:{port}")).await {
+        Err(e) if bind == "::" && ipv6_unavailable(&e) => {
+            tracing::warn!(
+                error = %e,
+                "IPv6 is not available on this host; binding the HTTP API to 0.0.0.0 instead of ::"
+            );
+            attempt(format!("0.0.0.0:{port}")).await
+        }
+        other => other,
+    }
+}
+
+/// `EAFNOSUPPORT` or `EADDRNOTAVAIL` from creating or binding an IPv6 socket.
+fn ipv6_unavailable(e: &std::io::Error) -> bool {
+    #[cfg(target_os = "linux")]
+    const EAFNOSUPPORT: i32 = 97;
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    const EAFNOSUPPORT: i32 = 47;
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+    const EAFNOSUPPORT: i32 = -1;
+    e.kind() == std::io::ErrorKind::AddrNotAvailable || e.raw_os_error() == Some(EAFNOSUPPORT)
+}
 
 /// Start the HTTP server.
 ///
@@ -184,6 +234,16 @@ pub fn build_router(state: &SharedState) -> Router {
             routes::speakers::speakers_router(state.clone()),
         );
 
+    // The OpenAPI document lists every route and parameter, so it is served like the
+    // API itself: behind the key when one is configured, open when none is.
+    #[cfg(feature = "api-docs")]
+    if state.config.http.api_docs {
+        protected = protected.route(
+            "/api/v1/openapi.json",
+            axum::routing::get(openapi::openapi_json),
+        );
+    }
+
     if !api_keys.is_empty() {
         tracing::info!(keys = api_keys.len(), "API authentication enabled");
         // Layer order is load-bearing: the LAST `.layer` is the OUTERMOST, so the
@@ -211,11 +271,14 @@ pub fn build_router(state: &SharedState) -> Router {
         .merge(protected)
         .fallback(webui::fallback);
 
+    // The interactive console is opt-in. Its page embeds the whole document and no
+    // key can be sent when a browser opens it, so it is never behind the API key. The
+    // page and its script are served from the binary (console.rs). The config notice
+    // for api_console says so at startup (config/notices.rs), so there is no second
+    // warning here.
     #[cfg(feature = "api-docs")]
-    let app = if state.config.http.api_docs {
-        use utoipa::OpenApi;
-        use utoipa_scalar::{Scalar, Servable};
-        app.merge(Scalar::with_url("/docs", openapi::ApiDoc::openapi()))
+    let app = if state.config.http.api_docs && state.config.http.api_console {
+        app.merge(console::router())
     } else {
         app
     };
@@ -235,5 +298,72 @@ mod crypto_provider_tests {
         // Panics with "Could not automatically determine the process-level CryptoProvider"
         // if no default is installed.
         let _ = rustls::ServerConfig::builder();
+    }
+}
+
+#[cfg(test)]
+mod bind_fallback_tests {
+    use super::{bind_with_fallback, ipv6_unavailable};
+    use std::io::{Error, ErrorKind};
+
+    #[cfg(target_os = "linux")]
+    const EAFNOSUPPORT: i32 = 97;
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    const EAFNOSUPPORT: i32 = 47;
+
+    #[test]
+    fn classifies_the_no_ipv6_errors_only() {
+        assert!(ipv6_unavailable(&Error::from(ErrorKind::AddrNotAvailable)));
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
+        assert!(ipv6_unavailable(&Error::from_raw_os_error(EAFNOSUPPORT)));
+        assert!(!ipv6_unavailable(&Error::from(ErrorKind::AddrInUse)));
+        assert!(!ipv6_unavailable(&Error::from(ErrorKind::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_ipv4_when_the_default_bind_has_no_ipv6() {
+        let tried = std::sync::Mutex::new(Vec::new());
+        let got = bind_with_fallback("::", 5555, |addr| {
+            tried.lock().unwrap().push(addr.clone());
+            async move {
+                if addr.starts_with("::") {
+                    Err(Error::from(ErrorKind::AddrNotAvailable))
+                } else {
+                    Ok(addr)
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(got, "0.0.0.0:5555");
+        assert_eq!(*tried.lock().unwrap(), vec![":::5555", "0.0.0.0:5555"]);
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_other_errors_or_other_addresses() {
+        // Port in use on `::` is a real conflict, not a missing IPv6 stack.
+        let e = bind_with_fallback::<(), _, _>("::", 5555, |_| async {
+            Err(Error::from(ErrorKind::AddrInUse))
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::AddrInUse);
+
+        // An explicitly configured address is never replaced.
+        let tried = std::sync::Mutex::new(0);
+        let e = bind_with_fallback::<(), _, _>("192.168.1.10", 5555, |_| {
+            *tried.lock().unwrap() += 1;
+            async { Err(Error::from(ErrorKind::AddrNotAvailable)) }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::AddrNotAvailable);
+        assert_eq!(*tried.lock().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn binds_for_real_on_loopback() {
+        let l = super::bind_http_listener("127.0.0.1", 0).await.unwrap();
+        assert!(l.local_addr().unwrap().is_ipv4());
     }
 }

@@ -20,6 +20,8 @@ build_local/
 
 # Runtime config & state (user-specific)
 snapdog.toml
+# ...except the default config the packages install
+!snapdog/debian/snapdog.toml
 snapdog.dev.toml
 state.json
 snapcast-state.json

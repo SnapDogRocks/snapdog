@@ -11,6 +11,11 @@ const WS_PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30)
 const NOTIFICATION_CHANNEL_SIZE: usize = 256;
 /// Maximum number of concurrent WebSocket connections.
 const MAX_WS_CONNECTIONS: usize = 64;
+/// Close code for a server that is shutting down (RFC 6455 "Going Away").
+const CLOSE_GOING_AWAY: u16 = 1001;
+/// Close code for a client that fell behind the notification buffer (IANA "Try Again
+/// Later"). It has missed events, so it has to reconnect and re-read the state over REST.
+pub const CLOSE_TOO_SLOW: u16 = 1013;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -207,6 +212,36 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<SharedState>) -> i
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
+/// What to do with one result of the broadcast receiver.
+enum Delivery {
+    /// Send this notification to the client.
+    Send(std::sync::Arc<str>),
+    /// End the connection with this close frame.
+    Close(axum::extract::ws::CloseFrame),
+}
+
+/// Map a broadcast receive result to an action. A closed channel means the server is
+/// shutting down. A lagged receiver means this client could not keep up and the
+/// channel dropped events for it: telling it "server shutting down" would be wrong
+/// (the `WebUI` shows a banner for 1001), so it gets its own code and reason.
+fn delivery(result: Result<std::sync::Arc<str>, broadcast::error::RecvError>) -> Delivery {
+    use axum::extract::ws::CloseFrame;
+    match result {
+        Ok(json) => Delivery::Send(json),
+        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+            tracing::warn!(skipped, "WebSocket client too slow, closing it");
+            Delivery::Close(CloseFrame {
+                code: CLOSE_TOO_SLOW,
+                reason: "Client too slow, reconnect and reload the state".into(),
+            })
+        }
+        Err(broadcast::error::RecvError::Closed) => Delivery::Close(CloseFrame {
+            code: CLOSE_GOING_AWAY,
+            reason: "Server shutting down".into(),
+        }),
+    }
+}
+
 async fn handle_socket(mut socket: WebSocket, state: SharedState) {
     ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
     let mut rx = state.notifications.subscribe();
@@ -216,17 +251,16 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
     loop {
         tokio::select! {
             result = rx.recv() => {
-                if let Ok(json) = result {
-                    if socket.send(Message::Text(json.as_ref().into())).await.is_err() {
+                match delivery(result) {
+                    Delivery::Send(json) => {
+                        if socket.send(Message::Text(json.as_ref().into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Delivery::Close(frame) => {
+                        let _ = socket.send(Message::Close(Some(frame))).await;
                         break;
                     }
-                } else {
-                    // Broadcast channel closed — server is shutting down
-                    let _ = socket.send(Message::Close(Some(axum::extract::ws::CloseFrame {
-                        code: 1001, // Going Away
-                        reason: "Server shutting down".into(),
-                    }))).await;
-                    break;
                 }
             }
             _ = ping_interval.tick() => {
@@ -245,4 +279,36 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
 
     ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
     tracing::debug!("WebSocket client disconnected");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_lagging_client_is_not_told_the_server_is_shutting_down() {
+        let Delivery::Close(frame) = delivery(Err(broadcast::error::RecvError::Lagged(12))) else {
+            panic!("a lagged receiver must be closed");
+        };
+        assert_eq!(frame.code, CLOSE_TOO_SLOW);
+        assert_ne!(frame.code, CLOSE_GOING_AWAY);
+        assert!(frame.reason.contains("too slow"));
+    }
+
+    #[test]
+    fn a_closed_channel_is_a_server_shutdown() {
+        let Delivery::Close(frame) = delivery(Err(broadcast::error::RecvError::Closed)) else {
+            panic!("a closed channel must close the socket");
+        };
+        assert_eq!(frame.code, CLOSE_GOING_AWAY);
+        assert!(frame.reason.contains("shutting down"));
+    }
+
+    #[test]
+    fn a_message_is_forwarded() {
+        let Delivery::Send(json) = delivery(Ok("{}".into())) else {
+            panic!("a message must be forwarded");
+        };
+        assert_eq!(&*json, "{}");
+    }
 }

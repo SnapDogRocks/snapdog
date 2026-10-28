@@ -921,6 +921,18 @@ jobs:
             apt-get install -y /packages/*_amd64.deb
             snapdog --version
             snapdog-client --version
+            # The maintainer scripts enable the client on install and leave the
+            # server disabled; deb-systemd-helper links units even without systemd.
+            test -L /etc/systemd/system/multi-user.target.wants/snapdog-client.service
+            test ! -e /etc/systemd/system/multi-user.target.wants/snapdog.service
+            # Purging takes away what systemd keeps for the DynamicUser server: its
+            # state directory and the link to it. There is no systemd here, so make
+            # both the way systemd does.
+            mkdir -p /var/lib/private/snapdog
+            ln -s private/snapdog /var/lib/snapdog
+            apt-get purge -y snapdog snapdog-client
+            test ! -e /var/lib/private/snapdog
+            test ! -L /var/lib/snapdog
           '
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
@@ -1007,7 +1019,7 @@ jobs:
             sed -i "s/^pkgver=.*/pkgver=${CORE}/" "aur-smoke/$pkg/PKGBUILD"
             sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${sha}')/" "aur-smoke/$pkg/PKGBUILD"
             if [ "$pkg" = snapdog ]; then
-              aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog.example.toml snapdog/dbus/snapdog.conf | awk '{printf "\047%s\047 ", $1}')
+              aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog/debian/snapdog.toml snapdog/dbus/snapdog.conf | awk '{printf "\047%s\047 ", $1}')
             else
               aux=$(sha256sum snapdog-client/systemd/snapdog-client.service snapdog-client/debian/snapdog-client.default snapdog-client/dbus/snapdog-client.conf | awk '{printf "\047%s\047 ", $1}')
             fi
@@ -1444,7 +1456,7 @@ jobs:
           sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${X64_SHA}')/" ${{ matrix.pkgbuild }}
           sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${ARM_SHA}')/" ${{ matrix.pkgbuild }}
           if [ "${{ matrix.pkg }}" = snapdog ]; then
-            aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog.example.toml snapdog/dbus/snapdog.conf | awk '{printf "\047%s\047 ", $1}')
+            aux=$(sha256sum snapdog/systemd/snapdog.service snapdog/debian/snapdog.default snapdog/debian/snapdog.toml snapdog/dbus/snapdog.conf | awk '{printf "\047%s\047 ", $1}')
           else
             aux=$(sha256sum snapdog-client/systemd/snapdog-client.service snapdog-client/debian/snapdog-client.default snapdog-client/dbus/snapdog-client.conf | awk '{printf "\047%s\047 ", $1}')
           fi
