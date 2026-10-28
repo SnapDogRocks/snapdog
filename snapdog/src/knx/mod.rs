@@ -9,207 +9,420 @@
 //!
 //! Transport-agnostic: both client mode (gateway connection) and device mode
 //! (ETS-programmable KNX/IP device) share the same publisher/listener logic
-//! via the [`KnxPublisher`] and [`KnxListener`] traits.
+//! via the [`KnxPublisher`] and [`KnxListener`] traits. The modes differ in how a
+//! group object finds its group address (see [`transport`]): client mode uses the
+//! configured addresses, device mode uses the associations ETS programmed.
+//!
+//! Both transports are supervised: a gateway that is unreachable at startup or lost later,
+//! and a device server that cannot bind or stops, are retried with capped exponential
+//! backoff, and every status value is published again once the transport is back.
 
 mod client;
 mod device;
 mod ets_config;
 pub mod group_objects;
+mod outbound;
+mod sink;
+mod supervisor;
 mod transport;
 
+pub use device::DeviceOptions;
 pub use ets_config::ets_device_config;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use knx_rs_core::address::GroupAddress;
 use knx_rs_core::dpt::{
-    self, DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_UCOUNT, Dpt, DptValue,
+    self, DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_UCOUNT, DptValue,
 };
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
 
 use crate::config::AppConfig;
 use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
 use crate::state;
 
-use group_objects::DPT_CONTROL_DIMMING;
-use transport::{KnxListener, KnxPublisher};
+use group_objects::{
+    CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
+    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_COUNT,
+    DPT_CONTROL_DIMMING, GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE,
+    GGO_SYSTEM_FAULT, MAX_CLIENTS, MAX_ZONES, ZGO_CONTROL_STATUS, ZGO_MUTE, ZGO_MUTE_STATUS,
+    ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT, ZGO_PLAYLIST_PREVIOUS,
+    ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT,
+    ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE,
+    ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING,
+    ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
+    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
+    ZONE_GO_COUNT,
+};
+use sink::{ObjectKey, StatusSink};
+use transport::{Incoming, KnxListener, KnxPublisher};
 
 // ── Start ─────────────────────────────────────────────────────
 
-/// Start the KNX bridge in the configured mode (client or device).
+/// Check the syntax of a client `url` (`--check-config` and config loading use this).
+///
+/// # Errors
+///
+/// Returns an error naming what is wrong with the URL.
+pub fn validate_url(url: &str) -> Result<()> {
+    supervisor::ClientTarget::parse(url).map(|_| ())
+}
+
 /// Handle for KNX device management (programming mode, etc.).
 /// Only available in device mode.
-pub type DeviceControlHandle = std::sync::Arc<device::DevicePublisher>;
+pub type DeviceControlHandle = Arc<device::DevicePublisher>;
 
 /// Re-export the device control trait for use by API routes.
 pub use transport::KnxDeviceControl;
 
-/// Start the KNX bridge. Returns a device control handle in device mode.
-///
-/// # Errors
-///
-/// Returns an error if KNX is not configured or the connection fails.
-pub async fn start<S: BuildHasher + Send + Sync + 'static>(
-    config: &AppConfig,
-    store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
-    zone_commands: HashMap<usize, ZoneCommandSender, S>,
-    snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
-) -> Result<Option<DeviceControlHandle>> {
-    let knx = config.knx.as_ref().context("KNX not configured")?;
-    match knx.role {
-        crate::config::KnxRole::Client => {
-            start_client(config, store, notify_rx, zone_commands, snap_tx).await?;
-            Ok(None)
-        }
-        crate::config::KnxRole::Device => {
-            let handle = start_device(config, store, notify_rx, zone_commands, snap_tx).await?;
-            Ok(Some(handle))
+/// A running KNX bridge. Dropping it leaves the bridge running; [`shutdown`](Self::shutdown)
+/// stops it.
+pub struct KnxBridge {
+    device: Option<DeviceControlHandle>,
+    shutdown: watch::Sender<bool>,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+impl KnxBridge {
+    /// Handle for programming mode and device info. `None` in client mode.
+    #[must_use]
+    pub fn device_control(&self) -> Option<DeviceControlHandle> {
+        self.device.clone()
+    }
+
+    /// Stop reconnecting, close the transport and wait briefly for the tasks to end.
+    pub async fn shutdown(self) {
+        let _ = self.shutdown.send(true);
+        for mut task in self.tasks {
+            if tokio::time::timeout(std::time::Duration::from_secs(2), &mut task)
+                .await
+                .is_err()
+            {
+                tracing::warn!("KNX task did not stop in time, aborting it");
+                task.abort();
+            }
         }
     }
 }
 
-async fn start_client<S: BuildHasher + Send + Sync + 'static>(
+/// Start the KNX bridge.
+///
+/// Client mode returns as soon as the configuration is valid: the gateway connection is made
+/// (and re-made) in the background, so an unreachable gateway no longer disables KNX for the
+/// lifetime of the process.
+///
+/// # Errors
+///
+/// Returns an error if KNX is not configured, the configuration is unusable (no or invalid
+/// URL, invalid individual address) or the device state cannot be set up.
+pub async fn start<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
+    notify_rx: tokio::sync::broadcast::Receiver<Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
-) -> Result<()> {
-    let url = config
-        .knx
-        .as_ref()
-        .and_then(|k| k.url.as_deref())
-        .context("KNX client mode requires 'url'")?;
-    let spec = knx_rs_ip::parse_url(url).context("Invalid KNX URL")?;
-    let conn = knx_rs_ip::connect(spec)
-        .await
-        .context("KNX connection failed")?;
-    tracing::info!(%url, "KNX client connected");
-
-    let mux = knx_rs_ip::Multiplexer::new(conn);
-    let pub_transport = client::ClientPublisher::new(mux.handle());
-    let listen_transport = client::ClientListener::new(mux.handle());
-    tokio::spawn(mux.run());
-
-    spawn_bridge(
-        pub_transport,
-        listen_transport,
+) -> Result<KnxBridge> {
+    start_with_options(
         config,
         store,
         notify_rx,
         zone_commands,
         snap_tx,
-    );
-    Ok(())
+        &DeviceOptions::default(),
+    )
+    .await
 }
 
-async fn start_device<S: BuildHasher + Send + Sync + 'static>(
+/// Like [`start`], with explicit device-transport options (loopback bind and memory
+/// path for tests).
+///
+/// # Errors
+///
+/// See [`start`].
+pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
+    notify_rx: tokio::sync::broadcast::Receiver<Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
-) -> Result<DeviceControlHandle> {
-    let addr = config
-        .knx
-        .as_ref()
-        .and_then(|k| k.individual_address.as_deref())
-        .context("KNX device mode requires 'individual_address'")?;
-
-    let (pub_transport, listen_transport, _ets_params) =
-        device::start_device_transport(addr, config).await?;
-    let handle: DeviceControlHandle = std::sync::Arc::new(pub_transport.clone());
-
-    spawn_bridge(
-        pub_transport,
-        listen_transport,
-        config,
-        store,
-        notify_rx,
-        zone_commands,
-        snap_tx,
-    );
-    Ok(handle)
+    options: &DeviceOptions,
+) -> Result<KnxBridge> {
+    let knx = config.knx.as_ref().context("KNX not configured")?;
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let bridge = Bridge::new(config, store, zone_commands, snap_tx);
+    for problem in duplicate_addresses(config) {
+        tracing::warn!("KNX group address configured twice: {problem}");
+    }
+    match knx.role {
+        crate::config::KnxRole::Client => {
+            let url = knx
+                .url
+                .as_deref()
+                .context("KNX client mode requires 'url'")?;
+            let target = supervisor::ClientTarget::parse(url)?;
+            let task = tokio::spawn(supervisor::run_client(
+                target,
+                bridge,
+                notify_rx,
+                shutdown_rx,
+            ));
+            Ok(KnxBridge {
+                device: None,
+                shutdown: shutdown_tx,
+                tasks: vec![task],
+            })
+        }
+        crate::config::KnxRole::Device => {
+            let addr = knx
+                .individual_address
+                .as_deref()
+                .context("KNX device mode requires 'individual_address'")?;
+            let transport =
+                device::start_device_transport(addr, config, options, shutdown_rx.clone()).await?;
+            let (publisher, listener) = (transport.publisher, transport.listener);
+            let handle: DeviceControlHandle = Arc::new(publisher.clone());
+            let task = tokio::spawn(supervisor::run_device(
+                publisher,
+                listener,
+                bridge,
+                notify_rx,
+                shutdown_rx,
+            ));
+            Ok(KnxBridge {
+                device: Some(handle),
+                shutdown: shutdown_tx,
+                // The device task persists on its way out: shutdown waits for it as well.
+                tasks: vec![task, transport.task],
+            })
+        }
+    }
 }
 
-fn spawn_bridge<S: BuildHasher + Send + Sync + 'static>(
-    pub_transport: impl KnxPublisher + 'static,
-    listen_transport: impl KnxListener + 'static,
-    config: &AppConfig,
+// ── Bridge state ──────────────────────────────────────────────
+
+/// What publisher and listener need besides the transport.
+pub(crate) struct Bridge<S> {
+    config: AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
-) {
-    let pub_config = config.clone();
-    let pub_store = store.clone();
-    tokio::spawn(async move {
-        publisher(pub_transport, pub_config, pub_store, notify_rx).await;
-    });
+    zone_ga_map: HashMap<String, (usize, &'static str)>,
+    client_ga_map: HashMap<String, (usize, &'static str)>,
+    global_ga_map: HashMap<String, &'static str>,
+    /// Canonical group addresses of the status objects, the ones a group read is answered for.
+    status_gas: HashSet<String>,
+    sync_system_clock: bool,
+}
 
-    let listen_config = config.clone();
-    tokio::spawn(async move {
-        listener(
-            listen_transport,
-            listen_config,
+impl<S> Bridge<S> {
+    fn new(
+        config: &AppConfig,
+        store: state::SharedState,
+        zone_commands: HashMap<usize, ZoneCommandSender, S>,
+        snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
+    ) -> Self {
+        Self {
+            zone_ga_map: build_zone_ga_map(config),
+            client_ga_map: build_client_ga_map(config),
+            global_ga_map: build_global_ga_map(config),
+            status_gas: build_status_ga_set(config),
+            sync_system_clock: config.knx.as_ref().is_some_and(|k| k.sync_system_clock),
+            config: config.clone(),
             store,
             zone_commands,
             snap_tx,
-        )
-        .await;
-    });
+        }
+    }
+}
+
+/// Why a bridge session ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionEnd {
+    /// The transport reported that the connection is closed.
+    ConnectionClosed,
+    /// Several writes in a row failed: the gateway is gone although the tunnel has not noticed.
+    WriteFailures,
+    /// The notification channel closed (the server is shutting down).
+    NotificationsClosed,
+}
+
+/// Run publisher and listener on one connected transport until the transport fails.
+pub(crate) async fn run_session<P, L, S>(
+    publisher: &P,
+    listener: L,
+    broken: Option<&tokio::sync::Notify>,
+    bridge: &Bridge<S>,
+    notify_rx: &mut tokio::sync::broadcast::Receiver<Arc<str>>,
+) -> SessionEnd
+where
+    P: KnxPublisher,
+    L: KnxListener,
+    S: BuildHasher + Send + Sync,
+{
+    // The listener passes group reads on to the publisher, which knows the values.
+    let (read_tx, mut read_rx) = tokio::sync::mpsc::channel(READ_QUEUE);
+    tokio::select! {
+        () = publisher_loop(publisher, bridge, notify_rx, &mut read_rx) => SessionEnd::NotificationsClosed,
+        () = listener_loop(listener, bridge, &read_tx) => SessionEnd::ConnectionClosed,
+        () = async {
+            match broken {
+                Some(n) => n.notified().await,
+                None => std::future::pending().await,
+            }
+        } => SessionEnd::WriteFailures,
+    }
 }
 
 // ── Publisher ─────────────────────────────────────────────────
 
-async fn publisher(
-    transport: impl KnxPublisher,
-    config: AppConfig,
-    store: state::SharedState,
-    mut notify_rx: tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
+/// Publish every status value: the state of all zones and clients and the global objects.
+async fn publish_all<P: KnxPublisher>(
+    config: &AppConfig,
+    store: &state::SharedState,
+    sink: &mut StatusSink<'_, P>,
 ) {
-    tracing::info!("KNX publisher started");
-
-    // Publish initial state for all zones and clients
     for (idx, _) in config.zones.iter().enumerate() {
         let zone_index = idx + 1;
-        publish_zone_state(zone_index, &config, &store, &transport).await;
-        publish_zone_track(zone_index, &config, &store, &transport).await;
-        publish_zone_progress(zone_index, &config, &store, &transport).await;
+        publish_zone_state(zone_index, config, store, sink).await;
+        publish_zone_track(zone_index, config, store, sink).await;
+        publish_zone_progress(zone_index, config, store, sink).await;
     }
     for (idx, _) in config.clients.iter().enumerate() {
-        publish_client_state(idx + 1, &config, &store, &transport).await;
+        publish_client_state(idx + 1, config, store, sink).await;
     }
-    publish_all_mute_status(&config, &store, &transport).await;
+    publish_all_mute_status(config, store, sink).await;
+}
 
-    // Cyclic "server online" heartbeat + fault publishing. The first tick fires immediately.
-    let hb_secs = config
+/// Heartbeat period of the cyclic "server online" object.
+fn heartbeat_period(config: &AppConfig) -> std::time::Duration {
+    let minutes = config
         .knx
         .as_ref()
         .map_or(5, |k| k.heartbeat_minutes)
-        .clamp(1, 240)
-        * 60;
-    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(u64::from(hb_secs)));
+        .clamp(1, 240);
+    std::time::Duration::from_secs(u64::from(minutes) * 60)
+}
+
+/// The cyclic "server online" heartbeat and the system-fault alarm.
+async fn publish_heartbeat<P: KnxPublisher>(
+    config: &AppConfig,
+    last_healthy: &mut Option<bool>,
+    sink: &mut StatusSink<'_, P>,
+) {
+    let Some(knx) = config.knx.as_ref() else {
+        return;
+    };
+    // The heartbeat is the point of the object: send it every time, changed or not.
+    sink.write_always(
+        ObjectKey::Global(GGO_SERVER_ONLINE),
+        knx.server_online.as_deref(),
+        DPT_SWITCH,
+        &true.into(),
+    )
+    .await;
+    let healthy = SYSTEM_HEALTHY.load(std::sync::atomic::Ordering::Relaxed);
+    if *last_healthy != Some(healthy) {
+        *last_healthy = Some(healthy);
+        sink.write(
+            ObjectKey::Global(GGO_SYSTEM_FAULT),
+            knx.system_fault.as_deref(),
+            DPT_SWITCH,
+            &(!healthy).into(),
+        )
+        .await;
+    }
+}
+
+/// How many group reads wait for the publisher. More are dropped, the asker repeats.
+const READ_QUEUE: usize = 64;
+
+/// Shortest time between two answers to reads of the same address. A display that asks again
+/// within it gets no second telegram: the first answer was a group response every device saw.
+const READ_ANSWER_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// A device that was programmed or restarted publishes everything again, but only after it
+/// stayed quiet this long: a download changes the tables in several steps, each of them can
+/// ask for the same burst.
+const RESYNC_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// A burst of resync requests is answered after this long at the latest.
+const RESYNC_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+async fn publisher_loop<P, S>(
+    transport: &P,
+    bridge: &Bridge<S>,
+    notify_rx: &mut tokio::sync::broadcast::Receiver<Arc<str>>,
+    read_rx: &mut tokio::sync::mpsc::Receiver<GroupAddress>,
+) where
+    P: KnxPublisher,
+    S: Send + Sync,
+{
+    let config = &bridge.config;
+    let store = &bridge.store;
+    let mut sink = StatusSink::new(transport);
+    tracing::info!("KNX publisher started");
+
+    publish_all(config, store, &mut sink).await;
+
+    // Cyclic "server online" heartbeat + fault publishing. The first tick fires immediately.
+    let mut heartbeat = tokio::time::interval(heartbeat_period(config));
+    // A late heartbeat is sent late, not followed by a catch-up burst.
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_healthy: Option<bool> = None;
+    // `(first request, answer at)` of a resync that waits for things to settle.
+    let mut resync_due: Option<(tokio::time::Instant, tokio::time::Instant)> = None;
+    let mut last_answer: HashMap<GroupAddress, tokio::time::Instant> = HashMap::new();
 
     loop {
+        let progress_due = sink.next_due();
+        let resync_at = resync_due.map(|(_, at)| at);
         tokio::select! {
             _ = heartbeat.tick() => {
-                if let Some(knx) = config.knx.as_ref() {
-                    if let Some(ref ga) = knx.server_online {
-                        write(&transport, ga, DPT_SWITCH, &true.into()).await;
-                    }
-                    let healthy = SYSTEM_HEALTHY.load(std::sync::atomic::Ordering::Relaxed);
-                    if last_healthy != Some(healthy) {
-                        last_healthy = Some(healthy);
-                        if let Some(ref ga) = knx.system_fault {
-                            write(&transport, ga, DPT_SWITCH, &(!healthy).into()).await;
-                        }
-                    }
+                publish_heartbeat(config, &mut last_healthy, &mut sink).await;
+            }
+            () = async {
+                match progress_due {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => std::future::pending().await,
                 }
+            } => {
+                sink.flush_due().await;
+            }
+            Some(ga) = read_rx.recv() => {
+                let now = tokio::time::Instant::now();
+                if last_answer.get(&ga).is_some_and(|at| now.duration_since(*at) < READ_ANSWER_MIN_INTERVAL) {
+                    continue;
+                }
+                last_answer.insert(ga, now);
+                // A display that starts late asks for the values: answer with the last one sent,
+                // and for an address nothing was sent to yet, with the current value.
+                if !sink.answer_read(ga).await {
+                    publish_all(config, store, &mut sink).await;
+                    sink.end_reads();
+                }
+            }
+            () = transport.resync() => {
+                let now = tokio::time::Instant::now();
+                let first = resync_due.map_or(now, |(first, _)| first);
+                resync_due = Some((first, (now + RESYNC_SETTLE).min(first + RESYNC_MAX_WAIT)));
+            }
+            () = async {
+                match resync_at {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                resync_due = None;
+                tracing::info!("KNX transport restarted or reprogrammed — publishing all status values again");
+                sink.invalidate();
+                publish_all(config, store, &mut sink).await;
+                last_healthy = None;
+                heartbeat.reset_immediately();
             }
             r = notify_rx.recv() => match r {
                 Ok(json) => {
@@ -218,25 +431,26 @@ async fn publisher(
                     };
                     match notif {
                         crate::api::ws::Notification::ZoneChanged { zone, .. } => {
-                            publish_zone_state(zone, &config, &store, &transport).await;
-                            publish_zone_track(zone, &config, &store, &transport).await;
-                            publish_all_mute_status(&config, &store, &transport).await;
+                            publish_zone_state(zone, config, store, &mut sink).await;
+                            publish_zone_track(zone, config, store, &mut sink).await;
+                            publish_all_mute_status(config, store, &mut sink).await;
                         }
                         crate::api::ws::Notification::ZoneVolumeChanged { zone, .. } => {
-                            publish_zone_state(zone, &config, &store, &transport).await;
-                            publish_all_mute_status(&config, &store, &transport).await;
+                            publish_zone_state(zone, config, store, &mut sink).await;
+                            publish_all_mute_status(config, store, &mut sink).await;
                         }
                         crate::api::ws::Notification::ZoneProgress { zone, .. } => {
-                            publish_zone_progress(zone, &config, &store, &transport).await;
+                            publish_zone_progress(zone, config, store, &mut sink).await;
                         }
                         crate::api::ws::Notification::ClientStateChanged { client, .. } => {
-                            publish_client_state(client, &config, &store, &transport).await;
+                            publish_client_state(client, config, store, &mut sink).await;
                         }
                         _ => {}
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(missed = n, "KNX publisher lagged");
+                    tracing::warn!(missed = n, "KNX publisher lagged — publishing all status values again");
+                    publish_all(config, store, &mut sink).await;
                 }
                 Err(_) => break,
             }
@@ -245,26 +459,32 @@ async fn publisher(
 }
 
 /// Publish the global "All Mute" status: on when every zone is muted.
-async fn publish_all_mute_status(
+async fn publish_all_mute_status<P: KnxPublisher>(
     config: &AppConfig,
     store: &state::SharedState,
-    transport: &impl KnxPublisher,
+    sink: &mut StatusSink<'_, P>,
 ) {
-    let Some(ga) = config.knx.as_ref().and_then(|k| k.all_mute_status.as_ref()) else {
-        return;
-    };
     let all_muted = {
         let s = store.read().await;
         !s.zones.is_empty() && s.zones.values().all(|z| z.muted)
     };
-    write(transport, ga, DPT_SWITCH, &all_muted.into()).await;
+    sink.write(
+        ObjectKey::Global(GGO_ALL_MUTE),
+        config
+            .knx
+            .as_ref()
+            .and_then(|k| k.all_mute_status.as_deref()),
+        DPT_SWITCH,
+        &all_muted.into(),
+    )
+    .await;
 }
 
-async fn publish_zone_state(
+async fn publish_zone_state<P: KnxPublisher>(
     zone_index: usize,
     config: &AppConfig,
     store: &state::SharedState,
-    transport: &impl KnxPublisher,
+    sink: &mut StatusSink<'_, P>,
 ) {
     let Some(zone_cfg) = config.zones.get(zone_index - 1) else {
         return;
@@ -278,58 +498,87 @@ async fn publish_zone_state(
         }
     };
     let playing = zone.playback.to_string() == "playing";
+    let go = |i: usize| ObjectKey::Zone(zone_index, i);
 
-    if let Some(ref ga) = knx.volume_status {
-        write(
-            transport,
-            ga,
-            DPT_SCALING,
-            &DptValue::Float(f64::from(zone.volume.clamp(0, 100) as u8)),
-        )
-        .await;
-    }
-    if let Some(ref ga) = knx.mute_status {
-        write(transport, ga, DPT_SWITCH, &zone.muted.into()).await;
-    }
-    if let Some(ref ga) = knx.shuffle_status {
-        write(transport, ga, DPT_SWITCH, &zone.shuffle.into()).await;
-    }
-    if let Some(ref ga) = knx.repeat_status {
-        let repeat_on = zone.repeat == snapdog_common::RepeatMode::Playlist;
-        write(transport, ga, DPT_SWITCH, &repeat_on.into()).await;
-    }
-    if let Some(ref ga) = knx.track_playing_status {
-        write(transport, ga, DPT_SWITCH, &playing.into()).await;
-    }
-    if let Some(ref ga) = knx.track_repeat_status {
-        let track_repeat_on = zone.repeat == snapdog_common::RepeatMode::Track;
-        write(transport, ga, DPT_SWITCH, &track_repeat_on.into()).await;
-    }
-    if let Some(ref ga) = knx.control_status {
-        write(transport, ga, DPT_SWITCH, &playing.into()).await;
-    }
-    if let Some(ref ga) = knx.playlist_status {
-        write(
-            transport,
-            ga,
-            DPT_VALUE_1_UCOUNT,
-            &DptValue::from(zone.playlist_index.unwrap_or(0) as u8),
-        )
-        .await;
-    }
-    if let Some(ref ga) = knx.presence_enable_status {
-        write(transport, ga, DPT_SWITCH, &zone.presence_enabled.into()).await;
-    }
-    if let Some(ref ga) = knx.presence_timer_status {
-        write(transport, ga, DPT_SWITCH, &zone.auto_off_active.into()).await;
-    }
+    sink.write(
+        go(ZGO_VOLUME_STATUS),
+        knx.volume_status.as_deref(),
+        DPT_SCALING,
+        &DptValue::Float(f64::from(zone.volume.clamp(0, 100) as u8)),
+    )
+    .await;
+    sink.write(
+        go(ZGO_MUTE_STATUS),
+        knx.mute_status.as_deref(),
+        DPT_SWITCH,
+        &zone.muted.into(),
+    )
+    .await;
+    sink.write(
+        go(ZGO_SHUFFLE_STATUS),
+        knx.shuffle_status.as_deref(),
+        DPT_SWITCH,
+        &zone.shuffle.into(),
+    )
+    .await;
+    let repeat_on = zone.repeat == snapdog_common::RepeatMode::Playlist;
+    sink.write(
+        go(ZGO_REPEAT_STATUS),
+        knx.repeat_status.as_deref(),
+        DPT_SWITCH,
+        &repeat_on.into(),
+    )
+    .await;
+    sink.write(
+        go(ZGO_TRACK_PLAYING),
+        knx.track_playing_status.as_deref(),
+        DPT_SWITCH,
+        &playing.into(),
+    )
+    .await;
+    let track_repeat_on = zone.repeat == snapdog_common::RepeatMode::Track;
+    sink.write(
+        go(ZGO_TRACK_REPEAT_STATUS),
+        knx.track_repeat_status.as_deref(),
+        DPT_SWITCH,
+        &track_repeat_on.into(),
+    )
+    .await;
+    sink.write(
+        go(ZGO_CONTROL_STATUS),
+        knx.control_status.as_deref(),
+        DPT_SWITCH,
+        &playing.into(),
+    )
+    .await;
+    sink.write(
+        go(ZGO_PLAYLIST_STATUS),
+        knx.playlist_status.as_deref(),
+        DPT_VALUE_1_UCOUNT,
+        &DptValue::from(zone.playlist_index.unwrap_or(0) as u8),
+    )
+    .await;
+    sink.write(
+        go(ZGO_PRESENCE_ENABLE),
+        knx.presence_enable_status.as_deref(),
+        DPT_SWITCH,
+        &zone.presence_enabled.into(),
+    )
+    .await;
+    sink.write(
+        go(ZGO_PRESENCE_TIMER_ACTIVE),
+        knx.presence_timer_status.as_deref(),
+        DPT_SWITCH,
+        &zone.auto_off_active.into(),
+    )
+    .await;
 }
 
-async fn publish_zone_track(
+async fn publish_zone_track<P: KnxPublisher>(
     zone_index: usize,
     config: &AppConfig,
     store: &state::SharedState,
-    transport: &impl KnxPublisher,
+    sink: &mut StatusSink<'_, P>,
 ) {
     let Some(zone_cfg) = config.zones.get(zone_index - 1) else {
         return;
@@ -340,76 +589,85 @@ async fn publish_zone_track(
         s.zones.get(&zone_index).and_then(|z| z.track.clone())
     };
 
-    if let Some(ref track) = track {
-        if let Some(ref ga) = knx.track_title_status {
-            write(
-                transport,
-                ga,
-                DPT_STRING_8859_1,
-                &DptValue::from(track.title.as_str()),
-            )
-            .await;
-        }
-        if let Some(ref ga) = knx.track_artist_status {
-            write(
-                transport,
-                ga,
-                DPT_STRING_8859_1,
-                &DptValue::from(track.artist.as_str()),
-            )
-            .await;
-        }
-        if let Some(ref ga) = knx.track_album_status {
-            write(
-                transport,
-                ga,
-                DPT_STRING_8859_1,
-                &DptValue::from(track.album.as_str()),
-            )
-            .await;
-        }
-        if let Some(ref ga) = knx.track_progress_status {
-            let pct = track_progress_pct(track);
-            write(transport, ga, DPT_SCALING, &DptValue::Float(pct)).await;
-        }
-    }
+    // No track is a state too: the strings are empty and the position is 0. Publishing it gives
+    // every string object a value to answer a read with, and clears a display when playback
+    // ends.
+    let go = |i: usize| ObjectKey::Zone(zone_index, i);
+    let text = |f: fn(&state::TrackInfo) -> &str| track.as_ref().map_or("", f);
+    sink.write(
+        go(ZGO_TRACK_TITLE),
+        knx.track_title_status.as_deref(),
+        DPT_STRING_8859_1,
+        &DptValue::from(text(|t| t.title.as_str())),
+    )
+    .await;
+    sink.write(
+        go(ZGO_TRACK_ARTIST),
+        knx.track_artist_status.as_deref(),
+        DPT_STRING_8859_1,
+        &DptValue::from(text(|t| t.artist.as_str())),
+    )
+    .await;
+    sink.write(
+        go(ZGO_TRACK_ALBUM),
+        knx.track_album_status.as_deref(),
+        DPT_STRING_8859_1,
+        &DptValue::from(text(|t| t.album.as_str())),
+    )
+    .await;
+    sink.write_progress(
+        go(ZGO_TRACK_PROGRESS),
+        knx.track_progress_status.as_deref(),
+        DPT_SCALING,
+        &DptValue::Float(track.as_ref().map_or(0.0, track_progress_pct)),
+    )
+    .await;
 }
 
-/// Calculate track progress as a percentage (0.0–100.0).
+/// Calculate track progress as a whole percentage (0.0–100.0).
+///
+/// Whole percent is the resolution worth a telegram: DPT 5.001 has 255 steps, and a longer
+/// track would move one step (0.4 %) every second or two.
 fn track_progress_pct(track: &state::TrackInfo) -> f64 {
     if track.duration_ms > 0 {
-        ((track.position_ms as f64 / track.duration_ms as f64) * 100.0).clamp(0.0, 100.0)
+        ((track.position_ms as f64 / track.duration_ms as f64) * 100.0)
+            .clamp(0.0, 100.0)
+            .round()
     } else {
         0.0
     }
 }
 
-async fn publish_zone_progress(
+async fn publish_zone_progress<P: KnxPublisher>(
     zone_index: usize,
     config: &AppConfig,
     store: &state::SharedState,
-    transport: &impl KnxPublisher,
+    sink: &mut StatusSink<'_, P>,
 ) {
     let Some(zone_cfg) = config.zones.get(zone_index - 1) else {
         return;
     };
-    if let Some(ref ga) = zone_cfg.knx.track_progress_status {
-        let pct = {
-            let s = store.read().await;
-            s.zones
-                .get(&zone_index)
-                .and_then(|z| z.track.as_ref())
-                .map_or(0.0, track_progress_pct)
-        };
-        write(transport, ga, DPT_SCALING, &DptValue::Float(pct)).await;
-    }
+    let pct = {
+        let s = store.read().await;
+        s.zones
+            .get(&zone_index)
+            .and_then(|z| z.track.as_ref())
+            .map_or(0.0, track_progress_pct)
+    };
+    sink.write_progress(
+        ObjectKey::Zone(zone_index, ZGO_TRACK_PROGRESS),
+        zone_cfg.knx.track_progress_status.as_deref(),
+        DPT_SCALING,
+        &DptValue::Float(pct),
+    )
+    .await;
 }
 
-async fn publish_client_state(
+async fn publish_client_state<P: KnxPublisher>(
     client_index: usize,
     config: &AppConfig,
     store: &state::SharedState,
-    transport: &impl KnxPublisher,
+    sink: &mut StatusSink<'_, P>,
 ) {
     let Some(client_cfg) = config.clients.get(client_index - 1) else {
         return;
@@ -422,84 +680,127 @@ async fn publish_client_state(
             None => return,
         }
     };
+    let go = |i: usize| ObjectKey::Client(client_index, i);
 
-    if let Some(ref ga) = knx.volume_status {
-        write(
-            transport,
-            ga,
-            DPT_SCALING,
-            &DptValue::Float(f64::from(client.base_volume.clamp(0, 100) as u8)),
-        )
-        .await;
-    }
-    if let Some(ref ga) = knx.mute_status {
-        write(transport, ga, DPT_SWITCH, &client.muted.into()).await;
-    }
-    if let Some(ref ga) = knx.connected_status {
-        write(transport, ga, DPT_SWITCH, &client.connected.into()).await;
-    }
-    if let Some(ref ga) = knx.zone_status {
-        write(
-            transport,
-            ga,
-            DPT_VALUE_1_UCOUNT,
-            &DptValue::from(client.zone_index as u8),
-        )
-        .await;
-    }
-    if let Some(ref ga) = knx.latency_status {
-        write(
-            transport,
-            ga,
-            DPT_VALUE_1_UCOUNT,
-            &DptValue::from(client.latency_ms.clamp(0, 255) as u8),
-        )
-        .await;
-    }
+    sink.write(
+        go(CGO_VOLUME_STATUS),
+        knx.volume_status.as_deref(),
+        DPT_SCALING,
+        &DptValue::Float(f64::from(client.base_volume.clamp(0, 100) as u8)),
+    )
+    .await;
+    sink.write(
+        go(CGO_MUTE_STATUS),
+        knx.mute_status.as_deref(),
+        DPT_SWITCH,
+        &client.muted.into(),
+    )
+    .await;
+    sink.write(
+        go(CGO_CONNECTED),
+        knx.connected_status.as_deref(),
+        DPT_SWITCH,
+        &client.connected.into(),
+    )
+    .await;
+    sink.write(
+        go(CGO_ZONE_STATUS),
+        knx.zone_status.as_deref(),
+        DPT_VALUE_1_UCOUNT,
+        &DptValue::from(client.zone_index as u8),
+    )
+    .await;
+    sink.write(
+        go(CGO_LATENCY_STATUS),
+        knx.latency_status.as_deref(),
+        DPT_VALUE_1_UCOUNT,
+        &DptValue::from(client.latency_ms.clamp(0, 255) as u8),
+    )
+    .await;
 }
 
 // ── Listener ──────────────────────────────────────────────────
 
-async fn listener<S: BuildHasher + Send + Sync>(
-    mut transport: impl KnxListener,
-    config: AppConfig,
-    store: state::SharedState,
-    zone_commands: HashMap<usize, ZoneCommandSender, S>,
-    snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
-) {
-    let zone_ga_map = build_zone_ga_map(&config);
-    let client_ga_map = build_client_ga_map(&config);
-    let global_ga_map = build_global_ga_map(&config);
-    let sync_system_clock = config.knx.as_ref().is_some_and(|k| k.sync_system_clock);
-
-    tracing::info!(
-        zone_gas = zone_ga_map.len(),
-        client_gas = client_ga_map.len(),
-        global_gas = global_ga_map.len(),
-        "KNX listener started"
-    );
-
-    loop {
-        let Some((ga, data)) = transport.recv_group_write().await else {
-            tracing::warn!("KNX connection closed");
-            break;
-        };
-        handle_incoming(
-            ga,
-            &data,
-            &zone_ga_map,
-            &client_ga_map,
-            &global_ga_map,
-            &zone_commands,
-            &snap_tx,
-            &store,
-            sync_system_clock,
-        )
-        .await;
+/// Dispatch everything the transport receives until it closes.
+async fn listener_loop<L, S>(
+    mut transport: L,
+    bridge: &Bridge<S>,
+    read_tx: &tokio::sync::mpsc::Sender<GroupAddress>,
+) where
+    L: KnxListener,
+    S: BuildHasher + Send + Sync,
+{
+    if bridge
+        .config
+        .knx
+        .as_ref()
+        .is_some_and(|k| k.role == crate::config::KnxRole::Client)
+    {
+        tracing::info!(
+            zone_gas = bridge.zone_ga_map.len(),
+            client_gas = bridge.client_ga_map.len(),
+            global_gas = bridge.global_ga_map.len(),
+            "KNX listener started"
+        );
+    } else {
+        tracing::info!("KNX listener started (group objects)");
     }
+
+    while let Some(incoming) = transport.recv().await {
+        match incoming {
+            Incoming::Address(ga, data) => {
+                handle_incoming(
+                    ga,
+                    &data,
+                    &bridge.zone_ga_map,
+                    &bridge.client_ga_map,
+                    &bridge.global_ga_map,
+                    &bridge.zone_commands,
+                    &bridge.snap_tx,
+                    &bridge.store,
+                    bridge.sync_system_clock,
+                )
+                .await;
+            }
+            Incoming::Read(ga) => {
+                // Only the addresses of status objects are answered.
+                // A full queue means the publisher is behind: the asker repeats the read.
+                if bridge.status_gas.contains(&canonical_ga(&ga.to_string())) {
+                    let _ = read_tx.try_send(ga);
+                }
+            }
+            Incoming::Object(asap, data) => {
+                handle_object(
+                    asap,
+                    &data,
+                    &bridge.zone_commands,
+                    &bridge.snap_tx,
+                    &bridge.store,
+                    bridge.sync_system_clock,
+                )
+                .await;
+            }
+        }
+    }
+    tracing::debug!("KNX listener ended: the transport closed");
+}
+
+/// Canonical form of a configured group address: the 3-level notation the bus side prints
+/// (`GroupAddress`'s `Display`), so `1/2047`, `1/7/255` and `01/7/255` key the same entry.
+/// A string that is not a group address is kept as written (it can never match).
+fn canonical_ga(ga: &str) -> String {
+    GroupAddress::from_str(ga).map_or_else(|_| ga.to_string(), |g| g.to_string())
 }
 
 pub(crate) fn build_zone_ga_map(config: &AppConfig) -> HashMap<String, (usize, &'static str)> {
+    zone_ga_map(config, &mut Vec::new())
+}
+
+/// The zone map; an address that two zone actions share is noted in `duplicates`.
+fn zone_ga_map(
+    config: &AppConfig,
+    duplicates: &mut Vec<String>,
+) -> HashMap<String, (usize, &'static str)> {
     let mut map = HashMap::new();
     for zone_cfg in &config.zones {
         let idx = zone_cfg.index;
@@ -527,8 +828,12 @@ pub(crate) fn build_zone_ga_map(config: &AppConfig) -> HashMap<String, (usize, &
             (&knx.presence_enable, "presence_enable"),
         ];
         for (ga_opt, action) in pairs {
-            if let Some(ga) = ga_opt {
-                map.insert(ga.clone(), (idx, *action));
+            if let Some(ga) = ga_opt
+                && let Some((z, a)) = map.insert(canonical_ga(ga), (idx, *action))
+            {
+                duplicates.push(format!(
+                    "{ga} is the address of zone {z} {a} and of zone {idx} {action}: the later one wins"
+                ));
             }
         }
     }
@@ -536,6 +841,14 @@ pub(crate) fn build_zone_ga_map(config: &AppConfig) -> HashMap<String, (usize, &
 }
 
 pub(crate) fn build_client_ga_map(config: &AppConfig) -> HashMap<String, (usize, &'static str)> {
+    client_ga_map(config, &mut Vec::new())
+}
+
+/// The client map; an address that two client actions share is noted in `duplicates`.
+fn client_ga_map(
+    config: &AppConfig,
+    duplicates: &mut Vec<String>,
+) -> HashMap<String, (usize, &'static str)> {
     let mut map = HashMap::new();
     for client_cfg in &config.clients {
         let idx = client_cfg.index;
@@ -549,12 +862,127 @@ pub(crate) fn build_client_ga_map(config: &AppConfig) -> HashMap<String, (usize,
             (&knx.zone, "zone"),
         ];
         for (ga_opt, action) in pairs {
-            if let Some(ga) = ga_opt {
-                map.insert(ga.clone(), (idx, *action));
+            if let Some(ga) = ga_opt
+                && let Some((c, a)) = map.insert(canonical_ga(ga), (idx, *action))
+            {
+                duplicates.push(format!(
+                    "{ga} is the address of client {c} {a} and of client {idx} {action}: the later one wins"
+                ));
             }
         }
     }
     map
+}
+
+/// Configurations that do not do what they say in client mode: an address configured for two
+/// actions of one kind (the later wins) or for a global object and a zone or client action (the
+/// global object takes the telegram, the other action never fires). In device mode the same
+/// address may belong to several objects, so this is a client mode check.
+pub(crate) fn duplicate_addresses(config: &AppConfig) -> Vec<String> {
+    let mut duplicates = Vec::new();
+    let zones = zone_ga_map(config, &mut duplicates);
+    let clients = client_ga_map(config, &mut duplicates);
+    for (ga, action) in build_global_ga_map(config) {
+        if let Some((z, a)) = zones.get(&ga) {
+            duplicates.push(format!(
+                "{ga} is the global {action} address and of zone {z} {a}: the zone action never runs"
+            ));
+        }
+        if let Some((c, a)) = clients.get(&ga) {
+            duplicates.push(format!(
+                "{ga} is the global {action} address and of client {c} {a}: the client action never runs"
+            ));
+        }
+    }
+    duplicates.extend(shared_status_addresses(config));
+    duplicates
+}
+
+/// Every configured status object with its group address: a label for messages and the
+/// canonical address. Zones come first, then clients, then the global objects.
+fn status_addresses(config: &AppConfig) -> Vec<(String, String)> {
+    let mut list = Vec::new();
+    for zone in &config.zones {
+        let k = &zone.knx;
+        let fields = [
+            (&k.volume_status, "volume_status"),
+            (&k.mute_status, "mute_status"),
+            (&k.control_status, "control_status"),
+            (&k.track_title_status, "track_title_status"),
+            (&k.track_artist_status, "track_artist_status"),
+            (&k.track_album_status, "track_album_status"),
+            (&k.track_progress_status, "track_progress_status"),
+            (&k.track_playing_status, "track_playing_status"),
+            (&k.track_repeat_status, "track_repeat_status"),
+            (&k.playlist_status, "playlist_status"),
+            (&k.shuffle_status, "shuffle_status"),
+            (&k.repeat_status, "repeat_status"),
+            (&k.presence_enable_status, "presence_enable_status"),
+            (&k.presence_timer_status, "presence_timer_status"),
+        ];
+        for (ga, name) in fields {
+            if let Some(ga) = ga {
+                list.push((format!("zone {} {name}", zone.index), canonical_ga(ga)));
+            }
+        }
+    }
+    for client in &config.clients {
+        let k = &client.knx;
+        let fields = [
+            (&k.volume_status, "volume_status"),
+            (&k.mute_status, "mute_status"),
+            (&k.latency_status, "latency_status"),
+            (&k.zone_status, "zone_status"),
+            (&k.connected_status, "connected_status"),
+        ];
+        for (ga, name) in fields {
+            if let Some(ga) = ga {
+                list.push((format!("client {} {name}", client.index), canonical_ga(ga)));
+            }
+        }
+    }
+    if let Some(k) = config.knx.as_ref() {
+        let fields = [
+            (&k.server_online, "server_online"),
+            (&k.all_mute_status, "all_mute_status"),
+            (&k.system_fault, "system_fault"),
+        ];
+        for (ga, name) in fields {
+            if let Some(ga) = ga {
+                list.push((format!("global {name}"), canonical_ga(ga)));
+            }
+        }
+    }
+    list
+}
+
+/// The group addresses of all status objects (canonical form), the ones a group read is
+/// answered for.
+pub(crate) fn build_status_ga_set(config: &AppConfig) -> HashSet<String> {
+    status_addresses(config)
+        .into_iter()
+        .map(|(_, ga)| ga)
+        .collect()
+}
+
+/// Status objects that share a group address, one message per address. A group read has a
+/// single answer: the value of the object with the lowest number (zones, then clients, then the
+/// global objects, each by number in the product database), see [`StatusSink::answer_read`].
+fn shared_status_addresses(config: &AppConfig) -> Vec<String> {
+    let mut by_address: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (label, ga) in status_addresses(config) {
+        by_address.entry(ga).or_default().push(label);
+    }
+    by_address
+        .into_iter()
+        .filter(|(_, labels)| labels.len() > 1)
+        .map(|(ga, labels)| {
+            format!(
+                "{ga} is the status address of {}: every change goes out as its own telegram and a read is answered with the value of the object with the lowest number",
+                labels.join(", ")
+            )
+        })
+        .collect()
 }
 
 /// Offset in seconds from the system clock to the KNX-provided time-of-day.
@@ -582,14 +1010,115 @@ pub(crate) fn build_global_ga_map(config: &AppConfig) -> HashMap<String, &'stati
         ];
         for (ga_opt, action) in pairs {
             if let Some(ga) = ga_opt {
-                map.insert(ga.clone(), *action);
+                map.insert(canonical_ga(ga), *action);
             }
         }
     }
     map
 }
 
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)] // Match dispatcher for KNX group addresses — splitting would obscure control flow
+/// A command a group telegram or group object stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Command<'a> {
+    /// A device-level object (`all_stop`, `all_mute`, `knx_time`).
+    Global(&'a str),
+    /// An action on zone `.0`.
+    Zone(usize, &'a str),
+    /// An action on client `.0`.
+    Client(usize, &'a str),
+}
+
+/// Zone objects the bus can write, and the action each one triggers.
+const ZONE_ACTIONS: &[(usize, &str)] = &[
+    (ZGO_PLAY, "play"),
+    (ZGO_PAUSE, "pause"),
+    (ZGO_STOP, "stop"),
+    (ZGO_TRACK_NEXT, "next"),
+    (ZGO_TRACK_PREVIOUS, "previous"),
+    (ZGO_VOLUME, "volume"),
+    (ZGO_VOLUME_DIM, "volume_dim"),
+    (ZGO_MUTE, "mute"),
+    (ZGO_MUTE_TOGGLE, "mute_toggle"),
+    (ZGO_SHUFFLE, "shuffle"),
+    (ZGO_SHUFFLE_TOGGLE, "shuffle_toggle"),
+    (ZGO_REPEAT, "repeat"),
+    (ZGO_REPEAT_TOGGLE, "repeat_toggle"),
+    (ZGO_TRACK_REPEAT, "track_repeat"),
+    (ZGO_TRACK_REPEAT_TOGGLE, "track_repeat_toggle"),
+    (ZGO_PLAYLIST, "playlist"),
+    (ZGO_PLAYLIST_NEXT, "playlist_next"),
+    (ZGO_PLAYLIST_PREVIOUS, "playlist_previous"),
+    (ZGO_PRESENCE, "presence"),
+    (ZGO_PRESENCE_ENABLE, "presence_enable"),
+];
+
+/// Client objects the bus can write, and the action each one triggers.
+const CLIENT_ACTIONS: &[(usize, &str)] = &[
+    (CGO_VOLUME, "volume"),
+    (CGO_VOLUME_DIM, "volume_dim"),
+    (CGO_MUTE, "mute"),
+    (CGO_MUTE_TOGGLE, "mute_toggle"),
+    (CGO_LATENCY, "latency"),
+    (CGO_ZONE, "zone"),
+];
+
+/// Device-level objects the bus can write, and the action each one triggers.
+const GLOBAL_ACTIONS: &[(usize, &str)] = &[
+    (GGO_ALL_STOP, "all_stop"),
+    (GGO_ALL_MUTE, "all_mute"),
+    (GGO_KNX_TIME, "knx_time"),
+];
+
+/// What a group object (by ASAP) commands when ETS-programmed addresses write it, or `None`
+/// for objects that only carry status.
+fn object_command(asap: u16) -> Option<Command<'static>> {
+    let n = usize::from(asap).checked_sub(1)?;
+    let zones_end = MAX_ZONES * ZONE_GO_COUNT;
+    let clients_end = zones_end + MAX_CLIENTS * CLIENT_GO_COUNT;
+    let find = |table: &'static [(usize, &'static str)], go: usize| {
+        table.iter().find(|(i, _)| *i == go).map(|(_, a)| *a)
+    };
+    if n < zones_end {
+        let action = find(ZONE_ACTIONS, n % ZONE_GO_COUNT)?;
+        Some(Command::Zone(n / ZONE_GO_COUNT + 1, action))
+    } else if n < clients_end {
+        let n = n - zones_end;
+        let action = find(CLIENT_ACTIONS, n % CLIENT_GO_COUNT)?;
+        Some(Command::Client(n / CLIENT_GO_COUNT + 1, action))
+    } else {
+        let action = find(GLOBAL_ACTIONS, n - clients_end)?;
+        Some(Command::Global(action))
+    }
+}
+
+/// A group object the device stack updated from the bus: ETS (or the TOML addresses) already
+/// resolved the address through the association table, so the object alone says what to do.
+pub(crate) async fn handle_object<S: BuildHasher + Sync>(
+    asap: u16,
+    data: &[u8],
+    zone_commands: &HashMap<usize, ZoneCommandSender, S>,
+    snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
+    store: &state::SharedState,
+    sync_system_clock: bool,
+) {
+    let Some(command) = object_command(asap) else {
+        tracing::trace!(asap, "KNX group object update without a command, ignored");
+        return;
+    };
+    execute(
+        command,
+        data,
+        &format!("object {asap}"),
+        zone_commands,
+        snap_tx,
+        store,
+        sync_system_clock,
+    )
+    .await;
+}
+
+/// A group write seen on a gateway connection: the configured addresses decide what it means.
+#[allow(clippy::too_many_arguments)] // Match dispatcher for KNX group addresses — splitting would obscure control flow
 pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
     ga: GroupAddress,
     data: &[u8],
@@ -605,121 +1134,172 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
 
     // Device-level (global) group objects: All Stop, All Mute, KNX Time.
     if let Some(&action) = global_ga_map.get(&ga_str) {
-        match action {
+        execute(
+            Command::Global(action),
+            data,
+            &ga_str,
+            zone_commands,
+            snap_tx,
+            store,
+            sync_system_clock,
+        )
+        .await;
+        return;
+    }
+
+    if let Some(&(zone_idx, action)) = zone_ga_map.get(&ga_str) {
+        execute(
+            Command::Zone(zone_idx, action),
+            data,
+            &ga_str,
+            zone_commands,
+            snap_tx,
+            store,
+            sync_system_clock,
+        )
+        .await;
+    }
+
+    if let Some(&(client_idx, action)) = client_ga_map.get(&ga_str) {
+        execute(
+            Command::Client(client_idx, action),
+            data,
+            &ga_str,
+            zone_commands,
+            snap_tx,
+            store,
+            sync_system_clock,
+        )
+        .await;
+    }
+}
+
+/// Carry out `command`; `source` names the address or object it came from, for the log.
+#[allow(clippy::too_many_lines)] // Match dispatcher for KNX actions — splitting would obscure control flow
+async fn execute<S: BuildHasher + Sync>(
+    command: Command<'_>,
+    data: &[u8],
+    source: &str,
+    zone_commands: &HashMap<usize, ZoneCommandSender, S>,
+    snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
+    store: &state::SharedState,
+    sync_system_clock: bool,
+) {
+    match command {
+        Command::Global(action) => match action {
             "all_stop" => {
-                tracing::debug!(ga = %ga_str, "KNX → all zones stop");
+                tracing::debug!(%source, "KNX → all zones stop");
                 for tx in zone_commands.values() {
                     let _ = tx.send(ZoneCommand::Stop).await;
                 }
             }
             "all_mute" => {
                 let on = decode_bool(data);
-                tracing::debug!(ga = %ga_str, mute = on, "KNX → all zones mute");
+                tracing::debug!(%source, mute = on, "KNX → all zones mute");
                 for tx in zone_commands.values() {
                     let _ = tx.send(ZoneCommand::SetMute(on)).await;
                 }
             }
             "knx_time" => apply_knx_time(data, sync_system_clock),
             _ => {}
-        }
-        return;
-    }
-
-    if let Some(&(zone_idx, action)) = zone_ga_map.get(&ga_str)
-        && let Some(tx) = zone_commands.get(&zone_idx)
-    {
-        let cmd = match action {
-            "play" => Some(ZoneCommand::Play),
-            "pause" => Some(ZoneCommand::Pause),
-            "stop" => Some(ZoneCommand::Stop),
-            "next" => Some(ZoneCommand::Next),
-            "previous" => Some(ZoneCommand::Previous),
-            "mute_toggle" => Some(ZoneCommand::ToggleMute),
-            "shuffle_toggle" => Some(ZoneCommand::ToggleShuffle),
-            "repeat_toggle" | "track_repeat_toggle" => Some(ZoneCommand::CycleRepeat),
-            "mute" => Some(ZoneCommand::SetMute(decode_bool(data))),
-            "shuffle" => Some(ZoneCommand::SetShuffle(decode_bool(data))),
-            "repeat" => {
-                let on = decode_bool(data);
-                Some(ZoneCommand::SetRepeat(if on {
-                    snapdog_common::RepeatMode::Playlist
-                } else {
-                    snapdog_common::RepeatMode::Off
-                }))
-            }
-            "track_repeat" => {
-                let on = decode_bool(data);
-                Some(ZoneCommand::SetRepeat(if on {
-                    snapdog_common::RepeatMode::Track
-                } else {
-                    snapdog_common::RepeatMode::Off
-                }))
-            }
-            "volume" => decode_percent(data).map(|v| ZoneCommand::SetVolume(i32::from(v))),
-            "volume_dim" => decode_dim(data).map(ZoneCommand::AdjustVolume),
-            "playlist" => decode_u8(data).map(|v| ZoneCommand::SetPlaylist(v as usize, 0)),
-            "playlist_next" => Some(ZoneCommand::NextPlaylist),
-            "playlist_previous" => Some(ZoneCommand::PreviousPlaylist),
-            "presence" => Some(ZoneCommand::SetPresence(decode_bool(data))),
-            "presence_enable" => Some(ZoneCommand::SetPresenceEnabled(decode_bool(data))),
-            _ => None,
-        };
-        if let Some(cmd) = cmd {
-            tracing::debug!(zone = zone_idx, ga = %ga_str, "KNX → zone command");
-            let _ = tx.send(cmd).await;
-        }
-    }
-
-    if let Some(&(client_idx, action)) = client_ga_map.get(&ga_str) {
-        let s = store.read().await;
-        if let Some(client) = s.clients.get(&client_idx)
-            && let Some(ref snap_id) = client.snapcast_id
-        {
+        },
+        Command::Zone(zone_idx, action) => {
+            let Some(tx) = zone_commands.get(&zone_idx) else {
+                tracing::debug!(zone = zone_idx, %source, "KNX telegram for a zone that is not running, ignored");
+                return;
+            };
             let cmd = match action {
-                "mute_toggle" => Some(ClientAction::Mute(!client.muted)),
-                "mute" => Some(ClientAction::Mute(decode_bool(data))),
-                "volume" => decode_percent(data).map(|v| ClientAction::Volume(i32::from(v))),
-                "volume_dim" => decode_dim(data).map(ClientAction::AdjustVolume),
-                "latency" => decode_u8(data).map(|v| ClientAction::Latency(i32::from(v))),
-                "zone" => {
-                    if let Some(target_zone) = decode_u8(data) {
-                        let target_zone = usize::from(target_zone);
-                        if target_zone == 0
-                            || !zone_commands.contains_key(&target_zone)
-                            || !s.zones.contains_key(&target_zone)
-                        {
-                            tracing::warn!(
-                                client = client_idx,
-                                zone = target_zone,
-                                ga = %ga_str,
-                                "Ignoring KNX client zone change to unknown zone"
-                            );
-                            return;
-                        }
-                        drop(s);
-                        let mut store = store.write().await;
-                        if let Some(c) = store.clients.get_mut(&client_idx) {
-                            c.zone_index = target_zone;
-                            store.dirty = true;
-                        }
-                        drop(store);
-                        let _ = snap_tx.send(SnapcastCmd::ReconcileZones).await;
-                        tracing::debug!(client = client_idx, zone = target_zone, ga = %ga_str, "KNX → client zone change");
-                    }
-                    return;
+                "play" => Some(ZoneCommand::Play),
+                "pause" => Some(ZoneCommand::Pause),
+                "stop" => Some(ZoneCommand::Stop),
+                "next" => Some(ZoneCommand::Next),
+                "previous" => Some(ZoneCommand::Previous),
+                "mute_toggle" => Some(ZoneCommand::ToggleMute),
+                "shuffle_toggle" => Some(ZoneCommand::ToggleShuffle),
+                "repeat_toggle" | "track_repeat_toggle" => Some(ZoneCommand::CycleRepeat),
+                "mute" => Some(ZoneCommand::SetMute(decode_bool(data))),
+                "shuffle" => Some(ZoneCommand::SetShuffle(decode_bool(data))),
+                "repeat" => {
+                    let on = decode_bool(data);
+                    Some(ZoneCommand::SetRepeat(if on {
+                        snapdog_common::RepeatMode::Playlist
+                    } else {
+                        snapdog_common::RepeatMode::Off
+                    }))
                 }
+                "track_repeat" => {
+                    let on = decode_bool(data);
+                    Some(ZoneCommand::SetRepeat(if on {
+                        snapdog_common::RepeatMode::Track
+                    } else {
+                        snapdog_common::RepeatMode::Off
+                    }))
+                }
+                "volume" => decode_percent(data).map(|v| ZoneCommand::SetVolume(i32::from(v))),
+                "volume_dim" => decode_dim(data).map(ZoneCommand::AdjustVolume),
+                "playlist" => decode_u8(data).map(|v| ZoneCommand::SetPlaylist(v as usize, 0)),
+                "playlist_next" => Some(ZoneCommand::NextPlaylist),
+                "playlist_previous" => Some(ZoneCommand::PreviousPlaylist),
+                "presence" => Some(ZoneCommand::SetPresence(decode_bool(data))),
+                "presence_enable" => Some(ZoneCommand::SetPresenceEnabled(decode_bool(data))),
                 _ => None,
             };
-            if let Some(action) = cmd {
-                let snap_id = snap_id.clone();
-                drop(s);
-                tracing::debug!(client = client_idx, ga = %ga_str, "KNX → client command");
-                let _ = snap_tx
-                    .send(SnapcastCmd::Client {
-                        client_id: snap_id,
-                        action,
-                    })
-                    .await;
+            if let Some(cmd) = cmd {
+                tracing::debug!(zone = zone_idx, %source, "KNX → zone command");
+                let _ = tx.send(cmd).await;
+            }
+        }
+        Command::Client(client_idx, action) => {
+            let s = store.read().await;
+            if let Some(client) = s.clients.get(&client_idx)
+                && let Some(ref snap_id) = client.snapcast_id
+            {
+                let cmd = match action {
+                    "mute_toggle" => Some(ClientAction::Mute(!client.muted)),
+                    "mute" => Some(ClientAction::Mute(decode_bool(data))),
+                    "volume" => decode_percent(data).map(|v| ClientAction::Volume(i32::from(v))),
+                    "volume_dim" => decode_dim(data).map(ClientAction::AdjustVolume),
+                    "latency" => decode_u8(data).map(|v| ClientAction::Latency(i32::from(v))),
+                    "zone" => {
+                        if let Some(target_zone) = decode_u8(data) {
+                            let target_zone = usize::from(target_zone);
+                            if target_zone == 0
+                                || !zone_commands.contains_key(&target_zone)
+                                || !s.zones.contains_key(&target_zone)
+                            {
+                                tracing::warn!(
+                                    client = client_idx,
+                                    zone = target_zone,
+                                    %source,
+                                    "Ignoring KNX client zone change to unknown zone"
+                                );
+                                return;
+                            }
+                            drop(s);
+                            let mut store = store.write().await;
+                            if let Some(c) = store.clients.get_mut(&client_idx) {
+                                c.zone_index = target_zone;
+                                store.dirty = true;
+                            }
+                            drop(store);
+                            let _ = snap_tx.send(SnapcastCmd::ReconcileZones).await;
+                            tracing::debug!(client = client_idx, zone = target_zone, %source, "KNX → client zone change");
+                        }
+                        return;
+                    }
+                    _ => None,
+                };
+                if let Some(action) = cmd {
+                    let snap_id = snap_id.clone();
+                    drop(s);
+                    tracing::debug!(client = client_idx, %source, "KNX → client command");
+                    let _ = snap_tx
+                        .send(SnapcastCmd::Client {
+                            client_id: snap_id,
+                            action,
+                        })
+                        .await;
+                }
             }
         }
     }
@@ -830,24 +1410,13 @@ fn decode_dim(payload: &[u8]) -> Option<i32> {
     Some(if increase { step } else { -step })
 }
 
-// ── Write helper ──────────────────────────────────────────────
-
-async fn write(transport: &impl KnxPublisher, ga_str: &str, dpt: Dpt, value: &DptValue) {
-    let ga = match GroupAddress::from_str(ga_str) {
-        Ok(ga) => ga,
-        Err(e) => {
-            tracing::warn!(ga = ga_str, error = %e, "Invalid KNX GA");
-            return;
-        }
-    };
-    transport.write(ga, dpt, value).await;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::player::ZoneCommand;
+    use group_objects::{client_asap, global_asap, zone_asap};
     use knx_rs_core::address::GroupAddress;
+    use knx_rs_core::dpt::Dpt;
     use std::sync::Arc;
     use tokio::sync::{RwLock, mpsc};
 
@@ -1259,26 +1828,99 @@ volume = "2/0/1"
         assert_eq!(m.get("2/0/1").copied(), Some((1usize, "volume")));
     }
 
+    // ── Group address notation ───────────────────────────────────────
+
+    /// A zone whose command addresses are written in 2-level and zero-padded notation, and
+    /// a global address in 2-level notation.
+    fn cfg_with_mixed_notation() -> crate::config::AppConfig {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+all_stop = "0/9"
+
+[[zone]]
+name = "Z1"
+[zone.knx]
+play = "1/2047"
+volume = "01/0/06"
+pause = "1/0/3"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+"#;
+        let raw: crate::config::FileConfig = toml::from_str(toml).unwrap();
+        crate::config::load_raw(raw).unwrap()
+    }
+
+    #[test]
+    fn ga_maps_are_keyed_by_the_three_level_form() {
+        let cfg = cfg_with_mixed_notation();
+        let zones = build_zone_ga_map(&cfg);
+        assert_eq!(zones.get("1/7/255").copied(), Some((1usize, "play")));
+        assert_eq!(zones.get("1/0/6").copied(), Some((1usize, "volume")));
+        assert_eq!(zones.get("1/0/3").copied(), Some((1usize, "pause")));
+        assert!(
+            !zones.contains_key("1/2047"),
+            "2-level key would never match"
+        );
+        assert_eq!(
+            build_global_ga_map(&cfg).get("0/0/9").copied(),
+            Some("all_stop")
+        );
+    }
+
+    #[tokio::test]
+    async fn telegrams_match_addresses_configured_in_two_level_notation() {
+        let cfg = cfg_with_mixed_notation();
+        let (tx, mut rx) = mpsc::channel(4);
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let cmds = HashMap::from([(1, tx)]);
+        handle_incoming(
+            ga("1/7/255"),
+            &[],
+            &build_zone_ga_map(&cfg),
+            &build_client_ga_map(&cfg),
+            &build_global_ga_map(&cfg),
+            &cmds,
+            &snap_tx,
+            &test_state(),
+            false,
+        )
+        .await;
+        assert!(matches!(rx.try_recv(), Ok(ZoneCommand::Play)));
+        handle_incoming(
+            ga("0/0/9"),
+            &[],
+            &build_zone_ga_map(&cfg),
+            &build_client_ga_map(&cfg),
+            &build_global_ga_map(&cfg),
+            &cmds,
+            &snap_tx,
+            &test_state(),
+            false,
+        )
+        .await;
+        assert!(matches!(rx.try_recv(), Ok(ZoneCommand::Stop)));
+    }
+
     // ── IT-T42: publisher — status GOs with fixed DPTs + progress scaling ──
 
-    /// Records every `(GA, DPT, value)` the publisher writes — no socket.
-    #[derive(Default)]
-    struct RecordingPub {
-        writes: std::sync::Mutex<Vec<(String, Dpt, DptValue)>>,
-    }
-    impl KnxPublisher for RecordingPub {
-        fn write(
-            &self,
-            ga: GroupAddress,
-            dpt: Dpt,
-            value: &DptValue,
-        ) -> impl std::future::Future<Output = ()> + Send {
-            self.writes
-                .lock()
-                .unwrap()
-                .push((ga.to_string(), dpt, value.clone()));
-            std::future::ready(())
-        }
+    type Rec = sink::testing::Recorder<true>;
+
+    /// The `(address, bytes)` of every recorded client-mode write, in order.
+    fn written(rec: &Rec) -> Vec<(String, Dpt, DptValue)> {
+        rec.writes
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(t, d, v)| match t {
+                transport::Target::Address(g) => (g.to_string(), *d, v.clone()),
+                transport::Target::Object(a) => (format!("object {a}"), *d, v.clone()),
+            })
+            .collect()
     }
 
     fn track(position_ms: i64, duration_ms: i64) -> state::TrackInfo {
@@ -1339,10 +1981,11 @@ zone = "Z1"
             z.repeat = snapdog_common::RepeatMode::Playlist;
             z.playback = state::PlaybackState::Playing;
         }
-        let mock = RecordingPub::default();
-        publish_zone_state(1, &cfg, &store, &mock).await;
+        let mock = Rec::default();
+        let mut sink = StatusSink::new(&mock);
+        publish_zone_state(1, &cfg, &store, &mut sink).await;
 
-        let w = mock.writes.lock().unwrap().clone();
+        let w = written(&mock);
         let chk = |ga: &str, dpt: Dpt, bytes: &[u8]| {
             let (_, d, v) = w
                 .iter()
@@ -1367,10 +2010,11 @@ zone = "Z1"
             let mut s = store.write().await;
             s.zones.get_mut(&1).unwrap().track = Some(track(30, 100)); // 30%
         }
-        let mock = RecordingPub::default();
-        publish_zone_track(1, &cfg, &store, &mock).await;
+        let mock = Rec::default();
+        let mut sink = StatusSink::new(&mock);
+        publish_zone_track(1, &cfg, &store, &mut sink).await;
 
-        let w = mock.writes.lock().unwrap().clone();
+        let w = written(&mock);
         let title = w
             .iter()
             .find(|(g, _, _)| g == "1/1/7")
@@ -1384,5 +2028,708 @@ zone = "Z1"
             .expect("progress write");
         assert_eq!(prog.1, DPT_SCALING);
         assert_eq!(dpt::encode(prog.1, &prog.2).unwrap(), vec![0x4D]); // 30% → round(76.5)=77
+    }
+
+    /// Radio and Subsonic playback make the zone announce itself every second because the
+    /// position is part of the state. The publisher used to rewrite every configured status
+    /// address each time; measure what reaches the bus now.
+    #[tokio::test(start_paused = true)]
+    #[allow(clippy::significant_drop_tightening)] // guard held only for the multi-field seed
+    async fn a_minute_of_playback_ticks_stays_quiet() {
+        const TICKS: usize = 60;
+        const ADDRESSES: usize = 8; // the status addresses of cfg_with_status_gas
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        {
+            let mut s = store.write().await;
+            let z = s.zones.get_mut(&1).unwrap();
+            z.playback = state::PlaybackState::Playing;
+            z.track = Some(track(0, 200_000)); // a 200 s track
+        }
+        let rec = Rec::default();
+        let mut sink = StatusSink::new(&rec);
+
+        for tick in 0..TICKS {
+            {
+                let mut s = store.write().await;
+                s.zones.get_mut(&1).unwrap().track =
+                    Some(track(i64::try_from(tick).unwrap() * 1000, 200_000));
+            }
+            // What the publisher does for every ZoneChanged.
+            publish_zone_state(1, &cfg, &store, &mut sink).await;
+            publish_zone_track(1, &cfg, &store, &mut sink).await;
+            publish_all_mute_status(&cfg, &store, &mut sink).await;
+            tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        }
+
+        let offered = TICKS * ADDRESSES;
+        let sent = rec.count();
+        println!("{TICKS} ticks, {offered} values offered, {sent} telegrams sent");
+        // The first tick sends all addresses; afterwards only progress moves: one whole
+        // percent per two seconds on this track.
+        assert!(
+            sent <= ADDRESSES + TICKS / 2 + 2,
+            "{sent} telegrams for {TICKS} ticks"
+        );
+        assert!(sent >= ADDRESSES, "the first tick sends everything");
+        let progress = written(&rec)
+            .iter()
+            .filter(|(g, _, _)| g == "1/1/8")
+            .count();
+        assert!(
+            progress >= TICKS / 2 - 1,
+            "progress still advances ({progress})"
+        );
+    }
+
+    /// Client mode has no limit on zones. Zone 11's mute status and client 1's zone status
+    /// are different objects that the device stack would number alike (ASAP 340); the change
+    /// filter must tell them apart or the second telegram is suppressed.
+    #[tokio::test]
+    async fn eleven_zones_do_not_suppress_the_status_of_client_one() {
+        let mut toml =
+            String::from("[knx]\nrole = \"client\"\nurl = \"udp://192.168.1.50:3671\"\n");
+        for z in 1..=11 {
+            let _ =
+                std::fmt::Write::write_fmt(&mut toml, format_args!("[[zone]]\nname = \"Z{z}\"\n"));
+            if z == 11 {
+                toml.push_str("[zone.knx]\nmute_status = \"3/0/1\"\n");
+            }
+        }
+        toml.push_str(
+            "[[client]]\nname = \"C1\"\nmac = \"02:42:ac:11:00:10\"\nzone = \"Z1\"\n[client.knx]\nzone_status = \"3/0/2\"\n",
+        );
+        let cfg = crate::config::load_raw(toml::from_str(&toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        store.write().await.zones.get_mut(&11).unwrap().muted = true;
+
+        let rec = Rec::default();
+        let mut sink = StatusSink::new(&rec);
+        publish_zone_state(11, &cfg, &store, &mut sink).await;
+        publish_client_state(1, &cfg, &store, &mut sink).await;
+
+        let w = written(&rec);
+        assert!(
+            w.iter().any(|(g, _, _)| g == "3/0/1"),
+            "zone 11 mute status"
+        );
+        assert!(
+            w.iter().any(|(g, _, _)| g == "3/0/2"),
+            "client 1 zone status"
+        );
+    }
+
+    // ── object_command ──────────────────────────────────────────────
+
+    #[test]
+    fn object_command_maps_every_writable_object_and_only_those() {
+        use group_objects::{CLIENT_GOS, GLOBAL_GOS, ZONE_GOS};
+        for zone in [1, 2, MAX_ZONES] {
+            for (i, def) in ZONE_GOS.iter().enumerate() {
+                let cmd = object_command(zone_asap(zone, i));
+                assert_eq!(
+                    cmd.is_some(),
+                    def.flags.write,
+                    "zone {zone} object {i} ({}): writable objects command, status objects do not",
+                    def.name
+                );
+                if let Some(Command::Zone(z, _)) = cmd {
+                    assert_eq!(z, zone, "{}", def.name);
+                }
+            }
+        }
+        for client in [1, 2, MAX_CLIENTS] {
+            for (i, def) in CLIENT_GOS.iter().enumerate() {
+                let cmd = object_command(client_asap(client, i));
+                assert_eq!(
+                    cmd.is_some(),
+                    def.flags.write,
+                    "client {client} {}",
+                    def.name
+                );
+                if let Some(Command::Client(c, _)) = cmd {
+                    assert_eq!(c, client);
+                }
+            }
+        }
+        for (i, def) in GLOBAL_GOS.iter().enumerate() {
+            let cmd = object_command(global_asap(i));
+            assert_eq!(cmd.is_some(), def.flags.write, "global {}", def.name);
+        }
+    }
+
+    #[test]
+    fn object_command_names_the_action_of_known_objects() {
+        assert_eq!(
+            object_command(zone_asap(1, ZGO_PLAY)),
+            Some(Command::Zone(1, "play"))
+        );
+        assert_eq!(
+            object_command(zone_asap(3, ZGO_VOLUME)),
+            Some(Command::Zone(3, "volume"))
+        );
+        assert_eq!(
+            object_command(zone_asap(MAX_ZONES, ZGO_PRESENCE_ENABLE)),
+            Some(Command::Zone(MAX_ZONES, "presence_enable"))
+        );
+        assert_eq!(
+            object_command(client_asap(2, CGO_LATENCY)),
+            Some(Command::Client(2, "latency"))
+        );
+        assert_eq!(
+            object_command(global_asap(GGO_ALL_STOP)),
+            Some(Command::Global("all_stop"))
+        );
+        // Status objects and out-of-range numbers command nothing.
+        assert_eq!(object_command(zone_asap(1, ZGO_VOLUME_STATUS)), None);
+        assert_eq!(object_command(0), None);
+        assert_eq!(object_command(666), None);
+        assert_eq!(object_command(u16::MAX), None);
+        // Adjacent ASAPs at the block borders land on the right side.
+        assert_eq!(
+            object_command(330),
+            None,
+            "zone 10's last object is a status object"
+        );
+        assert_eq!(
+            object_command(331),
+            Some(Command::Client(1, "volume")),
+            "first client object"
+        );
+    }
+
+    // ── Reads through the publisher ─────────────────────────────────
+
+    /// Run `fut` until the runtime has nothing else to do (paused time moves on by itself).
+    async fn settle<F: std::future::Future<Output = ()> + Unpin>(fut: &mut F) {
+        tokio::select! {
+            () = fut => unreachable!("the publisher loop does not end"),
+            () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_late_display_gets_the_values_it_asks_for() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        store.write().await.zones.get_mut(&1).unwrap().volume = 60;
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let rec = Rec::default();
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+
+        settle(&mut fut).await;
+        assert_eq!(
+            rec.count(),
+            8,
+            "initial state: one telegram per status address"
+        );
+
+        // A visualisation starts and reads the volume status and a command address.
+        read_tx.try_send(ga("1/1/1")).unwrap();
+        settle(&mut fut).await;
+        let responses = rec.responses.lock().unwrap().clone();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].0, ga("1/1/1"));
+        assert_eq!(rec.count(), 8, "answering a read sends no write");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_read_of_a_value_that_was_never_sent_gets_the_current_value() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let rec = Rec::default();
+        // The gateway takes nothing at first: every initial write fails.
+        rec.accept
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+        settle(&mut fut).await;
+        assert_eq!(rec.count(), 0);
+
+        rec.accept.store(true, std::sync::atomic::Ordering::Relaxed);
+        read_tx.try_send(ga("1/1/1")).unwrap();
+        settle(&mut fut).await;
+        assert_eq!(
+            rec.responses.lock().unwrap().len(),
+            1,
+            "the read is answered"
+        );
+        assert_eq!(rec.count(), 7, "the other values go out as ordinary writes");
+    }
+
+    #[test]
+    fn every_status_address_is_in_the_read_set() {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+server_online = "0/0/1"
+all_mute_status = "0/0/2"
+system_fault = "0/0/3"
+all_stop = "0/0/4"
+
+[[zone]]
+name = "Z1"
+[zone.knx]
+volume_status = "1/0/1"
+mute_status = "1/0/2"
+control_status = "1/0/3"
+track_title_status = "1/0/4"
+track_artist_status = "1/0/5"
+track_album_status = "1/0/6"
+track_progress_status = "1/0/7"
+track_playing_status = "1/0/8"
+track_repeat_status = "1/0/9"
+playlist_status = "1/0/10"
+shuffle_status = "1/0/11"
+repeat_status = "1/0/12"
+presence_enable_status = "1/0/13"
+presence_timer_status = "1/0/14"
+play = "1/0/20"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+[client.knx]
+volume_status = "2/0/1"
+mute_status = "2/0/2"
+latency_status = "2/0/3"
+zone_status = "2/0/4"
+connected_status = "2/0/5"
+volume = "2/0/20"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let set = build_status_ga_set(&cfg);
+        assert_eq!(
+            set.len(),
+            14 + 5 + 3,
+            "all status addresses, no command address"
+        );
+        assert!(!set.contains("1/0/20") && !set.contains("2/0/20") && !set.contains("0/0/4"));
+    }
+
+    #[test]
+    fn duplicate_command_addresses_are_reported() {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+all_stop = "0/0/1"
+
+[[zone]]
+name = "Z1"
+[zone.knx]
+play = "1/0/1"
+pause = "1/0/1"
+stop = "0/0/1"
+[[zone]]
+name = "Z2"
+[zone.knx]
+play = "1/0/2"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+[client.knx]
+volume = "2/0/1"
+mute = "2/0/1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let d = duplicate_addresses(&cfg);
+        assert_eq!(d.len(), 3, "{d:?}");
+        assert!(d.iter().any(|m| m.contains("1/0/1")
+            && m.contains("zone 1 play")
+            && m.contains("zone 1 pause")));
+        assert!(
+            d.iter()
+                .any(|m| m.contains("2/0/1") && m.contains("client 1"))
+        );
+        assert!(d.iter().any(|m| m.contains("0/0/1")
+            && m.contains("global all_stop")
+            && m.contains("never runs")));
+        // A zone and a client may share an address: both run.
+        let ok = cfg_with_knx();
+        assert_eq!(duplicate_addresses(&ok).len(), 0);
+    }
+
+    #[test]
+    fn status_objects_that_share_an_address_are_reported() {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+system_fault = "0/0/9"
+
+[[zone]]
+name = "Z1"
+[zone.knx]
+volume_status = "1/1/1"
+mute_status = "1/1/2"
+[[zone]]
+name = "Z2"
+[zone.knx]
+volume_status = "1/1/01"
+mute_status = "1/1/3"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+[client.knx]
+mute_status = "0/0/9"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let d = duplicate_addresses(&cfg);
+        assert_eq!(d.len(), 2, "{d:?}");
+        assert!(d.iter().any(|m| m.starts_with("0/0/9 ")
+            && m.contains("client 1 mute_status")
+            && m.contains("global system_fault")));
+        assert!(d.iter().any(|m| m.starts_with("1/1/1 ")
+            && m.contains("zone 1 volume_status")
+            && m.contains("zone 2 volume_status")));
+        // The same address for a status and a command object is the usual single-address setup.
+        let ok = cfg_with_status_gas();
+        assert_eq!(duplicate_addresses(&ok).len(), 0);
+    }
+
+    /// A recording publisher whose `resync` fires when the test says so (a device whose server
+    /// restarted, or whose associations a download changed).
+    struct Resyncing {
+        rec: Rec,
+        resync: Arc<tokio::sync::Notify>,
+    }
+
+    impl KnxPublisher for Resyncing {
+        const ADDRESSED: bool = true;
+
+        fn write(
+            &self,
+            target: transport::Target,
+            dpt: Dpt,
+            value: &DptValue,
+        ) -> impl std::future::Future<Output = bool> + Send {
+            self.rec.write(target, dpt, value)
+        }
+
+        async fn resync(&self) {
+            self.resync.notified().await;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_resync_sends_every_status_value_again() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let publisher = Resyncing {
+            rec: Rec::default(),
+            resync: Arc::new(tokio::sync::Notify::new()),
+        };
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&publisher, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+
+        settle(&mut fut).await;
+        assert_eq!(publisher.rec.count(), 8);
+        // Nothing changed, but the peers lost what they had: all eight go out again, not none
+        // (the change filter must forget what it sent).
+        publisher.resync.notify_one();
+        run_for(&mut fut, std::time::Duration::from_secs(1)).await;
+        assert_eq!(publisher.rec.count(), 16);
+    }
+
+    /// Run `fut` for `period` of (paused) time.
+    async fn run_for<F: std::future::Future<Output = ()> + Unpin>(
+        fut: &mut F,
+        period: std::time::Duration,
+    ) {
+        tokio::select! {
+            () = fut => unreachable!("the publisher loop does not end"),
+            () = tokio::time::sleep(period) => {}
+        }
+    }
+
+    /// A download asks for a resync after each table it completes: one burst answers them all,
+    /// sent only when things have been quiet for `RESYNC_SETTLE`.
+    #[tokio::test(start_paused = true)]
+    async fn resync_requests_that_follow_each_other_are_answered_by_one_burst() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let publisher = Resyncing {
+            rec: Rec::default(),
+            resync: Arc::new(tokio::sync::Notify::new()),
+        };
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&publisher, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+        settle(&mut fut).await;
+        assert_eq!(publisher.rec.count(), 8);
+
+        let step = RESYNC_SETTLE / 2;
+        for _ in 0..3 {
+            publisher.resync.notify_one();
+            run_for(&mut fut, step).await;
+            assert_eq!(
+                publisher.rec.count(),
+                8,
+                "nothing goes out while requests keep coming"
+            );
+        }
+        run_for(&mut fut, RESYNC_SETTLE).await;
+        assert_eq!(publisher.rec.count(), 16, "one burst of eight, not three");
+        run_for(&mut fut, std::time::Duration::from_secs(10)).await;
+        assert_eq!(publisher.rec.count(), 16);
+    }
+
+    /// Requests that never stop do not postpone the burst for ever.
+    #[tokio::test(start_paused = true)]
+    async fn a_resync_is_answered_at_the_latest_after_the_maximum_wait() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let publisher = Resyncing {
+            rec: Rec::default(),
+            resync: Arc::new(tokio::sync::Notify::new()),
+        };
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&publisher, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+        settle(&mut fut).await;
+
+        let step = RESYNC_SETTLE / 2;
+        let mut waited = std::time::Duration::ZERO;
+        while waited <= RESYNC_MAX_WAIT + RESYNC_SETTLE {
+            publisher.resync.notify_one();
+            run_for(&mut fut, step).await;
+            waited += step;
+        }
+        assert!(
+            publisher.rec.count() >= 16,
+            "the burst was postponed for {waited:?}"
+        );
+    }
+
+    /// A listener that hears the same group read over and over.
+    struct ReadFlood(u32);
+
+    impl KnxListener for ReadFlood {
+        fn recv(&mut self) -> impl std::future::Future<Output = Option<Incoming>> + Send {
+            let next = self.0.checked_sub(1);
+            self.0 = next.unwrap_or(0);
+            std::future::ready(next.map(|_| Incoming::Read(ga("1/1/1"))))
+        }
+    }
+
+    /// Reads that the publisher has not got to yet wait in a queue of fixed size; the listener
+    /// neither blocks on it (it would stop hearing writes) nor lets it grow.
+    #[tokio::test]
+    async fn a_flood_of_group_reads_fills_a_bounded_queue_and_no_more() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            listener_loop(ReadFlood(10_000), &bridge, &read_tx),
+        )
+        .await
+        .expect("the listener never waits for the publisher");
+        let mut queued = 0;
+        while read_rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, READ_QUEUE);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reads_of_one_address_are_answered_at_most_twice_a_second() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let rec = Rec::default();
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+        settle(&mut fut).await;
+
+        for _ in 0..40 {
+            read_tx.try_send(ga("1/1/1")).unwrap();
+            run_for(&mut fut, std::time::Duration::from_millis(25)).await;
+        }
+        // 40 reads in one second: the first, and one more after the minimum interval.
+        assert_eq!(rec.responses.lock().unwrap().len(), 2);
+        // Another address is not held back by it.
+        read_tx.try_send(ga("1/1/2")).unwrap();
+        run_for(&mut fut, std::time::Duration::from_millis(25)).await;
+        assert_eq!(rec.responses.lock().unwrap().len(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_server_online_heartbeat_is_sent_every_period_although_nothing_changes() {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+server_online = "0/0/1"
+heartbeat_minutes = 5
+
+[[zone]]
+name = "Z1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+        );
+        let rec = Rec::default();
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+
+        // 11 minutes: the first tick at once, then at 5 and at 10 minutes.
+        tokio::select! {
+            () = &mut fut => unreachable!(),
+            () = tokio::time::sleep(std::time::Duration::from_mins(11)) => {}
+        }
+        let beats = written(&rec)
+            .iter()
+            .filter(|(g, _, _)| g == "0/0/1")
+            .count();
+        assert_eq!(
+            beats, 3,
+            "a heartbeat that is sent on change only is not a heartbeat"
+        );
+    }
+
+    /// A task that never ends must not hold shutdown for ever: `shutdown` waits two seconds for
+    /// each task and then aborts it.
+    #[tokio::test(start_paused = true)]
+    async fn shutdown_aborts_a_task_that_does_not_stop() {
+        struct Flag(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for Flag {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let guard = Flag(Arc::clone(&dropped));
+        let (shutdown, _rx) = watch::channel(false);
+        let bridge = KnxBridge {
+            device: None,
+            shutdown,
+            tasks: vec![tokio::spawn(async move {
+                let _guard = guard;
+                std::future::pending::<()>().await;
+            })],
+        };
+        let started = tokio::time::Instant::now();
+        bridge.shutdown().await;
+        assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+        // The abort has run by the time the runtime gets to the task again.
+        tokio::task::yield_now().await;
+        assert!(
+            dropped.load(std::sync::atomic::Ordering::SeqCst),
+            "the task is still alive: shutdown did not abort it"
+        );
+    }
+
+    /// The device task writes the state on its way out, so shutdown has to wait for it as well as
+    /// for the bridge task. (Whether the file is complete when `shutdown` returns is a race
+    /// the integration test cannot always lose; the wiring is checked here.)
+    #[tokio::test]
+    async fn a_device_bridge_waits_for_the_device_task_on_shutdown() {
+        let toml = r#"
+[knx]
+role = "device"
+individual_address = "1.1.100"
+restart_after_ets = false
+
+[[zone]]
+name = "Z1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        let (_notify_tx, notify_rx) = tokio::sync::broadcast::channel(8);
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let dir = std::env::temp_dir().join(format!("snapdog_bridge_tasks_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let options = DeviceOptions {
+            bind: Some("127.0.0.1:0".parse().unwrap()),
+            memory_path: Some(dir.join("knx-memory.bin")),
+        };
+        let bridge = start_with_options(
+            &cfg,
+            store,
+            notify_rx,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+            &options,
+        )
+        .await
+        .unwrap();
+        assert_eq!(bridge.tasks.len(), 2, "bridge task and device task");
+        bridge.shutdown().await;
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

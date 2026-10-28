@@ -327,10 +327,11 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
     if let Some(ref knx) = raw.knx {
         match knx.role {
             KnxRole::Client => {
-                anyhow::ensure!(
-                    knx.url.is_some(),
-                    "KNX client mode requires 'url' (e.g. udp://192.168.1.50:3671)"
-                );
+                let url = knx
+                    .url
+                    .as_deref()
+                    .context("KNX client mode requires 'url' (e.g. udp://192.168.1.50:3671)")?;
+                crate::knx::validate_url(url).context("Invalid [knx] url")?;
             }
             KnxRole::Device => {
                 anyhow::ensure!(
@@ -419,6 +420,9 @@ fn validate_knx_addresses(raw: &FileConfig) -> Result<()> {
         && let Some(ref addr) = knx.individual_address
     {
         validate_knx_ia(addr).context("Invalid KNX individual address")?;
+    }
+    if let Some(ref knx) = raw.knx {
+        validate_global_knx(knx)?;
     }
     for zone in &raw.zone {
         validate_zone_knx(&zone.knx).with_context(|| format!("Zone '{}' KNX error", zone.name))?;
@@ -767,7 +771,9 @@ fn validate_knx_ga(ga: &str) -> Result<()> {
             anyhow::ensure!(main <= 31, "Main group must be 0-31");
             anyhow::ensure!(middle <= 7, "Middle group must be 0-7");
         }
-        _ => anyhow::bail!("Expected main/sub or main/middle/sub format"),
+        _ => anyhow::bail!(
+            "Expected main/middle/sub (e.g. 1/0/3) or main/sub (e.g. 1/3) notation; a single number is not supported"
+        ),
     }
     Ok(())
 }
@@ -780,6 +786,25 @@ fn validate_knx_ia(ia: &str) -> Result<()> {
     let _device: u8 = parts[2].parse().context("Invalid device")?;
     anyhow::ensure!(area <= 15, "Area must be 0-15");
     anyhow::ensure!(line <= 15, "Line must be 0-15");
+    Ok(())
+}
+
+/// The device-level group addresses in `[knx]`.
+fn validate_global_knx(knx: &KnxConfig) -> Result<()> {
+    let gas = [
+        ("server_online", &knx.server_online),
+        ("all_stop", &knx.all_stop),
+        ("all_mute", &knx.all_mute),
+        ("all_mute_status", &knx.all_mute_status),
+        ("system_fault", &knx.system_fault),
+        ("knx_time", &knx.knx_time),
+    ];
+    for (key, ga) in gas {
+        if let Some(ga) = ga {
+            validate_knx_ga(ga)
+                .with_context(|| format!("Invalid Group Address '{ga}' for [knx] {key}"))?;
+        }
+    }
     Ok(())
 }
 
@@ -1469,6 +1494,120 @@ mod tests {
         )
         .unwrap();
         assert!(load_raw(raw).is_ok());
+    }
+
+    fn zone_with_ga(ga: &str) -> FileConfig {
+        toml::from_str(&format!(
+            r#"
+            [[zone]]
+            name = "A"
+            [zone.knx]
+            play = "{ga}"
+            [[client]]
+            name = "X"
+            mac = "00:00:00:00:00:00"
+            zone = "A"
+        "#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn rejects_one_level_knx_ga_with_a_clear_message() {
+        let err = format!("{:#}", load_raw(zone_with_ga("2049")).unwrap_err());
+        assert!(
+            err.contains("a single number is not supported"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_knx_ga() {
+        for bad in ["1/8/0", "1/0/256", "1/2048", "a/b/c", "1/0/0/0", ""] {
+            assert!(load_raw(zone_with_ga(bad)).is_err(), "{bad:?} accepted");
+        }
+    }
+
+    #[test]
+    fn validates_the_global_knx_addresses() {
+        let toml = |key: &str, ga: &str| {
+            let raw: FileConfig = toml::from_str(&format!(
+                r#"
+                [knx]
+                role = "device"
+                individual_address = "1.1.100"
+                {key} = "{ga}"
+
+                [[zone]]
+                name = "A"
+                [[client]]
+                name = "X"
+                mac = "00:00:00:00:00:00"
+                zone = "A"
+            "#
+            ))
+            .unwrap();
+            load_raw(raw)
+        };
+        assert!(toml("all_stop", "0/0/1").is_ok());
+        assert!(toml("knx_time", "0/1").is_ok());
+        let err = format!("{:#}", toml("server_online", "40/0/1").unwrap_err());
+        assert!(
+            err.contains("server_online") && err.contains("Main group must be 0-31"),
+            "unexpected error: {err}"
+        );
+        assert!(toml("system_fault", "x").is_err());
+    }
+
+    #[test]
+    fn knx_table_from_the_command_line_has_the_toml_defaults() {
+        // `--knx-device` and `--knx-sync-system-clock` create the table with `Default`.
+        let from_toml: KnxConfig = toml::from_str("role = \"device\"").unwrap();
+        assert_eq!(
+            KnxConfig::default().heartbeat_minutes,
+            from_toml.heartbeat_minutes
+        );
+        assert_eq!(KnxConfig::default().heartbeat_minutes, 5);
+    }
+
+    fn knx_client(url: &str) -> FileConfig {
+        toml::from_str(&format!(
+            r#"
+            [knx]
+            role = "client"
+            url = "{url}"
+            [[zone]]
+            name = "A"
+            [[client]]
+            name = "X"
+            mac = "00:00:00:00:00:00"
+            zone = "A"
+        "#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn knx_client_url_is_checked_when_the_config_loads() {
+        for ok in [
+            "udp://192.168.1.50:3671",
+            "tunnel://gateway.local:3671",
+            "router://224.0.23.12:3671",
+            "tunnel://[::1]:3671",
+        ] {
+            assert!(load_raw(knx_client(ok)).is_ok(), "{ok}");
+        }
+        for (bad, why) in [
+            ("192.168.1.50:3671", "'://'"),
+            ("tcp://192.168.1.50:3671", "unsupported scheme"),
+            ("udp://192.168.1.50", "missing port"),
+            ("udp://1.2.3.4:0", "invalid port"),
+            ("udp://user@192.168.1.50:3671", "invalid host"),
+            ("udp://256.1.1.1:3671", "invalid IPv4 address"),
+        ] {
+            let err = format!("{:#}", load_raw(knx_client(bad)).unwrap_err());
+            assert!(err.contains(why), "{bad}: {err}");
+        }
     }
 
     // ── `~` expansion, environment overrides, re-validation ──────

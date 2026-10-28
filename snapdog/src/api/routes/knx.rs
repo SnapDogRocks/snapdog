@@ -91,7 +91,8 @@ pub async fn get_knxprod() -> impl IntoResponse {
     path = "/api/v1/knx/programming-mode",
     responses(
         (status = 200, description = "Programming mode status", body = bool),
-        (status = 409, description = "KNX device mode not active", body = ErrorBody)
+        (status = 409, description = "KNX device mode not active", body = ErrorBody),
+        (status = 503, description = "The KNX device task did not answer within two seconds", body = ErrorBody)
     ),
     tag = "knx"
 )]
@@ -99,7 +100,11 @@ async fn get_programming_mode(State(state): State<SharedState>) -> impl IntoResp
     let Some(ref ctl) = state.knx_device_control else {
         return Err(ApiError::Conflict("KNX device mode not active"));
     };
-    Ok(Json(ctl.get_prog_mode().await))
+    let enabled = ctl
+        .get_prog_mode()
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable("KNX device"))?;
+    Ok(Json(enabled))
 }
 
 /// Set KNX programming mode status
@@ -112,7 +117,8 @@ async fn get_programming_mode(State(state): State<SharedState>) -> impl IntoResp
     request_body = bool,
     responses(
         (status = 200, description = "Updated programming mode status", body = bool),
-        (status = 409, description = "KNX device mode not active", body = ErrorBody)
+        (status = 409, description = "KNX device mode not active", body = ErrorBody),
+        (status = 503, description = "The KNX device task did not answer within two seconds", body = ErrorBody)
     ),
     tag = "knx"
 )]
@@ -123,6 +129,8 @@ async fn set_programming_mode(
     let Some(ref ctl) = state.knx_device_control else {
         return Err(ApiError::Conflict("KNX device mode not active"));
     };
-    ctl.set_prog_mode(enabled).await;
+    ctl.set_prog_mode(enabled)
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable("KNX device"))?;
     Ok(Json(enabled))
 }

@@ -1159,6 +1159,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "The KNX device task did not answer within two seconds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       },
@@ -1192,6 +1202,16 @@
           },
           "409": {
             "description": "KNX device mode not active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The KNX device task did not answer within two seconds",
             "content": {
               "application/json": {
                 "schema": {
