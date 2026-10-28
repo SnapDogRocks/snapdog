@@ -62,7 +62,7 @@ COPY --from=webui-builder /build/webui/out webui/out
 RUN --mount=type=cache,id=snapdog-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=snapdog-cargo-git,target=/usr/local/cargo/git/db,sharing=locked \
     --mount=type=cache,id=snapdog-server-target,target=/build/target,sharing=locked \
-    CARGO_PROFILE_RELEASE_LTO="${CARGO_RELEASE_LTO}" cargo build --locked --release -p snapdog && \
+    CARGO_PROFILE_RELEASE_LTO="${CARGO_RELEASE_LTO}" cargo build --locked --release -p snapdog --features full && \
     install -Dm0755 target/release/snapdog /out/snapdog
 
 # ── Prebuilt binary stage (release path only) ─────────────────

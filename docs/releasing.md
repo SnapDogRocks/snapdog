@@ -51,6 +51,19 @@ merge.
 There is deliberately no `push: tags` or `release: published` trigger on the
 release workflow. Adding either creates a second build and races publication.
 
+## What CI does not build
+
+The Dockerfile has two ways to get the server binary. A release uses the `prebuilt` stage,
+which copies the binary from the `build` job (compiled with `--features snapdog/full`).
+A plain `docker build .` uses the `compile` stage, which runs `cargo build` inside the
+image. No CI job builds that stage, and the `docker-contract` job only runs
+`buildx --check`. `feature_consistency.rs` checks that the `compile` line passes
+`--features full`, nothing more. After you change that stage, build it by hand:
+
+```sh
+docker build --target binary -t snapdog-binary-test .
+```
+
 ## Required secrets
 
 - `RELEASE_PLEASE_APP_CLIENT_ID` and `RELEASE_PLEASE_APP_PRIVATE_KEY`: create the

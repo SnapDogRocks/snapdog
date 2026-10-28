@@ -21,6 +21,12 @@ ProtectSystem=strict
 ProtectHome=yes
 NoNewPrivileges=yes
 PrivateTmp=yes
+# AirPlay 2 accepts the sender's PTP clock on UDP 319 and 320. Both are privileged
+# ports and the service runs as an unprivileged dynamic user, so it needs exactly
+# this one capability and nothing else. Without it the PTP sink cannot bind and
+# every AirPlay 2 connect starts slower. snapdog/tests/packaging_units.rs guards this.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
