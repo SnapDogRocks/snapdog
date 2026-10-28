@@ -4,17 +4,30 @@
 # Copy to snapdog.toml and adjust to your setup.
 # All sections and fields are optional — sensible defaults are used.
 
-# Server display name — used for mDNS discovery, MQTT, KNX device name.
+# Server display name — mDNS service instance name, Home Assistant device name,
+# and the "name" in GET /api/v1/system/version.
 # name = "SnapDog"
 
 # ── System ─────────────────────────────────────────────────────────────────
 [system]
 # Logging verbosity: trace, debug, info, warn, error
 log_level = "info"
-# Optional: log to file with daily rotation (in addition to stdout)
+# Optional: also log to a file (in addition to stdout), one file per day. The date goes
+# before the extension: snapdog.log becomes snapdog.2026-10-25.log. SnapDog keeps 14
+# daily files (the current one and 13 more) and deletes older ones when it starts and
+# then hourly. Only files named exactly like that, snapdog.<yyyy-mm-dd>.log, are ever
+# deleted, the oldest date first; other files in the directory are left alone. The day
+# changes at midnight UTC, whatever the local time zone. If the file cannot be opened,
+# SnapDog warns and keeps logging to stdout. A write error later (disk full) is not
+# reported: the file then misses lines while stdout keeps working.
+# The packaged systemd unit creates /var/log/snapdog for this (LogsDirectory=); with the
+# unit's read-only file system no other directory is writable.
 # log_file = "/var/log/snapdog/snapdog.log"
-# Directory for persistent state files (zones.json, eq.json, snapcast.json).
-# Default: platform-appropriate (Linux: ~/.local/state/snapdog, macOS: ~/Library/Application Support/snapdog)
+# Directory for persistent state files (zones.json, eq.json, server_id, and
+# airplay-pairing with AirPlay 2). A leading ~ is expanded.
+# Default: under systemd /var/lib/snapdog; Linux $XDG_STATE_HOME/snapdog or
+# ~/.local/state/snapdog; macOS ~/Library/Application Support/SnapDog;
+# Windows %LOCALAPPDATA%\SnapDog
 # state_dir = "/var/lib/snapdog"
 
 # ── Audio ──────────────────────────────────────────────────────────────────
@@ -41,6 +54,8 @@ source_switch_fade_ms = 300
 [http]
 # WebUI + REST API port
 port = 5555
+# Bind address. Default "::" (IPv4 and IPv6 where the OS allows); "0.0.0.0" for IPv4 only.
+# bind = "::"
 # External base URL for absolute links in API responses.
 # Required if behind a reverse proxy or accessed from other hosts.
 base_url = "http://192.168.1.10:5555"
@@ -51,31 +66,51 @@ base_url = "http://192.168.1.10:5555"
 # Both tls_cert and tls_key must be set together.
 # tls_cert = "/etc/snapdog/tls/fullchain.pem"
 # tls_key = "/etc/snapdog/tls/privkey.pem"
-# Enable embedded Scalar API documentation (only if feature api-docs is compiled in).
+# API documentation (only in builds with the api-docs feature, which the release
+# binaries have; other builds serve none of it).
+# api_docs: serve the OpenAPI document at GET /api/v1/openapi.json. It is protected like
+# the rest of /api/v1: with api_keys set it needs "Authorization: Bearer <key>", without
+# keys it is open, like the API. Default true.
 # api_docs = true
+# api_console: also serve the interactive console (Scalar) at /docs. Off by default. A
+# browser cannot send the Authorization header when it opens a page, so the page is NOT
+# behind api_keys and embeds the whole OpenAPI document. The page and its script come from
+# SnapDog itself (a pinned copy of Scalar inside the binary, about 1.3 MB) and contact no
+# other host, so it also works without internet access. It runs on the same origin as the
+# web UI. Turn it on only on a network you trust.
+# api_console = false
 
 # ── Snapcast ───────────────────────────────────────────────────────────────
 [snapcast]
-# Snapcast server address (loopback for embedded server)
-address = "127.0.0.1"
-# JSON-RPC control port
-# jsonrpc_tcp_port = 1705
-# Audio streaming port (clients connect here)
+# Audio streaming port (clients connect here). It carries the audio stream and has
+# no authentication: whoever can reach it can connect as a client and receive the audio.
+# Restrict it with streaming_bind below and the firewall; use codec "f32lz4e" with your
+# own encryption_psk if the stream must not be readable on the network.
 streaming_port = 1704
+# Local address the streaming port listens on, one address: "192.168.10.5" for one
+# interface, "127.0.0.1" for this host only. Unset: all interfaces. Clients that find the
+# server with mDNS connect to the address mDNS resolves, so keep it reachable for them.
+# streaming_bind = "192.168.10.5"
 # Streaming codec: "pcm", "flac", "f32lz4", "f32lz4e" (encrypted)
 codec = "flac"
-# Pre-shared key for f32lz4e encryption (both server and client must match)
+# Pre-shared key for f32lz4e encryption (both server and client must match).
+# Without a key the built-in default is used, which is public: the stream is then
+# not protected, and SnapDog logs a warning. Also: SNAPDOG_SNAPCAST_ENCRYPTION_PSK.
+# An empty key (a blank value here, or the variable set to nothing, as with an unset
+# ${PSK:-} in a compose file) is never used as a key: with f32lz4e SnapDog refuses to
+# start, so a secret that did not arrive cannot turn into the public key unnoticed.
 # encryption_psk = "my-secret-key"
 # How zone volume changes affect individual client volumes:
 #   "absolute" = set all clients to the zone volume
 #   "relative" = scale proportionally: client_volume * zone_volume / 100
-#   "compressed" = compressed scaling with headroom preservation (default)
+#   "compressed" = square-root curve, quiet clients drop less (default)
 group_volume_mode = "relative"
-# Whether SnapDog manages (starts/stops) the snapserver process.
-# Set to false if using an external snapserver.
-managed = true
-# Snapserver verbose logging (for debugging)
-# verbose = false
+# Only for builds with the snapcast-process feature, which drive an external
+# snapserver instead of the embedded Rust server (ignored, with a warning, otherwise):
+# address = "127.0.0.1"     # host of the external snapserver
+# jsonrpc_tcp_port = 1705   # its JSON-RPC port
+# managed = true            # start snapserver as a child process (false: connect to a running one)
+# verbose = false           # show the child process's console output
 # Policy for unknown Snapcast clients (not in [[client]] config):
 #   "accept" = assign to default_zone
 #   "ignore" = allow connection but don't manage
@@ -98,18 +133,24 @@ default_zone = "Ground Floor"
 
 # ── AirPlay ────────────────────────────────────────────────────────────────
 [airplay]
-# Protocol mode: "airplay2" (default) or "airplay1" for legacy compatibility
+# Protocol mode: "airplay2" (default) or "airplay1" for legacy compatibility.
+# Only effective in builds with AirPlay 2 support (feature ap2); other builds use AirPlay 1.
 # mode = "airplay2"
 # Optional: require password for AirPlay connections
 # password = "1234"
-# Optional: bind to specific network interfaces
+# Optional: listen on specific IP addresses (not interface names). Default: all.
+# Only effective in builds with AirPlay 2 support (feature ap2).
 # bind = ["192.168.1.10"]
 
 # ── Spotify Connect ────────────────────────────────────────────────────────
 # Remove this section entirely to disable Spotify Connect.
 [spotify]
-# Spotify Connect device name (visible in Spotify app)
-name = "SnapDog"
+# Name of the Spotify Connect device in the Spotify app, for every zone that does not set
+# its own spotify_name below. With one zone the device is named exactly this. With several
+# zones each device is called "<name> <zone name>", because every zone runs its own device
+# and Spotify lists devices by name. Unset or blank: the zone name. A zone's own
+# spotify_name always wins. Changing a name makes the device show up as a new one.
+# name = "Home"
 # Spotify streaming bitrate: 96, 160, or 320 kbps
 bitrate = 320
 
@@ -124,7 +165,7 @@ password = "admin"
 # Skip TLS certificate verification (for self-signed certs)
 # tls_skip_verify = false
 
-# Track cache — always active for instant seek and replay.
+# Track cache — always active for instant seek and replay. A leading ~ is expanded.
 # [subsonic.cache]
 # path = "~/.cache/snapdog/tracks"  # Cache directory (default: platform-appropriate)
 # max_size_mb = 2048                # Max cache size (LRU eviction)
@@ -248,16 +289,34 @@ base_topic = "snapdog"
 # ── KNX ────────────────────────────────────────────────────────────────────
 # Remove this section entirely to disable KNX.
 # [knx]
+# The presence of this table switches KNX on; there is no "enabled" key.
 # Role: "client" (connect to gateway) or "device" (ETS-programmable)
 # role = "client"
-# KNX/IP gateway URL:
-#   Client mode: "udp://192.168.1.50:3671" (tunnel) or multicast (router)
-#   Device mode: optional, for forwarding GA traffic through a gateway
+# KNX/IP gateway URL, required in client mode and not used in device mode.
+# Written scheme://host:port. The host is an IPv4 address, an IPv6 address in brackets or
+# a host name (udp://gateway.local:3671; a trailing dot, as in gateway.example.org., is
+# fine). An IPv6 zone id ([fe80::1%eth0]) is not supported. udp:// picks tunnelling for
+# a unicast address and routing for a multicast one; tunnel:// and router:// force a mode.
 # url = "udp://192.168.1.50:3671"
 # Device mode only: KNX individual address assigned by ETS
 # individual_address = "1.1.100"
 # Device mode only: start in programming mode (for initial ETS discovery)
 # start_prog_mode = false
+# Device mode only: keep ETS programming across restarts (default true) and restart
+# to apply new parameters after an ETS download (default true)
+# persist_ets_config = true
+# restart_after_ets = true
+# Minutes between heartbeat telegrams (server_online, system_fault). Default 5.
+# heartbeat_minutes = 5
+# Set the operating system clock from the knx_time telegram (needs privilege). Default false.
+# sync_system_clock = false
+# Device-level group addresses:
+# server_online = "2/1/1"    # DPT 1.011 — heartbeat, true at start and every heartbeat_minutes
+# all_stop = "2/1/2"         # DPT 1.017 — stop all zones
+# all_mute = "2/1/3"         # DPT 1.001 — mute/unmute all zones
+# all_mute_status = "2/1/4"  # DPT 1.001 — true when every zone is muted
+# system_fault = "2/1/5"     # DPT 1.005 — true while the Snapcast link is down
+# knx_time = "2/1/6"         # DPT 10.001 — clock input (drives presence schedules)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Zones
@@ -272,6 +331,9 @@ icon = "🏠"
 # sink = "/snapsinks/zone1"
 # Override auto-generated AirPlay receiver name:
 # airplay_name = "Ground Floor (AirPlay)"
+# Name shown in the Spotify app. Default: [spotify].name (a prefix when there are several
+# zones, see above), without it the zone name:
+# spotify_name = "Ground Floor (Spotify)"
 
 # Optional: presence-triggered playback
 # [zone.presence]
@@ -282,7 +344,7 @@ icon = "🏠"
 # to = "09:00"
 # source = "radio:0"                # radio:<index>, playlist:<id>, or "none"
 
-# Optional: KNX group addresses (client mode only, device mode uses ETS)
+# Optional: KNX group addresses (33 group objects per zone).
 # [zone.knx]
 # volume = "1/1/1"                  # DPT 5.001 — set volume (0–100%)
 # volume_status = "1/1/2"           # DPT 5.001 — volume feedback
@@ -304,19 +366,21 @@ icon = "🏠"
 # shuffle = "1/1/30"               # DPT 1.001 — set shuffle
 # shuffle_status = "1/1/31"        # DPT 1.001 — shuffle feedback
 # shuffle_toggle = "1/1/32"        # DPT 1.001 — toggle shuffle
-# repeat = "1/1/33"                # DPT 1.001 — set repeat
-# repeat_status = "1/1/34"         # DPT 1.001 — repeat feedback
-# repeat_toggle = "1/1/35"         # DPT 1.001 — toggle repeat
+# repeat = "1/1/33"                # DPT 1.001 — set playlist repeat
+# repeat_status = "1/1/34"         # DPT 1.001 — playlist repeat feedback
+# repeat_toggle = "1/1/35"         # DPT 1.001 — cycle repeat: off, playlist, track
+# track_repeat = "1/1/36"          # DPT 1.001 — set single-track repeat
+# track_repeat_status = "1/1/37"   # DPT 1.001 — single-track repeat feedback
+# track_repeat_toggle = "1/1/38"   # DPT 1.001 — cycle repeat: off, playlist, track
 # playlist = "1/1/40"              # DPT 5.010 — set playlist index
 # playlist_status = "1/1/41"       # DPT 5.010 — playlist index feedback
 # playlist_next = "1/1/42"         # DPT 1.001 — next playlist
 # playlist_previous = "1/1/43"     # DPT 1.001 — previous playlist
-# presence = "1/1/50"              # DPT 1.001 — set presence
+# presence = "1/1/50"              # DPT 1.018 — set presence
 # presence_enable = "1/1/51"       # DPT 1.001 — enable/disable auto-off
 # presence_enable_status = "1/1/52" # DPT 1.001 — auto-off enabled feedback
-# presence_timeout = "1/1/53"      # DPT 7.005 — auto-off timeout (seconds)
-# presence_timeout_status = "1/1/54" # DPT 7.005 — timeout feedback
 # presence_timer_status = "1/1/55" # DPT 1.001 — timer running feedback
+# (The auto-off delay is not a group object: set auto_off_delay in [zone.presence].)
 
 [[zone]]
 name = "1st Floor"
@@ -335,7 +399,7 @@ zone = "Ground Floor"                 # Initial zone assignment (by name)
 icon = "🛋️"
 # max_volume = 100                   # Volume limit (0–100, default 100)
 
-# Optional: KNX group addresses (client mode only)
+# Optional: KNX group addresses (11 group objects per client).
 # [client.knx]
 # volume = "3/1/1"                   # DPT 5.001 — set volume
 # volume_status = "3/1/2"           # DPT 5.001 — volume feedback
@@ -343,8 +407,8 @@ icon = "🛋️"
 # mute = "3/1/4"                    # DPT 1.001 — set mute
 # mute_status = "3/1/5"            # DPT 1.001 — mute feedback
 # mute_toggle = "3/1/6"            # DPT 1.001 — toggle mute
-# latency = "3/1/7"                # DPT 7.005 — set latency (ms)
-# latency_status = "3/1/8"         # DPT 7.005 — latency feedback
+# latency = "3/1/7"                # DPT 5.010 — set latency (0–255 ms)
+# latency_status = "3/1/8"         # DPT 5.010 — latency feedback
 # zone = "3/1/9"                    # DPT 5.010 — set zone index
 # zone_status = "3/1/10"           # DPT 5.010 — zone feedback
 # connected_status = "3/1/11"      # DPT 1.001 — connected feedback

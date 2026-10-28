@@ -37,8 +37,8 @@ SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system
 | 🔊 **Speaker Correction** | Per-client Spinorama profiles (1000+ speakers from (https://spinorama.org)) |
 | 🔀 **Audio Fade** | Smooth transitions: zone switch (client-side) and source switch (server-side) |
 | 🏠 **MQTT** | Bidirectional smart home integration over MQTT 3.1.1: retained state, commands, availability; TLS and mutual TLS |
-| 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 35 group objects per zone, 11 per client, plus device-level global objects) |
-| 🌐 **REST API** | ~90 endpoints, full zone/client/media control |
+| 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 33 group objects per zone, 11 per client, plus 5 device-level global objects) |
+| 🌐 **REST API** | ~100 endpoints, full zone/client/media control |
 | 📡 **WebSocket** | Real-time state push notifications |
 | 🖥️ **WebUI** | Responsive SPA, drag-and-drop, tabbed EQ overlay, i18n (5 languages) |
 
@@ -200,6 +200,17 @@ sudo apt install snapdog snapdog-client
 Do not add `trusted=yes`. It disables exactly the check the fingerprint above is
 for.
 
+#### What the packages do
+
+The packages install the systemd units and manage them on install, upgrade and removal.
+
+- **Fresh install:** `snapdog-client` is enabled and started. It finds its server through mDNS. `snapdog` is installed disabled, because it needs a configuration first. Edit `/etc/snapdog/snapdog.toml`, then run `sudo systemctl enable --now snapdog`.
+- **Upgrade:** a service that runs is restarted, which interrupts the audio for a moment. Whether a service is enabled stays as you left it. A stopped `snapdog` stays stopped, and a disabled or masked `snapdog-client` stays that way. A `snapdog-client` that is enabled but stopped is started again, because the package starts it on every upgrade.
+- **Removal:** both services are stopped. If `snapdog` was enabled and running when you removed it, installing it again starts it again, also after a reboot, as long as you did not purge it in between.
+- **Purge:** also deletes what `snapdog` keeps in `/var/lib/snapdog`, such as pairing keys and the ETS and EQ settings. If `snapdog` still runs, because a `policy-rc.d` on the host keeps packages from stopping services, the directory is kept and the purge says so. Stop the service and delete `/var/lib/private/snapdog` and `/var/lib/snapdog` yourself then.
+
+**Upgrading from 0.28.2 or older.** Those packages shipped the unit files but no maintainer scripts, so nothing recorded whether you ever enabled `snapdog-client`. The upgrade therefore leaves it as it is: if you enabled it, it stays enabled and is restarted, and otherwise it stays disabled and stopped. Only a fresh install enables it. The same holds if you removed the old package without purging it and install the new one. `snapdog` is not enabled either, and one you enabled yourself is restarted like any running service, so expect a short gap in the audio.
+
 #### Moving from the old repository
 
 Until September 2026 the packages were served from a branch of this repository
@@ -229,6 +240,19 @@ brew install snapdog-client
 ```bash
 yay -S snapdog          # or: yay -S snapdog-client
 ```
+
+#### Default configuration of the packages
+
+The Debian and AUR packages install a small starter configuration as `/etc/snapdog/snapdog.toml`: one zone named "Living Room" (the name AirPlay and
+Spotify show), Spotify and AirPlay with their defaults, the web UI on port 5555. Earlier packages installed the
+full example instead (two zones, three speakers, an MQTT broker, a Subsonic server), which started services that
+were not yours. The full reference stays in `snapdog.example.toml` and at https://snapdog.cc/docs/configuration.
+
+The file is a package configuration file. If you edited it, `dpkg` asks before replacing it and `pacman` leaves your
+file and writes the new one next to it as `snapdog.toml.pacnew`. A copy you never edited is replaced by the starter
+configuration on upgrade, so the zone names, and with them the AirPlay and Spotify names, the MQTT entities and the
+KNX bindings of the old example, change. Copy the sections you want from the example before you upgrade, or restore
+them afterwards.
 
 The AUR recipes install the same measured Linux binaries used by the release
 tarballs, Debian packages and container images; they do not rebuild from source.
@@ -266,7 +290,7 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 
 [http]
 port = 5555
-bind = "0.0.0.0"                       # :: for dual-stack IPv4+IPv6
+bind = "::"                            # default; 0.0.0.0 for IPv4 only
 base_url = "http://192.168.1.10:5555"  # Required for MQTT cover art URLs; REST API uses relative URLs
 # tls_cert = "/etc/snapdog/tls/fullchain.pem"  # Enables HTTPS
 # tls_key = "/etc/snapdog/tls/privkey.pem"
@@ -281,6 +305,7 @@ source_switch_fade_ms = 300          # Source change fade within a zone (0 to di
 
 [snapcast]
 streaming_port = 1704
+# streaming_bind = "192.168.10.5"    # One address for the audio port (default: all interfaces)
 unknown_clients = "accept"           # accept | ignore | reject
 default_zone = "Living Room"         # Zone for unknown clients (accept only)
 
@@ -292,8 +317,11 @@ default_zone = "Living Room"         # Zone for unknown clients (accept only)
 # enabled = true                     # MPRIS2 per zone (Linux only)
 
 [airplay]
-# mode = "airplay2"                  # airplay1 | airplay2
+# mode = "airplay2"                  # airplay1 | airplay2 (airplay2 needs a build with feature ap2)
 # password = "1234"
+
+[spotify]
+# name = "Home"                      # Spotify device name: exactly this with one zone, "<name> <zone>" with several
 
 [mqtt]
 broker = "192.168.1.10:1883"         # or "mqtts://broker.example.org:8883" for TLS
@@ -337,6 +365,45 @@ url = "https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac"
 
 Snapcast sink paths, stream names, and AirPlay names are auto-generated from zone/client definitions. KNX addresses are explicit in client mode (fits into existing installations). In device mode, ETS assigns group addresses via the `.knxprod` product database.
 
+### Upgrading: changes that can stop a start or move data
+
+These changes came with the configuration and command-line fixes. Each one is a deliberate choice; the
+alternative is named.
+
+- **Command-line overrides are validated like file values.** `--sample-rate` accepts 44100, 48000, 88200,
+  96000, 176400 and 192000, `--bit-depth` 16, 24 and 32, and the ports must differ, exactly as the same keys in the
+  file always did. Before, a value only given on the command line (`--sample-rate 32000`, `--sample-rate 8000`)
+  was not checked. It now stops the start with the message that names the value. A systemd unit with
+  `SNAPDOG_ARGS="--sample-rate 32000"` restarts in a loop until the argument is changed. The other choice,
+  accepting more rates on the command line than in the file, would have made the same setting valid in one place
+  and invalid in the other.
+- **A leading `~` in a path means your home directory.** `state_dir`, `log_file`, the Subsonic cache path and the
+  TLS paths used to take `~` literally, as a directory named `~` under the working directory. State written there
+  (`zones.json`, `eq.json`, `server_id`, `airplay-pairing`) is no longer read. If such a directory still exists,
+  SnapDog says so at startup and in `--check-config`; move its contents to the real path. Writing the old
+  literal path was never what anybody meant, so the literal reading was not kept.
+- **`[spotify].name` names the Spotify Connect device.** It used to be ignored (with a warning); the name in the
+  Spotify app was always the zone's `spotify_name`, by default the zone name. Now a zone without its own
+  `spotify_name` is called `[spotify].name` when there is exactly one zone, and `"<name> <zone name>"` when there are
+  several, because every zone runs its own device and Spotify lists devices by name. A zone's own `spotify_name`
+  always wins, and without a name (or with a blank one) the zone name is used as before. This is visible for every
+  configuration that already has the key, among them those the macOS Settings app wrote: the device names in the
+  Spotify app change from the zone names to the new ones, and the Spotify app may list them as new devices (the
+  Zeroconf id is derived from the name). Remove the key, or set `spotify_name` per zone, to keep the old names.
+- **An empty encryption key is never a key.** `SNAPDOG_SNAPCAST_ENCRYPTION_PSK` set to nothing (for example
+  `${PSK:-}` in a compose file whose secret did not arrive) used to be used as the key. It is now ignored with a
+  warning, a key from the file stays, and with `codec = "f32lz4e"` and no other key SnapDog refuses to start
+  instead of falling back to the public built-in key. An empty `encryption_psk` in the file is treated the same.
+  Clients that were configured with an empty key need the real key, or the setting has to be removed.
+- **A WebSocket client that falls behind is closed with code 1013 (try again later)**, not 1001 (going away),
+  which is for a server that shuts down. The web UI reconnects on any close and is not affected. A client that
+  treated 1001 as "stop reconnecting" will now reconnect, which is what it should do for a lagging connection;
+  one that expects 1001 for lag has to accept 1013.
+- **The interactive API console at `/docs` is off by default.** It used to be on, and its page embedded the
+  whole OpenAPI document without any API key. Set `[http].api_console = true` to get it back (see
+  "API documentation (OpenAPI)" below for what that costs). The OpenAPI document is served on its own at
+  `GET /api/v1/openapi.json`, and that route needs the key when `api_keys` is set.
+
 <details>
 <summary><strong>MQTT</strong></summary>
 
@@ -361,6 +428,77 @@ If `api_keys` is set in `[http]`, all `/api/v1/*` and `/ws` endpoints require au
 - REST: `Authorization: Bearer <key>` header
 - WebSocket: `ws://host:port/ws?token=<key>` query parameter; query tokens are accepted only on `/ws`
 - Health endpoints and the WebUI are always accessible
+
+Without `api_keys` every endpoint is open, and SnapDog warns at startup when it listens on all interfaces.
+
+</details>
+
+<details>
+<summary><strong>API documentation (OpenAPI)</strong></summary>
+
+Builds with the `api-docs` feature, which the released binaries have, serve the OpenAPI document at
+`GET /api/v1/openapi.json`. It is part of `/api/v1`: with `api_keys` set it needs the Bearer key, without keys
+it is open like the rest of the API. Set `[http].api_docs = false` to switch it off. Builds without the
+feature serve no API documentation at all.
+
+The interactive console (Scalar) at `/docs` is off by default. `[http].api_console = true` turns it on. A
+browser cannot send the `Authorization` header when it opens a page, so the console is not behind the API key,
+and the page contains the whole OpenAPI document. The page and its script are served by SnapDog itself: a pinned,
+vendored copy of Scalar (`@scalar/api-reference` 1.74.0, MIT, about 1.3 MB gzip-compressed in the binary, licence at
+`/docs/assets/NOTICE.md`) at `/docs/assets/scalar.js`. No other host is contacted, so the console also works
+without internet access, and a Content-Security-Policy keeps the page to its own origin. Scalar's fonts, telemetry,
+AI agent and MCP features are switched off. The page runs on the same origin as the web UI, and SnapDog logs one
+warning at startup when the console is on. Enable it only on a network you trust. The script is sent compressed
+(`Content-Encoding: gzip`); a client that does not accept gzip gets 406, which no browser does.
+
+```bash
+curl -H "Authorization: Bearer $SNAPDOG_KEY" http://localhost:5555/api/v1/openapi.json
+```
+
+</details>
+
+<details>
+<summary><strong>Network ports and what they expose</strong></summary>
+
+| Port | Protocol | Carries | Protection |
+|------|----------|---------|------------|
+| 5555 (`[http].port`) | TCP | WebUI, REST API, WebSocket | `[http].api_keys`, optional TLS; `[http].bind` limits the address |
+| 1704 (`[snapcast].streaming_port`) | TCP | The audio stream for Snapcast clients | None. Whoever can reach the port can connect as a client and receive the audio |
+| 1705 (`[snapcast].jsonrpc_tcp_port`) | TCP | JSON-RPC control of an external `snapserver`, only in builds with the `snapcast-process` feature (the released binaries use the embedded server and do not open it) | None. Anyone who can reach it controls the server, and SnapDog's generated `snapserver.conf` does not restrict its address, so block it in the firewall |
+| 3671 | UDP | KNX/IP device mode | KNX/IP has no authentication of its own |
+
+Port 1704 has no authentication, in SnapDog as in Snapcast. To limit it:
+
+- `[snapcast].streaming_bind = "192.168.10.5"` makes SnapDog listen on that one address instead of all
+  interfaces (one address, IPv4 or IPv6; `127.0.0.1` for clients on the same host only). It is also written
+  to the generated `snapserver.conf` in builds that drive an external `snapserver`.
+- Block the port in the firewall for every network that is not yours. In Docker, publish it on one
+  address (`-p 192.168.10.5:1704:1704`) and leave `streaming_bind` unset, because inside the container
+  the address is the container's.
+- If the stream must not be readable on the network, use `codec = "f32lz4e"` with your own `encryption_psk`
+  and pass the same key to every client (`--encryption-psk`). SnapDog warns when `f32lz4e` runs with
+  the built-in default key, which is public.
+- Clients that find the server with mDNS connect to the address mDNS resolves, so the bound address must be
+  reachable for them.
+
+`snapdog --config snapdog.toml --check-config` prints a note while the port listens on all interfaces, refuses a
+`streaming_bind` that is not an address, and warns when the address belongs to no network interface of the machine
+it runs on (a best-effort check: it only reports the operating system's "cannot assign requested address", so it is
+a warning, not an error, because the file may be checked on another host). It does not bind the port itself. At
+start, an unassignable address stops SnapDog with a message that says so; a port that is already in use says that
+instead.
+
+</details>
+
+<details>
+<summary><strong>Log file</strong></summary>
+
+`[system].log_file` writes the log to a file in addition to stdout, one file per day (`snapdog.log` becomes
+`snapdog.2026-10-26.log`). SnapDog keeps 14 daily files, the current one and 13 more, and deletes older ones when
+it starts and then hourly. It deletes only files named exactly `snapdog.<yyyy-mm-dd>.log`, the oldest date first;
+everything else in the directory, such as `snapdog-audit.log`, is left alone. Days change at midnight UTC,
+whatever the local time zone. An error while writing (disk full) is not reported; stdout keeps working.
+The packaged systemd unit creates `/var/log/snapdog` for this (`LogsDirectory=`).
 
 </details>
 
@@ -416,7 +554,11 @@ $ playerctl -p snapdog.zone1 play
 $ playerctl -p snapdog.zone1 volume 0.8
 ```
 
-Each zone appears as `org.mpris.MediaPlayer2.snapdog.zone{N}`. SnapDog uses the session bus when `DBUS_SESSION_BUS_ADDRESS` is set and the system bus otherwise, which is the case for the systemd service. The system bus only lets a process own a name that a policy allows, so the `.deb`, AUR and SnapDog OS packages install one to `/usr/share/dbus-1/system.d/` (`snapdog.conf` for the server, `snapdog-client.conf` for the client). If you install the binaries by hand, copy the files from `packaging/` in the release archive there as well. Disable with:
+Each zone appears as `org.mpris.MediaPlayer2.snapdog.zone{N}`. SnapDog uses the session bus when `DBUS_SESSION_BUS_ADDRESS` is set and the system bus otherwise, which is the case for the systemd service. The system bus only lets a process own a name that a policy allows, so the `.deb`, AUR and SnapDog OS packages install one to `/usr/share/dbus-1/system.d/` (`snapdog.conf` for the server, `snapdog-client.conf` for the client). If you install the binaries by hand, copy the files from `packaging/` in the release archive there as well.
+
+The policy lets every local user read the players and control them, which is what `playerctl` and media keys do. It allows sending to each bus name one by one instead of by prefix, because `dbus-broker` ignores prefix rules for sending and would deny every caller. The server's file covers zones 1 to 16 (the plain name and `.instance2` to `.instance10` for each). For a zone above 16 the server logs a warning, and nobody can call its player on the system bus until you add its names to `snapdog.conf`.
+
+The same rule also lets every local user own those names, not only the service, because the service runs as a systemd `DynamicUser` and its uid is not known to the bus when it reads the policy. A local user who takes a name before the service asks for it (at boot, or right after a restart) makes the service fall back to the next `.instanceN` name, and calls to the plain name then reach that user. They can misdirect or swallow media key commands and show wrong metadata, but they only receive MPRIS calls and nothing secret. If you cannot accept that, run the service with a fixed `User=` instead of `DynamicUser=yes` and move the `own_prefix` rule in the policy file into a `<policy user="...">` element for that user. Disable with:
 
 ```toml
 [dbus]

@@ -1,6 +1,6 @@
 //! Logging setup — wires `--logsink` and `--logfilter` into tracing.
 //!
-//! Sink options: `stdout`, `stderr`, `null`, `system`, `file:<path>`
+//! Sink options: `stdout`, `stderr`, `null`, `system` (= stderr, there is no syslog), `file:<path>`
 //! Filter format: `<tag>:<level>[,<tag>:<level>]*`
 //!   - tag: `*` (all) or a module name like `Stream`, `Controller`
 //!   - level: trace, debug, info, notice, warning, error, fatal
@@ -10,7 +10,7 @@ use tracing_subscriber::EnvFilter;
 
 /// Convert snapcast-style log filter to tracing `EnvFilter` syntax.
 ///
-/// Snapcast: `*:info,Stream:debug` → tracing: `info,snapdog_client::stream=debug`
+/// Snapcast: `*:info,Stream:debug` → tracing: `info,snapcast_client::stream=debug`
 fn convert_filter(filter: &str) -> String {
     filter
         .split(',')
@@ -29,16 +29,16 @@ fn convert_filter(filter: &str) -> String {
             } else {
                 let tag_lower = tag.to_lowercase();
                 let module = match tag_lower.as_str() {
-                    "stream" | "stats" | "latency" => "snapdog_client::stream",
-                    "controller" => "snapdog_client::controller",
-                    "connection" => "snapdog_client::connection",
-                    "timeprovider" => "snapdog_client::time_provider",
+                    "stream" | "stats" | "latency" => "snapcast_client::stream",
+                    "controller" => "snapcast_client::controller",
+                    "connection" => "snapcast_client::connection",
+                    "timeprovider" => "snapcast_client::time_provider",
                     "player" | "coreaudioplayer" | "alsaplayer" | "pulseplayer" => {
                         "snapdog_client::player"
                     }
-                    "flac" | "flacdecoder" => "snapdog_client::decoder::flac",
-                    "opus" | "opusdecoder" => "snapdog_client::decoder::opus",
-                    "ogg" | "oggdecoder" => "snapdog_client::decoder::vorbis",
+                    "flac" | "flacdecoder" => "snapcast_client::decoder::flac",
+                    "opus" | "opusdecoder" => "snapcast_client::decoder::opus",
+                    "ogg" | "oggdecoder" => "snapcast_client::decoder::vorbis",
                     other => other,
                 };
                 format!("{module}={level}")
@@ -79,8 +79,8 @@ pub fn init(sink: &str, filter: &str) -> Result<()> {
                 .init();
         }
         "system" => {
-            // On Unix, "system" means syslog. tracing doesn't have native syslog,
-            // so we fall back to stderr with a note.
+            // Snapcast's "system" means syslog. tracing has no native syslog, so this
+            // writes to stderr, which journald and container runtimes collect.
             tracing_subscriber::fmt()
                 .with_env_filter(env_filter)
                 .with_writer(std::io::stderr)
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn convert_multi_filter() {
         let result = convert_filter("*:info,Stream:debug");
-        assert_eq!(result, "info,snapdog_client::stream=debug");
+        assert_eq!(result, "info,snapcast_client::stream=debug");
     }
 
     #[test]
@@ -141,6 +141,6 @@ mod tests {
     #[test]
     fn convert_controller_tag() {
         let result = convert_filter("Controller:trace");
-        assert_eq!(result, "snapdog_client::controller=trace");
+        assert_eq!(result, "snapcast_client::controller=trace");
     }
 }

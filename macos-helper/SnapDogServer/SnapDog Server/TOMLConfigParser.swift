@@ -24,7 +24,10 @@ enum TOMLConfigParser {
         // Spotify
         if let sp = table["spotify"]?.table {
             model.spotify.enabled = true
-            model.spotify.name = sp["name"]?.string ?? "SnapDog"
+            // A missing key stays empty: the server then names each device after its zone.
+            // Defaulting to "SnapDog" here would rename every zone's Spotify device the
+            // next time the settings are saved, now that the server honours the key.
+            model.spotify.name = sp["name"]?.string ?? ""
             model.spotify.bitrate = sp["bitrate"]?.int ?? 320
         }
 
@@ -90,6 +93,8 @@ enum TOMLConfigParser {
                     icon: z["icon"]?.string ?? "🏠"
                 )
                 entry.knx = readKnx(z["knx"]?.table)
+                entry.spotifyName = z["spotify_name"]?.string ?? ""
+                entry.fileName = entry.name
                 return entry
             }
         }
@@ -132,13 +137,13 @@ enum TOMLConfigParser {
             existing = TOMLTable()
         }
 
-        // HTTP — port only; api_keys are Keychain-backed (injected via env), never on disk.
+        // HTTP — port only; api_keys are Keychain-backed (injected via env) and never written by the
+        // app. A value that is already in the file is left as it is.
         let http = existing["http"]?.table ?? TOMLTable()
         http["port"] = model.httpPort
         if http["base_url"]?.string == nil {
             http["base_url"] = "http://localhost:\(model.httpPort)"
         }
-        http["api_keys"] = nil
         existing["http"] = http
 
         // Audio — output format + mixing from the model
@@ -153,12 +158,12 @@ enum TOMLConfigParser {
         // Snapcast — codec, streaming, grouping
         let snap = existing["snapcast"]?.table ?? TOMLTable()
         snap["codec"] = model.codec
-        // Encryption PSK is Keychain-backed (injected via SNAPDOG_SNAPCAST_ENCRYPTION_PSK).
-        snap["encryption_psk"] = nil
+        // Encryption PSK is Keychain-backed (injected via SNAPDOG_SNAPCAST_ENCRYPTION_PSK); the app
+        // never writes it and leaves a value that is already in the file as it is.
         snap["streaming_port"] = model.streamingPort
         snap["group_volume_mode"] = model.groupVolumeMode
         snap["unknown_clients"] = model.unknownClients
-        snap["default_zone"] = model.defaultZone.isEmpty ? nil : model.defaultZone
+        snap.setOrRemove("default_zone", model.defaultZone.isEmpty ? nil : model.defaultZone)
         existing["snapcast"] = snap
 
         // Subsonic
@@ -173,27 +178,37 @@ enum TOMLConfigParser {
             sub["tls_skip_verify"] = model.subsonic.tlsSkipVerify
             existing["subsonic"] = sub
         } else {
-            existing["subsonic"] = nil
+            existing.removeIfPresent("subsonic")
         }
 
         // Spotify
-        if model.spotify.enabled && !model.spotify.name.isEmpty {
+        // The section is present when Spotify is enabled, whatever the name. The name is
+        // written only when set: it names the Spotify device (the server adds the zone name
+        // as a suffix when there are several zones), and an empty one means "zone name".
+        if model.spotify.enabled {
             let sp = existing["spotify"]?.table ?? TOMLTable()
-            sp["name"] = model.spotify.name
+            let name = model.spotify.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            // TOMLKit 0.6 ignores `table[key] = nil`, so an emptied name has to be removed
+            // explicitly, or the old one would stay in the file.
+            if name.isEmpty {
+                sp.removeIfPresent("name")
+            } else {
+                sp["name"] = name
+            }
             sp["bitrate"] = model.spotify.bitrate
             existing["spotify"] = sp
         } else {
-            existing["spotify"] = nil
+            existing.removeIfPresent("spotify")
         }
 
         // AirPlay — write the section if a password or a non-default mode is set.
         if !model.airplayPassword.isEmpty || model.airplayMode != "airplay2" {
             let ap = existing["airplay"]?.table ?? TOMLTable()
-            ap["password"] = model.airplayPassword.isEmpty ? nil : model.airplayPassword
+            ap.setOrRemove("password", model.airplayPassword.isEmpty ? nil : model.airplayPassword)
             ap["mode"] = model.airplayMode
             existing["airplay"] = ap
         } else {
-            existing["airplay"] = nil
+            existing.removeIfPresent("airplay")
         }
 
         // MQTT
@@ -201,32 +216,33 @@ enum TOMLConfigParser {
             let mqtt = existing["mqtt"]?.table ?? TOMLTable()
             mqtt["broker"] = model.mqtt.broker
             mqtt["client_id"] = model.mqtt.clientId
-            mqtt["username"] = model.mqtt.username.isEmpty ? nil : model.mqtt.username
-            // Password is Keychain-backed (injected via SNAPDOG_MQTT_PASSWORD).
-            mqtt["password"] = nil
+            mqtt.setOrRemove("username", model.mqtt.username.isEmpty ? nil : model.mqtt.username)
+            // Password is Keychain-backed (injected via SNAPDOG_MQTT_PASSWORD); the app never writes
+            // it and leaves a value that is already in the file as it is.
             mqtt["base_topic"] = model.mqtt.baseTopic
             existing["mqtt"] = mqtt
         } else {
-            existing["mqtt"] = nil
+            existing.removeIfPresent("mqtt")
         }
 
         // KNX — global settings only; per-zone/client GA tables are preserved in place.
         if model.knx.enabled {
             let knx = existing["knx"]?.table ?? TOMLTable()
             knx["role"] = model.knx.role
-            knx["url"] = model.knx.url.isEmpty ? nil : model.knx.url
-            knx["individual_address"] =
-                model.knx.individualAddress.isEmpty ? nil : model.knx.individualAddress
+            knx.setOrRemove("url", model.knx.url.isEmpty ? nil : model.knx.url)
+            knx.setOrRemove("individual_address",
+                            model.knx.individualAddress.isEmpty ? nil : model.knx.individualAddress)
             knx["persist_ets_config"] = model.knx.persistEts
             knx["restart_after_ets"] = model.knx.restartAfterEts
             existing["knx"] = knx
         } else {
-            existing["knx"] = nil
+            existing.removeIfPresent("knx")
         }
 
         // Zones — preserve keys the app doesn't model (`.knx` GAs, `sink`, `airplay_name`,
-        // `presence`, per-zone `group_volume_mode`) by reusing the existing table with the
-        // same name; only name/icon are overwritten. Renamed/removed zones lose their extras.
+        // `presence`, per-zone `group_volume_mode`) by reusing the existing table of the zone
+        // (found under the name it had in the file, so a rename keeps them); name, icon and
+        // `spotify_name` are overwritten. Removed zones lose their extras.
         var existingZones: [String: TOMLTable] = [:]
         if let arr = existing["zone"]?.array {
             for item in arr {
@@ -235,16 +251,25 @@ enum TOMLConfigParser {
                 }
             }
         }
-        existing["zone"] = nil
         let zonesArr = TOMLArray()
         for zone in model.zones where !zone.name.isEmpty {
-            let z = existingZones[zone.name] ?? TOMLTable()
+            // A renamed zone keeps its table: look it up under the name it had in the file first.
+            let z = zone.fileName.flatMap { existingZones[$0] } ?? existingZones[zone.name] ?? TOMLTable()
             z["name"] = zone.name
             z["icon"] = zone.icon
+            // TOMLKit 0.6 ignores `table[key] = nil`, so a cleared name is removed explicitly.
+            let ownSpotifyName = zone.spotifyName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if ownSpotifyName.isEmpty {
+                z.removeIfPresent("spotify_name")
+            } else {
+                z["spotify_name"] = ownSpotifyName
+            }
             writeKnx(zone.knx, into: z)
             zonesArr.append(z)
         }
-        if !model.zones.isEmpty { existing["zone"] = zonesArr }
+        // Replace or drop the array only after it is built: the tables reused above live in the
+        // old array, and removing it any earlier would free them.
+        if model.zones.isEmpty { existing.removeIfPresent("zone") } else { existing["zone"] = zonesArr }
 
         // Clients — same preserve-merge (keeps `.knx` GAs etc. the app doesn't model).
         var existingClients: [String: TOMLTable] = [:]
@@ -255,7 +280,6 @@ enum TOMLConfigParser {
                 }
             }
         }
-        existing["client"] = nil
         let clientsArr = TOMLArray()
         for client in model.clients where !client.name.isEmpty {
             let c = existingClients[client.name] ?? TOMLTable()
@@ -266,10 +290,11 @@ enum TOMLConfigParser {
             writeKnx(client.knx, into: c)
             clientsArr.append(c)
         }
-        if !model.clients.isEmpty { existing["client"] = clientsArr }
+        // Replace or drop the array only after it is built: the tables reused above live in the
+        // old array, and removing it any earlier would free them.
+        if model.clients.isEmpty { existing.removeIfPresent("client") } else { existing["client"] = clientsArr }
 
         // Radios (fully modelled by the app — name/url/cover)
-        existing["radio"] = nil
         let radiosArr = TOMLArray()
         for radio in model.radios where !radio.name.isEmpty {
             let r = TOMLTable()
@@ -278,7 +303,9 @@ enum TOMLConfigParser {
             if !radio.cover.isEmpty { r["cover"] = radio.cover }
             radiosArr.append(r)
         }
-        if !model.radios.isEmpty { existing["radio"] = radiosArr }
+        // Replace or drop the array only after it is built: the tables reused above live in the
+        // old array, and removing it any earlier would free them.
+        if model.radios.isEmpty { existing.removeIfPresent("radio") } else { existing["radio"] = radiosArr }
 
         try existing.convert().write(to: url, atomically: true, encoding: .utf8)
     }
@@ -299,11 +326,25 @@ enum TOMLConfigParser {
     private static func writeKnx(_ ga: [String: String], into table: TOMLTable) {
         let filtered = ga.filter { !$0.value.isEmpty }
         if filtered.isEmpty {
-            table["knx"] = nil
+            table.removeIfPresent("knx")
         } else {
             let knx = TOMLTable()
             for (key, value) in filtered { knx[key] = value }
             table["knx"] = knx
         }
+    }
+}
+
+private extension TOMLTable {
+    /// Removes a key if there is one, so a key that is not there is never passed to
+    /// `remove(at:)`.
+    func removeIfPresent(_ key: String) {
+        if self[key] != nil { remove(at: key) }
+    }
+
+    /// Sets a string value, or removes the key when there is none. TOMLKit 0.6 ignores
+    /// `table[key] = nil`, so an unset value has to be removed explicitly or it stays in the file.
+    func setOrRemove(_ key: String, _ value: String?) {
+        if let value { self[key] = value } else { removeIfPresent(key) }
     }
 }

@@ -1,15 +1,22 @@
 # Configuration for snapdog-client systemd service.
 # Edit this file, then: systemctl restart snapdog-client
 
-# Server URL. Leave empty for automatic mDNS discovery.
+# Server URL (tcp:// only). Leave empty to look for a SnapDog server on the network
+# with mDNS (_snapdog._tcp, 5 seconds).
 # Examples: tcp://192.168.1.10:1704, tcp://snapdog.local:1704
 #SNAPDOG_CLIENT_ARGS="tcp://192.168.1.10:1704"
 
-# mDNS service name to search for (default: _snapdog._tcp)
-#SNAPDOG_CLIENT_ARGS="--mdns-name _snapdog._tcp"
-
 # Client ID (default: MAC address). Set to distinguish multiple clients on same host.
 #SNAPDOG_CLIENT_ARGS="--hostID kitchen-speaker"
+
+# Audio output device (default: the system default). List the devices with
+# `snapdog-client --list`, then pass the index or part of the name or id (case does not
+# matter). Snapclient's ALSA names such as hw:1 do not work. A device that is not found
+# stops the client with the list of devices, so the service will not start until it is fixed.
+#SNAPDOG_CLIENT_ARGS="--soundcard 1"
+
+# Running as another user is not an option of the client: --user is refused. The systemd
+# unit already runs it as a dynamic user (DynamicUser=yes).
 
 # Combined example:
 #SNAPDOG_CLIENT_ARGS="tcp://192.168.1.10:1704 --hostID kitchen-speaker"

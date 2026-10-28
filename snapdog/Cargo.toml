@@ -24,6 +24,9 @@ toml = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+# Reports configuration keys no struct recognises (typos, removed keys).
+serde_ignored = "0.1"
 # snapcast-control removed — using own JSON-RPC client (ADR-018)
 symphonia = { workspace = true }
 rubato = { workspace = true }
@@ -81,6 +84,8 @@ full = ["snapcast-embedded", "ap2", "dbus", "spotify", "api-docs"]
 test-harness = []
 
 [dev-dependencies]
+# Peer-to-peer connections let the D-Bus interface tests run without a bus daemon.
+zbus = { version = "6", default-features = false, features = ["tokio", "p2p"] }
 mockall = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }
@@ -97,15 +102,19 @@ time = "0.3"                                            # validity window of tho
 [package.metadata.deb]
 section = "sound"
 copyright = "2026 Fabian Schmieder"
-depends = "libasound2, libavahi-compat-libdnssd1, libssl3"
+depends = "libasound2, libavahi-compat-libdnssd1, libssl3, init-system-helpers (>= 1.54~)"
 conf-files = ["/etc/snapdog/snapdog.toml", "/etc/default/snapdog"]
 assets = [
   ["target/release/snapdog", "usr/bin/", "755"],
-  ["../snapdog.example.toml", "etc/snapdog/snapdog.toml", "644"],
+  ["debian/snapdog.toml", "etc/snapdog/snapdog.toml", "644"],
   ["debian/snapdog.default", "etc/default/snapdog", "644"],
   ["dbus/snapdog.conf", "usr/share/dbus-1/system.d/snapdog.conf", "644"],
 ]
-systemd-units = { unit-name = "snapdog", enable = false, start = false }
+# cargo-deb only writes the systemd maintainer scripts when maintainer-scripts is
+# set. The server is not enabled on install (it needs a config first), but an
+# upgrade restarts it if it is running, and removal stops it.
+maintainer-scripts = "debian/"
+systemd-units = { unit-name = "snapdog", unit-scripts = "systemd/", enable = false, start = false }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1"
