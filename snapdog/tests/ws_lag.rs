@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use snapdog::api;
 use snapdog::audio::eq::EqStore;
 use snapdog::player::{SnapcastCmd, ZoneCommand};
@@ -54,6 +54,14 @@ async fn a_client_that_falls_behind_is_closed_with_try_again_later() {
         .expect("connect");
     // The first Ping proves the server task is subscribed to the broadcast.
     assert!(matches!(ws.next().await, Some(Ok(Message::Ping(_)))));
+
+    // Reading the Ping queued a Pong that would only be written on the next client I/O,
+    // that is after the server has closed the connection. On Linux the write answers the
+    // closed socket with a reset that can discard the close frame ("Connection reset by
+    // peer"). Write it now and give the server a moment to read it: a connection that
+    // is closed with unread input is reset as well.
+    ws.flush().await.expect("flush the Pong");
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Flood the buffer without reading. Big messages fill the socket buffers, so the
     // server blocks in its send and the broadcast ring (256 slots) overruns for it.
