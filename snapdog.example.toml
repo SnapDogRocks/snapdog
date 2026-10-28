@@ -172,13 +172,119 @@ password = "admin"
 
 # ── MQTT ───────────────────────────────────────────────────────────────────
 # Remove this section entirely to disable MQTT.
+#
+# What SnapDog does over MQTT (all topics below `base_topic`):
+#   publishes   status                      "online" / "offline" (retained, last will)
+#               zones/<n>/state             JSON, retained
+#               clients/<n>/state           JSON, retained
+#   subscribes  zones/<n>/<what>/set        volume, mute, control, shuffle, repeat, position,
+#               clients/<n>/<what>/set      track, playlist, presence, ... (a `set` topic is a
+#                                           command; a retained command is never executed)
+# <n> is the position of the [[zone]] / [[client]] in this file, counting from 1. A client that
+# Snapcast accepts at runtime (snapcast.unknown_clients = "accept") gets the next free number
+# after those in the file.
 [mqtt]
+# Broker address:
+#   "host:1883"            plaintext; also "mqtt://host" or "tcp://host" (port 1883 if omitted)
+#   "mqtts://host:8883"    TLS; also "ssl://host" or "tls://host" (port 8883 if omitted)
+# TLS verifies the broker's certificate and its host name, always; there is no way to
+# switch that off. Without `ca_file` it is checked against the system trust store.
+# Minimum TLS 1.2. Do not put user:password into the address: use the keys below.
+# The host must be ASCII: write an international name in punycode (xn--mller-kva.lan).
 broker = "192.168.1.10:1883"
-# client_id = "snapdog"            # MQTT client ID (must be unique per broker)
-# username = "snapdog"
+# client_id = "snapdog"            # MQTT client ID. Must be unique per broker: a second client
+#                                  # with the same ID makes the broker drop the first, and the two
+#                                  # then take turns (the log says so after a few rounds).
+
+# A wrong [mqtt] section switches MQTT off (and logs why); the server keeps running.
+# `snapdog --check-config` reports it as an error and exits with status 1. A misspelt or
+# unknown key in [mqtt] or [mqtt.homeassistant] counts as wrong. (An unknown key anywhere
+# else in the file stops nothing: it is ignored, at most with a warning.)
+#
+# Credentials. A password needs a username. In order of preference:
+#   - password_file: a file holding the password alone, one line (Docker/Kubernetes
+#     secrets, systemd credentials). A file others can read gives a warning: chmod 600.
+#   - the SNAPDOG_MQTT_PASSWORD environment variable (wins over password_file and password;
+#     an empty variable counts as unset)
+#   - password: in this file
+# username = "snapdog"             # or SNAPDOG_MQTT_USERNAME
+# password_file = "/run/secrets/snapdog_mqtt_password"
 # password = "snapdog"
+# SnapDog warns at start-up if credentials would go over plaintext to another machine.
+
+# TLS material, only with an mqtts:// address (PEM files):
+# ca_file = "/etc/snapdog/mqtt-ca.pem"          # CA that signed the broker's certificate. Replaces
+#                                               # the system trust store (for a private CA);
+#                                               # or SNAPDOG_MQTT_CA_FILE
+# client_cert = "/etc/snapdog/mqtt-client.pem"  # mutual TLS: certificate (+ chain) ...
+# client_key = "/etc/snapdog/mqtt-client.key"   # ... and its key, unencrypted PKCS#8
+#                                               # ("BEGIN PRIVATE KEY"). Convert with
+#                                               # `openssl pkey -in old.key -out client.key`.
+#                                               # macOS imports RSA keys only (Secure Transport).
+#                                               # Or SNAPDOG_MQTT_CLIENT_CERT / _CLIENT_KEY.
+# In KNX device mode ETS sets broker and base topic (an ETS broker field of up to 40 bytes
+# holds e.g. "mqtts://mqtt.example.org:8883"); username and TLS files come from the
+# SNAPDOG_MQTT_* variables above. The ETS password has no use without a username.
+
 # Base topic prefix. All topics are published/subscribed under this prefix.
 base_topic = "snapdog"
+
+# Earlier releases left retained messages behind: `snapdog//status` (inside the base topic)
+# and `homeassistant/media_player/snapdog_zone_<n>/config` (outside it; Home Assistant never
+# did anything with them). Not set: SnapDog deletes only `snapdog//status` at every start, so
+# that an ACL confining it to the base topic is not asked for anything else. true: also the
+# media_player topics (set it for one start). false: nothing.
+# clear_legacy_topics = true
+
+# Home Assistant MQTT discovery. Off unless you set it. SnapDog then sends ONE retained device
+# message (homeassistant/device/snapdog_<server id>/config) that lists, per zone and client,
+# the entities MQTT can express: volume, mute, shuffle, repeat, transport buttons, what plays,
+# presence; per client volume, mute, latency, zone, connected. (Home Assistant's MQTT
+# integration has no media_player, so a zone cannot be announced as one.) It is sent after every
+# connect, when a client is added, and again after Home Assistant's birth message.
+# The values of `discovery`:
+#   true       announce
+#   false      announce nothing and DELETE the device message of an earlier run
+#              (how to take the entities out of Home Assistant again)
+#   not set    off; nothing is written to the discovery topic
+# Entity ids follow the position of the [[zone]] / [[client]] in this file: moving one moves
+# its entities onto another zone. No cover art is announced (Home Assistant's image entity
+# logs an error for every state without a cover URL). Needs, besides the ACL below: write on
+# homeassistant/device/+/config and read on homeassistant/status. A discovery message needs
+# a stable server id: SnapDog refuses to announce when it cannot persist it (state_dir).
+# [mqtt.homeassistant]
+# discovery = true
+# discovery_prefix = "homeassistant"      # Home Assistant's discovery prefix
+# status_topic = "homeassistant/status"   # Home Assistant's birth message
+
+# Hardening the broker (Mosquitto shown; other brokers have the same knobs):
+#   1. Listen on TLS only: no `listener 1883`; `listener 8883` with cafile/certfile/keyfile.
+#      Leave `tls_version` unset, so that TLS 1.2 and 1.3 stay available (SnapDog asks for 1.2
+#      or newer and takes the newest its platform's TLS library offers).
+#   2. allow_anonymous false, one user per client (SnapDog, Home Assistant, ...), or
+#      `require_certificate true` + `use_identity_as_username true` for certificate logins.
+#   3. An ACL that confines SnapDog to its own base topic (acl_file), e.g. for base "snapdog/":
+#        user snapdog
+#        topic write snapdog/status
+#        topic write snapdog/zones/+/state
+#        topic write snapdog/clients/+/state
+#        topic read  snapdog/zones/#
+#        topic read  snapdog/clients/#
+#        # Optional, to let SnapDog delete messages that old releases left behind
+#        # (clear_legacy_topics; the second line only with clear_legacy_topics = true):
+#        topic write snapdog//status
+#        topic write homeassistant/media_player/+/config
+#        # Only with [mqtt.homeassistant] (discovery true, or false to delete):
+#        topic write homeassistant/device/+/config      # '+' must fill a whole level
+#        topic read  homeassistant/status
+#      and give whatever controls SnapDog (Home Assistant, a script) `topic write` on the
+#      command topics and `topic read snapdog/#`. Commands have two and three levels below
+#      the zone or client, so both patterns are needed:
+#        topic write snapdog/zones/+/+/set        # volume, mute, control, shuffle, ...
+#        topic write snapdog/zones/+/+/+/set      # presence/enable, presence/timeout, track/position
+#        topic write snapdog/clients/+/+/set      # volume, mute, latency, zone
+#      Everybody who may write one of these topics can control the audio.
+#   4. A client that is refused a subscription shows up as a warning in SnapDog's log.
 
 # ── KNX ────────────────────────────────────────────────────────────────────
 # Remove this section entirely to disable KNX.

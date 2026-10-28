@@ -7,9 +7,11 @@
 //! Convention over configuration: sensible defaults, auto-generated where possible.
 
 mod convention;
+mod mqtt;
 mod notices;
 mod types;
 
+pub use mqtt::*;
 pub use types::*;
 
 use std::path::Path;
@@ -28,9 +30,9 @@ use anyhow::{Context, Result};
 pub fn load(path: &Path) -> Result<AppConfig> {
     let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
         .with_context(|| format!("Failed to read {}", path.display()))?;
-    let (raw, unknown) =
+    let (raw, unknown, mqtt_problem) =
         parse(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
-    resolve(raw, unknown)
+    resolve(raw, unknown, mqtt_problem)
 }
 
 /// Like [`load`], but takes the TOML text. Keys that no config struct knows
@@ -41,22 +43,63 @@ pub fn load(path: &Path) -> Result<AppConfig> {
 ///
 /// Returns an error if the text is not valid TOML or the configuration is invalid.
 pub fn load_str(content: &str) -> Result<AppConfig> {
-    let (raw, unknown) = parse(content)?;
-    resolve(raw, unknown)
+    let (raw, unknown, mqtt_problem) = parse(content)?;
+    resolve(raw, unknown, mqtt_problem)
 }
 
-/// Parse TOML text into the raw file structure and the paths of keys it ignored.
-fn parse(content: &str) -> Result<(FileConfig, Vec<String>)> {
+/// Parse TOML text into the raw file structure, the paths of keys it ignored and,
+/// when the `[mqtt]` section is what does not parse, a description of that problem.
+///
+/// A value of the wrong type inside `[mqtt]` (`broker = 5`, `discovery = "yes"`)
+/// does not stop the start-up: like any other wrong `[mqtt]` setting it switches MQTT
+/// off, and the problem is returned for the log and for `--check-config`. Anything
+/// else that does not parse is an error, with the position TOML reports.
+fn parse(content: &str) -> Result<(FileConfig, Vec<String>, Option<String>)> {
     let mut unknown = Vec::new();
-    let raw: FileConfig =
-        serde_ignored::deserialize(toml::Deserializer::parse(content)?, |path| {
-            unknown.push(path.to_string());
-        })?;
-    Ok((raw, unknown))
+    let original = match toml::Deserializer::parse(content)
+        .and_then(|de| deserialize_collecting(de, &mut unknown))
+    {
+        Ok(raw) => return Ok((raw, unknown, None)),
+        Err(e) => e,
+    };
+    // Is the [mqtt] section what is wrong? Take it out and try again.
+    if let Ok(mut table) = toml::from_str::<toml::Table>(content)
+        && let Some(section) = table.remove("mqtt")
+        && let Err(problem) = section.try_into::<MqttConfig>()
+    {
+        unknown.clear();
+        if let Ok(raw) = deserialize_collecting(table, &mut unknown) {
+            let place = original
+                .span()
+                .map(|span| key_and_line(content, span.start))
+                .unwrap_or_default();
+            let problem = format!("[mqtt]{place} {}", without_values(problem.message()));
+            return Ok((raw, unknown, Some(problem)));
+        }
+    }
+    Err(original.into())
 }
 
-fn resolve(raw: FileConfig, unknown: Vec<String>) -> Result<AppConfig> {
+/// Deserialize the file structure and collect the paths of the keys it ignored.
+fn deserialize_collecting<'de, D>(
+    de: D,
+    unknown: &mut Vec<String>,
+) -> std::result::Result<FileConfig, toml::de::Error>
+where
+    D: serde::Deserializer<'de, Error = toml::de::Error>,
+{
+    serde_ignored::deserialize(de, |path| unknown.push(path.to_string()))
+}
+
+fn resolve(
+    raw: FileConfig,
+    unknown: Vec<String>,
+    mqtt_problem: Option<String>,
+) -> Result<AppConfig> {
     let mut config = load_raw(raw)?;
+    if mqtt_problem.is_some() {
+        config.mqtt_problem = mqtt_problem;
+    }
     for key in unknown {
         config.warn(format!(
             "Unknown configuration key `{}` is ignored. Check the spelling against snapdog.example.toml.",
@@ -86,7 +129,7 @@ pub fn address_is_not_local(ip: std::net::IpAddr) -> bool {
 ///
 /// Returns an error if the text cannot be parsed into the config structure.
 pub fn unknown_keys(content: &str) -> Result<Vec<String>> {
-    let (_, unknown) = parse(content)?;
+    let (_, unknown, _) = parse(content)?;
     Ok(unknown.iter().map(|k| display_key_path(k)).collect())
 }
 
@@ -184,6 +227,37 @@ fn expand_paths(raw: &mut FileConfig, exists: &dyn Fn(&str) -> bool) -> Vec<Stri
         }
     }
     notices
+}
+
+/// ` key `broker` (line 2):` for the value at byte `offset`, taken from its line.
+fn key_and_line(content: &str, offset: usize) -> String {
+    let before = &content[..offset.min(content.len())];
+    let line = before.matches('\n').count() + 1;
+    let key = before
+        .rsplit('\n')
+        .next()
+        .and_then(|text| text.split('=').next())
+        .map(str::trim)
+        .filter(|key| !key.is_empty() && key.len() < 64);
+    key.map_or_else(
+        || format!(" line {line}:"),
+        |key| format!(" key `{key}` (line {line}):"),
+    )
+}
+
+/// A TOML type error says which value it found ("integer 5", "string yes"). The
+/// section may hold a password, so the found value is left out: the kind stays.
+fn without_values(message: &str) -> String {
+    let Some(rest) = message.strip_prefix("invalid type: ") else {
+        return message.to_string();
+    };
+    let (found, expected) = rest.split_once(", expected").unwrap_or((rest, ""));
+    let kind = found.split(['`', '"']).next().unwrap_or(found).trim_end();
+    if expected.is_empty() {
+        format!("invalid type: {kind}")
+    } else {
+        format!("invalid type: {kind}, expected{expected}")
+    }
 }
 
 /// Resolve raw TOML config into fully populated `AppConfig` with conventions applied.
@@ -294,6 +368,7 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         subsonic: raw.subsonic,
         spotify: raw.spotify,
         mqtt: raw.mqtt,
+        mqtt_problem: None,
         knx: raw.knx,
         zones,
         clients,
@@ -315,9 +390,27 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         }
     }
     apply_env_overrides(&mut config);
+    resolve_mqtt(&mut config);
     validate(&mut config)?;
 
     Ok(config)
+}
+
+/// Check the `[mqtt]` section and load its file-based secrets.
+///
+/// A wrong `[mqtt]` setting switches MQTT off, it does not stop the server: the
+/// audio keeps playing, which matters more than the smart-home link. The reason is
+/// kept in [`AppConfig::mqtt_problem`] (this runs before logging is set up, so it
+/// cannot be logged here). Nothing falls back to a weaker setting: there is no MQTT
+/// at all until the section is fixed.
+fn resolve_mqtt(config: &mut AppConfig) {
+    let Some(mqtt) = config.mqtt.as_mut() else {
+        return;
+    };
+    if let Err(e) = mqtt.resolve() {
+        config.mqtt_problem = Some(format!("{e:#}"));
+        config.mqtt = None;
+    }
 }
 
 /// Check the individual address and every group address in the file.
@@ -616,10 +709,8 @@ fn apply_env_overrides(config: &mut AppConfig) {
     {
         subsonic.password = SecretString::from(val);
     }
-    if let Some(ref mut mqtt) = config.mqtt
-        && let Ok(val) = std::env::var("SNAPDOG_MQTT_PASSWORD")
-    {
-        mqtt.password = SecretString::from(val);
+    if let Some(ref mut mqtt) = config.mqtt {
+        mqtt.apply_env(|name| std::env::var_os(name));
     }
     override_psk(
         config,
@@ -769,6 +860,118 @@ mod tests {
             mac = "02:42:ac:11:00:10"
             zone = "Ground Floor"
         "#
+    }
+
+    /// A5: a wrong `[mqtt]` section switches MQTT off and leaves the server (and with
+    /// it the audio) alone. The reason is kept for the start-up log and for
+    /// `--check-config`.
+    fn config_with_mqtt(section: &str) -> AppConfig {
+        let raw: FileConfig =
+            toml::from_str(&format!("{}\n[mqtt]\n{section}", minimal_toml())).unwrap();
+        load_raw(raw).expect("a wrong [mqtt] section must not stop the server")
+    }
+
+    #[test]
+    fn a_valid_mqtt_section_is_kept() {
+        let c = config_with_mqtt("broker = \"192.168.1.10:1883\"");
+        assert!(c.mqtt.is_some());
+        assert!(c.mqtt_problem.is_none());
+    }
+
+    #[test]
+    fn a_wrong_mqtt_section_switches_mqtt_off_and_says_why() {
+        for (section, needle) in [
+            // A password nobody would ever send.
+            ("broker = \"b:1883\"\npassword = \"hunter2\"", "username"),
+            ("broker = \"ws://b:9001\"", "WebSocket"),
+            ("broker = \"b:1883\"\nbase_topic = \"a/#\"", "wildcards"),
+            (
+                "broker = \"b:1883\"\nca_file = \"/nonexistent/ca.pem\"",
+                "plaintext",
+            ),
+        ] {
+            let c = config_with_mqtt(section);
+            assert!(c.mqtt.is_none(), "{section}");
+            let problem = c.mqtt_problem.expect(section);
+            assert!(problem.contains(needle), "{section}: {problem}");
+            assert!(
+                !problem.contains("hunter2"),
+                "a secret in the message: {problem}"
+            );
+            // The rest of the configuration is untouched.
+            assert_eq!(c.zones.len(), 1);
+        }
+    }
+
+    /// Load `text` the way the server does, from a file.
+    fn load_text(text: &str) -> Result<AppConfig> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snapdog.toml");
+        std::fs::write(&path, text).unwrap();
+        load(&path)
+    }
+
+    /// Review finding m4: a value of the wrong type inside `[mqtt]` made the file not
+    /// parse and stopped the whole server, unlike every other wrong `[mqtt]` setting.
+    #[test]
+    fn a_value_of_the_wrong_type_in_mqtt_switches_mqtt_off_too() {
+        for (section, key, kind) in [
+            ("broker = 5", "broker", "integer"),
+            (
+                "broker = \"b:1883\"\npassword = 12345\nusername = \"u\"\nclient_id = true",
+                "client_id",
+                "boolean",
+            ),
+            (
+                "broker = \"b:1883\"\n[mqtt.homeassistant]\ndiscovery = \"yes\"",
+                "discovery",
+                "string",
+            ),
+            (
+                "broker = \"b:1883\"\nclear_legacy_topics = \"true\"",
+                "clear_legacy_topics",
+                "string",
+            ),
+        ] {
+            let text = format!("[mqtt]\n{section}\n[[zone]]\nname = \"Z\"\n");
+            let config =
+                load_text(&text).unwrap_or_else(|e| panic!("{section}: stopped the start: {e:#}"));
+            assert!(config.mqtt.is_none(), "{section}");
+            let problem = config.mqtt_problem.expect(section);
+            assert!(
+                problem.contains(&format!("`{key}`")),
+                "{section}: {problem}"
+            );
+            assert!(problem.contains(kind), "{section}: {problem}");
+            assert!(
+                !problem.contains("12345"),
+                "a value must not be echoed: {problem}"
+            );
+            assert_eq!(config.zones.len(), 1, "the rest of the file loads");
+        }
+    }
+
+    #[test]
+    fn a_type_error_outside_mqtt_still_stops_the_start_with_its_position() {
+        let err = format!(
+            "{:#}",
+            load_text("[audio]\nsample_rate = \"x\"\n[mqtt]\nbroker = 5\n[[zone]]\nname = \"Z\"\n")
+                .unwrap_err()
+        );
+        assert!(
+            err.contains("sample_rate") && err.contains("line 2"),
+            "{err}"
+        );
+        // TOML that does not parse at all is an error as before.
+        assert!(load_text("[mqtt\nbroker = ").is_err());
+    }
+
+    #[test]
+    fn a_wrong_section_elsewhere_still_stops_the_start() {
+        // Only [mqtt] is soft: the rest of the file is as strict as ever.
+        let raw: FileConfig =
+            toml::from_str(&format!("{}\n[audio]\nsample_rate = 12345", minimal_toml())).unwrap();
+        assert!(load_raw(raw).is_err());
     }
 
     #[test]

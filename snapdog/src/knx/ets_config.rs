@@ -20,7 +20,7 @@ use super::group_objects::{MAX_CLIENTS, MAX_ZONES};
 use crate::config::{
     AudioCodec, FileConfig, LogLevel, MqttConfig, PresenceConfig, PresenceSource, RawClientConfig,
     RawClientKnxConfig, RawRadioConfig, RawZoneConfig, RawZoneKnxConfig, SecretString,
-    SourceConflict, SubsonicCacheConfig, SubsonicConfig, SubsonicFormat,
+    SourceConflict, SubsonicCacheConfig, SubsonicConfig, SubsonicFormat, normalize_base_topic,
 };
 
 /// Icon for ETS-derived zones/clients (ETS programs no icon).
@@ -104,6 +104,35 @@ fn client_zone_name(ets: &EtsParams, client: usize) -> String {
     )
 }
 
+/// The `[mqtt]` section for the ETS-programmed broker.
+///
+/// ETS has no fields for a username or for TLS files: those come from the
+/// `SNAPDOG_MQTT_USERNAME`, `_CA_FILE`, `_CLIENT_CERT` and `_CLIENT_KEY`
+/// environment variables. A TLS broker is selected by the scheme in the ETS broker
+/// field (`mqtts://host:8883` fits its 40 bytes for host names up to 27 characters).
+///
+/// The ETS password has always been ignored, because without a username it never
+/// reached the broker. It still is, unless a username is given, so that a device
+/// programmed years ago keeps connecting as it did; the config loader would
+/// otherwise refuse a password without a username.
+fn ets_mqtt_config(ets: &EtsParams, username_in_env: bool) -> MqttConfig {
+    let base_topic = normalize_base_topic(&or_else(&ets.mqtt_topic, || "snapdog".to_string()));
+    let mut password = ets.mqtt_pass.trim().to_string();
+    if !password.is_empty() && !username_in_env {
+        tracing::warn!(
+            "The ETS MQTT password is ignored: ETS has no username field. Set the \
+             SNAPDOG_MQTT_USERNAME environment variable to use it"
+        );
+        password.clear();
+    }
+    MqttConfig {
+        broker: ets.mqtt_broker.trim().to_string(),
+        password: SecretString::new(password),
+        base_topic,
+        ..MqttConfig::default()
+    }
+}
+
 /// Merge ETS-programmed parameters onto `base`.
 #[allow(clippy::too_many_lines)]
 fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfig {
@@ -159,17 +188,9 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
     }
 
     if !ets.mqtt_broker.trim().is_empty() {
-        let mut base_topic = or_else(&ets.mqtt_topic, || "snapdog".to_string());
-        if !base_topic.ends_with('/') {
-            base_topic.push('/');
-        }
-        base.mqtt = Some(MqttConfig {
-            broker: ets.mqtt_broker.trim().to_string(),
-            client_id: "snapdog".to_string(),
-            username: String::new(),
-            password: SecretString::new(ets.mqtt_pass.trim().to_string()),
-            base_topic,
-        });
+        let username_in_env =
+            std::env::var_os("SNAPDOG_MQTT_USERNAME").is_some_and(|v| !v.is_empty());
+        base.mqtt = Some(ets_mqtt_config(ets, username_in_env));
     }
 
     let zones: Vec<RawZoneConfig> = (0..MAX_ZONES)
@@ -281,6 +302,52 @@ mod tests {
         assert_eq!(mqtt.base_topic, "home/audio/", "trailing slash appended");
         assert_eq!(cfg.radio.len(), 1);
         assert_eq!(cfg.radio[0].name, "SomaFM");
+    }
+
+    #[test]
+    fn ets_mqtt_defaults_and_topic_normalisation() {
+        let mut ets = EtsParams::default();
+        ets.mqtt_broker = " mqtt.local:1883 ".into();
+        let m = ets_mqtt_config(&ets, false);
+        assert_eq!(m.broker, "mqtt.local:1883");
+        assert_eq!(m.base_topic, "snapdog/", "ETS default topic");
+        assert_eq!(m.client_id, "snapdog");
+        assert!(m.username.is_empty() && m.password.is_empty());
+        ets.mqtt_topic = "home/audio/".into();
+        assert_eq!(ets_mqtt_config(&ets, false).base_topic, "home/audio/");
+    }
+
+    #[test]
+    fn ets_password_is_dropped_without_a_username_and_kept_with_one() {
+        let mut ets = EtsParams::default();
+        ets.mqtt_broker = "mqtt.local:1883".into();
+        ets.mqtt_pass = " s3cret ".into();
+        // As it has always been: the password is not used, and MQTT still starts.
+        let m = ets_mqtt_config(&ets, false);
+        assert!(m.password.is_empty());
+        let mut m = m;
+        m.resolve().unwrap();
+        // With SNAPDOG_MQTT_USERNAME the password is used.
+        let m = ets_mqtt_config(&ets, true);
+        assert_eq!(m.password.as_str(), "s3cret");
+    }
+
+    #[test]
+    fn ets_broker_field_takes_a_tls_url_within_its_40_bytes() {
+        use crate::knx::group_objects::mem::GLOBAL_MQTT_BROKER_SIZE;
+        assert_eq!(GLOBAL_MQTT_BROKER_SIZE, 40);
+        for broker in [
+            "mqtts://homeassistant.local:8883",
+            "mqtts://mqtt.example.org",
+            "ssl://broker.lan.example.org:8883",
+        ] {
+            assert!(broker.len() <= GLOBAL_MQTT_BROKER_SIZE, "{broker}");
+            let mut ets = EtsParams::default();
+            ets.mqtt_broker = broker.into();
+            let mut m = ets_mqtt_config(&ets, false);
+            m.resolve().unwrap();
+            assert!(m.endpoint().unwrap().tls, "{broker}");
+        }
     }
 
     #[test]

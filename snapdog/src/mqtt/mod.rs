@@ -3,983 +3,804 @@
 
 //! MQTT integration via rumqttc.
 //!
-//! Bidirectional: subscribes to command topics (`*/set`), publishes status updates.
-//! All incoming commands are routed through `ZonePlayer` command channels.
+//! Bidirectional: subscribes to command topics (`{base}zones/{n}/.../set`,
+//! `{base}clients/{n}/.../set`) and publishes retained state (`.../state`) and
+//! availability (`{base}status`).
+//!
+//! The broker connection runs in its own tasks ([`MqttBridge::start`]). Commands
+//! are routed through the `ZonePlayer` command channels and the Snapcast command
+//! channel; the connection re-subscribes and re-announces after every reconnect.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
-use anyhow::{Context, Result};
-use rumqttc::{AsyncClient, Event, LastWill, MqttOptions, Packet, QoS};
+use anyhow::Result;
+use rumqttc::AsyncClient;
+use tokio::sync::{broadcast, mpsc, watch};
+use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use crate::config::MqttConfig;
-use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
+use crate::player::{SnapcastCmd, ZoneCommandSender};
 use crate::state;
 
-/// MQTT keep-alive interval.
-const MQTT_KEEP_ALIVE: std::time::Duration = std::time::Duration::from_mins(1);
-/// Delay before MQTT reconnection attempt.
-const MQTT_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
-/// Event loop channel capacity for MQTT messages.
-const MQTT_EVENT_CAPACITY: usize = 64;
+mod commands;
+mod discovery;
+mod limits;
+mod parse;
+mod payloads;
+mod publisher;
+mod runner;
+#[cfg(test)]
+pub(crate) mod test_pki;
+#[cfg(test)]
+mod test_support;
+pub(crate) mod tls;
+mod topics;
+mod transport;
 
-/// MQTT bridge: receives commands, publishes status.
+use commands::CommandHandler;
+use discovery::Discovery;
+pub use discovery::ServerInfo;
+use limits::LogThrottle;
+use publisher::{Publisher, request_capacity};
+use runner::{
+    Backoff, RECONNECT_MAX, RECONNECT_MIN, Session, StateFeed, supervised_backlog_flusher,
+    supervised_connection, supervised_state_publisher,
+};
+use topics::Topics;
+use transport::mqtt_options;
+
+/// What the bridge needs from the rest of the server.
+pub struct MqttRuntime {
+    /// Command channels of the zone players, by 1-based zone index.
+    pub zone_commands: HashMap<usize, ZoneCommandSender>,
+    /// Shared server state: source of the published state, target of client moves.
+    pub state: state::SharedState,
+    /// Snapcast command channel (client volume, mute, latency, zone moves).
+    pub snap_tx: mpsc::Sender<SnapcastCmd>,
+    /// Notification stream (`ZoneChanged`, `ClientStateChanged`, ...) as JSON.
+    pub notifications: broadcast::Receiver<Arc<str>>,
+    /// Who `SnapDog` says it is in the Home Assistant discovery message.
+    pub server: ServerInfo,
+}
+
+/// `config`, checked and with its file-based secrets loaded.
+///
+/// The config loader has done this already (it is idempotent), but a caller may
+/// hand over a section it built by hand, and a `password_file` in it would
+/// otherwise be silently ignored. Warnings that only this pass finds are logged.
+fn resolved(config: &MqttConfig) -> Result<MqttConfig> {
+    let mut resolved = config.clone();
+    resolved.resolve()?;
+    for warning in &resolved.warnings[config.warnings.len()..] {
+        tracing::warn!("{warning}");
+    }
+    Ok(resolved)
+}
+
+/// Handle to the running MQTT bridge. Dropping it aborts the tasks without a
+/// DISCONNECT, so the broker publishes the last will; use [`Self::shutdown`] for
+/// a clean exit.
 pub struct MqttBridge {
-    client: AsyncClient,
-    eventloop: rumqttc::EventLoop,
-    base_topic: String,
-    base_url: String,
-    name: String,
+    publisher: Publisher,
+    connected: watch::Receiver<bool>,
+    shutdown: watch::Sender<bool>,
+    tasks: Vec<JoinHandle<()>>,
 }
 
 impl MqttBridge {
-    /// Connect to MQTT broker.
+    /// Start the bridge: spawn the connection and the state publisher.
+    ///
+    /// Nothing is dialled here, the connection task does that (and retries). The
+    /// only errors are configuration errors.
     ///
     /// # Errors
     ///
-    /// Returns an error if the broker connection fails.
+    /// Returns an error if the section is invalid (see [`MqttConfig::resolve`]) or the
+    /// TLS material cannot be used. The bridge then does not start; it never falls
+    /// back to plaintext.
     #[tracing::instrument(skip_all, fields(broker = %config.broker))]
-    pub async fn connect(config: &MqttConfig, base_url: &str, name: &str) -> Result<Self> {
-        let mut opts = MqttOptions::new(
-            &config.client_id,
-            parse_host(&config.broker),
-            parse_port(&config.broker)?,
-        );
-        opts.set_keep_alive(MQTT_KEEP_ALIVE);
-        if !config.username.is_empty() {
-            opts.set_credentials(&config.username, &*config.password);
+    pub async fn start(config: &MqttConfig, base_url: &str, runtime: MqttRuntime) -> Result<Self> {
+        let config = &resolved(config)?;
+        let topics = Topics::new(&config.base_topic);
+        let options = mqtt_options(config, &topics)?;
+        if let Some(warning) = config.plaintext_credentials_warning() {
+            tracing::warn!("{warning}");
         }
 
-        let status_topic = availability_topic(&config.base_topic);
-        opts.set_last_will(LastWill::new(
-            &status_topic,
-            "offline",
-            QoS::AtLeastOnce,
-            true,
-        ));
+        let capacity = {
+            let store = runtime.state.read().await;
+            request_capacity(store.zones.len(), store.clients.len())
+        };
+        let (client, eventloop) = AsyncClient::new(options, capacity);
+        let publisher = Publisher::new(client, topics.clone(), base_url);
+        let discovery = Discovery::new(
+            config,
+            publisher.clone(),
+            runtime.state.clone(),
+            runtime.server,
+        );
 
-        let (client, eventloop) = AsyncClient::new(opts, MQTT_EVENT_CAPACITY);
-        tracing::info!("MQTT connected");
+        let (connected_tx, connected_rx) = watch::channel(false);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handler = CommandHandler::new(
+            topics,
+            runtime.zone_commands,
+            runtime.state.clone(),
+            runtime.snap_tx,
+        );
+        let session = Session {
+            publisher: publisher.clone(),
+            client_id: config.client_id.clone(),
+            discovery: discovery.clone(),
+            clear_legacy: config.legacy_cleanup(),
+            backoff: Backoff::new(RECONNECT_MIN, RECONNECT_MAX),
+            handler: handler.clone(),
+            store: runtime.state.clone(),
+            connected: connected_tx,
+            shutdown: shutdown_rx.clone(),
+            log_throttle: LogThrottle::new(Duration::from_secs(10)),
+        };
+        let feed = StateFeed {
+            discovery,
+            publisher: publisher.clone(),
+            store: runtime.state,
+            notifications: runtime.notifications,
+            connected: connected_rx.clone(),
+            shutdown: shutdown_rx.clone(),
+        };
+        // The tasks outlive this function, so they carry its span (the broker
+        // field) with them: their log lines say which broker they are about.
+        let span = tracing::Span::current();
+        let tasks = vec![
+            tokio::spawn(supervised_connection(eventloop, session).instrument(span.clone())),
+            tokio::spawn(supervised_backlog_flusher(handler, shutdown_rx).instrument(span.clone())),
+            tokio::spawn(supervised_state_publisher(feed).instrument(span)),
+        ];
+        tracing::info!(capacity, "MQTT bridge started");
 
         Ok(Self {
-            client,
-            eventloop,
-            base_topic: config.base_topic.clone(),
-            base_url: base_url.trim_end_matches('/').to_string(),
-            name: name.to_string(),
+            publisher,
+            connected: connected_rx,
+            shutdown: shutdown_tx,
+            tasks,
         })
     }
 
-    /// Create a disconnected bridge for testing (command routing only).
-    #[cfg(test)]
-    pub(crate) fn test_bridge(base_topic: &str) -> Self {
-        let opts = MqttOptions::new("test", "localhost", 1883);
-        let (client, eventloop) = AsyncClient::new(opts, 4);
-        Self {
-            client,
-            eventloop,
-            base_topic: base_topic.to_string(),
-            base_url: "http://localhost:5555".to_string(),
-            name: "SnapDog".to_string(),
-        }
+    /// Whether a broker connection is established right now.
+    #[must_use]
+    pub fn is_connected(&self) -> bool {
+        *self.connected.borrow()
     }
 
-    /// Subscribe to all command topics.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any subscription fails.
-    pub async fn subscribe_commands(&self) -> Result<()> {
-        let topics = [
-            "zones/+/volume/set",
-            "zones/+/mute/set",
-            "zones/+/control/set",
-            "zones/+/shuffle/set",
-            "zones/+/repeat/set",
-            "zones/+/position/set",
-            "zones/+/track/set",
-            "zones/+/track/position/set",
-            "zones/+/playlist/set",
-            "zones/+/presence/set",
-            "zones/+/presence/enable/set",
-            "zones/+/presence/timeout/set",
-            "clients/+/volume/set",
-            "clients/+/mute/set",
-            "clients/+/latency/set",
-            "clients/+/zone/set",
-        ];
-
-        for topic in &topics {
-            self.client
-                .subscribe(format!("{}{topic}", self.base_topic), QoS::AtLeastOnce)
-                .await
-                .with_context(|| format!("Failed to subscribe to {topic}"))?;
-        }
-
-        tracing::info!(topics = topics.len(), "MQTT subscribed");
-        Ok(())
-    }
-
-    /// Publish Home Assistant MQTT Discovery messages for all zones.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if publishing any discovery message fails.
-    pub async fn publish_ha_discovery(&self, zones: &[crate::config::ZoneConfig]) -> Result<()> {
-        for zone in zones {
-            let unique_id = format!("snapdog_zone_{}", zone.index);
-            let discovery = ha_discovery_payload(&self.base_topic, &self.name, zone);
-            self.client
-                .publish(
-                    format!("homeassistant/media_player/{unique_id}/config"),
-                    QoS::AtLeastOnce,
-                    true,
-                    discovery.to_string().as_bytes(),
-                )
-                .await
-                .with_context(|| {
-                    format!("Failed to publish HA discovery for zone {}", zone.index)
-                })?;
-        }
-
-        // Publish availability "online" to the SAME topic as the LWT (single slash).
-        self.client
-            .publish(
-                availability_topic(&self.base_topic),
-                QoS::AtLeastOnce,
-                true,
-                b"online",
-            )
-            .await?;
-
-        // Migration cleanup: clear the stale retained "online" left by pre-fix
-        // snapdog at the old buggy double-slash topic (`{base}/status`). A
-        // zero-length retained publish deletes a retained message (MQTT spec);
-        // idempotent, so it is harmless on every later reconnect.
-        self.client
-            .publish(
-                format!("{}/status", self.base_topic),
-                QoS::AtLeastOnce,
-                true,
-                Vec::<u8>::new(),
-            )
-            .await?;
-
-        tracing::info!(zones = zones.len(), "HA MQTT Discovery published");
-        Ok(())
-    }
-
-    /// Publish a status value (retained).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the MQTT publish fails.
-    pub async fn publish(&self, topic: &str, payload: &str) -> Result<()> {
-        self.client
-            .publish(
-                format!("{}{topic}", self.base_topic),
-                QoS::AtLeastOnce,
-                true,
-                payload.as_bytes(),
-            )
+    /// Wait until the broker has accepted the connection, up to `timeout`.
+    pub async fn wait_connected(&self, timeout: Duration) -> bool {
+        let mut connected = self.connected.clone();
+        tokio::time::timeout(timeout, connected.wait_for(|up| *up))
             .await
-            .with_context(|| format!("Failed to publish to {topic}"))
+            .is_ok_and(|r| r.is_ok())
     }
 
-    /// Publish zone state as a single retained JSON object.
+    /// Queue a retained status value for `{base}{topic}`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the MQTT publish fails.
-    pub async fn publish_zone_state(&self, index: usize, zone: &state::ZoneState) -> Result<()> {
-        let payload = zone_state_payload(&self.base_url, zone);
-        self.publish(&format!("zones/{index}/state"), &payload.to_string())
-            .await
+    /// Returns an error if the request queue is full.
+    pub fn publish(&self, topic: &str, payload: &str) -> Result<()> {
+        self.publisher
+            .retained(&self.publisher.topics().join(topic), payload)
     }
 
-    /// Publish client state as a single retained JSON object.
+    /// Queue the retained zone state.
     ///
     /// # Errors
     ///
-    /// Returns an error if the MQTT publish fails.
-    pub async fn publish_client_state(
-        &self,
-        index: usize,
-        client: &state::ClientState,
-    ) -> Result<()> {
-        self.publish(
-            &format!("clients/{index}/state"),
-            &client_state_payload(client).to_string(),
-        )
-        .await
+    /// Returns an error if the request queue is full.
+    pub fn publish_zone_state(&self, index: usize, zone: &state::ZoneState) -> Result<()> {
+        self.publisher.zone_state(index, zone)
     }
 
-    /// Run the event loop, dispatching incoming commands via `ZonePlayer` channels.
+    /// Queue the retained client state.
     ///
     /// # Errors
     ///
-    /// Returns an error if the event loop encounters a fatal MQTT error.
-    pub async fn run(
-        &mut self,
-        zone_commands: HashMap<usize, ZoneCommandSender>,
-        state: state::SharedState,
-        snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
-    ) -> Result<()> {
-        loop {
-            self.poll_once(&zone_commands, &state, &snap_tx).await;
+    /// Returns an error if the request queue is full.
+    pub fn publish_client_state(&self, index: usize, client: &state::ClientState) -> Result<()> {
+        self.publisher.client_state(index, client)
+    }
+
+    /// Leave cleanly: publish the retained `offline` (a DISCONNECT suppresses the
+    /// last will), send DISCONNECT, and wait up to `timeout` for the tasks.
+    pub async fn shutdown(mut self, timeout: Duration) {
+        let _ = self.publisher.offline();
+        let _ = self.publisher.client().try_disconnect();
+        self.shutdown.send_replace(true);
+        let tasks = std::mem::take(&mut self.tasks);
+        let finished = tokio::time::timeout(timeout, async {
+            for task in tasks {
+                let _ = task.await;
+            }
+        })
+        .await;
+        if finished.is_err() {
+            tracing::warn!("MQTT shutdown timed out, closing the connection");
+        }
+        // Dropping `self` aborts whatever is left.
+    }
+}
+
+impl Drop for MqttBridge {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
         }
     }
-
-    /// Poll for a single MQTT event. Returns when one event is processed.
-    pub async fn poll_once(
-        &mut self,
-        zone_commands: &HashMap<usize, ZoneCommandSender>,
-        state: &state::SharedState,
-        snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
-    ) {
-        match self.eventloop.poll().await {
-            Ok(Event::Incoming(Packet::Publish(msg))) => {
-                let topic = msg.topic.clone();
-                let payload = String::from_utf8_lossy(&msg.payload).to_string();
-                tracing::debug!(topic = %topic, payload = %payload, "MQTT message received");
-                if let Err(e) = self
-                    .handle_command(&topic, &payload, zone_commands, state, snap_tx)
-                    .await
-                {
-                    tracing::warn!(error = %e, topic = %topic, "Failed to handle MQTT command");
-                }
-            }
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!(error = %e, "MQTT connection error, retrying");
-                tokio::time::sleep(MQTT_RECONNECT_DELAY).await;
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_lines)] // Match dispatcher for MQTT topics — splitting would obscure control flow
-    pub(crate) async fn handle_command(
-        &self,
-        topic: &str,
-        payload: &str,
-        zone_commands: &HashMap<usize, ZoneCommandSender>,
-        state: &state::SharedState,
-        snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
-    ) -> Result<()> {
-        let stripped = topic
-            .strip_prefix(&self.base_topic)
-            .and_then(|t| t.strip_prefix('/'))
-            .context("Topic doesn't match base")?;
-
-        let parts: Vec<&str> = stripped.split('/').collect();
-
-        match parts.as_slice() {
-            // Zone commands → routed through ZonePlayer
-            ["zones", idx, "volume", "set"] => {
-                let index: usize = idx.parse()?;
-                let volume: f64 = payload.parse()?;
-                // Accept both 0.0-1.0 (HA) and 0-100 (legacy)
-                let volume_int = if volume <= 1.0 {
-                    (volume * 100.0).round() as i32
-                } else {
-                    volume as i32
-                };
-                send_zone_cmd(
-                    zone_commands,
-                    index,
-                    ZoneCommand::SetVolume(volume_int.clamp(0, 100)),
-                )
-                .await;
-            }
-            ["zones", idx, "mute", "set"] => {
-                let index: usize = idx.parse()?;
-                let muted = matches!(payload.trim(), "true" | "1" | "on");
-                send_zone_cmd(zone_commands, index, ZoneCommand::SetMute(muted)).await;
-            }
-            ["zones", idx, "control", "set"] => {
-                let index: usize = idx.parse()?;
-                let cmd = match payload.to_lowercase().as_str() {
-                    "play" => Some(ZoneCommand::Play),
-                    "pause" => Some(ZoneCommand::Pause),
-                    "stop" => Some(ZoneCommand::Stop),
-                    "next" => Some(ZoneCommand::Next),
-                    "previous" => Some(ZoneCommand::Previous),
-                    _ => {
-                        tracing::debug!(zone = index, command = payload, "Unknown control command");
-                        None
-                    }
-                };
-                if let Some(cmd) = cmd {
-                    send_zone_cmd(zone_commands, index, cmd).await;
-                }
-            }
-            ["zones", idx, "playlist", "set"] => {
-                let index: usize = idx.parse()?;
-                let playlist: usize = payload.parse()?;
-                send_zone_cmd(zone_commands, index, ZoneCommand::SetPlaylist(playlist, 0)).await;
-            }
-            ["zones", idx, "track", "set"] => {
-                let index: usize = idx.parse()?;
-                let track: usize = payload.parse()?;
-                send_zone_cmd(zone_commands, index, ZoneCommand::SetTrack(track)).await;
-            }
-            ["zones", idx, "position", "set"] | ["zones", idx, "track", "position", "set"] => {
-                let index: usize = idx.parse()?;
-                let pos_secs: f64 = payload.parse()?;
-                let pos_ms = (pos_secs * 1000.0) as i64;
-                send_zone_cmd(zone_commands, index, ZoneCommand::Seek(pos_ms)).await;
-            }
-            ["zones", idx, "shuffle", "set"] => {
-                let index: usize = idx.parse()?;
-                let shuffle = matches!(payload.trim(), "true" | "1" | "on");
-                send_zone_cmd(zone_commands, index, ZoneCommand::SetShuffle(shuffle)).await;
-            }
-            ["zones", idx, "repeat", "set"] => {
-                let index: usize = idx.parse()?;
-                let mode = match payload.trim() {
-                    "one" | "track" => snapdog_common::RepeatMode::Track,
-                    "all" | "playlist" => snapdog_common::RepeatMode::Playlist,
-                    _ => snapdog_common::RepeatMode::Off,
-                };
-                send_zone_cmd(zone_commands, index, ZoneCommand::SetRepeat(mode)).await;
-            }
-            ["zones", idx, "presence", "set"] => {
-                let index: usize = idx.parse()?;
-                let present: bool = payload.parse()?;
-                send_zone_cmd(zone_commands, index, ZoneCommand::SetPresence(present)).await;
-            }
-            ["zones", idx, "presence", "enable", "set"] => {
-                let index: usize = idx.parse()?;
-                let enabled: bool = payload.parse()?;
-                send_zone_cmd(
-                    zone_commands,
-                    index,
-                    ZoneCommand::SetPresenceEnabled(enabled),
-                )
-                .await;
-            }
-            ["zones", idx, "presence", "timeout", "set"] => {
-                let index: usize = idx.parse()?;
-                let delay: u16 = payload.parse()?;
-                send_zone_cmd(zone_commands, index, ZoneCommand::SetAutoOffDelay(delay)).await;
-            }
-
-            // Client commands → direct state mutation (no ZonePlayer involvement)
-            ["clients", idx, "volume", "set"] => {
-                let index: usize = idx.parse()?;
-                let volume: i32 = payload.parse()?;
-                let snap_id = {
-                    let store = state.read().await;
-                    store
-                        .clients
-                        .get(&index)
-                        .and_then(|c| c.snapcast_id.clone())
-                };
-                if let Some(snap_id) = snap_id {
-                    let _ = snap_tx
-                        .send(SnapcastCmd::Client {
-                            client_id: snap_id,
-                            action: ClientAction::Volume(volume.clamp(0, 100)),
-                        })
-                        .await;
-                }
-            }
-            ["clients", idx, "mute", "set"] => {
-                let index: usize = idx.parse()?;
-                let muted: bool = payload.parse()?;
-                let snap_id = {
-                    let store = state.read().await;
-                    store
-                        .clients
-                        .get(&index)
-                        .and_then(|c| c.snapcast_id.clone())
-                };
-                if let Some(snap_id) = snap_id {
-                    let _ = snap_tx
-                        .send(SnapcastCmd::Client {
-                            client_id: snap_id,
-                            action: ClientAction::Mute(muted),
-                        })
-                        .await;
-                }
-            }
-            ["clients", idx, "latency", "set"] => {
-                let index: usize = idx.parse()?;
-                let latency: i32 = payload.parse()?;
-                let snap_id = {
-                    let store = state.read().await;
-                    store
-                        .clients
-                        .get(&index)
-                        .and_then(|c| c.snapcast_id.clone())
-                };
-                if let Some(snap_id) = snap_id {
-                    let _ = snap_tx
-                        .send(SnapcastCmd::Client {
-                            client_id: snap_id,
-                            action: ClientAction::Latency(latency),
-                        })
-                        .await;
-                }
-            }
-            ["clients", idx, "zone", "set"] => {
-                let index: usize = idx.parse()?;
-                let zone: usize = payload.parse()?;
-                let mut store = state.write().await;
-                if zone == 0 || !store.zones.contains_key(&zone) {
-                    tracing::warn!(
-                        client = index,
-                        zone,
-                        "Ignoring MQTT client zone change to unknown zone"
-                    );
-                    return Ok(());
-                }
-                let Some(client) = store.clients.get_mut(&index) else {
-                    tracing::warn!(
-                        client = index,
-                        "Ignoring MQTT zone change for unknown client"
-                    );
-                    return Ok(());
-                };
-                client.zone_index = zone;
-                store.dirty = true;
-                drop(store);
-                let _ = snap_tx.send(SnapcastCmd::ReconcileZones).await;
-            }
-            _ => {
-                tracing::debug!(topic = stripped, "Unhandled MQTT command topic");
-            }
-        }
-
-        Ok(())
-    }
-}
-
-async fn send_zone_cmd(
-    zone_commands: &HashMap<usize, ZoneCommandSender>,
-    index: usize,
-    cmd: ZoneCommand,
-) {
-    if let Some(tx) = zone_commands.get(&index) {
-        if let Err(e) = tx.send(cmd).await {
-            tracing::warn!(zone = index, error = %e, "Failed to send zone command from MQTT");
-        }
-    } else {
-        tracing::warn!(zone = index, "No ZonePlayer for MQTT command");
-    }
-}
-
-fn parse_host(broker: &str) -> &str {
-    broker.rsplit_once(':').map_or(broker, |(h, _)| h)
-}
-
-fn parse_port(broker: &str) -> Result<u16> {
-    broker
-        .rsplit_once(':')
-        .and_then(|(_, p)| p.parse().ok())
-        .context("Invalid broker address — expected host:port")
-}
-
-/// Build the retained zone-state JSON (Home Assistant `media_player` schema).
-///
-/// Pure: extracted from `publish_zone_state` so the wire schema is unit-testable
-/// without a broker. Note `source` uses the `Display` form (e.g. `subsonic_playlist`,
-/// with underscore — differs from the serde form), and `repeat` maps to HA's
-/// `off`/`one`/`all`.
-fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json::Value {
-    let state_str = match zone.playback {
-        state::PlaybackState::Playing => "playing",
-        state::PlaybackState::Paused => "paused",
-        state::PlaybackState::Stopped => {
-            if zone.source == state::SourceType::Idle {
-                "idle"
-            } else {
-                "stopped"
-            }
-        }
-    };
-
-    let mut payload = serde_json::json!({
-        "state": state_str,
-        "volume_level": f64::from(zone.volume) / 100.0,
-        "is_volume_muted": zone.muted,
-        "shuffle": zone.shuffle,
-        "repeat": match zone.repeat { snapdog_common::RepeatMode::Track => "one", snapdog_common::RepeatMode::Playlist => "all", snapdog_common::RepeatMode::Off => "off" },
-        "source": zone.source.to_string(),
-        "presence": zone.presence,
-    });
-
-    if let Some(track) = &zone.track {
-        payload["media_title"] = serde_json::json!(track.title);
-        payload["media_artist"] = serde_json::json!(track.artist);
-        payload["media_album_name"] = serde_json::json!(track.album);
-        payload["media_duration"] = serde_json::json!(track.duration_ms / 1000);
-        payload["media_position"] = serde_json::json!(track.position_ms / 1000);
-        payload["media_content_type"] = serde_json::json!("music");
-    }
-
-    if let Some(ref cover_url) = zone.cover_url {
-        let absolute = if cover_url.starts_with('/') {
-            format!("{base_url}{cover_url}")
-        } else {
-            cover_url.clone()
-        };
-        payload["media_image_url"] = serde_json::json!(absolute);
-    }
-
-    payload
-}
-
-/// Build the retained client-state JSON. Pure (see [`zone_state_payload`]).
-fn client_state_payload(client: &state::ClientState) -> serde_json::Value {
-    serde_json::json!({
-        "volume": client.base_volume,
-        "muted": client.muted,
-        "connected": client.connected,
-        "zone": client.zone_index,
-        "latency": client.latency_ms,
-    })
-}
-
-/// Online/offline availability topic (LWT + retained "online").
-///
-/// `base_topic` is normalized to end with `/`, so this must NOT add a second slash.
-/// Single source of truth shared by `connect`'s LWT and HA discovery so the two
-/// can never drift (they previously did: `{base}status` vs `{base}/status`).
-fn availability_topic(base_topic: &str) -> String {
-    format!("{base_topic}status")
-}
-
-/// Build the Home Assistant MQTT-discovery payload for one zone (`media_player`).
-/// Pure: extracted from `publish_ha_discovery` so the schema is unit-testable.
-fn ha_discovery_payload(
-    base: &str,
-    device_name: &str,
-    zone: &crate::config::ZoneConfig,
-) -> serde_json::Value {
-    let idx = zone.index;
-    let unique_id = format!("snapdog_zone_{idx}");
-    serde_json::json!({
-        "name": zone.name,
-        "unique_id": &unique_id,
-        "object_id": &unique_id,
-        "icon": "mdi:speaker-group",
-        "state_topic": format!("{base}zones/{idx}/state"),
-        "volume_command_topic": format!("{base}zones/{idx}/volume/set"),
-        "mute_command_topic": format!("{base}zones/{idx}/mute/set"),
-        "media_position_command_topic": format!("{base}zones/{idx}/position/set"),
-        "payload_play": "play",
-        "payload_pause": "pause",
-        "payload_stop": "stop",
-        "payload_next": "next",
-        "payload_previous": "previous",
-        "command_topic": format!("{base}zones/{idx}/control/set"),
-        "shuffle_command_topic": format!("{base}zones/{idx}/shuffle/set"),
-        "repeat_command_topic": format!("{base}zones/{idx}/repeat/set"),
-        "volume_level_template": "{{ value_json.volume_level }}",
-        "is_volume_muted_template": "{{ value_json.is_volume_muted }}",
-        "state_template": "{{ value_json.state }}",
-        "media_title_template": "{{ value_json.media_title | default('') }}",
-        "media_artist_template": "{{ value_json.media_artist | default('') }}",
-        "media_album_name_template": "{{ value_json.media_album_name | default('') }}",
-        "media_duration_template": "{{ value_json.media_duration | default(0) }}",
-        "media_position_template": "{{ value_json.media_position | default(0) }}",
-        "media_image_url_template": "{{ value_json.media_image_url | default('') }}",
-        "shuffle_state_template": "{{ value_json.shuffle }}",
-        "repeat_state_template": "{{ value_json.repeat }}",
-        "supported_features": ["play", "pause", "stop", "next_track", "previous_track", "volume_set", "volume_mute", "shuffle_set", "repeat_set", "seek"],
-        "device": {
-            "identifiers": ["snapdog"],
-            "name": device_name,
-            "manufacturer": "metaneutrons",
-            "model": "Multi-zone Audio Controller",
-            "sw_version": env!("CARGO_PKG_VERSION"),
-        },
-        "availability_topic": availability_topic(base),
-        "payload_available": "online",
-        "payload_not_available": "offline",
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use tokio::sync::{RwLock, mpsc};
 
-    fn test_state_with_client() -> state::SharedState {
-        let store: state::Store = serde_json::from_value(serde_json::json!({
-            "zones": {
-                "1": { "name": "Zone 1", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": "off", "track": null, "playlist_index": null, "playlist_name": null, "playlist_total": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 },
-                "2": { "name": "Zone 2", "icon": "", "volume": 50, "muted": false, "playback": "stopped", "shuffle": false, "repeat": "off", "track": null, "playlist_index": null, "playlist_name": null, "playlist_total": null, "playlist_track_index": null, "playlist_track_count": null, "source": "idle", "cover_url": null, "snapcast_group_id": null, "presence": false, "presence_enabled": true, "presence_source": false, "auto_off_active": false, "auto_off_delay": 0 }
-            },
-            "clients": {
-                "1": {
-                    "name": "Test", "icon": "", "mac": "", "zone_index": 1,
-                    "volume": 50, "base_volume": 50, "muted": false,
-                    "latency_ms": 0, "connected": true, "snapcast_id": "snap-1"
-                }
-            }
-        }))
+    /// Review finding F13: `start` took a section as it was handed over, so a
+    /// `password_file` in a hand-built one was silently ignored.
+    #[test]
+    fn a_section_that_skipped_the_config_loader_is_resolved_before_it_is_used() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pw");
+        std::fs::write(&file, "from-file\n").unwrap();
+        let config: MqttConfig = toml::from_str(&format!(
+            "broker = \"b:1883\"\nusername = \"u\"\npassword_file = {:?}",
+            file.display().to_string()
+        ))
         .unwrap();
-        Arc::new(RwLock::new(store))
+        let resolved = resolved(&config).unwrap();
+        assert_eq!(resolved.password.as_str(), "from-file");
+        let options = mqtt_options(&resolved, &Topics::new(&resolved.base_topic)).unwrap();
+        assert_eq!(options.credentials().unwrap().password, "from-file");
+
+        // And a section that is wrong is refused, not started.
+        let bad: MqttConfig = toml::from_str("broker = \"b:1883\"\npassword = \"p\"").unwrap();
+        assert!(resolved_err(&bad).contains("username"));
+        // Resolving twice is harmless: what the loader did is not undone.
+        assert_eq!(
+            super::resolved(&resolved).unwrap().password.as_str(),
+            "from-file"
+        );
     }
 
-    fn zone_channels() -> (
-        HashMap<usize, ZoneCommandSender>,
-        mpsc::Receiver<ZoneCommand>,
-    ) {
-        let (tx, rx) = mpsc::channel(16);
-        let mut map = HashMap::new();
-        map.insert(1, tx);
-        (map, rx)
-    }
-
-    fn snap_channel() -> (mpsc::Sender<SnapcastCmd>, mpsc::Receiver<SnapcastCmd>) {
-        mpsc::channel(16)
-    }
-
-    // ── IT-T31: retained-state JSON schema ────────────────────────
-
+    /// The same through `start`: the password of an unresolved `password_file` is
+    /// what reaches the broker in the CONNECT packet.
     #[tokio::test]
-    async fn zone_state_payload_idle() {
-        let state = test_state_with_client();
-        let z = state.read().await.zones[&1].clone();
-        let p = zone_state_payload("http://host:8000", &z);
-        assert_eq!(p["state"], "idle"); // Stopped + Idle source => "idle"
-        assert_eq!(p["volume_level"], 0.5); // 50 / 100
-        assert_eq!(p["is_volume_muted"], false);
-        assert_eq!(p["shuffle"], false);
-        assert_eq!(p["repeat"], "off");
-        assert_eq!(p["source"], "idle");
-        assert_eq!(p["presence"], false);
-        assert!(p.get("media_title").is_none(), "no track fields when idle");
-        assert!(p.get("media_image_url").is_none(), "no cover when none");
+    async fn start_sends_the_password_from_a_password_file_it_resolved_itself() {
+        use tokio::io::AsyncReadExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pw");
+        std::fs::write(&file, "from-file-secret\n").unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let config: MqttConfig = toml::from_str(&format!(
+            "broker = \"127.0.0.1:{port}\"\nusername = \"the-user\"\npassword_file = {:?}",
+            file.display().to_string()
+        ))
+        .unwrap();
+        let (runtime, _ends) = crate::mqtt::test_support::test_runtime();
+        let bridge = MqttBridge::start(&config, "http://h", runtime)
+            .await
+            .unwrap();
+
+        let (mut socket, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+            .await
+            .expect("the bridge dials")
+            .unwrap();
+        let mut connect = vec![0_u8; 512];
+        let n = tokio::time::timeout(Duration::from_secs(5), socket.read(&mut connect))
+            .await
+            .expect("CONNECT arrives")
+            .unwrap();
+        let connect = &connect[..n];
+        let has = |needle: &[u8]| connect.windows(needle.len()).any(|w| w == needle);
+        assert!(has(b"the-user"), "username in CONNECT");
+        assert!(
+            has(b"from-file-secret"),
+            "password from the file in CONNECT"
+        );
+        drop(bridge);
     }
 
+    /// What `SnapDog` puts on the wire: every subscription and every publish is
+    /// `QoS` 1, state and availability are retained, the last will is a retained
+    /// `offline`. (Review mutation M3: `QoS` 1 became `QoS` 0 and nothing noticed.)
     #[tokio::test]
-    async fn zone_state_payload_stopped_non_idle() {
-        let state = test_state_with_client();
-        let mut z = state.read().await.zones[&1].clone();
-        z.source = state::SourceType::Radio; // Stopped + non-Idle source => "stopped"
-        let p = zone_state_payload("http://h", &z);
-        assert_eq!(p["state"], "stopped");
-        assert_eq!(p["source"], "radio");
-    }
+    async fn the_wire_carries_qos_1_retained_state_and_a_retained_last_will() {
+        use crate::mqtt::test_support::{FakeBroker, Script};
+        use rumqttc::Packet;
 
-    #[tokio::test]
-    async fn zone_state_payload_playing_with_track_and_cover() {
-        let state = test_state_with_client();
-        let mut z = state.read().await.zones[&1].clone();
-        z.volume = 80;
-        z.muted = true;
-        z.shuffle = true;
-        z.playback = state::PlaybackState::Playing;
-        z.repeat = snapdog_common::RepeatMode::Playlist;
-        z.source = state::SourceType::SubsonicPlaylist;
-        z.cover_url = Some("/cover/1.jpg".into());
-        z.track = Some(
-            serde_json::from_value(serde_json::json!({
-                "title": "T", "artist": "A", "album": "Al",
-                "album_artist": null, "genre": null, "year": null,
-                "track_number": null, "disc_number": null,
-                "duration_ms": 200_000, "position_ms": 5_000, "seekable": true,
-                "source": "subsonicplaylist", "bitrate_kbps": null,
-                "content_type": null, "sample_rate": null
-            }))
-            .unwrap(),
+        let broker = FakeBroker::start(Script::Serve).await;
+        let config: MqttConfig =
+            toml::from_str(&format!("broker = \"127.0.0.1:{}\"", broker.port)).unwrap();
+        let (runtime, _ends) = crate::mqtt::test_support::test_runtime();
+        let bridge = MqttBridge::start(&config, "http://h", runtime)
+            .await
+            .unwrap();
+        assert!(bridge.wait_connected(Duration::from_secs(5)).await);
+        // One CONNECT, 16 subscription filters, `online` and the state of 2 zones
+        // and 1 client (plus the clearing of legacy topics).
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline
+            && !broker
+                .packets()
+                .iter()
+                .any(|p| matches!(p, Packet::Publish(x) if x.topic == "snapdog/clients/1/state"))
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let packets = broker.packets();
+
+        let connect = packets
+            .iter()
+            .find_map(|p| {
+                if let Packet::Connect(c) = p {
+                    Some(c)
+                } else {
+                    None
+                }
+            })
+            .expect("CONNECT");
+        let will = connect.last_will.as_ref().expect("last will");
+        assert_eq!(will.topic, "snapdog/status");
+        assert_eq!(&will.message[..], b"offline");
+        assert_eq!(will.qos, rumqttc::QoS::AtLeastOnce);
+        assert!(will.retain);
+
+        let filters: Vec<_> = packets
+            .iter()
+            .filter_map(|p| {
+                if let Packet::Subscribe(s) = p {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .flat_map(|s| s.filters.iter())
+            .collect();
+        assert_eq!(filters.len(), super::topics::COMMAND_ROUTES.len());
+        assert!(
+            filters.iter().all(|f| f.qos == rumqttc::QoS::AtLeastOnce),
+            "commands are subscribed at QoS 1: {filters:?}"
         );
 
-        let p = zone_state_payload("http://host:8000", &z);
-        assert_eq!(p["state"], "playing");
-        assert_eq!(p["volume_level"], 0.8);
-        assert_eq!(p["is_volume_muted"], true);
-        assert_eq!(p["shuffle"], true);
-        assert_eq!(p["repeat"], "all"); // RepeatMode::Playlist => HA "all"
-        // `source` is the Display form (underscore), NOT the serde form "subsonicplaylist".
-        assert_eq!(p["source"], "subsonic_playlist");
-        assert_eq!(p["media_title"], "T");
-        assert_eq!(p["media_duration"], 200); // ms -> s
-        assert_eq!(p["media_position"], 5);
-        assert_eq!(p["media_content_type"], "music");
-        // Relative cover URL is absolutized against base_url.
-        assert_eq!(p["media_image_url"], "http://host:8000/cover/1.jpg");
+        let state_topics = [
+            "snapdog/status",
+            "snapdog/zones/1/state",
+            "snapdog/zones/2/state",
+            "snapdog/clients/1/state",
+        ];
+        for topic in state_topics {
+            let publish = packets
+                .iter()
+                .find_map(|p| match p {
+                    Packet::Publish(x) if x.topic == topic => Some(x),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{topic} was not published"));
+            assert_eq!(publish.qos, rumqttc::QoS::AtLeastOnce, "{topic}");
+            assert!(publish.retain, "{topic} is retained");
+        }
+        drop(bridge);
     }
 
+    /// Review finding F11: the clean-up of what earlier releases left behind ran at
+    /// every start, whatever the ACL, with no way to stop it.
     #[tokio::test]
-    async fn client_state_payload_schema() {
-        let state = test_state_with_client();
-        let c = state.read().await.clients[&1].clone();
-        let p = client_state_payload(&c);
-        assert_eq!(p["volume"], 50); // base_volume
-        assert_eq!(p["muted"], false);
-        assert_eq!(p["connected"], true);
-        assert_eq!(p["zone"], 1);
-        assert_eq!(p["latency"], 0);
-    }
+    async fn the_legacy_cleanup_can_be_switched_off() {
+        use crate::mqtt::test_support::{FakeBroker, Script};
+        use rumqttc::Packet;
 
-    #[test]
-    fn availability_topic_single_slash_matches_lwt() {
-        // base_topic is normalized to end with "/"; the availability topic must NOT
-        // double the slash. connect()'s LWT and HA discovery share this fn so they
-        // can't drift (regression guard for the snapdog//status bug).
-        assert_eq!(availability_topic("snapdog/"), "snapdog/status");
-    }
-
-    #[test]
-    fn ha_discovery_payload_schema() {
-        let cfg = crate::config::load_raw(
-            toml::from_str(
-                r#"
-                [[zone]]
-                name = "Living Room"
-                [[client]]
-                name = "Speaker"
-                mac = "00:00:00:00:00:01"
-                zone = "Living Room"
-            "#,
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        let p = ha_discovery_payload("snapdog/", "SnapDog", &cfg.zones[0]);
-        assert_eq!(p["name"], "Living Room");
-        assert_eq!(p["unique_id"], "snapdog_zone_1");
-        assert_eq!(p["state_topic"], "snapdog/zones/1/state");
-        assert_eq!(p["command_topic"], "snapdog/zones/1/control/set");
-        assert_eq!(p["volume_command_topic"], "snapdog/zones/1/volume/set");
-        // Must equal the LWT topic (single slash) — guards the snapdog//status bug.
-        assert_eq!(p["availability_topic"], "snapdog/status");
-        assert_eq!(p["availability_topic"], availability_topic("snapdog/"));
-        assert_eq!(p["payload_available"], "online");
-        assert_eq!(p["payload_not_available"], "offline");
-        assert_eq!(p["device"]["identifiers"][0], "snapdog");
-        assert_eq!(p["device"]["name"], "SnapDog");
-    }
-
-    #[test]
-    fn parses_broker_port() {
-        assert_eq!(parse_port("mqtt:1883").unwrap(), 1883);
-        assert_eq!(parse_port("localhost:1883").unwrap(), 1883);
-        assert!(parse_port("no-port").is_err());
-    }
-
-    #[tokio::test]
-    async fn routes_zone_volume() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, _snap_rx) = snap_channel();
-        let (cmds, mut rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command("snapdog/zones/1/volume/set", "75", &cmds, &state, &snap_tx)
-            .await
-            .unwrap();
-        assert!(matches!(rx.recv().await, Some(ZoneCommand::SetVolume(75))));
-    }
-
-    #[tokio::test]
-    async fn routes_zone_mute() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, _snap_rx) = snap_channel();
-        let (cmds, mut rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command("snapdog/zones/1/mute/set", "true", &cmds, &state, &snap_tx)
-            .await
-            .unwrap();
-        assert!(matches!(rx.recv().await, Some(ZoneCommand::SetMute(true))));
-    }
-
-    #[tokio::test]
-    async fn routes_zone_control_commands() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, _snap_rx) = snap_channel();
-        let (cmds, mut rx) = zone_channels();
-        let state = test_state_with_client();
-        for (payload, expected) in [
-            ("play", ZoneCommand::Play),
-            ("pause", ZoneCommand::Pause),
-            ("stop", ZoneCommand::Stop),
-            ("next", ZoneCommand::Next),
-            ("previous", ZoneCommand::Previous),
-        ] {
-            bridge
-                .handle_command(
-                    "snapdog/zones/1/control/set",
-                    payload,
-                    &cmds,
-                    &state,
-                    &snap_tx,
-                )
+        async fn publishes(extra: &str) -> Vec<(String, usize)> {
+            let broker = FakeBroker::start(Script::Serve).await;
+            let config: MqttConfig =
+                toml::from_str(&format!("broker = \"127.0.0.1:{}\"\n{extra}", broker.port))
+                    .unwrap();
+            let (runtime, _ends) = crate::mqtt::test_support::test_runtime();
+            let bridge = MqttBridge::start(&config, "http://h", runtime)
                 .await
                 .unwrap();
-            let cmd = rx.recv().await.unwrap();
-            assert_eq!(
-                std::mem::discriminant(&cmd),
-                std::mem::discriminant(&expected)
-            );
+            assert!(bridge.wait_connected(Duration::from_secs(5)).await);
+            // The client state is queued last: when it is there, the rest is.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            while tokio::time::Instant::now() < deadline
+                && !broker.packets().iter().any(
+                    |p| matches!(p, Packet::Publish(x) if x.topic == "snapdog/clients/1/state"),
+                )
+            {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let found = broker
+                .packets()
+                .iter()
+                .filter_map(|p| match p {
+                    Packet::Publish(x) => Some((x.topic.clone(), x.payload.len())),
+                    _ => None,
+                })
+                .collect();
+            drop(bridge);
+            found
+        }
+
+        // Default: only what is inside the base topic (`snapdog//status`). A broker ACL
+        // that confines SnapDog to its base topic is not asked for anything else.
+        let default = publishes("").await;
+        assert!(
+            default.contains(&("snapdog//status".to_string(), 0)),
+            "{default:?}"
+        );
+        assert!(
+            default
+                .iter()
+                .all(|(topic, _)| topic.starts_with("snapdog/")),
+            "by default nothing is written outside the base topic: {default:?}"
+        );
+        // `true` also clears the old media_player discovery topics.
+        let all = publishes("clear_legacy_topics = true").await;
+        assert!(all.contains(&("snapdog//status".to_string(), 0)), "{all:?}");
+        assert!(
+            all.contains(&(
+                "homeassistant/media_player/snapdog_zone_1/config".to_string(),
+                0
+            )),
+            "{all:?}"
+        );
+        let off = publishes("clear_legacy_topics = false").await;
+        assert!(
+            off.iter().all(
+                |(topic, _)| !topic.starts_with("homeassistant/") && topic != "snapdog//status"
+            ),
+            "nothing may be cleared: {off:?}"
+        );
+        assert!(off.iter().any(|(topic, _)| topic == "snapdog/status"));
+    }
+
+    // ── A panic does not leave the bridge half-dead ───────────
+
+    fn zone_state_publishes(broker: &crate::mqtt::test_support::FakeBroker) -> usize {
+        broker
+            .packets()
+            .iter()
+            .filter(
+                |p| matches!(p, rumqttc::Packet::Publish(x) if x.topic == "snapdog/zones/1/state"),
+            )
+            .count()
+    }
+
+    fn volume_changed() -> Arc<str> {
+        serde_json::json!({"type": "zone_volume_changed", "zone": 1, "volume": 20, "muted": false})
+            .to_string()
+            .into()
+    }
+
+    /// A message that makes the handler panic is dropped and logged. The connection,
+    /// the subscriptions and the announcement are untouched, the next message is
+    /// handled at once, and the state publisher still works. (Review finding M2.)
+    #[tokio::test]
+    async fn a_message_that_makes_the_handler_panic_is_dropped_and_the_bridge_carries_on() {
+        let (broker, bridge, mut ends) =
+            bridge_with(crate::mqtt::test_support::Script::Serve, "").await;
+        let before = zone_state_publishes(&broker);
+        broker.publish("snapdog/zones/1/__panic_message__", b"poison");
+        broker.publish("snapdog/zones/1/volume/set", b"42");
+        let cmd = tokio::time::timeout(Duration::from_secs(2), ends.zone_rx.recv())
+            .await
+            .expect("the message behind the poison one is handled at once");
+        assert!(
+            matches!(cmd, Some(crate::player::ZoneCommand::SetVolume(42))),
+            "{cmd:?}"
+        );
+        assert!(bridge.is_connected());
+        assert_eq!(
+            broker.connections.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        // State still flows.
+        ends.notify_tx.send(volume_changed()).unwrap();
+        wait_for(&broker, |_| zone_state_publishes(&broker) > before).await;
+        assert!(
+            zone_state_publishes(&broker) > before,
+            "state publishing stopped"
+        );
+    }
+
+    /// A panic anywhere else in the connection task drops the connection and connects
+    /// afresh: the flag is honest, everything is announced again, state flows. Before,
+    /// the flag stayed false for good, nothing was announced again, and the retained
+    /// state went stale while the entities showed as available. (Review finding M2.)
+    #[tokio::test]
+    async fn a_panic_in_the_connection_task_ends_in_a_clean_reconnect_and_a_full_announcement() {
+        let (broker, bridge, ends) =
+            bridge_with(crate::mqtt::test_support::Script::Serve, "").await;
+        let online = |b: &crate::mqtt::test_support::FakeBroker| {
+            b.packets()
+                .iter()
+                .filter(|p| matches!(p, rumqttc::Packet::Publish(x) if x.topic == "snapdog/status" && &x.payload[..] == b"online"))
+                .count()
+        };
+        assert_eq!(online(&broker), 1);
+        let before = zone_state_publishes(&broker);
+        broker.publish("snapdog/zones/1/__panic_loop__", b"poison");
+        wait_for(&broker, |_| {
+            broker.connections.load(std::sync::atomic::Ordering::SeqCst) >= 2
+        })
+        .await;
+        assert_eq!(
+            broker.connections.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "the connection is dropped and made again"
+        );
+        assert!(
+            bridge.wait_connected(Duration::from_secs(5)).await,
+            "connected again"
+        );
+        wait_for(&broker, |_| {
+            online(&broker) >= 2 && zone_state_publishes(&broker) > before
+        })
+        .await;
+        assert_eq!(online(&broker), 2, "announced again");
+        assert!(
+            zone_state_publishes(&broker) > before,
+            "the state was published again"
+        );
+        // And it keeps working: a notification becomes a state message.
+        let after = zone_state_publishes(&broker);
+        ends.notify_tx.send(volume_changed()).unwrap();
+        wait_for(&broker, |_| zone_state_publishes(&broker) > after).await;
+        assert!(
+            zone_state_publishes(&broker) > after,
+            "state publishing stopped"
+        );
+    }
+
+    // ── Home Assistant discovery on the wire ──────────────────
+
+    /// A bridge against a scripted broker, with `extra` lines after the broker address.
+    async fn bridge_with(
+        script: crate::mqtt::test_support::Script,
+        extra: &str,
+    ) -> (
+        crate::mqtt::test_support::FakeBroker,
+        MqttBridge,
+        crate::mqtt::test_support::RuntimeEnds,
+    ) {
+        bridge_for(script, extra, crate::mqtt::test_support::test_server()).await
+    }
+
+    async fn bridge_for(
+        script: crate::mqtt::test_support::Script,
+        extra: &str,
+        server: ServerInfo,
+    ) -> (
+        crate::mqtt::test_support::FakeBroker,
+        MqttBridge,
+        crate::mqtt::test_support::RuntimeEnds,
+    ) {
+        use crate::mqtt::test_support::{FakeBroker, test_runtime};
+        let broker = FakeBroker::start(script).await;
+        let config: MqttConfig =
+            toml::from_str(&format!("broker = \"127.0.0.1:{}\"\n{extra}", broker.port)).unwrap();
+        let (mut runtime, ends) = test_runtime();
+        runtime.server = server;
+        let bridge = MqttBridge::start(&config, "http://h", runtime)
+            .await
+            .unwrap();
+        assert!(bridge.wait_connected(Duration::from_secs(5)).await);
+        // The client state is queued last of the announcement.
+        wait_for(&broker, |p| {
+            p.iter()
+                .any(|x| matches!(x, rumqttc::Packet::Publish(x) if x.topic == "snapdog/clients/1/state"))
+        })
+        .await;
+        // Give the discovery message (queued after it) time to go out.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        (broker, bridge, ends)
+    }
+
+    async fn wait_for(
+        broker: &crate::mqtt::test_support::FakeBroker,
+        done: impl Fn(&[rumqttc::Packet]) -> bool,
+    ) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while tokio::time::Instant::now() < deadline && !done(&broker.packets()) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }
 
-    #[tokio::test]
-    async fn routes_zone_playlist() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, _snap_rx) = snap_channel();
-        let (cmds, mut rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command("snapdog/zones/1/playlist/set", "3", &cmds, &state, &snap_tx)
-            .await
-            .unwrap();
-        assert!(matches!(
-            rx.recv().await,
-            Some(ZoneCommand::SetPlaylist(3, 0))
-        ));
+    const DEVICE_TOPIC: &str =
+        "homeassistant/device/snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab/config";
+
+    fn device_messages(broker: &crate::mqtt::test_support::FakeBroker) -> Vec<rumqttc::Publish> {
+        broker
+            .packets()
+            .into_iter()
+            .filter_map(|p| match p {
+                rumqttc::Packet::Publish(x) if x.topic == DEVICE_TOPIC => Some(x),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn subscribed_to(broker: &crate::mqtt::test_support::FakeBroker, topic: &str) -> bool {
+        broker.packets().iter().any(|p| {
+            matches!(p, rumqttc::Packet::Subscribe(s) if s.filters.iter().any(|f| f.path == topic))
+        })
     }
 
     #[tokio::test]
-    async fn routes_zone_seek() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, _snap_rx) = snap_channel();
-        let (cmds, mut rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command(
-                "snapdog/zones/1/track/position/set",
-                "30",
-                &cmds,
-                &state,
-                &snap_tx,
-            )
-            .await
-            .unwrap();
-        assert!(matches!(rx.recv().await, Some(ZoneCommand::Seek(30000))));
+    async fn without_a_home_assistant_section_nothing_is_announced_or_touched() {
+        let (broker, bridge, _ends) =
+            bridge_with(crate::mqtt::test_support::Script::Serve, "").await;
+        assert_eq!(device_messages(&broker).len(), 0);
+        assert!(!subscribed_to(&broker, "homeassistant/status"));
+        drop(bridge);
     }
 
     #[tokio::test]
-    async fn routes_client_volume() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, mut snap_rx) = snap_channel();
-        let (cmds, _rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command(
-                "snapdog/clients/1/volume/set",
-                "80",
-                &cmds,
-                &state,
-                &snap_tx,
-            )
-            .await
-            .unwrap();
-        let cmd = snap_rx.recv().await.unwrap();
-        assert!(
-            matches!(cmd, SnapcastCmd::Client { client_id, action: ClientAction::Volume(80) } if client_id == "snap-1")
+    async fn discovery_on_announces_one_retained_device_message_and_listens_for_the_birth() {
+        let (broker, bridge, _ends) = bridge_with(
+            crate::mqtt::test_support::Script::Serve,
+            "[homeassistant]\ndiscovery = true",
+        )
+        .await;
+        let messages = device_messages(&broker);
+        assert_eq!(messages.len(), 1, "one message for the whole server");
+        let message = &messages[0];
+        assert!(message.retain);
+        assert_eq!(message.qos, rumqttc::QoS::AtLeastOnce);
+        // It is the message of the server state: 2 zones, 1 client.
+        let sent: serde_json::Value = serde_json::from_slice(&message.payload).unwrap();
+        let store = crate::mqtt::test_support::test_state_with_client();
+        let expected = crate::mqtt::discovery::device_payload(
+            &Topics::new("snapdog"),
+            &crate::mqtt::test_support::test_server(),
+            &crate::mqtt::discovery::Model::of(&*store.read().await),
         );
+        assert_eq!(sent, expected);
+        assert!(subscribed_to(&broker, "homeassistant/status"));
+        drop(bridge);
+    }
+
+    /// Review finding m6: when the server id cannot be stored, every start would
+    /// announce a new device next to the old one. Nothing is announced then, and the
+    /// log says why.
+    #[tokio::test]
+    async fn with_a_server_id_that_is_not_stored_nothing_is_announced() {
+        let (logs_guard, logs) = crate::mqtt::test_support::capture_logs();
+        let server = ServerInfo {
+            stable_id: false,
+            ..crate::mqtt::test_support::test_server()
+        };
+        let (broker, bridge, ends) = bridge_for(
+            crate::mqtt::test_support::Script::Birth("homeassistant/status"),
+            "[homeassistant]\ndiscovery = true",
+            server,
+        )
+        .await;
+        // A birth message and a new client change nothing either.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        {
+            let mut store = ends.store.write().await;
+            let client = store.clients[&1].clone();
+            store.clients.insert(2, client);
+        }
+        ends.notify_tx
+            .send(
+                serde_json::json!({"type": "client_state_changed", "client": 2, "volume": 50,
+                    "muted": false, "connected": true, "zone": 1, "is_snapdog": false})
+                .to_string()
+                .into(),
+            )
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(device_messages(&broker).len(), 0);
+        let text = logs.text();
+        assert!(text.contains("nothing is announced"), "{text}");
+        assert!(text.contains("state_dir"), "{text}");
+        drop((bridge, logs_guard));
     }
 
     #[tokio::test]
-    async fn routes_client_mute() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, mut snap_rx) = snap_channel();
-        let (cmds, _rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command(
-                "snapdog/clients/1/mute/set",
-                "true",
-                &cmds,
-                &state,
-                &snap_tx,
-            )
-            .await
-            .unwrap();
-        let cmd = snap_rx.recv().await.unwrap();
+    async fn the_prefix_and_the_birth_topic_follow_the_configuration() {
+        let (broker, bridge, _ends) = bridge_with(
+            crate::mqtt::test_support::Script::Serve,
+            "[homeassistant]\ndiscovery = true\ndiscovery_prefix = \"ha\"\nstatus_topic = \"ha/birth\"",
+        )
+        .await;
+        assert!(broker.packets().iter().any(|p| matches!(
+            p,
+            rumqttc::Packet::Publish(x) if x.topic == "ha/device/snapdog_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab/config"
+        )));
+        assert!(subscribed_to(&broker, "ha/birth"));
+        assert!(!subscribed_to(&broker, "homeassistant/status"));
+        drop(bridge);
+    }
+
+    #[tokio::test]
+    async fn discovery_false_deletes_the_device_message_once() {
+        let (broker, bridge, _ends) = bridge_with(
+            crate::mqtt::test_support::Script::Serve,
+            "[homeassistant]\ndiscovery = false",
+        )
+        .await;
+        let messages = device_messages(&broker);
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0].retain);
         assert!(
-            matches!(cmd, SnapcastCmd::Client { client_id, action: ClientAction::Mute(true) } if client_id == "snap-1")
+            messages[0].payload.is_empty(),
+            "an empty retained payload deletes"
         );
+        assert!(!subscribed_to(&broker, "homeassistant/status"));
+        drop(bridge);
+    }
+
+    /// Home Assistant forgets its discovered entities when it restarts, and says so
+    /// with a birth message: the device message follows (after a random delay).
+    #[tokio::test]
+    async fn a_birth_message_makes_the_device_message_go_out_again() {
+        let (broker, bridge, _ends) = bridge_with(
+            crate::mqtt::test_support::Script::Birth("homeassistant/status"),
+            "[homeassistant]\ndiscovery = true",
+        )
+        .await;
+        wait_for(&broker, |_| device_messages(&broker).len() >= 2).await;
+        assert!(
+            device_messages(&broker).len() >= 2,
+            "no second device message after the birth message"
+        );
+        // The birth message is not a command and is not complained about.
+        drop(bridge);
     }
 
     #[tokio::test]
-    async fn routes_client_zone_change() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, mut snap_rx) = snap_channel();
-        let (cmds, _rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command("snapdog/clients/1/zone/set", "2", &cmds, &state, &snap_tx)
-            .await
+    async fn a_client_that_appears_later_gets_entities() {
+        let (broker, bridge, ends) = bridge_with(
+            crate::mqtt::test_support::Script::Serve,
+            "[homeassistant]\ndiscovery = true",
+        )
+        .await;
+        assert_eq!(device_messages(&broker).len(), 1);
+        {
+            let mut store = ends.store.write().await;
+            let mut client = store.clients[&1].clone();
+            client.name = "Runtime".into();
+            store.clients.insert(2, client);
+        }
+        let notification = serde_json::json!({
+            "type": "client_state_changed", "client": 2, "volume": 50, "muted": false,
+            "connected": true, "zone": 1, "is_snapdog": false
+        });
+        ends.notify_tx
+            .send(notification.to_string().into())
             .unwrap();
-        let s = state.read().await;
-        assert_eq!(s.clients[&1].zone_index, 2);
-        drop(s);
-        let cmd = snap_rx.recv().await.unwrap();
-        assert!(matches!(cmd, SnapcastCmd::ReconcileZones));
-    }
-
-    #[tokio::test]
-    async fn rejects_client_zone_change_to_unknown_zone() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, mut snap_rx) = snap_channel();
-        let (cmds, _rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command("snapdog/clients/1/zone/set", "99", &cmds, &state, &snap_tx)
-            .await
+        wait_for(&broker, |_| device_messages(&broker).len() >= 2).await;
+        let messages = device_messages(&broker);
+        assert_eq!(messages.len(), 2);
+        let latest: serde_json::Value = serde_json::from_slice(&messages[1].payload).unwrap();
+        assert!(latest["components"]["client_2_volume"].is_object());
+        // A notification for a client that is already announced changes nothing: the
+        // message is sent again only when the zones or clients differ.
+        ends.notify_tx
+            .send(notification.to_string().into())
             .unwrap();
-        let s = state.read().await;
-        assert_eq!(s.clients[&1].zone_index, 1);
-        drop(s);
-        assert!(snap_rx.try_recv().is_err());
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(
+            device_messages(&broker).len(),
+            2,
+            "announced again without a change"
+        );
+        drop(bridge);
     }
 
-    #[tokio::test]
-    async fn clamps_client_volume() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, mut snap_rx) = snap_channel();
-        let (cmds, _rx) = zone_channels();
-        let state = test_state_with_client();
-        bridge
-            .handle_command(
-                "snapdog/clients/1/volume/set",
-                "200",
-                &cmds,
-                &state,
-                &snap_tx,
-            )
-            .await
-            .unwrap();
-        let cmd = snap_rx.recv().await.unwrap();
-        assert!(matches!(
-            cmd,
-            SnapcastCmd::Client {
-                action: ClientAction::Volume(100),
-                ..
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn rejects_unknown_topic() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, _snap_rx) = snap_channel();
-        let (cmds, _rx) = zone_channels();
-        let state = test_state_with_client();
-        // Should not error, just silently ignore
-        bridge
-            .handle_command("snapdog/unknown/topic", "x", &cmds, &state, &snap_tx)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn rejects_wrong_base_topic() {
-        let bridge = MqttBridge::test_bridge("snapdog");
-        let (snap_tx, _snap_rx) = snap_channel();
-        let (cmds, _rx) = zone_channels();
-        let state = test_state_with_client();
-        let result = bridge
-            .handle_command("other/zones/1/volume/set", "50", &cmds, &state, &snap_tx)
-            .await;
-        assert!(result.is_err());
+    fn resolved_err(config: &MqttConfig) -> String {
+        format!("{:#}", resolved(config).unwrap_err())
     }
 }

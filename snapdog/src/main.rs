@@ -298,6 +298,11 @@ pub async fn run_app() -> Result<()> {
     }
 
     if cli.check_config {
+        // A wrong [mqtt] section does not stop the server (MQTT is switched off), but
+        // it must not pass a configuration check either.
+        if let Some(problem) = &app_config.mqtt_problem {
+            anyhow::bail!("Invalid [mqtt] section, the server would start without MQTT: {problem}");
+        }
         if let Some(bind) = app_config.snapcast.streaming_bind
             && config::address_is_not_local(bind)
         {
@@ -313,6 +318,11 @@ pub async fn run_app() -> Result<()> {
                 config::NoticeLevel::Warn => "warning",
             };
             eprintln!("{label}: {}", notice.message);
+        }
+        if let Some(mqtt) = &app_config.mqtt {
+            for warning in &mqtt.warnings {
+                eprintln!("warning: {warning}");
+            }
         }
         println!("Configuration is valid");
         return Ok(());
@@ -386,17 +396,8 @@ pub async fn run_app() -> Result<()> {
     tracing::info!(path = %state_dir.display(), "State directory");
 
     // Stable server identity — persisted across restarts
-    let server_id = {
-        let id_path = state_dir.join("server_id");
-        match std::fs::read_to_string(&id_path) {
-            Ok(id) if !id.trim().is_empty() => id.trim().to_string(),
-            _ => {
-                let id = uuid::Uuid::new_v4().to_string();
-                std::fs::write(&id_path, &id).ok();
-                id
-            }
-        }
-    };
+    let server_identity = state::server_identity(&state_dir);
+    let server_id = server_identity.id.clone();
 
     let store = state::init(&config, Some(&state_dir.join(STATE_FILE)))?;
     state::spawn_auto_save(store.clone());
@@ -534,42 +535,45 @@ pub async fn run_app() -> Result<()> {
     });
 
     // ── MQTT bridge ───────────────────────────────────────────
-    let mut mqtt_bridge = if let Some(mqtt_config) = &config.mqtt {
-        match mqtt::MqttBridge::connect(mqtt_config, &config.http.base_url, &config.name).await {
-            Ok(bridge) => {
-                if let Err(e) = bridge.subscribe_commands().await {
-                    tracing::warn!(error = %e, "MQTT subscribe failed");
-                }
-                // Publish HA MQTT Discovery
-                if let Err(e) = bridge.publish_ha_discovery(&config.zones).await {
-                    tracing::warn!(error = %e, "HA MQTT Discovery publish failed");
-                }
-                // Publish initial state for all zones and clients
-                let (zones, clients) = {
-                    let s = store.read().await;
-                    let z: Vec<_> = s.zones.iter().map(|(&i, z)| (i, z.clone())).collect();
-                    let c: Vec<_> = s.clients.iter().map(|(&i, c)| (i, c.clone())).collect();
-                    drop(s);
-                    (z, c)
-                };
-                for (idx, zone) in &zones {
-                    if let Err(e) = bridge.publish_zone_state(*idx, zone).await {
-                        tracing::warn!(zone = idx, error = %e, "MQTT initial zone publish failed");
-                    }
-                }
-                for (idx, client) in &clients {
-                    if let Err(e) = bridge.publish_client_state(*idx, client).await {
-                        tracing::warn!(client = idx, error = %e, "MQTT initial client publish failed");
-                    }
-                }
-                Some(bridge)
-            }
+    // Runs in its own tasks: connects (and reconnects), subscribes, announces and
+    // publishes state. A configuration error disables MQTT, it never falls back
+    // to a different transport.
+    let mqtt_bridge = if let Some(mqtt_config) = &config.mqtt {
+        for warning in &mqtt_config.warnings {
+            tracing::warn!("{warning}");
+        }
+        match mqtt::MqttBridge::start(
+            mqtt_config,
+            &config.http.base_url,
+            mqtt::MqttRuntime {
+                zone_commands: zone_commands.clone(),
+                state: store.clone(),
+                snap_tx: snap_cmd_tx.clone(),
+                notifications: notify_tx.subscribe(),
+                server: mqtt::ServerInfo {
+                    id: server_id.clone(),
+                    stable_id: server_identity.persisted,
+                    name: config.name.clone(),
+                    base_url: config.http.base_url.clone(),
+                },
+            },
+        )
+        .await
+        {
+            Ok(bridge) => Some(bridge),
             Err(e) => {
-                tracing::warn!(error = %e, "MQTT connection failed — running without MQTT");
+                tracing::error!(error = %format!("{e:#}"), "MQTT cannot start, running without MQTT");
                 None
             }
         }
     } else {
+        if let Some(problem) = &config.mqtt_problem {
+            tracing::error!(
+                problem = %problem,
+                "MQTT is switched off: the [mqtt] section is invalid. The server keeps running \
+                 without MQTT; fix the section and restart (snapdog --check-config reports it)"
+            );
+        }
         None
     };
 
@@ -656,11 +660,6 @@ pub async fn run_app() -> Result<()> {
     };
 
     // ── Main loop ─────────────────────────────────────────────
-    let mqtt_zone_cmds = zone_commands.clone();
-    let mqtt_store = store.clone();
-    let mqtt_snap_tx = snap_cmd_tx.clone();
-    let mqtt_notify_store = store.clone();
-    let mut mqtt_notifications = notify_tx.subscribe();
     let cmd_backend = backend.clone();
 
     // Forward zone state to snapdog clients via Custom Message Type 14
@@ -845,36 +844,6 @@ pub async fn run_app() -> Result<()> {
                 #[cfg(not(all(feature = "snapcast-process", not(feature = "snapcast-embedded"))))]
                 std::future::pending::<()>().await;
             } => {}
-            // MQTT: poll commands + republish state on notifications
-            () = async {
-                if let Some(ref mut bridge) = mqtt_bridge {
-                    tokio::select! {
-                        () = bridge.poll_once(&mqtt_zone_cmds, &mqtt_store, &mqtt_snap_tx) => {}
-                        Ok(json) = mqtt_notifications.recv() => {
-                            if let Ok(notif) = serde_json::from_str::<api::ws::Notification>(&json) {
-                                let s = mqtt_notify_store.read().await;
-                                match notif {
-                                    api::ws::Notification::ZoneChanged { zone, .. }
-                                    | api::ws::Notification::ZoneVolumeChanged { zone, .. }
-                                    | api::ws::Notification::ZoneProgress { zone, .. } => {
-                                        if let Some(z) = s.zones.get(&zone) {
-                                            let _ = bridge.publish_zone_state(zone, z).await;
-                                        }
-                                    }
-                                    api::ws::Notification::ClientStateChanged { client, .. } => {
-                                        if let Some(c) = s.clients.get(&client) {
-                                            let _ = bridge.publish_client_state(client, c).await;
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    std::future::pending::<()>().await;
-                }
-            } => {}
             // API fatal error (post-startup axum failure — extremely rare)
             Some(e) = async {
                 if let Some(rx) = api_fatal_rx.as_mut() {
@@ -909,6 +878,15 @@ pub async fn run_app() -> Result<()> {
     }
 
     // ── Shutdown ──────────────────────────────────────────────
+
+    // Tell MQTT subscribers we are gone before anything else: a clean DISCONNECT
+    // suppresses the last will, so `offline` is published by hand. Bounded well
+    // below the forced-exit timeout below.
+    if let Some(bridge) = mqtt_bridge {
+        bridge
+            .shutdown(std::time::Duration::from_millis(1000))
+            .await;
+    }
 
     // Spawn a dedicated thread for the forced-exit safety net.
     // This survives the tokio runtime shutdown and handles second signals.

@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::mqtt::MqttConfig;
+
 // ── Typed enums for config fields ─────────────────────────────
 
 /// A string wrapper that masks its content in `Debug` output to prevent secret leakage.
@@ -868,42 +870,6 @@ impl Default for SubsonicCacheConfig {
     }
 }
 
-/// MQTT bridge configuration.
-#[derive(Debug, Deserialize, Clone)]
-pub struct MqttConfig {
-    /// Broker address (host:port).
-    pub broker: String,
-    /// MQTT client ID. Defaults to "snapdog".
-    #[serde(default = "default_mqtt_client_id")]
-    pub client_id: String,
-    /// MQTT username (empty for anonymous).
-    #[serde(default)]
-    pub username: String,
-    /// MQTT password.
-    #[serde(default)]
-    pub password: SecretString,
-    /// Base topic prefix. Trailing slash is added automatically if missing.
-    #[serde(
-        default = "default_mqtt_base_topic",
-        deserialize_with = "deserialize_base_topic"
-    )]
-    pub base_topic: String,
-}
-
-fn deserialize_base_topic<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<String, D::Error> {
-    let mut v = String::deserialize(deserializer)?;
-    if !v.ends_with('/') {
-        v.push('/');
-    }
-    Ok(v)
-}
-
-fn default_mqtt_client_id() -> String {
-    "snapdog".into()
-}
-
 /// KNX/IP integration settings.
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct KnxConfig {
@@ -1143,8 +1109,12 @@ pub struct AppConfig {
     pub subsonic: Option<SubsonicConfig>,
     /// Spotify Connect receiver settings (if configured).
     pub spotify: Option<SpotifyConfig>,
-    /// MQTT bridge (if configured).
+    /// MQTT bridge (if configured and valid).
     pub mqtt: Option<MqttConfig>,
+    /// Why MQTT is off although a `[mqtt]` section exists: the section is invalid.
+    /// The server runs without MQTT, logs this at start-up as an error, and
+    /// `--check-config` reports it as a failure.
+    pub mqtt_problem: Option<String>,
     /// KNX settings.
     pub knx: Option<KnxConfig>,
     /// Resolved zone configurations (1-indexed).
@@ -1466,9 +1436,6 @@ const fn default_streaming_port() -> u16 {
 }
 fn default_server_name() -> String {
     "SnapDog".into()
-}
-fn default_mqtt_base_topic() -> String {
-    "snapdog/".into()
 }
 fn default_zone_icon() -> String {
     "🎵".into()
