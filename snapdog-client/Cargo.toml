@@ -34,6 +34,10 @@ midir = "0.11.0"
 mdns-sd = { workspace = true, optional = true }
 zbus = { version = "6", optional = true, default-features = false, features = ["tokio", "service", "tracing"] }
 
+[dev-dependencies]
+# Peer-to-peer connections let the D-Bus interface tests run without a bus daemon.
+zbus = { version = "6", default-features = false, features = ["tokio", "p2p"] }
+
 [features]
 default = ["mdns", "f32lz4", "encryption", "custom-protocol", "dbus"]
 mdns = ["dep:mdns-sd"]
