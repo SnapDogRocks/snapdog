@@ -186,7 +186,9 @@ pub async fn serve<S: BuildHasher>(
             shutdown.await;
             shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
         });
-        axum_server::bind_rustls(local_addr, rustls_config)
+        // Serve the listener that is already bound: binding `local_addr` again here
+        // fails with "address in use", because `listener` still holds it (#343).
+        axum_server::from_tcp_rustls(listener.into_std()?, rustls_config)?
             .handle(handle)
             .serve(app.into_make_service())
             .await?;
