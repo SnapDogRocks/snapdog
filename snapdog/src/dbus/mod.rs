@@ -67,11 +67,10 @@ mod mpris {
         let use_system = std::env::var("DBUS_SESSION_BUS_ADDRESS").is_err();
 
         let art_base = {
-            let host = if config.http.bind == "::" || config.http.bind == "0.0.0.0" {
-                "localhost"
-            } else {
-                &config.http.bind
-            };
+            let host = config
+                .http
+                .single_specific_bind()
+                .unwrap_or_else(|| "localhost".to_owned());
             format!("http://{host}:{}", config.http.port)
         };
 

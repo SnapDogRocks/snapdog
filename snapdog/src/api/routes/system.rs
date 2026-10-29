@@ -35,6 +35,7 @@ pub fn router(state: SharedState) -> Router {
     Router::new()
         .route("/status", get(get_status))
         .route("/version", get(get_version))
+        .route("/listeners", get(get_listeners))
         .route("/updates", get(update_status))
         .route("/updates/check", post(check_updates))
         .route("/updates/apply", post(apply_update))
@@ -233,6 +234,23 @@ async fn get_status(State(state): State<SharedState>) -> Json<SystemStatus> {
         clients: state.config.clients.len(),
         radios: state.config.radios.len(),
     })
+}
+
+/// List every network listener of the server.
+///
+/// One row per listener: service, protocol, address, port, what creates the socket and how far
+/// the service honours a `bind` setting (`full`, `partial` or `none`). Use it to derive firewall
+/// rules. A port of `0` means a random port at every start.
+#[utoipa::path(
+    get,
+    path = "/api/v1/system/listeners",
+    tag = "system",
+    responses(
+        (status = 200, description = "Listeners of the server", body = Vec<crate::net::listener::Row>)
+    )
+)]
+async fn get_listeners(State(state): State<SharedState>) -> Json<Vec<crate::net::listener::Row>> {
+    Json(crate::net::listener::table(&state.config))
 }
 
 /// Retrieve application and platform version details.

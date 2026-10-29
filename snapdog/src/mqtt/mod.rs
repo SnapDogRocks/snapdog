@@ -241,6 +241,10 @@ impl Drop for MqttBridge {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 mod tests {
     use super::*;
 

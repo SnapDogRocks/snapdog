@@ -18,6 +18,10 @@
 //!        --test snapserver_e2e -- --test-threads=1`
 //! (CI's "Integration Tests" job apt-installs snapserver, so this runs there.)
 
+#![allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 #![cfg(feature = "snapcast-process")]
 #![allow(clippy::doc_markdown)] // doc mentions SnapcastClient / SnapserverHandle / snapserver.conf
 

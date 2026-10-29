@@ -333,6 +333,7 @@ async fn run(
                     bitrate: sp_config.bitrate,
                     port: sp_config.port,
                     zeroconf_backend: sp_config.zeroconf_backend.clone(),
+                    bind: None,
                 },
                 zone_index,
             );

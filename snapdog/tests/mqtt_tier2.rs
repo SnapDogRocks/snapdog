@@ -15,6 +15,10 @@
 //! Run: `cargo test -p snapdog --test mqtt_tier2 -- --nocapture --test-threads=1`
 
 #![allow(clippy::doc_markdown)] // doc mentions MqttBridge / QoS / AppConfig / load_raw
+#![allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

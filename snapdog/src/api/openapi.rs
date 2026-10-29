@@ -14,6 +14,7 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
     paths(
         system::get_status,
         system::get_version,
+        system::get_listeners,
         system::update_status,
         system::check_updates,
         system::apply_update,
@@ -129,6 +130,9 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
         schemas(
             SystemStatus,
             VersionInfo,
+            crate::net::listener::Row,
+            crate::net::listener::Protocol,
+            crate::net::listener::BindSupport,
             system::UpdateStatus,
             system::UpdateProgress,
             system::UpdateConfig,

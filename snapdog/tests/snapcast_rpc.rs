@@ -17,6 +17,10 @@
 //!   two traps: `Group.SetMute` → key `mute` (not `muted`); `Stream.AddStream` →
 //!   camelCase `streamUri`.
 
+#![allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 #![cfg(feature = "snapcast-process")]
 #![allow(clippy::doc_markdown)] // module doc contains CLI flags / bare identifiers
 

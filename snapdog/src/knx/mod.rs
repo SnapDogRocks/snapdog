@@ -2716,6 +2716,7 @@ name = "Z1"
         std::fs::create_dir_all(&dir).unwrap();
         let options = DeviceOptions {
             bind: Some("127.0.0.1:0".parse().unwrap()),
+            interface: None,
             memory_path: Some(dir.join("knx-memory.bin")),
         };
         let bridge = start_with_options(

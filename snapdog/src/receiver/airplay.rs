@@ -19,6 +19,7 @@ use shairplay::{BindConfig, PairingStore};
 use super::{AudioFormat, AudioSender, ReceiverEvent, ReceiverEventTx, ReceiverProvider};
 
 use crate::config::{AirplayConfig, AirplayMode};
+use crate::net::listener::AIRPLAY_BASE_PORT;
 
 /// The protocol mode a receiver really runs.
 ///
@@ -34,9 +35,6 @@ pub(crate) const fn effective_mode(configured: AirplayMode) -> AirplayMode {
         AirplayMode::Airplay1
     }
 }
-
-/// Base port for `AirPlay` receivers (each zone gets base + `zone_index`).
-const AIRPLAY_BASE_PORT: u16 = 7000;
 
 /// `AirPlay` volume minimum in dB (silence).
 const AIRPLAY_VOLUME_MIN_DB: f32 = -144.0;

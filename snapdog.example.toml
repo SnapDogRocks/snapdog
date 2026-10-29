@@ -50,12 +50,23 @@ zone_switch_fade_ms = 300
 # (e.g., radio → subsonic). Server-side fade-out then fade-in. 0 to disable.
 source_switch_fade_ms = 300
 
+# ── Network ────────────────────────────────────────────────────────────────
+# Which addresses SnapDog listens on, stated once. A service with its own `bind` below
+# uses that; a service without one uses this list; without either, every service keeps its
+# own default (HTTP "::", the others every IPv4 interface). IP addresses, not interface
+# names. Services that listen on exactly one address (Snapcast streaming, KNX) use this
+# only when the list holds exactly one address, and warn when it holds more.
+# [network]
+# bind = ["192.168.1.10"]
+
 # ── HTTP Server ────────────────────────────────────────────────────────────
 [http]
 # WebUI + REST API port
 port = 5555
-# Bind address. Default "::" (IPv4 and IPv6 where the OS allows); "0.0.0.0" for IPv4 only.
+# Addresses to listen on, one string or a list. Default: [network].bind, then "::" (IPv4
+# and IPv6 where the OS allows); "0.0.0.0" for IPv4 only.
 # bind = "::"
+# bind = ["192.168.1.10", "127.0.0.1"]
 # External base URL for absolute links in API responses.
 # Required if behind a reverse proxy or accessed from other hosts.
 base_url = "http://192.168.1.10:5555"
@@ -91,6 +102,7 @@ streaming_port = 1704
 # interface, "127.0.0.1" for this host only. Unset: all interfaces. Clients that find the
 # server with mDNS connect to the address mDNS resolves, so keep it reachable for them.
 # streaming_bind = "192.168.10.5"
+# Default: [network].bind when it holds exactly one address, else all interfaces.
 # Streaming codec: "pcm", "flac", "f32lz4", "f32lz4e" (encrypted)
 codec = "flac"
 # Pre-shared key for f32lz4e encryption (both server and client must match).
@@ -138,8 +150,8 @@ default_zone = "Ground Floor"
 # mode = "airplay2"
 # Optional: require password for AirPlay connections
 # password = "1234"
-# Optional: listen on specific IP addresses (not interface names). Default: all.
-# Only effective in builds with AirPlay 2 support (feature ap2).
+# Optional: listen on specific IP addresses (not interface names). Default: [network].bind,
+# else all. Only effective in builds with AirPlay 2 support (feature ap2).
 # bind = ["192.168.1.10"]
 
 # ── Spotify Connect ────────────────────────────────────────────────────────
@@ -153,10 +165,10 @@ default_zone = "Ground Floor"
 # name = "Home"
 # Spotify streaming bitrate: 96, 160, or 320 kbps
 bitrate = 320
-# TCP port of the Zeroconf HTTP server (default: 7002). Open it in the firewall
+# TCP port of the Zeroconf HTTP server (default: 7100, above the AirPlay ports 7001 and up). Open it in the firewall
 # when phones are in another VLAN/subnet. Zone n listens on port + n.
 # Zero picks a random port at every start (not firewall-friendly).
-# port = 7002
+# port = 7100
 # Zeroconf announcement backend: "libmdns" (default, announces on the default
 # route's interface only), "avahi" (host avahi-daemon via system D-Bus, all
 # interfaces; with Docker mount /run/dbus) or "dns-sd".
@@ -300,6 +312,10 @@ base_topic = "snapdog"
 # The presence of this table switches KNX on; there is no "enabled" key.
 # Role: "client" (connect to gateway) or "device" (ETS-programmable)
 # role = "client"
+# Device role: the IPv4 address of the interface that joins the KNX multicast group.
+# Default: [network].bind when it holds exactly one IPv4 address, else the system default.
+# The UDP port 3671 itself stays open on all interfaces, the KNX library binds it that way.
+# bind = "192.168.1.10"
 # KNX/IP gateway URL, required in client mode and not used in device mode.
 # Written scheme://host:port. The host is an IPv4 address, an IPv6 address in brackets or
 # a host name (udp://gateway.local:3671; a trailing dot, as in gateway.example.org., is

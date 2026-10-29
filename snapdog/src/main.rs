@@ -20,7 +20,7 @@ use clap::Parser;
 use snapdog::dbus;
 #[cfg(feature = "snapcast-process")]
 use snapdog::process;
-use snapdog::{api, audio, config, knx, logging, mqtt, player, snapcast, state};
+use snapdog::{api, audio, config, knx, logging, mqtt, net, player, snapcast, state};
 
 /// Multi-zone audio controller with `AirPlay`, Snapcast, MQTT, and KNX integration.
 #[derive(Parser)]
@@ -55,8 +55,9 @@ struct Cli {
     port: Option<u16>,
 
     /// HTTP bind address (default: ::, dual-stack IPv4+IPv6). Use 0.0.0.0 for IPv4 only.
-    #[arg(short, long)]
-    bind: Option<String>,
+    /// Several addresses, separated by commas, listen on each of them.
+    #[arg(short, long, value_delimiter = ',')]
+    bind: Vec<String>,
 
     /// TLS certificate path (PEM fullchain). Enables HTTPS.
     #[arg(long)]
@@ -244,8 +245,8 @@ pub async fn run_app() -> Result<()> {
     if let Some(port) = cli.port {
         app_config.http.port = port;
     }
-    if let Some(ref bind) = cli.bind {
-        app_config.http.bind = bind.clone();
+    if !cli.bind.is_empty() {
+        app_config.http.bind.clone_from(&cli.bind);
     }
     if let Some(ref cert) = cli.tls_cert {
         app_config.http.tls_cert = Some(cert.clone());
@@ -312,6 +313,17 @@ pub async fn run_app() -> Result<()> {
                  ignore this if the configuration is for another machine."
             ));
         }
+        let planned = net::listener::planned(&app_config);
+        net::listener::check_unique(&planned)?;
+        for listener in net::listener::unassigned(&planned) {
+            if listener.service != "Snapcast streaming" {
+                app_config.warn(format!(
+                    "{listener} is not an address of this host (or not one that can be bound), \
+                     so the server would not start here. Check the bind setting of that \
+                     service, or ignore this if the configuration is for another machine."
+                ));
+            }
+        }
         for notice in &app_config.notices {
             let label = match notice.level {
                 config::NoticeLevel::Info => "note",
@@ -367,21 +379,32 @@ pub async fn run_app() -> Result<()> {
     // (e.g. a stale snapdog instance) fails fast with an actionable error
     // instead of crashing mid-startup or silently degrading.
 
-    // HTTP API listener — passed into api::serve() so no TOCTOU window.
-    let http_listener = api::bind_http_listener(&config.http.bind, config.http.port)
+    // Nothing is bound yet: two services on one port, or an address that no interface
+    // has, are found here and not as the second bind that fails.
+    let planned = net::listener::planned(&config);
+    net::listener::check_unique(&planned)?;
+    if let Some(listener) = net::listener::unassigned(&planned).first() {
+        anyhow::bail!(
+            "{listener} cannot be bound: {} is not an address of this host. Check the bind \
+             setting of that service.",
+            listener.addr.ip()
+        );
+    }
+
+    // HTTP API listeners — passed into api::serve_on() so no TOCTOU window.
+    let http_listeners = api::bind_http_listeners(&config.http.bind_addresses(), config.http.port)
         .await
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::AddrInUse {
-                anyhow::anyhow!(
-                    "HTTP API port {} is already in use — is snapdog already running?",
-                    config.http.port
-                )
-            } else {
-                anyhow::Error::new(e).context(format!(
-                    "cannot bind the HTTP API to {}:{}",
-                    config.http.bind, config.http.port
-                ))
-            }
+        .map_err(|(bind, e)| match bind.parse::<std::net::IpAddr>() {
+            Ok(ip) => anyhow::anyhow!(net::listener::bind_failure_message(
+                "HTTP API",
+                std::net::SocketAddr::new(ip, config.http.port),
+                "[http].bind",
+                &e
+            )),
+            Err(_) => anyhow::Error::new(e).context(format!(
+                "cannot bind the HTTP API to {bind}:{}",
+                config.http.port
+            )),
         })?;
 
     // Snapcast streaming port — probe-bind then immediately release so the
@@ -516,8 +539,8 @@ pub async fn run_app() -> Result<()> {
     let api_snap_tx = snap_cmd_tx.clone();
     let (api_fatal_tx, api_fatal_rx) = tokio::sync::oneshot::channel::<anyhow::Error>();
     tokio::spawn(async move {
-        if let Err(e) = api::serve(
-            http_listener,
+        if let Err(e) = api::serve_on(
+            http_listeners,
             http_config,
             api_store,
             api_commands,
@@ -537,6 +560,11 @@ pub async fn run_app() -> Result<()> {
             let _ = api_fatal_tx.send(e);
         }
     });
+
+    tracing::info!(
+        "Listeners{}",
+        net::listener::format_table(&net::listener::table(&config))
+    );
 
     // ── MQTT bridge ───────────────────────────────────────────
     // Runs in its own tasks: connects (and reconnects), subscribes, announces and
@@ -610,11 +638,8 @@ pub async fn run_app() -> Result<()> {
         let default_base = format!("http://localhost:{}", config.http.port);
         let effective_base_url = if config.http.base_url != default_base {
             Some(config.http.base_url.clone())
-        } else if config.http.bind != "::" && config.http.bind != "0.0.0.0" {
-            Some(format!(
-                "{scheme}://{}:{}",
-                config.http.bind, config.http.port
-            ))
+        } else if let Some(host) = config.http.single_specific_bind() {
+            Some(format!("{scheme}://{host}:{}", config.http.port))
         } else if tls_enabled {
             Some(format!("https://localhost:{}", config.http.port))
         } else {

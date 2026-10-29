@@ -1577,6 +1577,31 @@
         }
       }
     },
+    "/api/v1/system/listeners": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "List every network listener of the server.",
+        "description": "One row per listener: service, protocol, address, port, what creates the socket and how far\nthe service honours a `bind` setting (`full`, `partial` or `none`). Use it to derive firewall\nrules. A port of `0` means a random port at every start.",
+        "operationId": "get_listeners",
+        "responses": {
+          "200": {
+            "description": "Listeners of the server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Row"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/system/status": {
       "get": {
         "tags": [
@@ -4403,6 +4428,15 @@
           }
         }
       },
+      "BindSupport": {
+        "type": "string",
+        "description": "How far a service honours a `bind` setting.",
+        "enum": [
+          "full",
+          "partial",
+          "none"
+        ]
+      },
       "ClientInfo": {
         "type": "object",
         "required": [
@@ -4887,6 +4921,14 @@
           }
         }
       },
+      "Protocol": {
+        "type": "string",
+        "description": "Transport protocol of a listener.",
+        "enum": [
+          "tcp",
+          "udp"
+        ]
+      },
       "RepeatMode": {
         "type": "string",
         "description": "Repeat mode for zone playback.",
@@ -4895,6 +4937,51 @@
           "track",
           "playlist"
         ]
+      },
+      "Row": {
+        "type": "object",
+        "description": "One line of the listener table: a listener, and what an operator needs to know about\nbinding it.",
+        "required": [
+          "service",
+          "protocol",
+          "address",
+          "port",
+          "backend",
+          "bind_support",
+          "note"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address, `0.0.0.0` or `::` for every interface of that family."
+          },
+          "backend": {
+            "type": "string",
+            "description": "What creates the socket."
+          },
+          "bind_support": {
+            "$ref": "#/components/schemas/BindSupport",
+            "description": "Whether a `bind` setting reaches this socket."
+          },
+          "note": {
+            "type": "string",
+            "description": "What the bind support level means for this service, in one sentence."
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Port. `0` means a random port at every start.",
+            "minimum": 0
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/Protocol",
+            "description": "Transport protocol."
+          },
+          "service": {
+            "type": "string",
+            "description": "Service that owns the listener."
+          }
+        }
       },
       "SeekPayload": {
         "type": "object",
