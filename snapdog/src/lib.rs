@@ -17,6 +17,7 @@ pub mod dbus;
 pub mod knx;
 pub mod logging;
 pub mod mqtt;
+pub mod net;
 pub mod player;
 pub mod process;
 pub mod receiver;

@@ -109,18 +109,7 @@ fn resolve(
     Ok(config)
 }
 
-/// Best effort: whether `ip` is certainly not assigned to any network interface of this host.
-///
-/// Found by binding a TCP socket to it on an ephemeral port. Only the operating system's
-/// "cannot assign requested address" counts. Any other outcome, including a successful
-/// bind and every other error, says nothing, so this never reports a problem that is not one.
-#[must_use]
-pub fn address_is_not_local(ip: std::net::IpAddr) -> bool {
-    matches!(
-        std::net::TcpListener::bind((ip, 0)),
-        Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable
-    )
-}
+pub use crate::net::listener::address_is_not_local;
 
 /// Unknown-key list for a TOML text, in the form used in log messages.
 /// Mainly for tests that need to assert a file contains no stale keys.
@@ -278,6 +267,32 @@ pub fn load_raw_no_validate(raw: FileConfig) -> Result<AppConfig> {
     load_raw_inner(raw, true)
 }
 
+/// What each KNX role needs: a gateway URL for a client, an individual address (and an IPv4
+/// interface, if one is named) for a device.
+fn validate_knx_role(knx: &KnxConfig) -> Result<()> {
+    match knx.role {
+        KnxRole::Client => {
+            let url = knx
+                .url
+                .as_deref()
+                .context("KNX client mode requires 'url' (e.g. udp://192.168.1.50:3671)")?;
+            crate::knx::validate_url(url).context("Invalid [knx] url")?;
+        }
+        KnxRole::Device => {
+            anyhow::ensure!(
+                knx.individual_address.is_some(),
+                "KNX device mode requires 'individual_address' (e.g. 1.1.100)"
+            );
+            anyhow::ensure!(
+                knx.bind.is_none_or(|ip| ip.is_ipv4()),
+                "[knx].bind must be an IPv4 address: the KNX device server joins an IPv4 \
+                 multicast group on that interface"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<AppConfig> {
     let path_notices = expand_paths(&mut raw, &|p| Path::new(p).exists());
     if !skip_zone_validation {
@@ -323,23 +338,16 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
 
     let radios: Vec<RadioConfig> = raw.radio.into_iter().map(Into::into).collect();
 
-    // ── KNX mode validation ───────────────────────────────────
     if let Some(ref knx) = raw.knx {
-        match knx.role {
-            KnxRole::Client => {
-                let url = knx
-                    .url
-                    .as_deref()
-                    .context("KNX client mode requires 'url' (e.g. udp://192.168.1.50:3671)")?;
-                crate::knx::validate_url(url).context("Invalid [knx] url")?;
-            }
-            KnxRole::Device => {
-                anyhow::ensure!(
-                    knx.individual_address.is_some(),
-                    "KNX device mode requires 'individual_address' (e.g. 1.1.100)"
-                );
-            }
-        }
+        validate_knx_role(knx)?;
+    }
+    if let Some(sp) = raw.spotify.as_ref().filter(|sp| sp.bind.is_some()) {
+        anyhow::bail!(
+            "[spotify].bind is not supported: Spotify Connect's discovery server listens on all \
+             interfaces (TCP port {}) and cannot be bound to an address. Limit that port in the \
+             firewall instead, and remove the key.",
+            sp.port
+        );
     }
 
     if let Some(ref subsonic) = raw.subsonic {
@@ -361,6 +369,7 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         name,
         system: raw.system,
         audio: raw.audio,
+        network: raw.network,
         http: raw.http,
         snapcast: raw.snapcast,
         mdns: raw.mdns,
@@ -391,10 +400,73 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         }
     }
     apply_env_overrides(&mut config);
+    resolve_binds(&mut config);
     resolve_mqtt(&mut config);
     validate(&mut config)?;
 
     Ok(config)
+}
+
+/// Fill the bind setting of every service that has none from `[network].bind`.
+///
+/// Resolution order, see RFC LBD-0008: the service's own key, then `[network].bind`, then
+/// the service's built-in default (which is what an unset key keeps). A service whose
+/// backend takes one address (Snapcast streaming, the KNX device server) uses
+/// `[network].bind` only when it holds exactly one address. With several it keeps its
+/// default, which listens on every interface, and a warning says so: it never takes the
+/// first entry of a list silently.
+fn resolve_binds(config: &mut AppConfig) {
+    let Some(network) = config.network.bind.clone().filter(|bind| !bind.is_empty()) else {
+        return;
+    };
+
+    if config.http.bind.is_empty() {
+        config.http.bind = network.iter().map(ToString::to_string).collect();
+    }
+    if config.airplay.bind.is_none() {
+        config.airplay.bind = Some(network.clone());
+    }
+
+    let [only] = network.as_slice() else {
+        let mut unapplied = vec![(
+            "Snapcast streaming",
+            "[snapcast].streaming_bind",
+            config.snapcast.streaming_bind.is_none(),
+        )];
+        if let Some(knx) = config.knx.as_ref().filter(|k| k.role == KnxRole::Device) {
+            unapplied.push(("The KNX device server", "[knx].bind", knx.bind.is_none()));
+        }
+        for (service, key, unset) in unapplied {
+            if unset {
+                config.warn(format!(
+                    "[network].bind lists {} addresses, but {service} listens on exactly one, so it \
+                     keeps its default and listens on all interfaces. Set {key} to choose one.",
+                    network.len()
+                ));
+            }
+        }
+        return;
+    };
+    if config.snapcast.streaming_bind.is_none() {
+        config.snapcast.streaming_bind = Some(*only);
+    }
+    let knx_device_unbound = config
+        .knx
+        .as_ref()
+        .is_some_and(|knx| knx.role == KnxRole::Device && knx.bind.is_none());
+    if knx_device_unbound {
+        if only.is_ipv4() {
+            if let Some(knx) = config.knx.as_mut() {
+                knx.bind = Some(*only);
+            }
+        } else {
+            config.warn(format!(
+                "[network].bind = {only} is an IPv6 address, but the KNX device server joins an \
+                 IPv4 multicast group, so it keeps its default interface. Set [knx].bind to an \
+                 IPv4 address to choose one."
+            ));
+        }
+    }
 }
 
 /// Check the `[mqtt]` section and load its file-based secrets.
@@ -1836,8 +1908,9 @@ mod tests {
                     SpotifyConfig {
                         name,
                         bitrate: 320,
-                        port: 7002,
+                        port: 7100,
                         zeroconf_backend: None,
+                        bind: None,
                     }
                     .device_id()
                 })
@@ -1988,5 +2061,165 @@ mod tests {
         let keys =
             unknown_keys("[snapcast]\nbogus = 1\n[[zone]]\nname = \"A\"\nnope = true").unwrap();
         assert_eq!(keys, ["snapcast.bogus", "zone[0].nope"]);
+    }
+}
+
+#[cfg(test)]
+mod bind_tests {
+    use super::*;
+
+    const ZONE: &str = "[[zone]]\nname = \"A\"\n";
+    const KNX_DEVICE: &str = "[knx]\nrole = \"device\"\nindividual_address = \"1.1.100\"\n";
+
+    fn load(toml: &str) -> AppConfig {
+        load_str(&format!("{toml}\n{ZONE}")).unwrap()
+    }
+
+    fn ip(text: &str) -> std::net::IpAddr {
+        text.parse().unwrap()
+    }
+
+    fn warned(config: &AppConfig, needle: &str) -> bool {
+        config
+            .notices
+            .iter()
+            .any(|n| n.level == NoticeLevel::Warn && n.message.contains(needle))
+    }
+
+    #[test]
+    fn without_any_bind_every_service_keeps_its_own_default() {
+        let config = load(KNX_DEVICE);
+        assert_eq!(config.http.bind, Vec::<String>::new());
+        assert_eq!(config.http.bind_addresses(), ["::"]);
+        assert_eq!(config.airplay.bind, None);
+        assert_eq!(config.snapcast.streaming_bind, None);
+        assert_eq!(config.knx.unwrap().bind, None);
+    }
+
+    #[test]
+    fn network_bind_is_the_default_of_every_service() {
+        let config = load(&format!("[network]\nbind = [\"10.0.0.5\"]\n{KNX_DEVICE}"));
+        assert_eq!(config.http.bind, ["10.0.0.5"]);
+        assert_eq!(config.airplay.bind, Some(vec![ip("10.0.0.5")]));
+        assert_eq!(config.snapcast.streaming_bind, Some(ip("10.0.0.5")));
+        assert_eq!(config.knx.unwrap().bind, Some(ip("10.0.0.5")));
+    }
+
+    #[test]
+    fn a_service_key_wins_over_network_bind() {
+        let config = load(&format!(
+            "[network]\nbind = [\"10.0.0.5\"]\n[http]\nbind = \"127.0.0.1\"\n[airplay]\nbind = [\"10.0.0.6\"]\n\
+             [snapcast]\nstreaming_bind = \"10.0.0.7\"\n{KNX_DEVICE}bind = \"10.0.0.8\"\n"
+        ));
+        assert_eq!(config.http.bind, ["127.0.0.1"]);
+        assert_eq!(config.airplay.bind, Some(vec![ip("10.0.0.6")]));
+        assert_eq!(config.snapcast.streaming_bind, Some(ip("10.0.0.7")));
+        assert_eq!(config.knx.unwrap().bind, Some(ip("10.0.0.8")));
+    }
+
+    #[test]
+    fn several_network_addresses_reach_the_services_that_take_a_list() {
+        let config = load("[network]\nbind = [\"10.0.0.5\", \"10.0.1.5\"]\n");
+        assert_eq!(config.http.bind, ["10.0.0.5", "10.0.1.5"]);
+        assert_eq!(
+            config.airplay.bind,
+            Some(vec![ip("10.0.0.5"), ip("10.0.1.5")])
+        );
+    }
+
+    #[test]
+    fn a_single_address_service_never_takes_the_first_of_several() {
+        let config = load(&format!(
+            "[network]\nbind = [\"10.0.0.5\", \"10.0.1.5\"]\n{KNX_DEVICE}"
+        ));
+        assert_eq!(config.snapcast.streaming_bind, None);
+        assert_eq!(config.knx.as_ref().unwrap().bind, None);
+        assert!(warned(&config, "Snapcast streaming listens on exactly one"));
+        assert!(warned(
+            &config,
+            "The KNX device server listens on exactly one"
+        ));
+        assert!(warned(&config, "[snapcast].streaming_bind"));
+        // A service that chose its own address has nothing to warn about.
+        let config = load(
+            "[network]\nbind = [\"10.0.0.5\", \"10.0.1.5\"]\n[snapcast]\nstreaming_bind = \"10.0.0.5\"\n",
+        );
+        assert!(!warned(&config, "Snapcast streaming"));
+    }
+
+    #[test]
+    fn http_bind_takes_a_string_or_a_list() {
+        assert_eq!(
+            load("[http]\nbind = \"127.0.0.1\"").http.bind,
+            ["127.0.0.1"]
+        );
+        assert_eq!(
+            load("[http]\nbind = [\"127.0.0.1\", \"::1\"]").http.bind,
+            ["127.0.0.1", "::1"]
+        );
+        let error = load_str(&format!("[http]\nbind = 5\n{ZONE}")).unwrap_err();
+        assert!(format!("{error:#}").contains("bind"), "{error:#}");
+    }
+
+    #[test]
+    fn a_single_address_key_with_a_list_is_an_error_that_says_so() {
+        let error = load_str(&format!(
+            "[snapcast]\nstreaming_bind = [\"10.0.0.5\", \"10.0.1.5\"]\n{ZONE}"
+        ))
+        .unwrap_err();
+        let text = format!("{error:#}");
+        assert!(
+            text.contains("exactly one address") && text.contains('2'),
+            "{text}"
+        );
+        // A list of one is fine, so is the plain string.
+        let config = load("[snapcast]\nstreaming_bind = [\"10.0.0.5\"]\n");
+        assert_eq!(config.snapcast.streaming_bind, Some(ip("10.0.0.5")));
+    }
+
+    #[test]
+    fn knx_bind_must_be_an_ipv4_address_and_network_bind_is_skipped_when_it_is_not() {
+        let error = load_str(&format!("{KNX_DEVICE}bind = \"::1\"\n{ZONE}")).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("must be an IPv4 address"),
+            "{error:#}"
+        );
+
+        let config = load(&format!("[network]\nbind = [\"::1\"]\n{KNX_DEVICE}"));
+        assert_eq!(config.knx.as_ref().unwrap().bind, None);
+        assert!(warned(&config, "IPv6 address"));
+        assert_eq!(config.http.bind, ["::1"]);
+    }
+
+    #[test]
+    fn knx_client_mode_has_no_bind_to_resolve() {
+        let config = load(
+            "[network]\nbind = [\"10.0.0.5\"]\n[knx]\nrole = \"client\"\nurl = \"udp://192.168.1.50:3671\"\n",
+        );
+        assert_eq!(config.knx.unwrap().bind, None);
+    }
+
+    #[test]
+    fn a_hostname_is_no_network_bind() {
+        let error = load_str(&format!("[network]\nbind = [\"localhost\"]\n{ZONE}")).unwrap_err();
+        assert!(
+            format!("{error:#}").to_lowercase().contains("ip"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn the_plan_follows_the_resolved_addresses() {
+        let config = load("[network]\nbind = [\"127.0.0.1\"]\n");
+        let plan = crate::net::listener::planned(&config);
+        let of = |service: &str| {
+            plan.iter()
+                .filter(|l| l.service.starts_with(service))
+                .map(|l| l.addr.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(of("HTTP API"), ["127.0.0.1:5555"]);
+        assert_eq!(of("Snapcast streaming"), ["127.0.0.1:1704"]);
+        assert_eq!(of("AirPlay zone 1"), ["127.0.0.1:7001"]);
     }
 }

@@ -32,6 +32,7 @@ fn derive(config: &mut AppConfig) {
     embedded_snapcast(config);
     api_console(config);
     streaming_port(config);
+    listener_limits(config);
     #[cfg(not(feature = "ap2"))]
     airplay(config);
 }
@@ -158,13 +159,47 @@ fn api_console(config: &mut AppConfig) {
     }
 }
 
+/// What a bind setting cannot do for the services whose dependencies decide it (RFC LBD-0008,
+/// section 2.5): a `bind` must never silently do nothing.
+///
+/// Spotify Connect's discovery server listens on every interface whatever `[network].bind`
+/// says, and its announcements follow the Zeroconf backend. The KNX device server keeps its
+/// UDP socket on all interfaces; `[knx].bind` only chooses the multicast interface.
+fn listener_limits(config: &mut AppConfig) {
+    if config.network.bind.is_some()
+        && let Some(spotify) = &config.spotify
+    {
+        let announced = match spotify.zeroconf_backend.as_deref().unwrap_or("libmdns") {
+            "libmdns" => {
+                "and, with the default libmdns backend, announced on the default-route interface only (zeroconf_backend = \"avahi\" announces on all interfaces)"
+            }
+            _ => "and announced on all interfaces",
+        };
+        config.warn(format!(
+            "[network].bind does not apply to Spotify Connect: its discovery server listens on \
+             all interfaces (TCP port {}) {announced}. Limit the port in the firewall.",
+            spotify.port
+        ));
+    }
+    if let Some(knx) = &config.knx
+        && knx.role == super::KnxRole::Device
+        && let Some(bind) = knx.bind
+    {
+        config.info(format!(
+            "[knx].bind = {bind} selects the interface for the KNX multicast group. UDP port \
+             3671 stays open on all interfaces, because the KNX library binds it that way: limit \
+             it in the firewall."
+        ));
+    }
+}
+
 /// `[airplay].bind` needs feature `ap2`, and without it the mode is always `AirPlay` 1.
 #[cfg(not(feature = "ap2"))]
 fn airplay(config: &mut AppConfig) {
     if config.airplay.bind.is_some() {
         config.warn(
-            "[airplay].bind has no effect: this build was compiled without the ap2 feature \
-             and listens on all interfaces.",
+            "[airplay].bind (or [network].bind) has no effect: this build was compiled without \
+             the ap2 feature and AirPlay listens on all interfaces.",
         );
     }
     config.info(
@@ -417,6 +452,77 @@ mod tests {
         assert!(!mentions(&config, "Unknown configuration key"));
     }
 
+    fn notes(config: &config::AppConfig) -> Vec<&str> {
+        config
+            .notices
+            .iter()
+            .filter(|n| n.level == NoticeLevel::Info)
+            .map(|n| n.message.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn network_bind_does_not_reach_spotify_and_the_notice_follows_the_backend() {
+        let spotify = |backend: &str| {
+            load(&format!(
+                "[network]\nbind = [\"10.0.0.5\"]\n[spotify]\nname = \"Home\"\n{backend}"
+            ))
+        };
+        let libmdns = spotify("");
+        assert!(mentions(
+            &libmdns,
+            "[network].bind does not apply to Spotify Connect"
+        ));
+        assert!(mentions(&libmdns, "default-route interface only"));
+        assert!(mentions(&libmdns, "TCP port 7100"));
+        for backend in ["avahi", "dns-sd"] {
+            let config = spotify(&format!("zeroconf_backend = \"{backend}\""));
+            assert!(
+                mentions(&config, "does not apply to Spotify Connect"),
+                "{backend}"
+            );
+            assert!(
+                mentions(&config, "announced on all interfaces"),
+                "{backend}"
+            );
+            assert!(!mentions(&config, "default-route"), "{backend}");
+        }
+        // Nothing to say without [network].bind, or without Spotify.
+        assert!(!mentions(&load("[spotify]\nname = \"Home\"\n"), "Spotify"));
+        assert!(!mentions(
+            &load("[network]\nbind = [\"10.0.0.5\"]\n"),
+            "Spotify"
+        ));
+    }
+
+    #[test]
+    fn a_spotify_bind_is_an_error_that_says_why() {
+        let error = config::load_str("[spotify]\nbind = [\"10.0.0.5\"]\n[[zone]]\nname = \"A\"\n")
+            .unwrap_err();
+        let text = format!("{error:#}");
+        assert!(
+            text.contains("[spotify].bind is not supported") && text.contains("firewall"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn knx_bind_is_explained_as_the_multicast_interface() {
+        let device = "[knx]\nrole = \"device\"\nindividual_address = \"1.1.100\"\n";
+        let config = load(&format!("{device}bind = \"10.0.0.5\"\n"));
+        assert!(
+            notes(&config)
+                .iter()
+                .any(|n| n.contains("[knx].bind = 10.0.0.5")
+                    && n.contains("3671 stays open on all interfaces"))
+        );
+        assert!(
+            !notes(&load(device))
+                .iter()
+                .any(|n| n.contains("[knx].bind"))
+        );
+    }
+
     #[test]
     fn notices_are_not_duplicated() {
         let mut config = load("[snapcast]\ncodec = \"f32lz4e\"");
@@ -457,7 +563,10 @@ mod tests {
     #[test]
     fn airplay_bind_without_ap2_warns() {
         let config = load("[airplay]\nbind = [\"192.168.1.10\"]");
-        assert!(mentions(&config, "[airplay].bind has no effect"));
+        assert!(mentions(
+            &config,
+            "[airplay].bind (or [network].bind) has no effect"
+        ));
         assert!(!mentions(&load(""), "[airplay].bind"));
     }
 }

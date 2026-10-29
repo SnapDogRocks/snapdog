@@ -2,6 +2,10 @@
 // Copyright (C) 2026 Fabian Schmieder
 
 //! Fixtures shared by the MQTT unit tests.
+#![allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};

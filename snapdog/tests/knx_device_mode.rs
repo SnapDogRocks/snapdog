@@ -11,6 +11,10 @@
 //! frame-driven download harness uses, not output of a real ETS.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -324,6 +328,7 @@ async fn start_device_on(cfg: &config::AppConfig, memory: PathBuf, bind: SocketA
     let (snap_tx, snap_rx) = mpsc::channel(16);
     let options = DeviceOptions {
         bind: Some(bind),
+        interface: None,
         memory_path: Some(memory.clone()),
     };
     let bridge = knx::start_with_options(

@@ -2,9 +2,9 @@
 rfc: LBD-0008
 title: One bind model for every network listener
 status: in-progress      # draft | accepted | in-progress | done | superseded
-version: 0.2.0           # v0.1: initial proposal; v0.2: baseline corrected after #346 and a read of the dependencies, see section 5
+version: 0.3.0           # v0.1: initial proposal; v0.2: baseline corrected after #346 and the dependencies; v0.3: delivery, see section 5
 created: 2026-10-28
-updated: 2026-10-28
+updated: 2026-10-29
 target_repo: snapdog
 target_branch: main
 related: [343, 346]
@@ -14,7 +14,7 @@ owners: [metaneutrons]
 # RFC LBD-0008 — One bind model for every network listener
 
 Epic: https://github.com/SnapDogRocks/snapdog/issues/352
-Decision state: accepted on 2026-10-28 by the owner's instruction to carry out the plan; amended in v0.2.0, see section 5
+Decision state: accepted on 2026-10-28 by the owner's instruction to carry out the plan; amended in v0.2.0 and v0.3.0, see section 5
 
 > This document owns requirements and acceptance criteria (`LBD-M*-A*`); the
 > epic and milestone issues own execution state and evidence. Do not keep a
@@ -139,7 +139,15 @@ A setting must never silently do nothing.
   names the interface of the device server and the matrix says that 3671/udp
   stays open on all interfaces. `start_at` would bind the address precisely but
   gives up routing multicast, which is a behaviour change and is not chosen here.
-- **mDNS:** `mdns-sd` can be limited to interfaces; `libmdns` cannot.
+- **mDNS:** `mdns-sd` can be limited to interfaces; `libmdns` cannot. Limiting `mdns-sd`
+  is not part of the first delivery: the matrix lists mDNS as `none`.
+- **Upstream question for `librespot-discovery` (LBD-M4-A2), answered.** Not feasible
+  inside this repository. In 0.8 `DiscoveryServer::new` binds `0.0.0.0:<port>` and
+  `[::]:<port>` itself, and the builder offers `port()` but neither an address nor a
+  listener. A change needs a `bind_address` on the builder or a pre-bound listener to be
+  accepted. The other Zeroconf backends (`avahi`, `dns-sd`) change only the announcement.
+  This is the proposal; it has not been filed upstream, because that is an external action
+  left to the owner.
 
 ### 2.6 Alternatives considered
 
@@ -217,7 +225,7 @@ Dependencies: M2
   honour fails or warns as specified, with tests for each backend.
 - LBD-M4-A2: the upstream question for librespot-discovery is answered in the
   plan (change proposed upstream, or recorded as not feasible with the reason).
-- LBD-M4-A3 (optional, only if accepted at the M2 review): `interfaces = [...]`
+- LBD-M4-A3 (optional, only if accepted at the M2 review; not delivered in v0.3.0, waiting for the owner's decision): `interfaces = [...]`
   resolves names to addresses at start; a name that does not exist is a start-up
   error.
 
@@ -264,3 +272,16 @@ release of the repository and is not part of this plan.
   6. LBD-M2-A2 no longer asks for a deprecation warning: `http.bind` as a string
      is not deprecated, and a list is added next to it. LBD-M2-A3 is already
      met by #346 and is re-measured on the new build.
+- **v0.3.0 (2026-10-29), made while delivering; the owner can veto each of them.**
+  1. The four milestones are delivered in one pull request, at the owner's request,
+     instead of one pull request per milestone. The criteria and their evidence stay
+     per milestone in the milestone issues.
+  2. The default Spotify port is 7100, not 7002 (#360). `AirPlay` zone *n* listens on
+     7000 + *n*, so Spotify zone 1 on 7002 collided with `AirPlay` zone 2 on every
+     installation with two or more zones. The start-up check of this plan found it.
+  3. Spotify Connect is part of the plan, so a port shared with another service is found
+     before anything starts.
+  4. LBD-M4-A3 (interface names) is not delivered; it needs the owner's decision at
+     the M2 review. Limiting `mdns-sd` to interfaces is not delivered either; both are
+     recorded in the matrix and in section 2.5.
+  5. LBD-M4-A2 is answered in section 2.5; no upstream issue has been filed.

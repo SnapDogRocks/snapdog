@@ -8,6 +8,10 @@
 //!
 //! Tier-1, default features. Run: `cargo test -p snapdog --test testkit`.
 
+#![allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 #![allow(clippy::doc_markdown)]
 
 mod common;

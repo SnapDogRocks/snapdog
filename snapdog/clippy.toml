@@ -1,0 +1,10 @@
+avoid-breaking-exported-api = false
+
+# Every listener is bound in `snapdog/src/net/listener.rs` (RFC LBD-0008), so that each
+# one is named, logged and listed, and so that a service never binds an address twice.
+disallowed-methods = [
+  { path = "std::net::TcpListener::bind", reason = "bind through net::listener::bind_tcp" },
+  { path = "std::net::UdpSocket::bind", reason = "bind through net::listener::bind_udp" },
+  { path = "tokio::net::TcpListener::bind", reason = "bind through net::listener::bind_tcp and from_std" },
+  { path = "tokio::net::UdpSocket::bind", reason = "bind through net::listener::bind_udp and from_std" },
+]

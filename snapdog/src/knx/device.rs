@@ -779,17 +779,33 @@ pub struct DeviceOptions {
     /// Bind the KNXnet/IP server to this unicast address instead of `0.0.0.0:3671`.
     /// No multicast group is joined in that case.
     pub bind: Option<std::net::SocketAddr>,
+    /// Local IPv4 address of the interface that joins the KNX multicast group (`[knx].bind`).
+    /// The UDP socket on port 3671 stays on all interfaces whatever this is, because
+    /// `DeviceServer::start` binds it that way. `None`: the system default.
+    pub interface: Option<Ipv4Addr>,
     /// Path of the persisted ETS memory (default: `knx-memory.bin` in the working directory).
     pub memory_path: Option<PathBuf>,
 }
 
 /// Start the KNXnet/IP server (UDP 3671 plus multicast, or the test address).
-async fn open_server(bind: Option<std::net::SocketAddr>) -> Result<DeviceServer> {
+async fn open_server(
+    bind: Option<std::net::SocketAddr>,
+    interface: Option<Ipv4Addr>,
+) -> Result<DeviceServer> {
     match bind {
         Some(addr) => DeviceServer::start_at(addr).await,
-        None => DeviceServer::start(Ipv4Addr::UNSPECIFIED).await,
+        None => DeviceServer::start(interface.unwrap_or(Ipv4Addr::UNSPECIFIED)).await,
     }
     .context("Failed to start KNX device server")
+}
+
+/// The IPv4 interface `[knx].bind` names, if it names one. An IPv6 address is refused when
+/// the configuration is loaded; the device server joins an IPv4 multicast group.
+fn configured_interface(config: &crate::config::AppConfig) -> Option<Ipv4Addr> {
+    match config.knx.as_ref()?.bind? {
+        std::net::IpAddr::V4(ip) => Some(ip),
+        std::net::IpAddr::V6(_) => None,
+    }
 }
 
 /// What the BAU holds in its address and association tables, for the startup log.
@@ -981,7 +997,8 @@ pub async fn start_device_transport(
     // First bind inline so a caller (and the log) sees the result right away; a failure is
     // not fatal, the supervisor keeps trying.
     let (addr_tx, addr_rx) = watch::channel(None);
-    let first = match open_server(options.bind).await {
+    let interface = options.interface.or_else(|| configured_interface(config));
+    let first = match open_server(options.bind, interface).await {
         Ok(server) => {
             let _ = addr_tx.send(Some(server.local_addr()));
             Some(server)
@@ -1003,6 +1020,7 @@ pub async fn start_device_transport(
             restart_after_ets,
             config_ia: ia.raw(),
             bind: options.bind,
+            interface,
             addr_tx,
             resync: Arc::clone(&resync),
             outbound_stats: Arc::clone(&outbound_stats),
@@ -1066,6 +1084,7 @@ struct DeviceTask {
     /// Individual address from the configuration, before ETS assigned another.
     config_ia: u16,
     bind: Option<std::net::SocketAddr>,
+    interface: Option<Ipv4Addr>,
     addr_tx: watch::Sender<Option<std::net::SocketAddr>>,
     resync: Arc<Notify>,
     outbound_stats: Arc<OutboundStats>,
@@ -1128,7 +1147,7 @@ async fn device_supervisor_with(
     loop {
         let srv = match server.take() {
             Some(s) => s,
-            None => match open_server(task.bind).await {
+            None => match open_server(task.bind, task.interface).await {
                 Ok(s) => {
                     if backoff.failures() > 0 {
                         tracing::info!(attempts = backoff.failures(), "KNX device server is up");
@@ -1972,6 +1991,10 @@ fn classify_group_frame(bau: &Bau, frame: &CemiFrame) -> GroupPolicy {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 mod tests {
     use super::group_objects::zone_asap;
     use super::*;
@@ -3024,6 +3047,7 @@ mod tests {
             restart_after_ets: false,
             config_ia: 0x1164,
             bind: Some(bind),
+            interface: None,
             addr_tx,
             resync: Arc::clone(&resync),
             outbound_stats: Arc::new(OutboundStats::default()),
@@ -3037,7 +3061,7 @@ mod tests {
     async fn the_status_is_published_again_after_the_server_restarted() {
         let bind = "127.0.0.1:0".parse().unwrap();
         let (task, cmd_tx, resync, shutdown_tx) = supervised_task(bind);
-        let first = open_server(Some(bind)).await.unwrap();
+        let first = open_server(Some(bind), None).await.unwrap();
         let supervisor = tokio::spawn(device_supervisor(task, Some(first)));
 
         // The first server is not a restart: nobody has anything to republish yet.
@@ -3102,7 +3126,7 @@ mod tests {
     async fn start_times(script: Vec<std::time::Duration>) -> Vec<tokio::time::Instant> {
         let bind = "127.0.0.1:0".parse().unwrap();
         let (task, _cmd_tx, _resync, _shutdown_tx) = supervised_task(bind);
-        let first = open_server(Some(bind)).await.unwrap();
+        let first = open_server(Some(bind), None).await.unwrap();
         let started = Arc::new(std::sync::Mutex::new(Vec::new()));
         let serve = Lives {
             script: script.into_iter(),

@@ -9,6 +9,10 @@
 //! and restarted by the test. Nothing here touches UDP 3671 or a real KNX installation.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
+)]
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

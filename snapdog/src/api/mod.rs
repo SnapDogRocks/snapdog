@@ -75,7 +75,7 @@ pub struct AppState {
 /// Thread-safe shared reference to [`AppState`].
 pub type SharedState = Arc<AppState>;
 
-/// Bind the HTTP listener for `[http].bind` and `[http].port`.
+/// Bind the HTTP listener for one `[http].bind` address and `[http].port`.
 ///
 /// The default bind address is `::` (dual stack). A kernel with IPv6 compiled out or
 /// disabled with `ipv6.disable=1` cannot create an IPv6 socket at all and the bind fails
@@ -87,12 +87,42 @@ pub type SharedState = Arc<AppState>;
 ///
 /// Returns the I/O error of the bind that failed.
 pub async fn bind_http_listener(bind: &str, port: u16) -> std::io::Result<TcpListener> {
-    bind_with_fallback(
-        bind,
-        port,
-        |addr| async move { TcpListener::bind(addr).await },
-    )
+    bind_with_fallback(bind, port, |addr| async move {
+        let mut last = None;
+        for socket_addr in tokio::net::lookup_host(addr).await? {
+            match crate::net::listener::bind_tcp("HTTP API", "axum", socket_addr) {
+                Ok(listener) => return TcpListener::from_std(listener),
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(last.unwrap_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::AddrNotAvailable,
+                "the bind address resolves to no address",
+            )
+        }))
+    })
     .await
+}
+
+/// Bind one HTTP listener per `[http].bind` address. All of them are bound before any is
+/// served, and the first that fails ends the start with the address that failed.
+///
+/// # Errors
+///
+/// Returns the address that could not be bound and the I/O error of its bind.
+pub async fn bind_http_listeners(
+    binds: &[String],
+    port: u16,
+) -> Result<Vec<TcpListener>, (String, std::io::Error)> {
+    let mut listeners = Vec::with_capacity(binds.len());
+    for bind in binds {
+        match bind_http_listener(bind, port).await {
+            Ok(listener) => listeners.push(listener),
+            Err(e) => return Err((bind.clone(), e)),
+        }
+    }
+    Ok(listeners)
 }
 
 async fn bind_with_fallback<T, F, Fut>(bind: &str, port: u16, mut attempt: F) -> std::io::Result<T>
@@ -123,7 +153,7 @@ fn ipv6_unavailable(e: &std::io::Error) -> bool {
     e.kind() == std::io::ErrorKind::AddrNotAvailable || e.raw_os_error() == Some(EAFNOSUPPORT)
 }
 
-/// Start the HTTP server.
+/// Start the HTTP server on one listener, see [`serve_on`].
 ///
 /// # Errors
 ///
@@ -133,6 +163,41 @@ fn ipv6_unavailable(e: &std::io::Error) -> bool {
 #[expect(clippy::too_many_arguments)]
 pub async fn serve<S: BuildHasher>(
     listener: TcpListener,
+    config: AppConfig,
+    store: state::SharedState,
+    zone_commands: HashMap<usize, ZoneCommandSender, S>,
+    snap_tx: player::SnapcastCmdSender,
+    covers: state::cover::SharedCoverCache,
+    notifications: ws::NotifySender,
+    eq_store: std::sync::Arc<std::sync::Mutex<crate::audio::eq::EqStore>>,
+    knx_device_control: Option<crate::knx::DeviceControlHandle>,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    serve_on(
+        vec![listener],
+        config,
+        store,
+        zone_commands,
+        snap_tx,
+        covers,
+        notifications,
+        eq_store,
+        knx_device_control,
+        shutdown,
+    )
+    .await
+}
+
+/// Start the HTTP server on every listener, all of them serving the same application.
+///
+/// # Errors
+///
+/// Returns an error if a server fails. The caller is responsible for
+/// pre-binding the listeners before starting any subsystems so that a
+/// port conflict is detected early and can be handled as a fatal error.
+#[expect(clippy::too_many_arguments)]
+pub async fn serve_on<S: BuildHasher>(
+    listeners: Vec<TcpListener>,
     config: AppConfig,
     store: state::SharedState,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
@@ -158,16 +223,18 @@ pub async fn serve<S: BuildHasher>(
 
     let app = build_router(&state);
 
-    let local_addr = listener.local_addr()?;
-    let port = local_addr.port();
     let tls_enabled = state.config.http.tls_cert.is_some();
     let scheme = if tls_enabled { "https" } else { "http" };
 
-    if local_addr.ip().is_unspecified() {
-        tracing::info!("REST API listening on port {port} (all interfaces, {scheme})");
-        tracing::info!("  → {scheme}://localhost:{port}");
-    } else {
-        tracing::info!("REST API listening on {scheme}://{local_addr}");
+    for listener in &listeners {
+        let local_addr = listener.local_addr()?;
+        let port = local_addr.port();
+        if local_addr.ip().is_unspecified() {
+            tracing::info!("REST API listening on port {port} (all interfaces, {scheme})");
+            tracing::info!("  → {scheme}://localhost:{port}");
+        } else {
+            tracing::info!("REST API listening on {scheme}://{local_addr}");
+        }
     }
 
     if let (Some(cert_path), Some(key_path)) =
@@ -179,20 +246,30 @@ pub async fn serve<S: BuildHasher>(
                 .map_err(|e| anyhow::anyhow!("TLS configuration failed: {e}"))?;
         // TLS graceful shutdown via axum_server's Handle: when the cooperative
         // `shutdown` future resolves, stop accepting + drain in-flight, then
-        // force-close after a grace period (parity with the plain-HTTP path).
+        // force-close after a grace period (parity with the plain-HTTP path). One
+        // handle serves every listener.
         let handle = axum_server::Handle::new();
         let shutdown_handle = handle.clone();
         tokio::spawn(async move {
             shutdown.await;
             shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
         });
-        axum_server::bind_rustls(local_addr, rustls_config)
-            .handle(handle)
-            .serve(app.into_make_service())
-            .await?;
+        // Serve the listeners that are already bound: binding their addresses again here
+        // fails with "address in use", because the listeners still hold them (#343).
+        let mut servers = Vec::with_capacity(listeners.len());
+        for listener in listeners {
+            let server = axum_server::from_tcp_rustls(listener.into_std()?, rustls_config.clone())?
+                .handle(handle.clone());
+            servers.push(server.serve(app.clone().into_make_service()));
+        }
+        futures_util::future::try_join_all(servers).await?;
     } else {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown)
+        // The one `shutdown` future ends every listener's server.
+        let shutdown = futures_util::FutureExt::shared(shutdown);
+        let servers = listeners.into_iter().map(|listener| {
+            axum::serve(listener, app.clone()).with_graceful_shutdown(shutdown.clone())
+        });
+        futures_util::future::try_join_all(servers.map(std::future::IntoFuture::into_future))
             .await?;
     }
     Ok(())
@@ -253,15 +330,12 @@ pub fn build_router(state: &SharedState) -> Router {
         protected = protected
             .layer(axum::middleware::from_fn(auth::require_api_key))
             .layer(axum::Extension(auth::ApiKeys(api_keys)));
-    } else if state
-        .config
-        .http
-        .bind
-        .parse::<std::net::IpAddr>()
-        .is_ok_and(|ip| ip.is_unspecified())
-    {
+    } else if state.config.http.bind_addresses().iter().any(|bind| {
+        bind.parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_unspecified())
+    }) {
         tracing::warn!(
-            bind = %state.config.http.bind,
+            bind = ?state.config.http.bind_addresses(),
             "API authentication is disabled while listening on all interfaces"
         );
     }

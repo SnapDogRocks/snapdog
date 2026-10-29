@@ -289,9 +289,12 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 # Server display name — used for mDNS, MQTT, browser title
 # name = "SnapDog"
 
+# [network]
+# bind = ["192.168.1.10"]            # Addresses every service listens on, unless it sets its own `bind`
+
 [http]
 port = 5555
-bind = "::"                            # default; 0.0.0.0 for IPv4 only
+bind = "::"                            # default; 0.0.0.0 for IPv4 only; a list listens on each address
 base_url = "http://192.168.1.10:5555"  # Required for MQTT cover art URLs; REST API uses relative URLs
 # tls_cert = "/etc/snapdog/tls/fullchain.pem"  # Enables HTTPS
 # tls_key = "/etc/snapdog/tls/privkey.pem"
@@ -306,7 +309,7 @@ source_switch_fade_ms = 300          # Source change fade within a zone (0 to di
 
 [snapcast]
 streaming_port = 1704
-# streaming_bind = "192.168.10.5"    # One address for the audio port (default: all interfaces)
+# streaming_bind = "192.168.10.5"    # One address for the audio port (default: [network].bind if it is one address, else all interfaces)
 unknown_clients = "accept"           # accept | ignore | reject
 default_zone = "Living Room"         # Zone for unknown clients (accept only)
 
@@ -461,12 +464,38 @@ curl -H "Authorization: Bearer $SNAPDOG_KEY" http://localhost:5555/api/v1/openap
 <details>
 <summary><strong>Network ports and what they expose</strong></summary>
 
-| Port | Protocol | Carries | Protection |
-|------|----------|---------|------------|
-| 5555 (`[http].port`) | TCP | WebUI, REST API, WebSocket | `[http].api_keys`, optional TLS; `[http].bind` limits the address |
-| 1704 (`[snapcast].streaming_port`) | TCP | The audio stream for Snapcast clients | None. Whoever can reach the port can connect as a client and receive the audio |
-| 1705 (`[snapcast].jsonrpc_tcp_port`) | TCP | JSON-RPC control of an external `snapserver`, only in builds with the `snapcast-process` feature (the released binaries use the embedded server and do not open it) | None. Anyone who can reach it controls the server, and SnapDog's generated `snapserver.conf` does not restrict its address, so block it in the firewall |
-| 3671 | UDP | KNX/IP device mode | KNX/IP has no authentication of its own |
+The server prints the same list at start ("Listeners" in the log) and serves it as
+`GET /api/v1/system/listeners`, with the real addresses and ports, so a firewall can be derived from a running
+instance.
+
+| Service | Default port | Protocol | `bind` support | Set with | Protection | Firewall rule it implies |
+|---------|--------------|----------|----------------|----------|------------|--------------------------|
+| WebUI, REST API, WebSocket | 5555 (`[http].port`) | TCP | full | `[http].bind`, `[network].bind` | `[http].api_keys`, optional TLS | Allow from the machines that use the web UI or API |
+| Snapcast audio stream | 1704 (`[snapcast].streaming_port`) | TCP | full, one address | `[snapcast].streaming_bind`, `[network].bind` with one address | None | Allow from your Snapcast clients only: whoever can reach the port can connect as a client and receive the audio |
+| Snapcast JSON-RPC | 1705 (`[snapcast].jsonrpc_tcp_port`) | TCP | none | not configurable | None | Only in builds with the `snapcast-process` feature (released binaries use the embedded server and do not open it). Anyone who can reach it controls the server, and SnapDog's generated `snapserver.conf` does not restrict its address, so block it for everyone but this host |
+| AirPlay | 7001 and up, one per zone (7000 + zone number) | TCP, plus UDP | full with AirPlay 2 (feature `ap2`), none without | `[airplay].bind`, `[network].bind` | Optional `[airplay].password` | Allow the TCP ports from your AirPlay devices. AirPlay also uses UDP: ports 319 and 320 (AirPlay 2 clock) and further UDP ports chosen at run time for audio and timing, so allow UDP from the same devices |
+| Spotify Connect | 7100 and up, one per zone (`[spotify].port` + zone number − 1; 0 = random) | TCP | none | not possible: `[spotify].bind` is an error | The Spotify app's own login | Allow the ports from the phones that cast. Announcements follow `[spotify].zeroconf_backend`: `libmdns` announces on the default-route interface only, `avahi` and `dns-sd` on all |
+| KNX/IP device mode | 3671 | UDP (and the KNX multicast group 224.0.23.12) | partial | `[knx].bind` names the interface for the multicast group | None: KNX/IP has no authentication | The socket stays on all interfaces, so limit 3671/udp in the firewall |
+| mDNS announcements | 5353 | UDP | none | not configurable | None | Allow multicast DNS where the devices that discover SnapDog are |
+| MQTT | none | | | | | Client only: SnapDog connects out to the broker, nothing listens |
+
+"Full" means the service listens on exactly the configured addresses. "Partial" means the setting has an effect, but
+not on every socket of the service. "None" means the service cannot be bound to an address, and SnapDog says so
+instead of ignoring the setting. A `[network].bind` that cannot reach a service (Spotify) is reported at start. Inside a
+bridged container the bind address is the container's, not the host's, so publish the port on one address
+(`-p 192.168.10.5:1704:1704`) rather than relying on `bind`.
+
+**Choosing the addresses.** `[network].bind` states once on which addresses SnapDog listens. A service's own
+`bind` (`[http].bind`, `[airplay].bind`, `[snapcast].streaming_bind`, `[knx].bind`) wins; a service without one uses
+`[network].bind`; without either, each service keeps its default (HTTP `::`, the others every IPv4 interface).
+The addresses are IP addresses, not interface names. `[http].bind` and `[airplay].bind` take a list. The Snapcast
+streaming port and the KNX device server listen on exactly one address: they use `[network].bind` only when it
+holds one address, and SnapDog warns (and keeps their default) when it holds more, instead of taking the first.
+`[knx].bind` names the IPv4 interface that joins the KNX multicast group; UDP port 3671 itself stays on all
+interfaces, because the KNX library binds it that way. `[airplay].bind` has an effect only in builds with
+AirPlay 2 (feature `ap2`), and Spotify Connect cannot be bound to an address. `bind` is not a security boundary:
+use the firewall as well. At start, two services on the same port, or an address that no interface has, stop
+SnapDog with a message that names them; `--check-config` reports the same.
 
 Port 1704 has no authentication, in SnapDog as in Snapcast. To limit it:
 

@@ -97,41 +97,23 @@ fn codec_and_key(snapcast: &crate::config::SnapcastConfig) -> (String, Option<St
     }
 }
 
+const STREAMING_SERVICE: &str = "Snapcast streaming";
+const STREAMING_SETTING: &str = "[snapcast].streaming_bind";
+
 /// Bind the audio streaming port on `[snapcast].streaming_bind` (all IPv4 interfaces
 /// when unset). Synchronous (std bind, then non-blocking) so `start` stays sync.
 fn bind_streaming_listener(
     snapcast: &crate::config::SnapcastConfig,
 ) -> Result<std::net::TcpListener> {
     let addr = snapcast.streaming_socket_addr();
-    let listener = std::net::TcpListener::bind(addr)
-        .map_err(|e| anyhow::anyhow!(streaming_bind_message(addr, &e)))?;
-    listener
-        .set_nonblocking(true)
-        .context("set embedded Snapcast listener non-blocking")?;
-    Ok(listener)
-}
-
-/// What a failed bind of the streaming port means, by kind of error.
-///
-/// A port that is taken is a second instance, an address that is not ours is a wrong
-/// `[snapcast].streaming_bind`, and anything else is reported as it is.
-#[must_use]
-pub fn streaming_bind_message(addr: std::net::SocketAddr, error: &std::io::Error) -> String {
-    match error.kind() {
-        std::io::ErrorKind::AddrInUse => format!(
-            "Snapcast streaming port {addr} is already in use - is snapdog already running? ({error})"
-        ),
-        std::io::ErrorKind::AddrNotAvailable => format!(
-            "Snapcast streaming port {addr} cannot be bound: {} is not an address of this host. \
-             Check [snapcast].streaming_bind ({error})",
-            addr.ip()
-        ),
-        std::io::ErrorKind::PermissionDenied => format!(
-            "Snapcast streaming port {addr} cannot be bound: permission denied. Ports below 1024 \
-             need extra privileges ({error})"
-        ),
-        _ => format!("Snapcast streaming port {addr} cannot be bound: {error}"),
-    }
+    crate::net::listener::bind_tcp(STREAMING_SERVICE, "snapcast-server", addr).map_err(|e| {
+        anyhow::anyhow!(crate::net::listener::bind_failure_message(
+            STREAMING_SERVICE,
+            addr,
+            STREAMING_SETTING,
+            &e
+        ))
+    })
 }
 
 /// Check that the streaming port can be bound, then release it. `main` calls this
@@ -142,7 +124,15 @@ pub fn streaming_bind_message(addr: std::net::SocketAddr, error: &std::io::Error
 ///
 /// Returns an error if the address cannot be bound, for example because the port is in use.
 pub fn check_streaming_port(snapcast: &crate::config::SnapcastConfig) -> Result<()> {
-    bind_streaming_listener(snapcast).map(drop)
+    let addr = snapcast.streaming_socket_addr();
+    crate::net::listener::probe_tcp(addr).map_err(|e| {
+        anyhow::anyhow!(crate::net::listener::bind_failure_message(
+            STREAMING_SERVICE,
+            addr,
+            STREAMING_SETTING,
+            &e
+        ))
+    })
 }
 
 /// Event receiver from the embedded server.
@@ -685,7 +675,8 @@ mod tests {
 
     #[test]
     fn the_port_check_reports_a_taken_port_on_the_configured_address() {
-        let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let taken =
+            crate::net::listener::bind_tcp("test", "std", "127.0.0.1:0".parse().unwrap()).unwrap();
         let port = taken.local_addr().unwrap().port();
         let config = snapcast_config(&format!(
             "streaming_port = {port}\nstreaming_bind = \"127.0.0.1\""
@@ -700,33 +691,10 @@ mod tests {
     }
 
     #[test]
-    fn a_bind_failure_is_explained_by_its_kind() {
-        use std::io::{Error, ErrorKind};
-        let addr: std::net::SocketAddr = "192.0.2.1:1704".parse().unwrap();
-        let in_use = streaming_bind_message(addr, &Error::from(ErrorKind::AddrInUse));
-        assert!(in_use.contains("already in use"), "{in_use}");
-        assert!(in_use.contains("already running"), "{in_use}");
-
-        let unassigned = streaming_bind_message(addr, &Error::from(ErrorKind::AddrNotAvailable));
-        assert!(
-            unassigned.contains("192.0.2.1 is not an address of this host"),
-            "{unassigned}"
-        );
-        assert!(unassigned.contains("streaming_bind"), "{unassigned}");
-        assert!(!unassigned.contains("already running"), "{unassigned}");
-
-        let denied = streaming_bind_message(addr, &Error::from(ErrorKind::PermissionDenied));
-        assert!(denied.contains("permission denied"), "{denied}");
-        assert!(!denied.contains("already running"), "{denied}");
-
-        let other = streaming_bind_message(addr, &Error::from(ErrorKind::TimedOut));
-        assert!(!other.contains("already running"), "{other}");
-    }
-
-    #[test]
     fn the_real_errors_get_the_matching_message() {
         // Taken port: a second instance.
-        let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let taken =
+            crate::net::listener::bind_tcp("test", "std", "127.0.0.1:0".parse().unwrap()).unwrap();
         let port = taken.local_addr().unwrap().port();
         let config = snapcast_config(&format!(
             "streaming_port = {port}\nstreaming_bind = \"127.0.0.1\""

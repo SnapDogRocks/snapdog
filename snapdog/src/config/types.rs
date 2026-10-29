@@ -187,6 +187,9 @@ pub struct FileConfig {
     /// Audio output format (sample rate, bit depth, channels, codec).
     #[serde(default)]
     pub audio: AudioConfig,
+    /// Network settings shared by every listener.
+    #[serde(default)]
+    pub network: NetworkConfig,
     /// HTTP server settings (port, API keys).
     #[serde(default)]
     pub http: HttpConfig,
@@ -531,16 +534,85 @@ impl AudioConfig {
     }
 }
 
+/// Network settings shared by every listener (`[network]`).
+///
+/// `bind` is the default for every service that has no `bind` of its own, see RFC
+/// LBD-0008. Unset, each service keeps its built-in default (HTTP `::`, the others
+/// the IPv4 wildcard).
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct NetworkConfig {
+    /// IP addresses (not interface names) the services listen on unless they set their own
+    /// `bind`, for example `["192.168.1.10"]`. A service whose backend takes one address
+    /// (Snapcast streaming, KNX) uses this only when the list has exactly one entry.
+    #[serde(default)]
+    pub bind: Option<Vec<std::net::IpAddr>>,
+}
+
+/// One value or a list of values: `bind = "10.0.0.1"` and `bind = ["10.0.0.1", "::1"]`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrMany<T> {
+    One(T),
+    Many(Vec<T>),
+}
+
+/// A bind setting that may be written as one string or as a list of strings.
+fn string_or_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(match OneOrMany::<String>::deserialize(deserializer)? {
+        OneOrMany::One(one) => vec![one],
+        OneOrMany::Many(many) => many,
+    })
+}
+
+/// A bind setting written as one address or a list of addresses.
+fn address_list<'de, D>(deserializer: D) -> Result<Option<Vec<std::net::IpAddr>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(
+        Option::<OneOrMany<std::net::IpAddr>>::deserialize(deserializer)?.map(
+            |value| match value {
+                OneOrMany::One(one) => vec![one],
+                OneOrMany::Many(many) => many,
+            },
+        ),
+    )
+}
+
+/// A bind setting of a service that listens on exactly one address. A list with one entry
+/// is accepted, a longer one is an error that says so, instead of taking the first entry.
+fn single_address<'de, D>(deserializer: D) -> Result<Option<std::net::IpAddr>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    match Option::<OneOrMany<std::net::IpAddr>>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(OneOrMany::One(one)) => Ok(Some(one)),
+        Some(OneOrMany::Many(many)) => match many.as_slice() {
+            [one] => Ok(Some(*one)),
+            _ => Err(D::Error::custom(format!(
+                "this service listens on exactly one address, but the list has {}",
+                many.len()
+            ))),
+        },
+    }
+}
+
 /// HTTP server configuration.
 #[derive(Debug, Deserialize, Clone)]
 pub struct HttpConfig {
     /// Port for the REST API, WebSocket, and embedded `WebUI`.
     #[serde(default = "default_http_port")]
     pub port: u16,
-    /// Bind address. Default: `::` (dual-stack IPv4 and IPv6 where the OS
-    /// allows it). Use `0.0.0.0` for IPv4 only.
-    #[serde(default = "default_bind_address")]
-    pub bind: String,
+    /// Addresses to listen on: one string or a list. Unset: `[network].bind`, then `::`
+    /// (dual-stack IPv4 and IPv6 where the OS allows it). Use `0.0.0.0` for IPv4 only.
+    /// After loading this is never empty, see [`HttpConfig::bind_addresses`].
+    #[serde(default, deserialize_with = "string_or_list")]
+    pub bind: Vec<String>,
     /// External base URL (e.g., `http://192.168.2.20:5555` or `https://music.example.com`).
     /// Used for absolute URLs in API responses. Defaults to `http://localhost:<port>`.
     #[serde(default = "default_base_url")]
@@ -569,11 +641,39 @@ pub struct HttpConfig {
     pub api_console: bool,
 }
 
+impl HttpConfig {
+    /// The addresses to listen on: what is configured, or the built-in default `::`.
+    #[must_use]
+    pub fn bind_addresses(&self) -> Vec<String> {
+        if self.bind.is_empty() {
+            vec![default_bind_address()]
+        } else {
+            self.bind.clone()
+        }
+    }
+
+    /// The one address the server listens on, when it is a specific one: what the mDNS
+    /// advertisement and the D-Bus cover URLs name. `None` for a wildcard, a list or no setting.
+    #[must_use]
+    pub fn single_specific_bind(&self) -> Option<String> {
+        match self.bind.as_slice() {
+            [one]
+                if one
+                    .parse::<std::net::IpAddr>()
+                    .map_or(true, |ip| !ip.is_unspecified()) =>
+            {
+                Some(one.clone())
+            }
+            _ => None,
+        }
+    }
+}
+
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
             port: default_http_port(),
-            bind: default_bind_address(),
+            bind: Vec::new(),
             base_url: default_base_url(),
             tls_cert: None,
             tls_key: None,
@@ -658,7 +758,7 @@ pub struct SnapcastConfig {
     /// interface or `127.0.0.1` for this host only. Unset: all interfaces (`0.0.0.0` in
     /// the embedded server, what an external `snapserver` does by default otherwise).
     /// A single address, not a list.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "single_address")]
     pub streaming_bind: Option<std::net::IpAddr>,
     /// Start an external `snapserver` binary as a child process (default:
     /// true). Only used by builds with the `snapcast-process` feature. The
@@ -763,7 +863,7 @@ pub struct SpotifyConfig {
     /// Audio bitrate: 96, 160, or 320 kbps. Default: 320.
     #[serde(default = "default_spotify_bitrate")]
     pub bitrate: u32,
-    /// TCP port of the Zeroconf (Spotify Connect) HTTP server. Default: 7002.
+    /// TCP port of the Zeroconf (Spotify Connect) HTTP server. Default: 7100, above the `AirPlay` ports (7001 and up, one per zone).
     ///
     /// A fixed port keeps firewall rules and monitoring stable. Zone `n` listens on
     /// `port + n`. `0` picks a random port at every start (not firewall-friendly).
@@ -775,6 +875,11 @@ pub struct SpotifyConfig {
     /// announcement to the host's avahi-daemon (system D-Bus), which covers all interfaces.
     #[serde(default)]
     pub zeroconf_backend: Option<String>,
+    /// Not supported: Spotify Connect's discovery server listens on all interfaces and
+    /// cannot be bound to an address. Accepted only so that setting it is an error that says
+    /// why, instead of a key that silently does nothing.
+    #[serde(default, deserialize_with = "address_list")]
+    pub bind: Option<Vec<std::net::IpAddr>>,
 }
 
 impl SpotifyConfig {
@@ -802,7 +907,7 @@ const fn default_spotify_bitrate() -> u32 {
 }
 
 const fn default_spotify_port() -> u16 {
-    7002
+    7100
 }
 
 /// Subsonic/Navidrome server connection.
@@ -898,6 +1003,12 @@ pub struct KnxConfig {
     /// routing for a multicast address and tunnelling otherwise.
     /// Examples: `udp://192.168.1.50:3671` (tunnel), `udp://224.0.23.12:3671` (routing)
     pub url: Option<String>,
+    /// Local IPv4 address of the interface the KNX device server (device role) uses for the
+    /// KNX multicast group, for example `"192.168.1.10"`. Unset: `[network].bind` when it
+    /// has exactly one address, else the system default. The UDP socket on port 3671
+    /// itself stays on all interfaces, the library binds it that way.
+    #[serde(default, deserialize_with = "single_address")]
+    pub bind: Option<std::net::IpAddr>,
     /// KNX individual address (device role). Example: `"1.1.100"`
     pub individual_address: Option<String>,
     /// Persist ETS-programmed configuration across restarts (device role).
@@ -945,6 +1056,7 @@ impl Default for KnxConfig {
         Self {
             role: KnxRole::default(),
             url: None,
+            bind: None,
             individual_address: None,
             persist_ets_config: None,
             restart_after_ets: None,
@@ -1138,6 +1250,8 @@ pub struct AppConfig {
     pub system: SystemConfig,
     /// Audio output format.
     pub audio: AudioConfig,
+    /// Network settings shared by every listener.
+    pub network: NetworkConfig,
     /// HTTP server settings.
     pub http: HttpConfig,
     /// Snapcast connection settings.
@@ -1509,7 +1623,7 @@ mod spotify_config_tests {
     #[test]
     fn spotify_defaults_to_fixed_port_and_default_backend() {
         let cfg: SpotifyConfig = toml::from_str(r#"name = "Docks""#).unwrap();
-        assert_eq!(cfg.port, 7002);
+        assert_eq!(cfg.port, 7100);
         assert_eq!(cfg.bitrate, 320);
         assert!(cfg.zeroconf_backend.is_none());
     }
