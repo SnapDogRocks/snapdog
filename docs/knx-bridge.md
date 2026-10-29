@@ -62,10 +62,9 @@ addresses of a zone above 10 or a client above 30 are ignored with a warning.
   An address that a writable object listens to as well is that object's business. The
   flags are compiled in: flag settings changed in ETS for these objects are not read and
   have no effect.
-- A master reset (`A_Restart` with erase code 1 to 7, ETS "reset device") is repaired
-  before it reaches the stack: knx-rs 0.11 rejects the four-byte form the specification
-  has (APCI, erase code, channel), so the BAU task repeats the low APCI byte in front of
-  the erase code (`repair_master_reset`). The reset is persisted (see below).
+- A master reset (`A_Restart` with erase code 1 to 7, ETS "reset device") reaches the stack
+  as it is: knx-rs 0.12 reads the four-byte form the specification has (APCI, erase code,
+  channel), which 0.11 rejected as too short. The reset is persisted (see below).
 - Status values are written to the object. The stack sends to the first association of
   an object in the association table; further associations are listening addresses. When
   an object has a command and a status address in TOML (`presence_enable`/
@@ -123,23 +122,24 @@ go through a queue (`outbound.rs`):
   paced.
 - At most 512 group and 256 management frames wait; the oldest are dropped, counted and
   logged.
-- Frames leave as `L_Data.ind` (0x29), as a server tells its clients about a telegram; the
-  stack builds them as `L_Data.req` and they are rewritten before they are sent.
+- Frames leave as `L_Data.ind` (0x29), as a server tells its clients about a telegram. The
+  stack builds them as `L_Data.req`, and the knx-rs 0.12 `DeviceServer` rewrites them. It also
+  confirms every `L_Data.req` of a tunnel client with an `L_Data.con` (0x2E) that carries
+  the same telegram: a client that sends several requests has to read those confirmations.
 - Commands for a zone or client channel that is full are dropped, not waited for (one
   warning per five seconds, with the number dropped since the last).
 - Corrections of foreign writes use the same queue, so a device that writes a wrong value in
   a loop gets a correction per 25 ms at most, and a pending one is replaced.
 
-The server waits up to three seconds per telegram for a tunnel client that does not
-acknowledge, and knx-rs never drops such a client, so it takes frames slowly. When the queue
+A tunnel client that does not acknowledge a frame is dropped by knx-rs 0.12, so it no longer
+makes the server slow (0.11 waited up to three seconds per telegram for it, for good). The
+watchdog stays as a diagnostic for a server that falls behind for another reason: when the queue
 has not drained for ten seconds and the server takes fewer than a frame a second, the bridge
 logs an ERROR with the counters (seconds behind, frames waiting, dropped, coalesced), again
 every minute while it lasts, and a warning when it is over. The same numbers are in
-`DevicePublisher::outbound_stats()`. **The server is not restarted:** a `DeviceServer` that is
-dropped keeps running in knx-rs until it has sent what is queued and holds the port for
-minutes, so a restart would lock ETS out instead of freeing the device. Until knx-rs drops
-dead tunnels itself, the remedy is to disconnect the client that does not acknowledge, or to
-restart snapdog.
+`DevicePublisher::outbound_stats()`. **The server is not restarted by the watchdog**; a
+restart is left to the supervisor, which does it when the server stops. Dropping or stopping
+a `DeviceServer` releases its port in 0.12 (0.11 held it for minutes).
 
 **Slow zones (not changed here).** A zone or client command channel that is full makes the
 listener wait for it, and the listener serves all zones: telegrams for the other zones wait
@@ -212,8 +212,8 @@ router. The `L_Data.ind` code of device-mode telegrams is asserted on the tunnel
 routing multicast cannot be observed on that loopback seam: it carries the same frame, wrapped
 by the same `send_to_all` of knx-rs, and only that code path was read, not seen on the wire.
 Whether a given router or client treats `0x11` and `0x29` differently is not known, and neither is how a real gateway paces its acknowledgements
-against the 25 ms spacing. The master reset repair is tested against the device stack
-(connected and unnumbered form) and an ETS-style frame over the tunnel, not against ETS.
+against the 25 ms spacing. The master reset is tested against the device stack (connected and
+unnumbered form) and an ETS-style frame over the tunnel, not against ETS.
 
 The ETS download is simulated with the management frames of knx-rs's own test harness over a
 loopback tunnel: connectionless services, the application segment allocated first, `Unload`
