@@ -468,16 +468,16 @@ The server prints the same list at start ("Listeners" in the log) and serves it 
 `GET /api/v1/system/listeners`, with the real addresses and ports, so a firewall can be derived from a running
 instance.
 
-| Service | Default port | Protocol | `bind` support | Set with | Firewall rule it implies |
-|---------|--------------|----------|----------------|----------|--------------------------|
-| WebUI, REST API, WebSocket | 5555 (`[http].port`) | TCP | full | `[http].bind`, `[network].bind` | Allow from the machines that use the web UI or API. Protect with `[http].api_keys`, optional TLS |
-| Snapcast audio stream | 1704 (`[snapcast].streaming_port`) | TCP | full, one address | `[snapcast].streaming_bind`, `[network].bind` with one address | Allow from your Snapcast clients only: the port has no authentication |
-| Snapcast JSON-RPC | 1705 (`[snapcast].jsonrpc_tcp_port`) | TCP | none | not configurable | Only in builds with the `snapcast-process` feature (released binaries use the embedded server and do not open it). Block it for everyone but this host: whoever reaches it controls the server |
-| AirPlay | 7001 and up, one per zone (7000 + zone number) | TCP, plus UDP | full with AirPlay 2 (feature `ap2`), none without | `[airplay].bind`, `[network].bind` | Allow the TCP ports from your AirPlay devices. AirPlay also uses UDP: ports 319 and 320 (AirPlay 2 clock) and further UDP ports chosen at run time for audio and timing, so allow UDP from the same devices |
-| Spotify Connect | 7100 and up, one per zone (`[spotify].port` + zone number − 1; 0 = random) | TCP | none | not possible: `[spotify].bind` is an error | Allow the ports from the phones that cast. Announcements follow `[spotify].zeroconf_backend`: `libmdns` announces on the default-route interface only, `avahi` and `dns-sd` on all |
-| KNX device mode | 3671 | UDP (and the KNX multicast group 224.0.23.12) | partial | `[knx].bind` names the interface for the multicast group | The socket stays on all interfaces, so limit 3671/udp in the firewall. KNX/IP has no authentication |
-| mDNS announcements | 5353 | UDP | none | not configurable | Allow multicast DNS where the devices that discover SnapDog are |
-| MQTT | none | | | | Client only: SnapDog connects out to the broker, nothing listens |
+| Service | Default port | Protocol | `bind` support | Set with | Protection | Firewall rule it implies |
+|---------|--------------|----------|----------------|----------|------------|--------------------------|
+| WebUI, REST API, WebSocket | 5555 (`[http].port`) | TCP | full | `[http].bind`, `[network].bind` | `[http].api_keys`, optional TLS | Allow from the machines that use the web UI or API |
+| Snapcast audio stream | 1704 (`[snapcast].streaming_port`) | TCP | full, one address | `[snapcast].streaming_bind`, `[network].bind` with one address | None | Allow from your Snapcast clients only: whoever can reach the port can connect as a client and receive the audio |
+| Snapcast JSON-RPC | 1705 (`[snapcast].jsonrpc_tcp_port`) | TCP | none | not configurable | None | Only in builds with the `snapcast-process` feature (released binaries use the embedded server and do not open it). Anyone who can reach it controls the server, and SnapDog's generated `snapserver.conf` does not restrict its address, so block it for everyone but this host |
+| AirPlay | 7001 and up, one per zone (7000 + zone number) | TCP, plus UDP | full with AirPlay 2 (feature `ap2`), none without | `[airplay].bind`, `[network].bind` | Optional `[airplay].password` | Allow the TCP ports from your AirPlay devices. AirPlay also uses UDP: ports 319 and 320 (AirPlay 2 clock) and further UDP ports chosen at run time for audio and timing, so allow UDP from the same devices |
+| Spotify Connect | 7100 and up, one per zone (`[spotify].port` + zone number − 1; 0 = random) | TCP | none | not possible: `[spotify].bind` is an error | The Spotify app's own login | Allow the ports from the phones that cast. Announcements follow `[spotify].zeroconf_backend`: `libmdns` announces on the default-route interface only, `avahi` and `dns-sd` on all |
+| KNX/IP device mode | 3671 | UDP (and the KNX multicast group 224.0.23.12) | partial | `[knx].bind` names the interface for the multicast group | None: KNX/IP has no authentication | The socket stays on all interfaces, so limit 3671/udp in the firewall |
+| mDNS announcements | 5353 | UDP | none | not configurable | None | Allow multicast DNS where the devices that discover SnapDog are |
+| MQTT | none | | | | | Client only: SnapDog connects out to the broker, nothing listens |
 
 "Full" means the service listens on exactly the configured addresses. "Partial" means the setting has an effect, but
 not on every socket of the service. "None" means the service cannot be bound to an address, and SnapDog says so
