@@ -14,7 +14,12 @@ fn main() {
 }
 
 fn build_webui() {
-    let webui_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../webui");
+    // Read at run time, not with `env!`: cargo reuses a compiled build script across
+    // checkouts that share a target directory, and a path baked in at compile time then
+    // points into another (possibly deleted) checkout.
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
+        .expect("cargo sets CARGO_MANIFEST_DIR for build scripts");
+    let webui_dir = Path::new(&manifest_dir).join("../webui");
     let out_dir = webui_dir.join("out");
 
     // Re-run if webui sources change
