@@ -120,6 +120,19 @@ fn mem_write(address: u16, data: &[u8]) -> Vec<u8> {
     a
 }
 
+/// The next frame that is the device's own answer to a programming request: not a group
+/// telegram, and not the `L_Data.con` (0x2E) with which knx-rs 0.12 confirms every `L_Data.req`
+/// a tunnel client sends. A confirmation carries the client's own source address, so taking it
+/// for the answer reads the wrong address.
+async fn next_answer(ets: &mut TunnelConnection) -> CemiFrame {
+    loop {
+        let frame = ets.recv().await.expect("tunnel open");
+        if frame.message_code_raw() != 0x2E && frame.as_group_write().is_none() {
+            return frame;
+        }
+    }
+}
+
 /// Write a property and wait for the device's response, as ETS does. A client that keeps
 /// writing while the server waits for its acknowledgement of that response only makes both
 /// sides retry.
@@ -127,21 +140,14 @@ async fn property_write(ets: &mut TunnelConnection, obj: u8, pid: u8, data: Vec<
     ets.send(mgmt_frame(managed_ia(), &prop_write(obj, pid, &data)))
         .await
         .unwrap();
-    timeout(T, async {
-        loop {
-            let frame = ets.recv().await.expect("tunnel open");
-            if frame.as_group_write().is_none() {
-                assert_eq!(
-                    frame.message_code_raw(),
-                    0x29,
-                    "a management response is an L_Data.ind as well"
-                );
-                return;
-            }
-        }
-    })
-    .await
-    .expect("property response");
+    let frame = timeout(T, next_answer(ets))
+        .await
+        .expect("property response");
+    assert_eq!(
+        frame.message_code_raw(),
+        0x29,
+        "a management response is an L_Data.ind as well"
+    );
 }
 
 /// Group objects the simulated ETS associates with group addresses.
@@ -165,16 +171,9 @@ async fn table_reference(ets: &mut TunnelConnection, obj: u8) -> u16 {
     ))
     .await
     .unwrap();
-    let response = timeout(T, async {
-        loop {
-            let frame = ets.recv().await.expect("tunnel open");
-            if frame.as_group_write().is_none() {
-                return frame;
-            }
-        }
-    })
-    .await
-    .expect("table reference response");
+    let response = timeout(T, next_answer(ets))
+        .await
+        .expect("table reference response");
     let p = response.payload();
     u16::try_from(u32::from_be_bytes(p[p.len() - 4..].try_into().unwrap())).unwrap()
 }
@@ -190,13 +189,32 @@ async fn allocate(ets: &mut TunnelConnection, obj: u8, size: usize) -> u16 {
     table_reference(ets, obj).await
 }
 
-async fn write_segment(ets: &TunnelConnection, at: u16, data: &[u8]) {
+async fn write_segment(ets: &mut TunnelConnection, at: u16, data: &[u8]) {
     for (i, chunk) in data.chunks(60).enumerate() {
         let to = at + u16::try_from(i * 60).unwrap();
-        ets.send(mgmt_frame(managed_ia(), &mem_write(to, chunk)))
-            .await
-            .unwrap();
+        send_confirmed(ets, mgmt_frame(managed_ia(), &mem_write(to, chunk))).await;
     }
+}
+
+/// Send a frame and read the `L_Data.con` (0x2E) with which knx-rs 0.12 confirms it.
+///
+/// Reading acknowledges the server's confirmation. A knx-rs tunnel client does not
+/// acknowledge a server frame while it waits for the acknowledgement of its own request, so
+/// a client that sends the next frame first only makes both sides retry; real ETS reads what
+/// the server sends. Group telegrams that arrive first are skipped.
+async fn send_confirmed(ets: &mut TunnelConnection, frame: CemiFrame) {
+    ets.send(frame).await.unwrap();
+    let confirmation = timeout(T, async {
+        loop {
+            let frame = ets.recv().await.expect("tunnel open");
+            if frame.message_code_raw() == 0x2E {
+                return frame;
+            }
+        }
+    })
+    .await
+    .expect("the server confirms the request with an L_Data.con");
+    assert_eq!(confirmation.message_code_raw(), 0x2E);
 }
 
 /// The download order of the generated product: the application segment is allocated first
@@ -386,6 +404,10 @@ async fn expect_group_write(conn: &mut TunnelConnection, dst: &str) -> Vec<u8> {
     timeout(T, async {
         loop {
             let frame = conn.recv().await.expect("tunnel open");
+            // The L_Data.con (0x2E) that confirms a write of ours carries the same telegram.
+            if frame.message_code_raw() == 0x2E {
+                continue;
+            }
             if let Some((g, data)) = frame.as_group_write()
                 && g == want
             {
@@ -411,6 +433,10 @@ async fn expect_no_group_write(conn: &mut TunnelConnection, dst: &str) {
     let r = timeout(Duration::from_millis(700), async {
         loop {
             let frame = conn.recv().await?;
+            // The L_Data.con (0x2E) that confirms a write of ours carries the same telegram.
+            if frame.message_code_raw() == 0x2E {
+                continue;
+            }
             if let Some((g, _)) = frame.as_group_write()
                 && g == want
             {
@@ -1210,19 +1236,24 @@ async fn a_flood_of_foreign_writes_is_corrected_at_a_bounded_rate() {
     let sent_in = started.elapsed();
 
     let mut corrections = Vec::new();
+    let mut last_arrival = started;
     while let Ok(Some(frame)) = timeout(Duration::from_millis(800), ets.recv()).await {
         if let Some((address, data)) = frame.as_group_write()
             && address == ga("1/1/3")
+            && frame.message_code_raw() != 0x2E
         {
             corrections.push(data);
+            last_arrival = std::time::Instant::now();
         }
     }
-    // At most one telegram per pacing interval of the time the flood took, plus the one that
-    // was sent at once.
-    let allowed = sent_in.as_millis() / 25 + 2;
+    // At most one telegram per pacing interval of the time over which the corrections arrived,
+    // plus the one that was sent at once. The time the flood took to send is no measure: the
+    // server works through it at its own pace, which a busy machine stretches.
+    let span = last_arrival - started;
+    let allowed = span.as_millis() / 25 + 2;
     assert!(
         !corrections.is_empty() && (corrections.len() as u128) <= allowed,
-        "{} corrections for 300 foreign writes in {sent_in:?} (at most {allowed})",
+        "{} corrections for 300 foreign writes sent in {sent_in:?}, arriving over {span:?} (at most {allowed})",
         corrections.len()
     );
     assert!(corrections.len() < 300);
@@ -1239,46 +1270,47 @@ async fn a_flood_of_foreign_writes_is_corrected_at_a_bounded_rate() {
     }
 }
 
-/// A server that cannot keep up (a tunnel client that never acknowledges costs it three seconds
-/// per telegram) is reported, loudly and with counters, and left alone: dropping a knx-rs
-/// `DeviceServer` does not free its port, so a restart would lock everybody out. The device task
-/// goes on answering, and shutdown returns.
+/// A tunnel client that never acknowledges used to cost a knx-rs 0.11 `DeviceServer` three seconds
+/// per telegram for good, which the device task reported as a stall (and could not cure, because
+/// dropping that server did not free its port). knx-rs 0.12 drops such a client after the first
+/// frame it does not acknowledge, so the server keeps up: nothing is reported as stalled, a client
+/// that does acknowledge keeps receiving, the device task answers and shutdown returns.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_server_that_cannot_keep_up_is_reported_and_not_restarted() {
+async fn a_silent_tunnel_client_no_longer_stalls_the_server() {
     let tmp = tempfile::tempdir().unwrap();
     let cfg = ets_style_config("", "");
     let dev = start_device(&cfg, tmp.path().join("knx-memory.bin")).await;
     let mut ets = connect(&dev).await;
     ets_download(&mut ets, &all_status_links()).await;
-    // The burst of status telegrams starts a moment after the download. A client that does not
-    // acknowledge joins now, and from then on every telegram costs the server three seconds.
     let server = dev.handle.local_addr().expect("server up");
-    let ets_acks = tokio::spawn(async move { while ets.recv().await.is_some() {} });
+    // The client that acknowledges forwards what it sees, so that the test can look at it.
+    let (seen_tx, mut seen) = mpsc::unbounded_channel();
+    let ets_acks = tokio::spawn(async move {
+        while let Some(frame) = ets.recv().await {
+            let _ = seen_tx.send(frame);
+        }
+    });
     let _silent = connect_and_go_silent(server).await;
 
-    let stats = dev.handle.outbound_stats();
-    let started = std::time::Instant::now();
-    timeout(Duration::from_secs(25), async {
-        while !stats.stalled.load(std::sync::atomic::Ordering::Relaxed) {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+    // A change after the silent client joined: its telegram has to reach the client that listens.
+    set_zone_volume(&dev, 1, 33, false).await;
+    timeout(Duration::from_secs(12), async {
+        while let Some(frame) = seen.recv().await {
+            if frame.message_code_raw() == 0x29 && frame.as_group_write().is_some() {
+                return;
+            }
         }
     })
     .await
-    .expect("the stall is detected");
-    let detected_after = started.elapsed();
-    assert!(
-        detected_after >= Duration::from_secs(8),
-        "not before the limit: {detected_after:?}"
-    );
-    assert_eq!(stats.stalls.load(std::sync::atomic::Ordering::Relaxed), 1);
-    assert!(
-        stats
-            .stalled_seconds
-            .load(std::sync::atomic::Ordering::Relaxed)
-            >= 10
-    );
+    .expect("a client that acknowledges keeps receiving next to a silent one");
 
-    // Nothing was restarted: the same server answers, and the device task takes commands.
+    // Long enough for the old stall limit (ten seconds) to have passed, if there were one.
+    tokio::time::sleep(Duration::from_secs(11)).await;
+    let stats = dev.handle.outbound_stats();
+    assert!(!stats.stalled.load(std::sync::atomic::Ordering::Relaxed));
+    assert_eq!(stats.stalls.load(std::sync::atomic::Ordering::Relaxed), 0);
+
+    // The same server answers, and the device task takes commands.
     assert_eq!(dev.handle.local_addr(), Some(server));
     let prog = timeout(Duration::from_secs(4), dev.handle.get_prog_mode())
         .await
@@ -1468,16 +1500,11 @@ async fn individual_address_of(dev: &Device, ets: &mut TunnelConnection) -> u16 
     dev.handle.set_prog_mode(true).await.unwrap();
     let [hi, lo] = apci_hdr(ApduType::IndividualAddressRead);
     ets.send(broadcast_frame(&[hi, lo])).await.unwrap();
-    timeout(T, async {
-        loop {
-            let frame = ets.recv().await.expect("tunnel open");
-            if frame.as_group_write().is_none() {
-                return frame.source_address().raw();
-            }
-        }
-    })
-    .await
-    .expect("individual address response")
+    timeout(T, next_answer(ets))
+        .await
+        .expect("individual address response")
+        .source_address()
+        .raw()
 }
 
 /// ETS assigns an individual address in programming mode and downloads to it. After the

@@ -1282,9 +1282,9 @@ async fn bau_task_loop(task: &mut DeviceTask, mut server: DeviceServer) -> LoopE
             event = server.recv() => {
                 let Some(event) = event else { break LoopEnd::ServerClosed };
                 let is_tunnel = matches!(event, ServerEvent::TunnelFrame(_));
-                let frame = repair_master_reset(match event {
+                let frame = match event {
                     ServerEvent::TunnelFrame(f) | ServerEvent::RoutingFrame(f) => f,
-                });
+                };
 
                 // Log tunnel client connections
                 if is_tunnel && !tunnel_active {
@@ -1470,10 +1470,11 @@ async fn finish_loop(server: DeviceServer, end: LoopEnd) -> LoopEnd {
     end
 }
 
-/// Move what the device stack wants to send into the outbound queue, as indications.
+/// Move what the device stack wants to send into the outbound queue. The server delivers
+/// each frame to its clients as `L_Data.ind`.
 fn drain_outbox(bau: &mut Bau, outbound: &mut Outbound) {
     while let Some(out) = bau.next_outgoing_frame() {
-        outbound.push(to_indication(out));
+        outbound.push(out);
     }
 }
 
@@ -1877,50 +1878,6 @@ fn is_management_for_device(bau: &Bau, frame: &CemiFrame) -> bool {
         && frame.destination_address_raw() == bau.individual_address().raw()
 }
 
-/// An `A_Restart` with the master reset type (`0x0381`) as the specification has it: the APCI,
-/// the erase code and the channel, four bytes. knx-rs 0.11 strips both APCI bytes and then reads
-/// the erase code at `data[1]`, the layout of the C++ stack's pointer, which still has the low
-/// APCI byte in front. It rejects the four-byte form as too short, so a master reset from a real
-/// ETS (a factory reset, "reset links", "reset application") would never take effect. The low
-/// APCI byte is repeated in front of the erase code, which gives the stack the layout it reads.
-///
-/// Other frames, and a frame that already has the longer form, are returned as they are.
-fn repair_master_reset(frame: CemiFrame) -> CemiFrame {
-    const MASTER_RESET: u16 = 0x0381;
-    let bytes = frame.as_bytes();
-    // msg code, additional info length, ctrl1, ctrl2, source (2), destination (2), length
-    let length_at = 8 + bytes.get(1).map_or(0, |n| usize::from(*n));
-    let tpdu = length_at + 1;
-    let [hi, lo] = match bytes.get(tpdu..tpdu + 2) {
-        Some([hi, lo]) => [*hi, *lo],
-        _ => return frame,
-    };
-    let apci = u16::from_be_bytes([hi & 0x03, lo]);
-    if apci != MASTER_RESET || bytes.len() != tpdu + 4 || usize::from(bytes[length_at]) != 3 {
-        return frame;
-    }
-    let mut patched = bytes.to_vec();
-    patched[length_at] = 4;
-    patched.insert(tpdu + 2, lo);
-    CemiFrame::parse(&patched).unwrap_or(frame)
-}
-
-/// A frame the device stack produced, as the KNXnet/IP server must deliver it.
-///
-/// The stack builds its outgoing frames as `L_Data.req` (0x11), a request from an application to
-/// the data link layer. A server tells its tunnel clients, and the routing multicast group, about
-/// a telegram with `L_Data.ind` (0x29). Clients and routers that follow the specification may
-/// ignore a request that arrives where an indication belongs.
-fn to_indication(frame: CemiFrame) -> CemiFrame {
-    use knx_rs_core::message::MessageCode;
-    if frame.message_code_raw() != MessageCode::LDataReq as u8 {
-        return frame;
-    }
-    let mut bytes = frame.as_bytes().to_vec();
-    bytes[0] = MessageCode::LDataInd as u8;
-    CemiFrame::parse(&bytes).unwrap_or(frame)
-}
-
 /// What the BAU task does with a telegram before the device stack sees it.
 #[derive(Debug, PartialEq, Eq)]
 enum GroupPolicy {
@@ -2038,11 +1995,9 @@ mod tests {
     #[test]
     fn a_master_reset_in_the_specified_form_reaches_the_device_stack_unnumbered() {
         let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
-        // erase code 2 (factory reset), channel 0: APCI 0x0381 and two bytes.
-        let frame = p2p(&[0x03, 0x81, 0x02, 0x00]);
-        bau.process_frame(&frame, 0);
-        assert!(!bau.take_restart_pending(), "knx-rs 0.11 rejects the form");
-        bau.process_frame(&repair_master_reset(frame), 0);
+        // erase code 2 (factory reset), channel 0: APCI 0x0381 and two bytes. knx-rs 0.11
+        // rejected this form as too short; 0.12 reads it.
+        bau.process_frame(&p2p(&[0x03, 0x81, 0x02, 0x00]), 0);
         assert!(bau.take_restart_pending());
     }
 
@@ -2051,30 +2006,9 @@ mod tests {
         let mut bau = build_bau(IndividualAddress::from_raw(0x1164));
         bau.process_frame(&p2p(&[0x80, 0x00]), 0); // T_Connect
         // Numbered data, sequence 0.
-        let frame = repair_master_reset(p2p(&[0x43, 0x81, 0x02, 0x00]));
-        bau.process_frame(&frame, 1);
+        bau.process_frame(&p2p(&[0x43, 0x81, 0x02, 0x00]), 1);
         bau.poll(2);
         assert!(bau.take_restart_pending());
-    }
-
-    #[test]
-    fn only_a_four_byte_master_reset_is_repaired() {
-        let same = |tpdu: &[u8]| {
-            let frame = p2p(tpdu);
-            repair_master_reset(frame.clone()).as_bytes() == frame.as_bytes()
-        };
-        assert!(same(&[0x03, 0x80]), "a basic restart");
-        assert!(
-            same(&[0x03, 0x81, 0x02, 0x00, 0x00]),
-            "already the longer form"
-        );
-        assert!(same(&[0x03, 0x82, 0x02, 0x00]), "another service");
-        assert!(same(&[0x00, 0x80]), "a group write");
-        let repaired = repair_master_reset(p2p(&[0x03, 0x81, 0x07, 0x00]));
-        assert_eq!(
-            &repaired.as_bytes()[8..],
-            &[4, 0x03, 0x81, 0x81, 0x07, 0x00]
-        );
     }
 
     #[test]
@@ -3187,26 +3121,5 @@ mod tests {
             .expect("everything offered while there was no server goes out once it is up");
         shutdown_tx.send(true).unwrap();
         supervisor.await.unwrap();
-    }
-
-    #[test]
-    fn frames_leave_the_server_as_indications() {
-        let mut bau = bau_from_toml(&toml_config());
-        let go = bau
-            .group_objects_mut()
-            .get_mut(zone_asap(1, ZGO_VOLUME_STATUS))
-            .unwrap();
-        go.set_value(&DptValue::Float(40.0)).unwrap();
-        bau.poll(0);
-        let req = bau.next_outgoing_frame().unwrap();
-        assert_eq!(req.message_code_raw(), 0x11, "the stack builds requests");
-        let ind = to_indication(req.clone());
-        assert_eq!(ind.message_code_raw(), 0x29);
-        // Nothing else about the telegram changes.
-        assert_eq!(ind.destination_address_raw(), req.destination_address_raw());
-        assert_eq!(ind.source_address(), req.source_address());
-        assert_eq!(ind.as_group_write(), req.as_group_write());
-        // A frame that is not a request is left alone.
-        assert_eq!(to_indication(ind.clone()).as_bytes(), ind.as_bytes());
     }
 }
