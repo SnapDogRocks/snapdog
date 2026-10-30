@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.29.0](https://github.com/SnapDogRocks/snapdog/compare/v0.28.2...v0.29.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **knx:** validate global group addresses and malformed KNX URLs when the configuration loads
+* **knx:** keep the individual address ETS assigns across the restart in a version 2 memory file
+* **knx:** read the parameters from the segment the last download wrote
+* **knx:** enforce the group object flags, ignore responses and answer group reads on status objects
+* **knx:** never block the device task on the KNXnet/IP server, the programming-mode API can answer 503
+* **knx:** dispatch and send device-mode group objects by object identity, status only on change
+* **mqtt:** stop publishing the media_player discovery that Home Assistant ignores
+* **mqtt:** refuse unclear command payloads, ignore retained and flooded commands
+* **mqtt:** a wrong [mqtt] section switches MQTT off and TLS and secret files are checked at load
+* **release:** build released binaries and images with the full feature set, AirPlay 2 becomes the default
+* **config:** expand a leading ~ in path settings
+* **cli:** validate command-line overrides such as --sample-rate and --bit-depth
+* **cli:** snapdog-client --soundcard fails without a match and --user, ws:// and wss:// are refused
+* **api:** close a lagging WebSocket client with 1013 instead of the shutdown code
+* **deb:** install a minimal one-zone default config instead of the example
+* **config:** refuse an empty encryption key with f32lz4e
+* **api:** serve the OpenAPI document at /api/v1/openapi.json behind the API key and make the console opt-in
+* **config:** [spotify].name names the Spotify Connect device, a prefix when there are several zones
+
+### Features
+
+* **api:** serve the API console and its script from the binary without a CDN ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **config:** bind the audio streaming port to one address with [snapcast].streaming_bind ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **config:** report data left in a literal ~ directory ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **mqtt:** Home Assistant MQTT device discovery, off by default ([1d00fd6](https://github.com/SnapDogRocks/snapdog/commit/1d00fd6b153cf1cab4853fc354fa9816161d2b2e))
+* **mqtt:** TLS, mutual TLS, password files and load-time validation for [mqtt] ([1d00fd6](https://github.com/SnapDogRocks/snapdog/commit/1d00fd6b153cf1cab4853fc354fa9816161d2b2e))
+* **net:** one bind model for every network listener ([#363](https://github.com/SnapDogRocks/snapdog/issues/363)) ([59d535a](https://github.com/SnapDogRocks/snapdog/commit/59d535a8066678f23e5b6ae7bdd7f26fd39fa800))
+* **spotify:** add a fixed Zeroconf port and a selectable announcement backend ([#360](https://github.com/SnapDogRocks/snapdog/issues/360)) ([83d5936](https://github.com/SnapDogRocks/snapdog/commit/83d59364703465f7853e8220189bb6ed2e0c1f2b))
+
+
+### Bug Fixes
+
+* **airplay:** share one pairing store between all zones ([ea6d7b9](https://github.com/SnapDogRocks/snapdog/commit/ea6d7b9a5b171dd333c7ccf19532dc64550e2ff2))
+* **api:** close a lagging WebSocket client with 1013 instead of the shutdown code ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **api:** document the system update routes and check the spec against the routers ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **api:** fall back to IPv4 when the default bind has no IPv6 ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **api:** serve the OpenAPI document at /api/v1/openapi.json behind the API key and make the console opt-in ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **build:** read the manifest directory when the build script runs ([#364](https://github.com/SnapDogRocks/snapdog/issues/364)) ([50d34ed](https://github.com/SnapDogRocks/snapdog/commit/50d34edfbf0e8535fd1207ad9f13bdbd15836ded))
+* **client:** answer MPRIS PlayPause instead of panicking ([2b08b58](https://github.com/SnapDogRocks/snapdog/commit/2b08b58da684cef5fbb77385c8a4bd81319392ba))
+* **cli:** snapdog-client --soundcard fails without a match and --user, ws:// and wss:// are refused ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **cli:** validate command-line overrides such as --sample-rate and --bit-depth ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **config:** [spotify].name names the Spotify Connect device, a prefix when there are several zones ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **config:** expand a leading ~ in path settings ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **config:** refuse an empty encryption key with f32lz4e ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **config:** report unknown keys, ignored keys and the default encryption key at startup ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **config:** write [system].log_file with daily rotation, keep 14 files and delete only exact daily names ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **dbus:** allow sending to the MPRIS names one by one so dbus-broker accepts the policy files ([2b08b58](https://github.com/SnapDogRocks/snapdog/commit/2b08b58da684cef5fbb77385c8a4bd81319392ba))
+* **deb:** install a minimal one-zone default config instead of the example ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **deb:** install, restart and stop the systemd units from the packages ([#335](https://github.com/SnapDogRocks/snapdog/issues/335)) ([a22dd29](https://github.com/SnapDogRocks/snapdog/commit/a22dd29eba1784fa666161253869bb459af763a8))
+* **deps:** update knx-rs to 0.12.0 and drop the workarounds it fixes ([#365](https://github.com/SnapDogRocks/snapdog/issues/365)) ([a8293c8](https://github.com/SnapDogRocks/snapdog/commit/a8293c898252698566cd907cc885cad94160044e))
+* **deps:** update zstd to 0.14.3, zstd-safe to 8.2.0 and zstd-sys to 2.1.2 ([#342](https://github.com/SnapDogRocks/snapdog/issues/342)) ([4fffb8a](https://github.com/SnapDogRocks/snapdog/commit/4fffb8ae738de6cb0dbea9af791341bc355479c7))
+* **knx:** dispatch and send device-mode group objects by object identity, status only on change ([0b4b23e](https://github.com/SnapDogRocks/snapdog/commit/0b4b23e85079f31768f743b2d754f2b65477bb4d))
+* **knx:** enforce the group object flags, ignore responses and answer group reads on status objects ([0b4b23e](https://github.com/SnapDogRocks/snapdog/commit/0b4b23e85079f31768f743b2d754f2b65477bb4d))
+* **knx:** keep the individual address ETS assigns across the restart in a version 2 memory file ([0b4b23e](https://github.com/SnapDogRocks/snapdog/commit/0b4b23e85079f31768f743b2d754f2b65477bb4d))
+* **knx:** never block the device task on the KNXnet/IP server, the programming-mode API can answer 503 ([0b4b23e](https://github.com/SnapDogRocks/snapdog/commit/0b4b23e85079f31768f743b2d754f2b65477bb4d))
+* **knx:** read the parameters from the segment the last download wrote ([0b4b23e](https://github.com/SnapDogRocks/snapdog/commit/0b4b23e85079f31768f743b2d754f2b65477bb4d))
+* **knx:** reconnect to a lost or late gateway and restart a stopped device server ([0b4b23e](https://github.com/SnapDogRocks/snapdog/commit/0b4b23e85079f31768f743b2d754f2b65477bb4d))
+* **knx:** send device-mode telegrams as L_Data.ind and make an ETS factory reset persistent ([0b4b23e](https://github.com/SnapDogRocks/snapdog/commit/0b4b23e85079f31768f743b2d754f2b65477bb4d))
+* **knx:** validate global group addresses and malformed KNX URLs when the configuration loads ([0b4b23e](https://github.com/SnapDogRocks/snapdog/commit/0b4b23e85079f31768f743b2d754f2b65477bb4d))
+* **macos:** do not invent a Spotify device name in the Settings app and keep zone settings when a zone is renamed ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **macos:** really remove settings that the Settings app switches off or clears ([faeab61](https://github.com/SnapDogRocks/snapdog/commit/faeab616381ba0e9fe733307c44623ccf5eb08ea))
+* **mqtt:** a wrong [mqtt] section switches MQTT off and TLS and secret files are checked at load ([1d00fd6](https://github.com/SnapDogRocks/snapdog/commit/1d00fd6b153cf1cab4853fc354fa9816161d2b2e))
+* **mqtt:** accept large retained messages, bound the state size and keep the latest command value ([1d00fd6](https://github.com/SnapDogRocks/snapdog/commit/1d00fd6b153cf1cab4853fc354fa9816161d2b2e))
+* **mqtt:** derive command routing from the subscription topics so that commands reach the zones again ([1d00fd6](https://github.com/SnapDogRocks/snapdog/commit/1d00fd6b153cf1cab4853fc354fa9816161d2b2e))
+* **mqtt:** refuse unclear command payloads, ignore retained and flooded commands ([1d00fd6](https://github.com/SnapDogRocks/snapdog/commit/1d00fd6b153cf1cab4853fc354fa9816161d2b2e))
+* **mqtt:** run the broker connection in its own task, recover after reconnects and supervise the tasks ([1d00fd6](https://github.com/SnapDogRocks/snapdog/commit/1d00fd6b153cf1cab4853fc354fa9816161d2b2e))
+* **mqtt:** stop publishing the media_player discovery that Home Assistant ignores ([1d00fd6](https://github.com/SnapDogRocks/snapdog/commit/1d00fd6b153cf1cab4853fc354fa9816161d2b2e))
+* **packaging:** let the systemd unit bind the AirPlay 2 PTP ports ([ea6d7b9](https://github.com/SnapDogRocks/snapdog/commit/ea6d7b9a5b171dd333c7ccf19532dc64550e2ff2))
+* **release:** build released binaries and images with the full feature set, AirPlay 2 becomes the default ([ea6d7b9](https://github.com/SnapDogRocks/snapdog/commit/ea6d7b9a5b171dd333c7ccf19532dc64550e2ff2))
+
 ## [0.28.2](https://github.com/SnapDogRocks/snapdog/compare/v0.28.1...v0.28.2) (2026-10-24)
 
 
