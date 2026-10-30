@@ -1352,9 +1352,18 @@ jobs:
         run: |
           set -euo pipefail
           # `gh pr checks --watch` errors out when no check has been registered
-          # yet, which races the tap workflow starting.
+          # yet, which races the tap workflow starting. So wait until one is
+          # registered, and count them: the exit status of `gh pr checks` cannot
+          # tell "none registered" from "registered and still running" (it is
+          # non-zero for both, 8 for pending). The second case is the normal one
+          # while the slowest lane, the Intel macOS runner, runs for minutes;
+          # taking it for the first failed release 0.29.0 thirteen seconds before
+          # that lane finished. A failed API call counts as none and is retried.
           for attempt in {1..18}; do
-            gh pr checks "$PR" --repo "$TAP_REPO" >/dev/null 2>&1 && break
+            registered=$(gh pr view "$PR" --repo "$TAP_REPO" \
+              --json statusCheckRollup --jq '.statusCheckRollup | length' 2>/dev/null) \
+              || registered=0
+            [[ "$registered" =~ ^[0-9]+$ && "$registered" -gt 0 ]] && break
             if [[ "$attempt" == 18 ]]; then
               echo "::error::TAP004 the tap reported no checks for $PR"
               exit 1
