@@ -408,6 +408,29 @@ alternative is named.
   "API documentation (OpenAPI)" below for what that costs). The OpenAPI document is served on its own at
   `GET /api/v1/openapi.json`, and that route needs the key when `api_keys` is set.
 
+- **KNX device mode.** A malformed `[knx].url`, a malformed global group address (`all_stop`, `knx_time` and the
+  others) or an IPv6 `[knx].bind` now stops the start when the configuration loads, with the key named; before, the
+  mistake surfaced later or never. `knx-memory.bin` is format version 2: **an older SnapDog cannot read it**, starts the
+  device unprogrammed and overwrites the file, so keep a copy before a downgrade. The device applies the parameters of
+  the *last* ETS download (earlier releases kept applying those of the first one): check them in ETS after the upgrade.
+  Behaviour changes: status is sent only when a value changes (a bus device that relied on the repeated send no longer
+  gets it), a group response no longer runs a command, a command object no longer answers a read, and the group object
+  flags are enforced. [docs/knx-bridge.md](docs/knx-bridge.md) has the details, and what has not been tried against ETS.
+- **MQTT.** Inbound commands work again: since 0.16.0 every one was dropped, because the base topic's trailing slash was
+  stripped twice. They are strict now: `on`, `off`, `true`, `false`, `1` and `0` in any case, and finite numbers within
+  limits; a retained command is ignored and a flood is rate limited per zone and client. Anything that relied on the
+  lenient parsing, such as a `repeat` payload other than `off`, changes. A wrong `[mqtt]` section (a value of the wrong
+  type, an unknown key, a TLS or password file that cannot be read) switches MQTT off with an error while the rest of the
+  server keeps running, and `--check-config` exits 1. The `media_player` discovery messages, which Home Assistant never
+  turned into an entity, are no longer published; they are deleted from the broker only with `clear_legacy_topics = true`.
+  [docs/mqtt.md](docs/mqtt.md) has the migration notes.
+- **Listeners.** Two services configured for the same port, or a `bind` address that no interface of the machine has,
+  stop the start with both names (`--check-config` reports the same); a second bind used to fail later. Spotify Connect
+  listens on TCP port 7100 (zone *n* on 7100 + *n* - 1) instead of a random port: open it in the firewall, or set
+  `[spotify].port = 0` for the old behaviour. `[spotify].bind` is refused, because the Spotify library cannot be bound to
+  an address. `[http].bind` accepts a list, and `[network].bind` sets the default of every service; see "Network ports and
+  what they expose" below.
+
 <details>
 <summary><strong>MQTT</strong></summary>
 

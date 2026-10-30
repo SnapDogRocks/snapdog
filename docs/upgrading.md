@@ -158,6 +158,10 @@ the configuration and CLI fixes:
   are reported once at startup, and `--check-config` prints them. Existing files still load.
 - **New.** `[snapcast].streaming_bind` binds the audio port 1704 to one address. The README
   lists the ports and what they expose.
+- **KNX device mode, MQTT and listeners.** These releases also changed what the KNX device
+  mode stores and how it behaves, how MQTT commands and configuration errors are handled, and
+  which listener settings stop a start. Each change is listed, with the action it needs, in the
+  README under "Upgrading: changes that can stop a start or move data".
 
 ## Features that did not change
 
