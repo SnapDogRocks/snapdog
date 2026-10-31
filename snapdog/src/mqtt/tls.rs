@@ -97,17 +97,22 @@ fn load_material(config: &MqttConfig) -> Result<Material> {
     };
 
     let identity = if let (Some(cert), Some(key)) = (&config.client_cert, &config.client_key) {
-        Some(
-            Identity::from_pkcs8(&read(cert, "client_cert")?, &read(key, "client_key")?)
-                .with_context(|| {
-                    format!(
-                        "[mqtt] client_cert {} and client_key {} do not make a TLS identity \
+        let (cert_pem, key_pem) = (read(cert, "client_cert")?, read(key, "client_key")?);
+        ensure_key_belongs_to_cert(&cert_pem, &key_pem).with_context(|| {
+            format!(
+                "[mqtt] client_key {} does not belong to client_cert {}",
+                key.display(),
+                cert.display()
+            )
+        })?;
+        Some(Identity::from_pkcs8(&cert_pem, &key_pem).with_context(|| {
+            format!(
+                "[mqtt] client_cert {} and client_key {} do not make a TLS identity \
                          (does the key belong to the certificate, is it unencrypted PKCS#8?)",
-                        cert.display(),
-                        key.display()
-                    )
-                })?,
-        )
+                cert.display(),
+                key.display()
+            )
+        })?)
     } else {
         None
     };
@@ -131,6 +136,30 @@ pub fn tls_connector(config: &MqttConfig) -> Result<TlsConnector> {
             ),
             _ => "[mqtt] cannot set up the TLS client".to_owned(),
         })
+}
+
+/// Check, with the same code on every platform, that `key_pem` is the private key of the
+/// first certificate in `cert_pem`. The platform libraries differ: OpenSSL notices a foreign
+/// key when the connector is built, Secure Transport when the identity is read, `SChannel`
+/// only in the handshake, so a mismatch would otherwise surface late and differently.
+fn ensure_key_belongs_to_cert(cert_pem: &[u8], key_pem: &[u8]) -> Result<()> {
+    use rustls::pki_types::pem::PemObject;
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+    use rustls::sign::CertifiedKey;
+
+    let chain = CertificateDer::pem_slice_iter(cert_pem)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .context("the certificate is not PEM")?;
+    anyhow::ensure!(
+        !chain.is_empty(),
+        "the certificate file holds no certificate"
+    );
+    let key = PrivateKeyDer::from_pem_slice(key_pem).context("the key is not PEM")?;
+    let key = rustls::crypto::aws_lc_rs::sign::any_supported_type(&key)
+        .context("the key is of a kind that is not supported")?;
+    CertifiedKey::new(chain, key)
+        .keys_match()
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 fn read(path: &std::path::Path, key: &str) -> Result<Vec<u8>> {
