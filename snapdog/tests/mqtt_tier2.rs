@@ -1160,6 +1160,9 @@ async fn mqtt_tier2_the_documented_acl_lets_every_command_through() {
 /// listener that demands a client certificate, all signed by a throwaway CA.
 struct TlsBroker {
     _container: ContainerAsync<GenericImage>,
+    /// Where the Docker daemon publishes the container ports: `localhost` for a local
+    /// daemon, the daemon's address for a `tcp://` `DOCKER_HOST`.
+    host: String,
     plain_port: u16,
     tls_port: u16,
     mtls_port: u16,
@@ -1191,9 +1194,31 @@ keyfile /mosquitto/config/server.key
 require_certificate true
 ";
 
-/// Start the TLS mosquitto with a server certificate valid for `server_names`.
+/// The host the published container ports are reachable on: the `tcp://` host of
+/// `DOCKER_HOST`, otherwise `localhost`.
+fn docker_host_name() -> String {
+    std::env::var("DOCKER_HOST")
+        .ok()
+        .and_then(|h| {
+            let addr = h.strip_prefix("tcp://")?;
+            Some(
+                addr.rsplit_once(':')
+                    .map_or(addr, |(host, _)| host)
+                    .to_string(),
+            )
+        })
+        .unwrap_or_else(|| "localhost".into())
+}
+
+/// Start the TLS mosquitto with a server certificate valid for `server_names` and for
+/// the host the Docker daemon publishes the ports on (the TLS tests connect there).
 async fn start_tls_broker(test: &str, server_names: &[&str]) -> Option<TlsBroker> {
-    let pki = test_pki::generate_for(server_names);
+    let host = docker_host_name();
+    let mut names = server_names.to_vec();
+    if !names.contains(&host.as_str()) {
+        names.push(&host);
+    }
+    let pki = test_pki::generate_for(&names);
     let copy = |path: &str| CopyTargetOptions::new(path).with_mode(0o644);
     let image = mosquitto()
         .with_exposed_port(ContainerPort::Tcp(8883))
@@ -1226,6 +1251,7 @@ async fn start_tls_broker(test: &str, server_names: &[&str]) -> Option<TlsBroker
         std::fs::write(dir.path().join(name), content).expect("write PEM");
     }
     Some(TlsBroker {
+        host,
         plain_port: container.get_host_port_ipv4(1883).await.expect("1883"),
         tls_port: container.get_host_port_ipv4(8883).await.expect("8883"),
         mtls_port: container.get_host_port_ipv4(8884).await.expect("8884"),
@@ -1257,9 +1283,9 @@ async fn mqtt_tier2_tls_verifies_the_server() {
         return;
     };
     let ca = b.file("ca.pem");
-    let tls = format!("mqtts://localhost:{}", b.tls_port);
+    let tls = format!("mqtts://{}:{}", b.host, b.tls_port);
     // Plaintext observer: what the bridge publishes over TLS is visible here.
-    let observer = Observer::start("it-t32-tls-obs", "localhost", b.plain_port, "#");
+    let observer = Observer::start("it-t32-tls-obs", &b.host, b.plain_port, "#");
 
     // Without the CA the system roots do not know the test CA: rejected.
     let rig = tls_bridge(&tls, "tls/no-ca/", "").await.expect("starts");
@@ -1286,7 +1312,7 @@ async fn mqtt_tier2_tls_verifies_the_server() {
     drop(rig);
 
     // TLS to a plaintext listener: no handshake, no connection, and no fallback.
-    let to_plain = format!("mqtts://localhost:{}", b.plain_port);
+    let to_plain = format!("mqtts://{}:{}", b.host, b.plain_port);
     let rig = tls_bridge(&to_plain, "tls/to-plain/", &format!("ca_file = {ca:?}"))
         .await
         .expect("starts");
@@ -1324,7 +1350,7 @@ async fn mqtt_tier2_tls_carries_commands() {
     let Some(b) = start_tls_broker("IT-T32 TLS command", &["localhost"]).await else {
         return;
     };
-    let tls = format!("mqtts://localhost:{}", b.tls_port);
+    let tls = format!("mqtts://{}:{}", b.host, b.tls_port);
     let mut rig = tls_bridge(
         &tls,
         "snapdog/",
@@ -1334,7 +1360,7 @@ async fn mqtt_tier2_tls_carries_commands() {
     .expect("starts");
     assert!(connects(&rig, 20).await);
     let cmd = publish_until_received(
-        "localhost",
+        &b.host,
         b.plain_port,
         "snapdog/zones/1/volume/set",
         "37",
@@ -1353,8 +1379,8 @@ async fn mqtt_tier2_mutual_tls() {
         return;
     };
     let ca = b.file("ca.pem");
-    let mtls = format!("mqtts://localhost:{}", b.mtls_port);
-    let observer = Observer::start("it-t32-mtls-obs", "localhost", b.plain_port, "#");
+    let mtls = format!("mqtts://{}:{}", b.host, b.mtls_port);
+    let observer = Observer::start("it-t32-mtls-obs", &b.host, b.plain_port, "#");
 
     let rig = tls_bridge(&mtls, "mtls/no-cert/", &format!("ca_file = {ca:?}"))
         .await
