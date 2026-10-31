@@ -7,7 +7,7 @@ created: 2026-11-01
 updated: 2026-11-01
 target_repo: snapdog     # RFC and API additions here; integration and library in two new repositories (HAI-DEC-3, confirmed 2026-11-01)
 target_branch: main
-related: [HAI-0007, LBD-0009, 377]
+related: [HAI-0007]
 owners: [metaneutrons]
 ---
 
@@ -41,8 +41,8 @@ custom component is the primary route. MQTT discovery published by the server ca
 
 **Out of scope.** Core submission (HAI-DEC-5 of HAI-0007, after Gold). A Lovelace card. Music
 Assistant provider code (a zone with `PLAY_MEDIA` is a target without it, HAI-0007 §9.2).
-Changes to the MQTT bridge. Anything under `snapdog/src/config` or `snapdog/src/net` while
-epic #377 (LBD-0008/0009) is open, except where §5 names it and orders it after #377.
+Changes to the MQTT bridge or to stage 1. Anything under `snapdog/src/config`, `snapdog/src/net` or
+`snapdog/src/mqtt`; the interface-binding epic #377 (LBD-0008/0009) is not touched.
 
 ## 2. Baseline
 
@@ -82,17 +82,14 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
   `snapdog-homeassistant` (`custom_components/snapdog`, `hacs.json`, CI) and the PyPI package
   `snapdog-api` (async client, models; its own repository `snapdog-api-python`). Both created
   locally first, no remote and no push without consent per action.
-- **HAI-DEC-6 (decided: yes).** Zones and clients get an optional stable `id` (S-5). Until a
-  server has them, the integration falls back to the index and says so in a repair.
 - **HAI-DEC-7 (decided: yes, as a separate design).** Zone linking (S-6) gets its own RFC
   before any code; `GROUPING` and the `join`/`unjoin` services depend on it and stay behind
   a capability flag until then.
-- **HAI-DEC-8.** The integration needs no change for covers. It fetches cover art itself with
-  the header and hands it to HA through `async_get_media_image` and `media_image_hash`, so a
-  protected server works. The signed URL (S-2) is still built, because stage 1 and every other
-  consumer of `cover_url` (a Cast device, Music Assistant) cannot send a header. **Strongest
-  objection:** that is work the integration does not need. Answer: it is the only fix for stage
-  1 covers, so it stays, but it is not on the integration's critical path (§8).
+- **HAI-DEC-8.** The integration needs no server change for covers. It fetches cover art itself
+  with the header and hands it to HA through `async_get_media_image` and `media_image_hash`,
+  so a protected server works. The signed cover URL proposed in HAI-0007 §5 item 2 is dropped
+  from this plan: its only consumers are stage 1 (an MQTT matter, not touched here) and
+  devices that cannot send a header (Cast, Music Assistant), which are not targets.
 - **HAI-DEC-9.** Clients are entities on their own device, not `media_player` entities
   (HAI-0007 §6.4), with one exception to decide in §10 (open question 3).
 - **HAI-DEC-10.** One config entry per server; zones and clients appear and disappear
@@ -100,13 +97,19 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
   client set changes.
 - **HAI-DEC-11.** The integration declares `iot_class: local_push`, minimum HA version 2026.10,
   Python as HA requires (3.14 for 2026.10).
+- **HAI-DEC-12.** Entity identity is the server id plus the index (`unique_id` =
+  `<server_id>_zone_<n>_<key>`). The order of `[[zone]]` and `[[client]]` in the configuration
+  is the identity, as it already is for API paths, MQTT topics and KNX addresses; new entries
+  are appended. The integration's documentation states this contract. This is a decision about
+  the integration only. HAI-0007's HAI-DEC-6 concerns the MQTT entities and is untouched: stage
+  1 shipped with indices and no `id`, and the MQTT bridge is not changed by this RFC.
 
 ## 4. Architecture
 
 ```text
 snapdog (Rust)  --REST + /ws-->  snapdog-api (PyPI, async)  -->  custom_components/snapdog
-   S-1..S-7                      models, client, WS runner        config flow, coordinator,
-   openapi.json, ws-events.json  coverage manifest                platforms, services, repairs
+S-1, S-3, S-4, S-6, S-7          models, client, WS runner        config flow, coordinator,
+openapi.json, ws-events.json     coverage manifest                platforms, services, repairs
 ```
 
 - **Library `snapdog-api`.** `SnapDogClient(session, host, port, api_key, tls)` with one method
@@ -127,24 +130,28 @@ snapdog (Rust)  --REST + /ws-->  snapdog-api (PyPI, async)  -->  custom_componen
 - **Discovery.** `manifest.json` `zeroconf: ["_snapdog._tcp.local."]`; the entry's `unique_id`
   is `server_id`; a changed address updates the entry. TXT `auth=true` leads to the API key
   step, `tls=true` to a verify switch.
-- **Identity.** Entity `unique_id` = `<server_id>_zone_<id>_<entity key>`, where `<id>` is the
-  stable id (S-5) or `n<index>` as fallback. Moving from the fallback to a stable id keeps the
-  entity (an entity registry migration in the integration, tested).
+- **Identity.** HAI-DEC-12: `unique_id` from `server_id` and the index, no migration layer.
 
 ## 5. API additions to SnapDog
 
 Each is small and useful on its own. All are additive; API version stays 1 (open question 7
-of HAI-0007 answered: additive means 1). None touches `snapdog/src/config` except S-5.
+of HAI-0007 answered: additive means 1). None touches `snapdog/src/config`, `snapdog/src/net` or `snapdog/src/mqtt`.
 
 | # | Addition | Needed for | Order |
 |---|---|---|---|
 | S-1 | `GET /api/v1/eq/presets` (names, and the band set of each) | `select_sound_mode`, client EQ preset select | first |
-| S-2 | Cover URL that needs no header: a short-lived signed `cover_url` in state and REST, signing key derived from the API key or generated per start; open when no keys are set | stage 1 covers, Cast, Music Assistant (not the integration, HAI-DEC-8) | with S-3 |
-| S-3 | WebSocket `hello` (server id, version, `api_version`, capabilities such as `zone_links`) and `snapshot` (all zones, clients, EQ, presence, playlists) on connect and on request | one-message resync (HAI-REQ-5, HAI-REQ-8) | first |
-| S-4 | Optional API key scopes `read` and `control` | a HA key that cannot change configuration (HAI-0007 §10) | after S-3 |
-| S-5 | Optional stable `id` on `[[zone]]` and `[[client]]`, returned in `ZoneInfo`, `ClientInfo`, MQTT state and notifications; paths stay index-based | entity identity (HAI-DEC-6) | **after #377 merges**, it touches `snapdog/src/config` |
+| S-3 | WebSocket `hello` (server id, version, `api_version`, capabilities such as `zone_links`) and `snapshot` (all zones, clients, EQ, presence, playlists), **sent only on opt-in** (`/ws?hello=1`, or a first client message), so the WebUI and other clients see no new message type | one-message resync (HAI-REQ-5, HAI-REQ-8) | first |
+| S-4 | Optional API key scopes `read` and `control` | a HA key that cannot change configuration (HAI-0007 §10). A key without a scope keeps full rights, otherwise it would be breaking | after S-3 |
 | S-6 | Zone linking (party mode): a runtime model that makes zones follow a leader's source | `GROUPING`, `join`, `unjoin` | own design RFC first |
 | S-7 | A machine-readable description of the WebSocket events (`docs/api/ws-events.json`, generated from `Notification` by a test, so it cannot drift) and a golden-file test in SnapDog | HAI-REQ-6, shared fixtures for the library | first |
+
+**Dropped from HAI-0007 §5, numbers kept so the discussion stays traceable.** S-2 (signed cover
+URL): no consumer left, see HAI-DEC-8. S-5 (stable `id`): see HAI-DEC-12. Both would also have
+touched code outside this RFC's boundary (MQTT state, `snapdog/src/config`).
+
+**Breaking changes.** None. S-1, S-6 (once designed) and S-7 add endpoints, files or tests. S-3
+is additive only because it is opt-in. S-4 is additive only while an unscoped key keeps all
+rights.
 
 **Emitting `zone_progress`** (HAI-T4) is dropped from the plan: the integration works with the
 once-per-second `zone_changed`; the variant is either removed or documented as reserved as part
@@ -258,7 +265,7 @@ checks each operation individually; the table groups for reading.
 | M-W05 | `zone_presence_changed` | presence entities | I: `test_ws_presence` | yes |
 | M-W06 | `playback_error` | `event` entity and a persistent repair-free log line; recoverable flag in the event data | I: `test_ws_playback_error` | yes |
 | M-W07 | `zone_progress` | **excluded** until emitted (S-7 decides); the event file marks it reserved | coverage exclusion table | — |
-| M-W08 | `hello` and `snapshot` (S-3) | version and `api_version` check, capability flags, full resync | L: `test_hello_snapshot`; I: `test_resync_after_reconnect` | yes |
+| M-W08 | `hello` and `snapshot` (S-3, requested by the integration on connect) | version and `api_version` check, capability flags, full resync | L: `test_hello_snapshot`; I: `test_resync_after_reconnect` | yes |
 | M-W09 | Socket loss, close 1001 and 1013, 64-connection limit (HTTP 503) | entities unavailable, one log line each way, backoff, repair for a refused connection | I: `test_reconnect`, `test_too_slow_close`, `test_ws_limit_repair` | yes |
 | M-D01 | mDNS `_snapdog._tcp` | zeroconf flow, confirm step, `unique_id` = `server_id` | I: `test_zeroconf` | yes |
 | M-D02 | TXT `server_id` change of address | entry updated, no duplicate | I: `test_zeroconf_updates_host` | yes |
@@ -267,19 +274,14 @@ checks each operation individually; the table groups for reading.
 | M-A02 | Key scopes (S-4) | the flow tells which scope the key has; a `read` key makes controls unavailable with an explanation | I: `test_scoped_key` | when S-4 ships |
 | M-X01 | Diagnostics | `async_get_config_entry_diagnostics`, key, host and `base_url` redacted | I: `test_diagnostics_snapshot` (syrupy) | yes |
 | M-X02 | Both MQTT discovery and the integration active | repair that names the way to switch discovery off | I: `test_repair_double_entities` | when MQTT is present |
-| M-X03 | Stable ids (S-5) and fallback | `unique_id` from the id, migration from `n<index>`, repair while on the fallback | I: `test_unique_id_migration`, `test_repair_unstable_ids` | yes |
 | M-X04 | Zone linking (S-6) | `GROUPING`, `join`, `unjoin`, `group_members` when the capability is set | I: `test_grouping` | when S-6 ships |
 | M-X05 | Translations | `de.json` and `en.json` with equal keys, entity, service, exception, issue and flow strings | CI: `check_translations.py` | yes (UI language switch) |
 
 ### 7.3 MQTT and stage 1
 
-The MQTT topics keep their own tests in `snapdog` (`snapdog/src/mqtt`, golden file
-`discovery_device.json`). The integration does not use MQTT. Two rows keep stage 1 honest:
-
-| ID | Capability | Behaviour | Tests | Live |
-|---|---|---|---|---|
-| M-Q01 | Every command topic of `docs/mqtt.md` | has a REST equivalent in §7.1 or is listed as MQTT-only in the exclusion table | S: `mqtt_topics_have_rest_twin` (new) | — |
-| M-Q02 | Stage 1 covers (S-2) | `image` entity or `cover_url` works on a protected server | S: `signed_cover_url`; Live with an MQTT-enabled HA | when MQTT is present |
+Out of the matrix. The MQTT bridge and stage 1 are finished (HAI-0007 §2, §4.3, `1d00fd6`),
+keep their own tests in `snapdog` and are not changed by this RFC. The integration does not use
+MQTT. The only link is M-X02: a repair when both entity sets are active.
 
 ### 7.4 What "100 %" means, mechanically
 
@@ -309,15 +311,13 @@ opened as a pull request without the maintainer's yes for that action.
 | WP-4 | Sources, `play_media`, browse, covers, sound mode, TTS target | same | S-1 |
 | WP-5 | Client entities, presence, EQ, speaker, server, update, KNX, services, `event` | same | WP-3 |
 | WP-6 | Diagnostics, repairs, translations, dynamic and stale devices, docs, hassfest and HACS actions, matrix scripts | same | WP-5 |
-| WP-7 | S-2 (signed cover) | `snapdog` | WP-1 |
 | WP-8 | S-4 (scopes) | `snapdog` | WP-1 |
-| WP-9 | S-5 (stable ids) and the integration's migration | `snapdog` (config), integration | **#377 merged** |
 | WP-10 | S-6: own RFC, then code and `GROUPING` | `snapdog`, integration | RFC accepted |
 | WP-11 | End-to-end job against the real `snapdog` demo backend; Live pass | CI and a HA | WP-6 |
 
 Rough effort for one developer who knows the code: WP-1 3 to 4 days, WP-2 4 to 6, WP-3 5 to 7,
-WP-4 3 to 4, WP-5 5 to 7, WP-6 4 to 6, WP-7 2, WP-8 2, WP-9 3, WP-10 design plus 6 to 10,
-WP-11 2 (about 40 to 60 working days with S-6, 30 to 40 without). These are estimates, not
+WP-4 3 to 4, WP-5 5 to 7, WP-6 4 to 6, WP-8 2, WP-10 design plus 6 to 10,
+WP-11 2 (about 35 to 50 working days with S-6, 25 to 35 without). These are estimates, not
 measurements.
 
 ### CI and quality gates
@@ -357,8 +357,7 @@ The maintainer's instance is 2026.10.4 without `mqtt` and `hacs`.
 
 Risks as in HAI-0007 §13, plus:
 
-1. **S-5 waits for #377.** Both touch `snapdog/src/config`. The integration ships with the
-   index fallback and a repair; WP-9 follows the merge.
+1. **Reordering the configuration.** The index is the identity (HAI-DEC-12). If a user reorders `[[zone]]`, HA attaches history and areas to the wrong zone without an error. The documentation says so; if reports come in, S-5 can be revisited.
 2. **S-6 is a design, not a task.** If zone linking is not wanted, M-X04 becomes an exclusion
    and "complete" is declared without grouping. This is the only row that can fall out of 100 %.
 3. **The matrix counts operations, not behaviour.** A row that passes with a mock can still be
