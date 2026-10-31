@@ -7,6 +7,7 @@
 //! Convention over configuration: sensible defaults, auto-generated where possible.
 
 mod convention;
+pub mod interfaces;
 mod mqtt;
 mod notices;
 mod types;
@@ -2221,5 +2222,134 @@ mod bind_tests {
         assert_eq!(of("HTTP API"), ["127.0.0.1:5555"]);
         assert_eq!(of("Snapcast streaming"), ["127.0.0.1:1704"]);
         assert_eq!(of("AirPlay zone 1"), ["127.0.0.1:7001"]);
+    }
+}
+
+#[cfg(test)]
+mod interface_bind_tests {
+    use super::interfaces::{Interface, InterfaceTable, with_table};
+    use super::*;
+
+    const ZONE: &str = "[[zone]]\nname = \"A\"\n";
+    const KNX_DEVICE: &str = "[knx]\nrole = \"device\"\nindividual_address = \"1.1.100\"\n";
+
+    fn ip(text: &str) -> std::net::IpAddr {
+        text.parse().unwrap()
+    }
+
+    fn host() -> InterfaceTable {
+        InterfaceTable::new(vec![
+            Interface {
+                name: "eth0".into(),
+                addrs: vec![ip("192.168.1.10"), ip("fd00::10"), ip("fe80::1")],
+            },
+            Interface {
+                name: "eth1".into(),
+                addrs: vec![ip("10.0.0.5"), ip("10.0.0.6")],
+            },
+        ])
+    }
+
+    fn load(toml: &str) -> Result<AppConfig> {
+        with_table(host(), || load_str(&format!("{toml}\n{ZONE}")))
+    }
+
+    fn error_of(toml: &str) -> String {
+        match load(toml) {
+            Ok(_) => panic!("the configuration should not load"),
+            Err(e) => format!("{e:#}"),
+        }
+    }
+
+    #[test]
+    fn network_bind_by_name_reaches_every_service() {
+        let config = load(&format!("[network]\nbind = \"eth0\"\n{KNX_DEVICE}")).unwrap();
+        assert_eq!(config.http.bind, ["192.168.1.10", "fd00::10"]);
+        assert_eq!(
+            config.airplay.bind,
+            Some(vec![ip("192.168.1.10"), ip("fd00::10")])
+        );
+        // Two addresses, so the services that take one keep their default and say so.
+        assert_eq!(config.snapcast.streaming_bind, None);
+        assert!(
+            config
+                .notices
+                .iter()
+                .any(|n| n.message.contains("exactly one"))
+        );
+    }
+
+    #[test]
+    fn a_service_key_takes_a_name_next_to_addresses() {
+        let config = load(
+            "[http]\nbind = [\"eth1\", \"127.0.0.1\"]\n[airplay]\nbind = [\"eth0\", \"10.9.9.9\"]\n",
+        )
+        .unwrap();
+        assert_eq!(config.http.bind, ["10.0.0.5", "10.0.0.6", "127.0.0.1"]);
+        assert_eq!(
+            config.airplay.bind,
+            Some(vec![ip("192.168.1.10"), ip("fd00::10"), ip("10.9.9.9")])
+        );
+    }
+
+    #[test]
+    fn loopback_is_both_loopback_addresses() {
+        let config = load("[http]\nbind = \"loopback\"\n").unwrap();
+        assert_eq!(config.http.bind, ["127.0.0.1", "::1"]);
+    }
+
+    #[test]
+    fn the_single_address_services_take_an_interface_with_one_ipv4_address() {
+        let config = load(&format!(
+            "[snapcast]\nstreaming_bind = \"eth0\"\n{KNX_DEVICE}bind = \"eth0\"\n"
+        ))
+        .unwrap();
+        assert_eq!(config.snapcast.streaming_bind, Some(ip("192.168.1.10")));
+        assert_eq!(config.knx.unwrap().bind, Some(ip("192.168.1.10")));
+    }
+
+    #[test]
+    fn network_bind_with_one_ipv4_interface_reaches_the_single_address_services() {
+        let config = load(&format!("[network]\nbind = \"loopback\"\n{KNX_DEVICE}")).unwrap();
+        // loopback is two addresses, so the single-address services keep their default.
+        assert_eq!(config.snapcast.streaming_bind, None);
+        assert_eq!(config.http.bind, ["127.0.0.1", "::1"]);
+    }
+
+    #[test]
+    fn an_interface_with_two_ipv4_addresses_names_the_line_to_write() {
+        let error = error_of("[snapcast]\nstreaming_bind = \"eth1\"\n");
+        assert!(error.contains("exactly one address"), "{error}");
+        assert!(error.contains("10.0.0.5, 10.0.0.6"), "{error}");
+        assert!(error.contains("for example \"10.0.0.5\""), "{error}");
+    }
+
+    #[test]
+    fn an_unknown_name_stops_the_load_and_lists_the_interfaces() {
+        for toml in [
+            "[network]\nbind = [\"eht0\"]\n",
+            "[airplay]\nbind = \"eht0\"\n",
+            "[snapcast]\nstreaming_bind = \"eht0\"\n",
+        ] {
+            let error = error_of(toml);
+            assert!(error.contains("\"eht0\""), "{error}");
+            assert!(
+                error.contains("Interfaces found: eth0 (192.168.1.10"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_http_host_name_that_is_no_interface_is_left_to_the_bind() {
+        let config = load("[http]\nbind = \"localhost\"\n").unwrap();
+        assert_eq!(config.http.bind, ["localhost"]);
+    }
+
+    #[test]
+    fn addresses_still_work_as_they_did() {
+        let config = load("[network]\nbind = [\"10.0.0.5\"]\n[http]\nbind = \"::\"\n").unwrap();
+        assert_eq!(config.http.bind, ["::"]);
+        assert_eq!(config.snapcast.streaming_bind, Some(ip("10.0.0.5")));
     }
 }

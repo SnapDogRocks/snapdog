@@ -541,10 +541,13 @@ impl AudioConfig {
 /// the IPv4 wildcard).
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct NetworkConfig {
-    /// IP addresses (not interface names) the services listen on unless they set their own
-    /// `bind`, for example `["192.168.1.10"]`. A service whose backend takes one address
-    /// (Snapcast streaming, KNX) uses this only when the list has exactly one entry.
-    #[serde(default)]
+    /// Where the services listen unless they set their own `bind`: one entry or a list of
+    /// IP addresses, interface names (`"eth0"`) or `"loopback"`, for example
+    /// `["eth0"]` or `["192.168.1.10"]`. A name stands for the IPv4 and non-link-local IPv6
+    /// addresses of that interface when the file is read, see RFC LBD-0009. A service whose
+    /// backend takes one address (Snapcast streaming, KNX) uses this only when the result is
+    /// exactly one address.
+    #[serde(default, deserialize_with = "address_list")]
     pub bind: Option<Vec<std::net::IpAddr>>,
 }
 
@@ -556,50 +559,80 @@ enum OneOrMany<T> {
     Many(Vec<T>),
 }
 
-/// A bind setting that may be written as one string or as a list of strings.
-fn string_or_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+/// The `[http].bind` setting: one entry or a list. An entry that is an address, `loopback`
+/// or the name of an interface is replaced by the addresses it stands for (RFC LBD-0009).
+/// Anything else is kept as written, so a host name still reaches the bind and fails there,
+/// with its name.
+fn http_bind_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    Ok(match OneOrMany::<String>::deserialize(deserializer)? {
+    let entries = match OneOrMany::<String>::deserialize(deserializer)? {
         OneOrMany::One(one) => vec![one],
         OneOrMany::Many(many) => many,
-    })
+    };
+    let mut bind = Vec::with_capacity(entries.len());
+    for entry in entries {
+        if super::interfaces::is_address_or_known_name(&entry) {
+            let addrs =
+                super::interfaces::resolve_here(&entry).map_err(serde::de::Error::custom)?;
+            bind.extend(addrs.iter().map(ToString::to_string));
+        } else {
+            bind.push(entry);
+        }
+    }
+    Ok(bind)
 }
 
-/// A bind setting written as one address or a list of addresses.
+/// A bind setting written as one entry or a list of entries: addresses, `loopback` or
+/// interface names, all turned into addresses.
 fn address_list<'de, D>(deserializer: D) -> Result<Option<Vec<std::net::IpAddr>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    Ok(
-        Option::<OneOrMany<std::net::IpAddr>>::deserialize(deserializer)?.map(
-            |value| match value {
-                OneOrMany::One(one) => vec![one],
-                OneOrMany::Many(many) => many,
-            },
-        ),
-    )
+    use serde::de::Error;
+    let Some(value) = Option::<OneOrMany<String>>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let entries = match value {
+        OneOrMany::One(one) => vec![one],
+        OneOrMany::Many(many) => many,
+    };
+    let mut addrs = Vec::new();
+    for entry in &entries {
+        for ip in super::interfaces::resolve_here(entry).map_err(D::Error::custom)? {
+            if !addrs.contains(&ip) {
+                addrs.push(ip);
+            }
+        }
+    }
+    Ok(Some(addrs))
 }
 
 /// A bind setting of a service that listens on exactly one address. A list with one entry
 /// is accepted, a longer one is an error that says so, instead of taking the first entry.
+/// The entry is an address, `loopback` or an interface with exactly one IPv4 address.
 fn single_address<'de, D>(deserializer: D) -> Result<Option<std::net::IpAddr>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     use serde::de::Error;
-    match Option::<OneOrMany<std::net::IpAddr>>::deserialize(deserializer)? {
-        None => Ok(None),
-        Some(OneOrMany::One(one)) => Ok(Some(one)),
+    let entry = match Option::<OneOrMany<String>>::deserialize(deserializer)? {
+        None => return Ok(None),
+        Some(OneOrMany::One(one)) => one,
         Some(OneOrMany::Many(many)) => match many.as_slice() {
-            [one] => Ok(Some(*one)),
-            _ => Err(D::Error::custom(format!(
-                "this service listens on exactly one address, but the list has {}",
-                many.len()
-            ))),
+            [one] => one.clone(),
+            _ => {
+                return Err(D::Error::custom(format!(
+                    "this service listens on exactly one address, but the list has {}",
+                    many.len()
+                )));
+            }
         },
-    }
+    };
+    super::interfaces::resolve_single_here(&entry)
+        .map(Some)
+        .map_err(D::Error::custom)
 }
 
 /// HTTP server configuration.
@@ -608,10 +641,11 @@ pub struct HttpConfig {
     /// Port for the REST API, WebSocket, and embedded `WebUI`.
     #[serde(default = "default_http_port")]
     pub port: u16,
-    /// Addresses to listen on: one string or a list. Unset: `[network].bind`, then `::`
-    /// (dual-stack IPv4 and IPv6 where the OS allows it). Use `0.0.0.0` for IPv4 only.
+    /// Where to listen: one string or a list of IP addresses, interface names or
+    /// `"loopback"`. Unset: `[network].bind`, then `::` (dual-stack IPv4 and IPv6 where the
+    /// OS allows it). Use `0.0.0.0` for IPv4 only.
     /// After loading this is never empty, see [`HttpConfig::bind_addresses`].
-    #[serde(default, deserialize_with = "string_or_list")]
+    #[serde(default, deserialize_with = "http_bind_list")]
     pub bind: Vec<String>,
     /// External base URL (e.g., `http://192.168.2.20:5555` or `https://music.example.com`).
     /// Used for absolute URLs in API responses. Defaults to `http://localhost:<port>`.
@@ -843,9 +877,11 @@ pub struct AirplayConfig {
     /// `AirPlay` 1.
     #[serde(default)]
     pub mode: AirplayMode,
-    /// IP addresses (not interface names) to listen on, for example
-    /// `["192.168.1.10"]`. Default: all interfaces. Only takes effect in
-    /// builds with the `ap2` feature (ignored with a warning otherwise).
+    /// Where to listen: one entry or a list of IP addresses, interface names or `"loopback"`,
+    /// for example `["192.168.1.10"]` or `["eth0"]`. Default: `[network].bind`, then all
+    /// interfaces. Only takes effect in builds with the `ap2` feature (ignored with a warning
+    /// otherwise).
+    #[serde(default, deserialize_with = "address_list")]
     pub bind: Option<Vec<std::net::IpAddr>>,
 }
 
