@@ -96,9 +96,19 @@ The word is reserved; an interface that carries this name is reached by its addr
 
 ### 2.4 Announcements follow the list
 
-When a service's own `bind` or `[network].bind` is set, the mDNS announcement of SnapDog and of
-AirPlay is limited to the same interfaces: `disable_interface(IfKind::All)`, then
-`enable_interface` for each resolved name or address. Without a setting nothing changes.
+When the `bind` of the HTTP API (its own or from `[network].bind`) is set, the mDNS announcement
+of SnapDog (`_snapdog._tcp`, and `_snapcast._tcp` if `[mdns].advertise_snapcast` is on) is
+limited to the interfaces that carry those addresses: `disable_interface(IfKind::All)`, then
+`enable_interface(IfKind::Addr)` for each address. The announcement follows where the announced
+services listen, so it stays unlimited if one of them has no `bind`, a wildcard address, or a
+host name that is not an address (`localhost` counts as `127.0.0.1`). `IfKind::Addr` selects the
+interface that carries the address, not the single address.
+
+The AirPlay announcement is not part of this. It is made inside `shairplay` 0.10
+(`net/mdns.rs`) by a private `ServiceDaemon` on Linux and by Bonjour (`astro-dnssd`) on macOS,
+and the caller can reach neither. Limiting it needs a new setting in `shairplay-rust`
+(metaneutrons/shairplay-rust#78). Until then AirPlay announces on every interface, which the
+matrix shows as `partial` on Linux and `none` on macOS (M4).
 
 This closes the gap that a service listens on `eth0` but announces on `nebula1`. It does not reach
 Spotify Connect: `libmdns` announces on the default-route interface only, `avahi` and `dns-sd` on
@@ -153,8 +163,8 @@ security boundary; the firewall is, as in LBD-0008.
 ### 2.9 Compatibility
 
 Existing files keep their meaning: an entry that is an IP address behaves as before. A name that
-used to be a load error now resolves. Setting `bind` now also limits the mDNS announcement
-(2.4), which is a visible change for installations that set it; the changelog says so.
+used to be a load error now resolves. Setting `bind` now also limits the mDNS announcement of
+SnapDog itself (2.4), not that of AirPlay. This is a visible change for installations that set it; the changelog says so.
 
 ## 3. Delivery and acceptance
 
@@ -173,8 +183,9 @@ Execution: https://github.com/SnapDogRocks/snapdog/issues/378
 Execution: https://github.com/SnapDogRocks/snapdog/issues/379
 Dependencies: M1
 
-- LBD-M2-A1: with `bind` set, the mDNS daemon announces only on the resolved interfaces,
-  measured with a second host or `dns-sd`/`avahi-browse`; without `bind` nothing changes.
+- LBD-M2-A1: with `bind` set, the mDNS daemon of SnapDog announces only on the resolved
+  interfaces, measured with a second host or `dns-sd`/`avahi-browse`; without `bind` nothing
+  changes. The AirPlay announcement is excluded until metaneutrons/shairplay-rust#78 is done.
 
 ### M3: Visibility and documentation
 
@@ -192,12 +203,15 @@ Execution: https://github.com/SnapDogRocks/snapdog/issues/381
 - LBD-M4-A1: AirPlay 2 is `partial` in the matrix (clock sockets 319 and 320 stay on `[::]`),
   with the firewall hint; the support level is checked against the `shairplay` version that is
   in use at the time.
+  The AirPlay mDNS announcement is listed as `partial` on Linux and `none` on macOS until
+  metaneutrons/shairplay-rust#78 is done.
 
 ## 4. Decisions, risks and open questions
 
 Decided at acceptance (2026-10-31): `bind` takes names and addresses in one list and there is no
 second key (2.1); `loopback` stays (2.3); no wait for interfaces at boot; `bind` also limits the
-mDNS announcement (2.4).
+mDNS announcement of SnapDog (2.4). Corrected at M2 (2026-11-01): the AirPlay announcement
+cannot be limited from SnapDog, see 2.4.
 
 - **Name and address mismatch after start** (DHCP renewal, VPN that comes up later). Start
   stops with the error of 2.2. Decided: no wait for interfaces at boot; the unit is ordered

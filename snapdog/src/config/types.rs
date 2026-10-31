@@ -1354,6 +1354,43 @@ pub enum ResolvedPlaylist {
 }
 
 impl AppConfig {
+    /// The addresses whose interfaces the mDNS announcement of the server is limited to, or `None`
+    /// when it goes out on every interface (RFC LBD-0009, 2.4).
+    ///
+    /// The announcement follows where the announced services listen: the HTTP API always, the
+    /// Snapcast stream when `[mdns].advertise_snapcast` is on. If one of them listens on all
+    /// interfaces (no `bind`, a wildcard address, or a host name this function cannot map to an
+    /// address), the announcement is not limited.
+    #[must_use]
+    pub fn mdns_scope(&self) -> Option<Vec<std::net::IpAddr>> {
+        let mut scope: Vec<std::net::IpAddr> = Vec::new();
+        if self.http.bind.is_empty() {
+            return None;
+        }
+        for entry in &self.http.bind {
+            let ip = match entry.parse::<std::net::IpAddr>() {
+                Ok(ip) => ip,
+                Err(_) if entry == "localhost" => {
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+                }
+                Err(_) => return None,
+            };
+            if ip.is_unspecified() {
+                return None;
+            }
+            scope.push(ip);
+        }
+        if self.mdns.advertise_snapcast {
+            match self.snapcast.streaming_bind {
+                Some(ip) if !ip.is_unspecified() => scope.push(ip),
+                _ => return None,
+            }
+        }
+        scope.sort();
+        scope.dedup();
+        Some(scope)
+    }
+
     /// Record a warning to be logged once logging is set up. Duplicates are dropped.
     pub fn warn(&mut self, message: impl Into<String>) {
         self.push_notice(NoticeLevel::Warn, message.into());
