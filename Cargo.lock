@@ -2736,27 +2736,27 @@ dependencies = [
 
 [[package]]
 name = "knx-rs-core"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7609cd7e1a4efe8f448ae1b695aa946ef964dae355f32ba87ae727a229832218"
+checksum = "ce1d065575f43153c4671479c997ad12c5e5ed34c7b7f3a270ac356970644e44"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "knx-rs-device"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c040d28212b94605949e16710fe5c41070d62755ebe5d1489037210319347a73"
+checksum = "ebc8bddfd1b3c7e98677212684f0f65484354a299dc2d8a8f0f0d9d9afa34584"
 dependencies = [
  "knx-rs-core",
 ]
 
 [[package]]
 name = "knx-rs-ip"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6cd89ecc39f21374fb66f1420f451734661202e51eee4e1ba06d64bea2215b8"
+checksum = "7eaf5c05c8fe248aae1e3e55fd054d6ab53b9d7170b0ab2655eb013de86ad0e9"
 dependencies = [
  "knx-rs-core",
  "socket2 0.6.5",
@@ -2767,9 +2767,9 @@ dependencies = [
 
 [[package]]
 name = "knx-rs-prod"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "313ea7f86e17e298ca82674588a74396d991e12112366a7b4cdcf1efbe68adb7"
+checksum = "482c0c8eae0d04f4b4fb8ae098c98abbe4034ef8575cda3f4c21cc84a7f8d984"
 dependencies = [
  "base64 0.23.1",
  "clap",
