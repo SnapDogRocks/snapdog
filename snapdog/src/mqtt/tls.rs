@@ -140,7 +140,7 @@ pub fn tls_connector(config: &MqttConfig) -> Result<TlsConnector> {
 
 /// Check, with the same code on every platform, that `key_pem` is the private key of the
 /// first certificate in `cert_pem`. The platform libraries differ: OpenSSL notices a foreign
-/// key when the connector is built, Secure Transport when the identity is read, SChannel
+/// key when the connector is built, Secure Transport when the identity is read, `SChannel`
 /// only in the handshake, so a mismatch would otherwise surface late and differently.
 fn ensure_key_belongs_to_cert(cert_pem: &[u8], key_pem: &[u8]) -> Result<()> {
     use rustls::pki_types::pem::PemObject;
