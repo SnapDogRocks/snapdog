@@ -22,6 +22,9 @@ tokio = { version = "1", features = ["full"] }
 # mDNS discovery
 mdns-sd = "0.21"
 
+# Interface names in bind settings
+if-addrs = "0.15"
+
 # Web framework
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.7", features = ["cors", "trace", "compression-full"] }

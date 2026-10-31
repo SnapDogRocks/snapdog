@@ -5297,6 +5297,7 @@ dependencies = [
  "fastrand",
  "futures-util",
  "gethostname",
+ "if-addrs 0.15.0",
  "image",
  "knx-rs-core",
  "knx-rs-device",

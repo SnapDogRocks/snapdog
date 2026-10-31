@@ -50,6 +50,7 @@ crc32fast = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 shairplay = "0.10.0"
 mdns-sd = "0.21"
+if-addrs = { workspace = true }
 gethostname = "1"
 zbus = { version = "6", optional = true, default-features = false, features = ["tokio", "service", "tracing"] }
 librespot-core = { version = "0.8", optional = true }
