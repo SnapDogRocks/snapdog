@@ -80,8 +80,7 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
 
 - **HAI-DEC-3 (confirmed).** Two new repositories under `SnapDogRocks`:
   `snapdog-homeassistant` (`custom_components/snapdog`, `hacs.json`, CI) and `pysnapdog` (async
-  client, models, PyPI package of the same name). Both licensed Apache-2.0 (maintainer, 2026-11-01;
-  the integration's licence is assumed to match, to be confirmed). Both are created locally
+  client, models, PyPI package of the same name). Both licensed Apache-2.0 (maintainer, 2026-11-01). Both are created locally
   first, with no remote and no push without consent per action. `pysnapdog` is developed in its
   own repository from the start and published to PyPI before the first integration release.
 - **HAI-DEC-7 (decided: yes, as a separate design).** Zone linking (S-6) gets its own RFC
@@ -371,7 +370,8 @@ Risks as in HAI-0007 §13, plus:
 Open questions for the maintainer:
 
 1. Should a client also be offered as a `media_player` (volume, mute, source of its zone) for
-   voice assistants? It doubles entities; the default here is no.
-2. How is the maintainer's HA hosted (OS, container, core), and may the agent be given a way
-   to place `custom_components/snapdog` there, or does the maintainer copy it (§9, item 3)?
-3. Minimum HA version 2026.10, or lower for users who have not updated?
+   voice assistants? It doubles entities; the default here is no (accepted 2026-11-01).
+2. How is the maintainer's HA hosted (OS, container, core)? The maintainer wants to test against
+   `https://home.schmieder.eu` as well, so a way to place `custom_components/snapdog` there is
+   needed (§9, item 3). Until then: local container, read-only checks of the real instance.
+3. Minimum HA version 2026.10 (accepted 2026-11-01).
