@@ -99,8 +99,9 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
   Python as HA requires (3.14 for 2026.10).
 - **HAI-DEC-12.** Entity identity is the server id plus the index (`unique_id` =
   `<server_id>_zone_<n>_<key>`). The order of `[[zone]]` and `[[client]]` in the configuration
-  is the identity, as it already is for API paths, MQTT topics and KNX addresses; new entries
-  are appended. The integration's documentation states this contract. This is a decision about
+  is the identity, as it already is for API paths, MQTT topics and KNX addresses. `snapdog.toml`
+  defines the ids and they stay as they are until that file is edited: new blocks go at the
+  end, while inserting, deleting or reordering a block shifts the ones behind it. The integration's documentation states this contract. This is a decision about
   the integration only. HAI-0007's HAI-DEC-6 concerns the MQTT entities and is untouched: stage
   1 shipped with indices and no `id`, and the MQTT bridge is not changed by this RFC.
 
