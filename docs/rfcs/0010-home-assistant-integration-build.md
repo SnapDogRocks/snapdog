@@ -79,9 +79,11 @@ New requirements (HAI-REQ-1 to 5 stay):
 Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
 
 - **HAI-DEC-3 (confirmed).** Two new repositories under `SnapDogRocks`:
-  `snapdog-homeassistant` (`custom_components/snapdog`, `hacs.json`, CI) and the PyPI package
-  `snapdog-api` (async client, models; its own repository `snapdog-api-python`). Both created
-  locally first, no remote and no push without consent per action.
+  `snapdog-homeassistant` (`custom_components/snapdog`, `hacs.json`, CI) and `pysnapdog` (async
+  client, models, PyPI package of the same name). Both licensed Apache-2.0 (maintainer, 2026-11-01;
+  the integration's licence is assumed to match, to be confirmed). Both are created locally
+  first, with no remote and no push without consent per action. `pysnapdog` is developed in its
+  own repository from the start and published to PyPI before the first integration release.
 - **HAI-DEC-7 (decided: yes, as a separate design).** Zone linking (S-6) gets its own RFC
   before any code; `GROUPING` and the `join`/`unjoin` services depend on it and stay behind
   a capability flag until then.
@@ -91,7 +93,7 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
   from this plan: its only consumers are stage 1 (an MQTT matter, not touched here) and
   devices that cannot send a header (Cast, Music Assistant), which are not targets.
 - **HAI-DEC-9.** Clients are entities on their own device, not `media_player` entities
-  (HAI-0007 §6.4), with one exception to decide in §10 (open question 3).
+  (HAI-0007 §6.4), with one exception to decide in §10 (open question 1).
 - **HAI-DEC-10.** One config entry per server; zones and clients appear and disappear
   dynamically (`dynamic-devices`, `stale-devices`), driven by a REST reload when the zone or
   client set changes.
@@ -108,12 +110,12 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
 ## 4. Architecture
 
 ```text
-snapdog (Rust)  --REST + /ws-->  snapdog-api (PyPI, async)  -->  custom_components/snapdog
+snapdog (Rust)  --REST + /ws-->  pysnapdog (PyPI, async)  -->  custom_components/snapdog
 S-1, S-3, S-4, S-6, S-7          models, client, WS runner        config flow, coordinator,
 openapi.json, ws-events.json     coverage manifest                platforms, services, repairs
 ```
 
-- **Library `snapdog-api`.** `SnapDogClient(session, host, port, api_key, tls)` with one method
+- **Library `pysnapdog`.** `SnapDogClient(session, host, port, api_key, tls)` with one method
   per operation, typed models generated from `openapi.json` (pinned copy, updated by script),
   `SnapDogSocket` with reconnect and backoff that yields typed events, and a
   `COVERAGE` manifest (operation → method) used by the CI check. It takes HA's `aiohttp`
@@ -211,7 +213,7 @@ a rejected request (400 with the SnapDog `ErrorBody` message).
 
 A row is done when its test exists, passes in CI, and the row's "Live" cell (where set) has
 been checked once against a real server. Test names are modules in the repositories named in
-§8: `L:` library (`snapdog-api-python/tests`), `I:` integration
+§8: `L:` library (`pysnapdog/tests`), `I:` integration
 (`snapdog-homeassistant/tests`), `E:` end to end against the real `snapdog` demo backend,
 `S:` in the `snapdog` repository. **Live** = checked by hand on a running HA (§9), `—` = not
 needed.
@@ -286,7 +288,7 @@ MQTT. The only link is M-X02: a repair when both entity sets are active.
 
 ### 7.4 What "100 %" means, mechanically
 
-1. `snapdog-api-python` CI runs `scripts/check_coverage.py`: every `operationId` or
+1. `pysnapdog` CI runs `scripts/check_coverage.py`: every `operationId` or
    path+method in the pinned `openapi.json` must appear in `COVERAGE` (library method) **and**
    in the integration's `matrix.yaml` (row id, or an exclusion with a reason). The same for
    every `type` in `ws-events.json` (S-7).
@@ -307,7 +309,7 @@ opened as a pull request without the maintainer's yes for that action.
 |---|---|---|---|
 | WP-0 | This RFC accepted; HAI-0007 status line and §14 updated to point here | `snapdog` branch `docs/rfc-ha-integration` | – |
 | WP-1 | S-1, S-3, S-7 with golden tests (`S:` rows) | `snapdog`, own branch, no config or net files | WP-0 |
-| WP-2 | Library skeleton: client, models from `openapi.json`, socket, fake-server tests, `check_coverage.py` | `snapdog-api-python` | S-3, S-7 for the full set; starts on REST |
+| WP-2 | Library skeleton: client, models from `openapi.json`, socket, fake-server tests, `check_coverage.py` | `pysnapdog` | S-3, S-7 for the full set; starts on REST |
 | WP-3 | Integration alpha: config flow, zeroconf, reauth, coordinator, zone `media_player` (transport, volume, mute, shuffle, repeat, position) | `snapdog-homeassistant` | WP-2 |
 | WP-4 | Sources, `play_media`, browse, covers, sound mode, TTS target | same | S-1 |
 | WP-5 | Client entities, presence, EQ, speaker, server, update, KNX, services, `event` | same | WP-3 |
@@ -368,11 +370,8 @@ Risks as in HAI-0007 §13, plus:
 
 Open questions for the maintainer:
 
-1. Names of the two repositories (`snapdog-homeassistant`, `snapdog-api-python`) and the PyPI
-   project name `snapdog-api`; is the name free on PyPI (**unverified**)?
-2. Licence of the library (HAI-0007 §7): GPL-3.0-only like the server, or permissive?
-3. Should a client also be offered as a `media_player` (volume, mute, source of its zone) for
+1. Should a client also be offered as a `media_player` (volume, mute, source of its zone) for
    voice assistants? It doubles entities; the default here is no.
-4. How is the maintainer's HA hosted (OS, container, core), and may the agent be given a way
+2. How is the maintainer's HA hosted (OS, container, core), and may the agent be given a way
    to place `custom_components/snapdog` there, or does the maintainer copy it (§9, item 3)?
-5. Minimum HA version 2026.10, or lower for users who have not updated?
+3. Minimum HA version 2026.10, or lower for users who have not updated?
