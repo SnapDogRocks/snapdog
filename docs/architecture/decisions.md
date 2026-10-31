@@ -253,7 +253,7 @@ the backend.
 
 - **Linux (OpenSSL):** the TLS tests pass in CI (Rust Core on Linux runners, including `mqtt_tier2` against mosquitto and the config tests for key and certificate handling). An OpenSSL-only difference showed up and was fixed: a key that does not belong to its certificate is noticed when the connector is built, not when the identity is read, and the error now names `client_cert` and `client_key` on every platform.
 - **macOS (Secure Transport):** local runs.
-- **Windows (SChannel):** not run, tracked in #371. Until then the TLS version and the accepted key formats on Windows are unknown.
+- **Windows (SChannel):** the MQTT unit tests (`cargo test -p snapdog --lib mqtt`, 169 tests) pass on Windows 11 ARM64 with MSVC. SChannel did not notice a key that does not belong to its certificate until the handshake, so the two config tests for key and certificate handling failed there. `client_key` is now compared with `client_cert` by rustls before the platform library is involved (#373), which gives the same early error on every platform. Not yet run on Windows: `mqtt_tier2` against a real broker, so the negotiated TLS version and the accepted key formats (EC keys in particular) are still unknown. Tracked in #371.
 
 ### Revisit triggers
 
