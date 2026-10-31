@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.29.1](https://github.com/SnapDogRocks/snapdog/compare/v0.29.0...v0.29.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **mqtt:** check that client_key belongs to client_cert on every platform ([#373](https://github.com/SnapDogRocks/snapdog/issues/373)) ([fee2c96](https://github.com/SnapDogRocks/snapdog/commit/fee2c96305a1970759448e47fb08ed17da8093ad))
+* **release:** wait for the tap's checks to register instead of for them to pass ([#369](https://github.com/SnapDogRocks/snapdog/issues/369)) ([5300d2a](https://github.com/SnapDogRocks/snapdog/commit/5300d2a57574a542760268cde739570b49f290db))
+
 ## [0.29.0](https://github.com/SnapDogRocks/snapdog/compare/v0.28.2...v0.29.0) (2026-10-30)
 
 
