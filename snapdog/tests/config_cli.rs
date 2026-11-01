@@ -26,10 +26,10 @@ fn check_config_accepts_valid_configuration_without_starting_services() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        "Configuration is valid"
-    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim().lines().last(), Some("Configuration is valid"));
+    assert!(stdout.contains("Interfaces of this host:"), "{stdout}");
+    assert!(stdout.contains("Listeners:"), "{stdout}");
 }
 
 #[test]
@@ -86,10 +86,9 @@ fn check_config_prints_warnings_on_stderr_and_keeps_stdout_clean() {
     );
 
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        "Configuration is valid"
-    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim().lines().last(), Some("Configuration is valid"));
+    assert!(!stdout.contains("warning"), "{stdout}");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("warning: Unknown configuration key `snapcast.streaming_prot`"));
     assert!(stderr.contains("built-in default key"), "{stderr}");
