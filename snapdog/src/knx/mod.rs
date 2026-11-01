@@ -46,18 +46,20 @@ use crate::config::AppConfig;
 use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
 use crate::state;
 
+use group_objects::GoLocation;
 use group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
-    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_COUNT,
-    DPT_CONTROL_DIMMING, GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE,
-    GGO_SYSTEM_FAULT, MAX_CLIENTS, MAX_ZONES, ZGO_CONTROL_STATUS, ZGO_MUTE, ZGO_MUTE_STATUS,
-    ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT, ZGO_PLAYLIST_PREVIOUS,
-    ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT,
-    ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE,
-    ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING,
+    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, DPT_CONTROL_DIMMING,
+    GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE, GGO_SYSTEM_FAULT,
+    ZGO_CONTROL_STATUS, ZGO_MUTE, ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY,
+    ZGO_PLAY_PAUSE, ZGO_PLAYLIST, ZGO_PLAYLIST_NAME, ZGO_PLAYLIST_NEXT, ZGO_PLAYLIST_PREVIOUS,
+    ZGO_PLAYLIST_STATUS, ZGO_PLAYLIST_STEP, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
+    ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
+    ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
+    ZGO_TRACK_NEXT, ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS, ZGO_TRACK_PLAYING,
     ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
-    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
-    ZONE_GO_COUNT,
+    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
+    ZGO_VOLUME_STATUS,
 };
 use sink::{ObjectKey, StatusSink};
 use transport::{Incoming, KnxListener, KnxPublisher};
@@ -480,6 +482,7 @@ async fn publish_all_mute_status<P: KnxPublisher>(
     .await;
 }
 
+#[allow(clippy::too_many_lines)] // one write per status object
 async fn publish_zone_state<P: KnxPublisher>(
     zone_index: usize,
     config: &AppConfig,
@@ -549,6 +552,23 @@ async fn publish_zone_state<P: KnxPublisher>(
         knx.control_status.as_deref(),
         DPT_SWITCH,
         &playing.into(),
+    )
+    .await;
+    sink.write(
+        go(ZGO_PLAYLIST_NAME),
+        knx.playlist_name_status.as_deref(),
+        DPT_STRING_8859_1,
+        &DptValue::from(zone.playlist_name.as_deref().unwrap_or("")),
+    )
+    .await;
+    sink.write(
+        go(ZGO_TRACK_NUMBER_STATUS),
+        knx.track_number_status.as_deref(),
+        DPT_VALUE_1_UCOUNT,
+        &DptValue::from(
+            zone.playlist_track_index
+                .map_or(0, |i| u8::try_from(i + 1).unwrap_or(u8::MAX)),
+        ),
     )
     .await;
     sink.write(
@@ -824,6 +844,10 @@ fn zone_ga_map(
             (&knx.playlist, "playlist"),
             (&knx.playlist_next, "playlist_next"),
             (&knx.playlist_previous, "playlist_previous"),
+            (&knx.playlist_step, "playlist_step"),
+            (&knx.track_number, "track_number"),
+            (&knx.play_pause, "play_pause"),
+            (&knx.track_step, "track_step"),
             (&knx.presence, "presence"),
             (&knx.presence_enable, "presence_enable"),
         ];
@@ -915,6 +939,7 @@ fn status_addresses(config: &AppConfig) -> Vec<(String, String)> {
             (&k.track_playing_status, "track_playing_status"),
             (&k.track_repeat_status, "track_repeat_status"),
             (&k.playlist_status, "playlist_status"),
+            (&k.track_number_status, "track_number_status"),
             (&k.shuffle_status, "shuffle_status"),
             (&k.repeat_status, "repeat_status"),
             (&k.presence_enable_status, "presence_enable_status"),
@@ -1048,6 +1073,10 @@ const ZONE_ACTIONS: &[(usize, &str)] = &[
     (ZGO_PLAYLIST, "playlist"),
     (ZGO_PLAYLIST_NEXT, "playlist_next"),
     (ZGO_PLAYLIST_PREVIOUS, "playlist_previous"),
+    (ZGO_PLAYLIST_STEP, "playlist_step"),
+    (ZGO_TRACK_NUMBER, "track_number"),
+    (ZGO_PLAY_PAUSE, "play_pause"),
+    (ZGO_TRACK_STEP, "track_step"),
     (ZGO_PRESENCE, "presence"),
     (ZGO_PRESENCE_ENABLE, "presence_enable"),
 ];
@@ -1072,22 +1101,15 @@ const GLOBAL_ACTIONS: &[(usize, &str)] = &[
 /// What a group object (by ASAP) commands when ETS-programmed addresses write it, or `None`
 /// for objects that only carry status.
 fn object_command(asap: u16) -> Option<Command<'static>> {
-    let n = usize::from(asap).checked_sub(1)?;
-    let zones_end = MAX_ZONES * ZONE_GO_COUNT;
-    let clients_end = zones_end + MAX_CLIENTS * CLIENT_GO_COUNT;
     let find = |table: &'static [(usize, &'static str)], go: usize| {
         table.iter().find(|(i, _)| *i == go).map(|(_, a)| *a)
     };
-    if n < zones_end {
-        let action = find(ZONE_ACTIONS, n % ZONE_GO_COUNT)?;
-        Some(Command::Zone(n / ZONE_GO_COUNT + 1, action))
-    } else if n < clients_end {
-        let n = n - zones_end;
-        let action = find(CLIENT_ACTIONS, n % CLIENT_GO_COUNT)?;
-        Some(Command::Client(n / CLIENT_GO_COUNT + 1, action))
-    } else {
-        let action = find(GLOBAL_ACTIONS, n - clients_end)?;
-        Some(Command::Global(action))
+    match group_objects::locate(asap)? {
+        GoLocation::Zone { zone, go } => Some(Command::Zone(zone, find(ZONE_ACTIONS, go)?)),
+        GoLocation::Client { client, go } => {
+            Some(Command::Client(client, find(CLIENT_ACTIONS, go)?))
+        }
+        GoLocation::Global(go) => Some(Command::Global(find(GLOBAL_ACTIONS, go)?)),
     }
 }
 
@@ -1238,8 +1260,34 @@ async fn execute<S: BuildHasher + Sync>(
                 "volume" => decode_percent(data).map(|v| ZoneCommand::SetVolume(i32::from(v))),
                 "volume_dim" => decode_dim(data).map(ZoneCommand::AdjustVolume),
                 "playlist" => decode_u8(data).map(|v| ZoneCommand::SetPlaylist(v as usize, 0)),
+                // Numbered from 1; 0 names no track.
+                "track_number" => decode_u8(data)
+                    .and_then(|v| usize::from(v).checked_sub(1))
+                    .map(ZoneCommand::SetTrack),
                 "playlist_next" => Some(ZoneCommand::NextPlaylist),
                 "playlist_previous" => Some(ZoneCommand::PreviousPlaylist),
+                // The value counts for these three: a malformed or empty payload is not a 0.
+                "play_pause" => decode_switch(data).map(|play| {
+                    if play {
+                        ZoneCommand::Play
+                    } else {
+                        ZoneCommand::Pause
+                    }
+                }),
+                "track_step" => decode_switch(data).map(|next| {
+                    if next {
+                        ZoneCommand::Next
+                    } else {
+                        ZoneCommand::Previous
+                    }
+                }),
+                "playlist_step" => decode_switch(data).map(|next| {
+                    if next {
+                        ZoneCommand::NextPlaylist
+                    } else {
+                        ZoneCommand::PreviousPlaylist
+                    }
+                }),
                 "presence" => Some(ZoneCommand::SetPresence(decode_bool(data))),
                 "presence_enable" => Some(ZoneCommand::SetPresenceEnabled(decode_bool(data))),
                 _ => None,
@@ -1364,6 +1412,15 @@ fn apply_knx_time(data: &[u8], sync_system_clock: bool) {
 
 // ── DPT decode helpers ────────────────────────────────────────
 
+/// A 1-bit payload as a bool, `None` for an empty or malformed one. Objects whose value decides the
+/// action (play/pause, the step objects) use this, not [`decode_bool`], so a bad telegram is
+/// ignored and not read as 0.
+fn decode_switch(payload: &[u8]) -> Option<bool> {
+    dpt::decode(DPT_SWITCH, payload)
+        .ok()
+        .and_then(|v| v.as_bool())
+}
+
 fn decode_bool(payload: &[u8]) -> bool {
     dpt::decode(DPT_SWITCH, payload)
         .ok()
@@ -1414,6 +1471,7 @@ fn decode_dim(payload: &[u8]) -> Option<i32> {
 mod tests {
     use super::*;
     use crate::player::ZoneCommand;
+    use group_objects::{MAX_CLIENTS, MAX_ZONES};
     use group_objects::{client_asap, global_asap, zone_asap};
     use knx_rs_core::address::GroupAddress;
     use knx_rs_core::dpt::Dpt;
@@ -1600,6 +1658,91 @@ mod tests {
         assert!(matches!(rx.recv().await, Some(ZoneCommand::Play)));
     }
 
+    /// Send `data` to the object `go` of zone 1 and return what the zone received.
+    async fn run_object(go: usize, data: &[u8]) -> Vec<ZoneCommand> {
+        let (tx, mut rx) = mpsc::channel(8);
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let cmds = HashMap::from([(1, tx)]);
+        handle_object(
+            group_objects::zone_asap(1, go),
+            data,
+            &cmds,
+            &snap_tx,
+            &test_state(),
+            false,
+        )
+        .await;
+        let mut got = Vec::new();
+        while let Ok(c) = rx.try_recv() {
+            got.push(c);
+        }
+        got
+    }
+
+    #[tokio::test]
+    async fn play_pause_plays_on_one_and_pauses_on_zero() {
+        assert!(matches!(
+            run_object(ZGO_PLAY_PAUSE, &encode_bool(true)).await[..],
+            [ZoneCommand::Play]
+        ));
+        assert!(matches!(
+            run_object(ZGO_PLAY_PAUSE, &encode_bool(false)).await[..],
+            [ZoneCommand::Pause]
+        ));
+        assert!(run_object(ZGO_PLAY_PAUSE, &[]).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_step_objects_go_forward_on_one_and_back_on_zero() {
+        assert!(matches!(
+            run_object(ZGO_TRACK_STEP, &encode_bool(true)).await[..],
+            [ZoneCommand::Next]
+        ));
+        assert!(matches!(
+            run_object(ZGO_TRACK_STEP, &encode_bool(false)).await[..],
+            [ZoneCommand::Previous]
+        ));
+        assert!(matches!(
+            run_object(ZGO_PLAYLIST_STEP, &encode_bool(true)).await[..],
+            [ZoneCommand::NextPlaylist]
+        ));
+        assert!(matches!(
+            run_object(ZGO_PLAYLIST_STEP, &encode_bool(false)).await[..],
+            [ZoneCommand::PreviousPlaylist]
+        ));
+        assert!(run_object(ZGO_TRACK_STEP, &[]).await.is_empty());
+        assert!(run_object(ZGO_PLAYLIST_STEP, &[]).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_track_number_counts_from_one_and_zero_names_no_track() {
+        let number = |n: u8| dpt::encode(DPT_VALUE_1_UCOUNT, &DptValue::from(n)).unwrap();
+        assert!(matches!(
+            run_object(ZGO_TRACK_NUMBER, &number(1)).await[..],
+            [ZoneCommand::SetTrack(0)]
+        ));
+        assert!(matches!(
+            run_object(ZGO_TRACK_NUMBER, &number(12)).await[..],
+            [ZoneCommand::SetTrack(11)]
+        ));
+        assert!(run_object(ZGO_TRACK_NUMBER, &number(0)).await.is_empty());
+        assert!(run_object(ZGO_TRACK_NUMBER, &[]).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_single_trigger_objects_ignore_the_value() {
+        for value in [true, false] {
+            assert!(matches!(
+                run_object(ZGO_TRACK_NEXT, &encode_bool(value)).await[..],
+                [ZoneCommand::Next]
+            ));
+            assert!(matches!(
+                run_object(ZGO_PLAYLIST_PREVIOUS, &encode_bool(value)).await[..],
+                [ZoneCommand::PreviousPlaylist]
+            ));
+        }
+    }
+
     #[tokio::test]
     async fn zone_volume_from_knx() {
         let (mut rx, _) = run_incoming("1/0/6", &encode_percent(75), &test_state()).await;
@@ -1717,6 +1860,13 @@ mod tests {
     }
 
     // ── IT-T40: explicit-byte decode goldens (+ decode_u16, zero coverage) ──
+
+    #[test]
+    fn decode_switch_reads_the_bit_and_rejects_a_bad_payload() {
+        assert_eq!(decode_switch(&[1]), Some(true));
+        assert_eq!(decode_switch(&[0]), Some(false));
+        assert_eq!(decode_switch(&[]), None, "an empty payload is not a 0");
+    }
 
     #[test]
     fn decode_bool_handles_empty() {
@@ -2003,6 +2153,45 @@ zone = "Z1"
     }
 
     #[tokio::test]
+    async fn the_track_number_status_counts_from_one_and_is_zero_without_a_track() {
+        let toml = r#"
+[[zone]]
+name = "Z1"
+[zone.knx]
+track_number_status = "1/1/9"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        let status = |track_index: Option<usize>| {
+            let (cfg, store) = (&cfg, &store);
+            async move {
+                store
+                    .write()
+                    .await
+                    .zones
+                    .get_mut(&1)
+                    .unwrap()
+                    .playlist_track_index = track_index;
+                let mock = Rec::default();
+                let mut sink = StatusSink::new(&mock);
+                publish_zone_state(1, cfg, store, &mut sink).await;
+                let w = written(&mock);
+                let (_, d, v) = w.iter().find(|(g, _, _)| g == "1/1/9").expect("write");
+                assert_eq!(*d, DPT_VALUE_1_UCOUNT);
+                dpt::encode(*d, v).unwrap()
+            }
+        };
+        assert_eq!(status(None).await, vec![0]);
+        assert_eq!(status(Some(0)).await, vec![1]);
+        assert_eq!(status(Some(11)).await, vec![12]);
+    }
+
+    #[tokio::test]
     async fn publish_zone_track_writes_title_and_scaled_progress() {
         let cfg = cfg_with_status_gas();
         let store = state::init(&cfg, None).unwrap();
@@ -2183,18 +2372,43 @@ zone = "Z1"
         // Status objects and out-of-range numbers command nothing.
         assert_eq!(object_command(zone_asap(1, ZGO_VOLUME_STATUS)), None);
         assert_eq!(object_command(0), None);
-        assert_eq!(object_command(666), None);
+        assert_eq!(object_command(1506), None);
         assert_eq!(object_command(u16::MAX), None);
+        // Reserved numbers command nothing, whatever sits next to them.
+        assert_eq!(
+            object_command(10),
+            None,
+            "reserved end of the transport group"
+        );
+        assert_eq!(object_command(54), None, "reserved end of the zone block");
         // Adjacent ASAPs at the block borders land on the right side.
         assert_eq!(
-            object_command(330),
+            object_command(zone_asap(MAX_ZONES, ZGO_PRESENCE_TIMER_ACTIVE)),
             None,
             "zone 10's last object is a status object"
         );
         assert_eq!(
-            object_command(331),
+            object_command(601),
             Some(Command::Client(1, "volume")),
             "first client object"
+        );
+        // The objects added with the grouped layout.
+        assert_eq!(
+            object_command(zone_asap(2, ZGO_PLAY_PAUSE)),
+            Some(Command::Zone(2, "play_pause"))
+        );
+        assert_eq!(
+            object_command(zone_asap(2, ZGO_TRACK_STEP)),
+            Some(Command::Zone(2, "track_step"))
+        );
+        assert_eq!(
+            object_command(zone_asap(2, ZGO_PLAYLIST_STEP)),
+            Some(Command::Zone(2, "playlist_step"))
+        );
+        assert_eq!(
+            object_command(zone_asap(2, ZGO_PLAYLIST_NAME)),
+            None,
+            "the playlist name is a status object"
         );
     }
 

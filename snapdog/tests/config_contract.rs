@@ -219,7 +219,7 @@ fn example_config_documents_every_zone_and_client_knx_key() {
         found
     };
     let zone = keys("zone.knx");
-    assert_eq!(zone.len(), 34, "zone.knx keys in the example: {zone:?}");
+    assert_eq!(zone.len(), 40, "zone.knx keys in the example: {zone:?}");
     let client = keys("client.knx");
     assert_eq!(
         client.len(),

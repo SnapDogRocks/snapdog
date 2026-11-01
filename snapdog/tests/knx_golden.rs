@@ -4,7 +4,7 @@
 //! IT-T41 — KNX wire contract via the PUBLIC surface + the knx-rs-core dependency
 //! contract. The GroupAddress round-trip and DPT byte encodings are exactly what a
 //! knx-rs upgrade could silently break, so they're pinned here as golden bytes
-//! (the in-source `group_objects` tests cover the 665-GO layout values; this also
+//! (the in-source `group_objects` tests cover the 1520-number layout values; this also
 //! confirms they're reachable through the exported module path).
 
 #![allow(clippy::doc_markdown)] // doc mentions knx-rs / GroupAddress / DPT
@@ -12,25 +12,36 @@
 use knx_rs_core::address::GroupAddress;
 use knx_rs_core::dpt::{self, DPT_SCALING, DPT_SWITCH, DPT_VALUE_2_UCOUNT, Dpt, DptValue};
 use snapdog::knx::group_objects::{
-    CLIENT_GO_COUNT, GLOBAL_GO_COUNT, HARDWARE_TYPE, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT,
-    ZONE_GO_COUNT, client_asap, global_asap, zone_asap,
+    CLIENT_GO_COUNT, CLIENT_GO_STRIDE, GLOBAL_GO_COUNT, GLOBAL_GO_STRIDE, HARDWARE_TYPE,
+    MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PRESENCE, ZGO_SHUFFLE,
+    ZGO_TRACK_TITLE, ZGO_VOLUME, ZONE_GO_COUNT, ZONE_GO_STRIDE, client_asap, global_asap,
+    zone_asap,
 };
 use std::str::FromStr;
 
 #[test]
-fn group_object_layout_is_exported_and_totals_665() {
+fn group_object_layout_is_exported_and_totals_1520() {
+    // The table counts every number, defined or reserved: 10 zones x 60, 30 clients x 30, 20 global.
     assert_eq!(
         TOTAL_GO_COUNT,
-        MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIENT_GO_COUNT + GLOBAL_GO_COUNT
+        MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE + GLOBAL_GO_STRIDE
     );
-    assert_eq!(TOTAL_GO_COUNT, 665);
-    // Contiguous 1-based ASAP layout: zones [1..=330], clients [331..=660], globals [661..=665].
+    assert_eq!(TOTAL_GO_COUNT, 1520);
+    // 1-based layout: zones [1..=600], clients [601..=1500], globals [1501..=1520].
     assert_eq!(zone_asap(1, 0), 1);
-    assert_eq!(zone_asap(MAX_ZONES, ZONE_GO_COUNT - 1), 330);
-    assert_eq!(client_asap(1, 0), 331);
-    assert_eq!(client_asap(MAX_CLIENTS, CLIENT_GO_COUNT - 1), 660);
-    assert_eq!(global_asap(0), 661);
-    assert_eq!(global_asap(GLOBAL_GO_COUNT - 1), 665);
+    assert_eq!(zone_asap(MAX_ZONES, ZONE_GO_COUNT - 1), 593);
+    assert_eq!(client_asap(1, 0), 601);
+    assert_eq!(client_asap(MAX_CLIENTS, CLIENT_GO_COUNT - 1), 1491);
+    assert_eq!(global_asap(0), 1501);
+    assert_eq!(global_asap(GLOBAL_GO_COUNT - 1), 1512);
+    // The object numbers ETS shows an integrator, pinned for the first zone: a group starts at a
+    // multiple of ten plus one.
+    assert_eq!(zone_asap(1, ZGO_PLAY), 1);
+    assert_eq!(zone_asap(1, ZGO_VOLUME), 11);
+    assert_eq!(zone_asap(1, ZGO_SHUFFLE), 21);
+    assert_eq!(zone_asap(1, ZGO_PLAYLIST), 31);
+    assert_eq!(zone_asap(1, ZGO_TRACK_TITLE), 41);
+    assert_eq!(zone_asap(1, ZGO_PRESENCE), 51);
 }
 
 #[test]

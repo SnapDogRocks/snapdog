@@ -558,19 +558,19 @@ mod tests {
         assert_eq!(ObjectKey::Zone(1, 0).asap(), Some(1));
         assert_eq!(
             ObjectKey::Zone(MAX_ZONES, ZONE_GO_COUNT - 1).asap(),
-            Some(330)
+            Some(593)
         );
         assert_eq!(ObjectKey::Zone(MAX_ZONES + 1, 0).asap(), None);
         assert_eq!(ObjectKey::Zone(0, 0).asap(), None);
         assert_eq!(ObjectKey::Zone(1, ZONE_GO_COUNT).asap(), None);
-        assert_eq!(ObjectKey::Client(1, 0).asap(), Some(331));
+        assert_eq!(ObjectKey::Client(1, 0).asap(), Some(601));
         assert_eq!(ObjectKey::Client(MAX_CLIENTS + 1, 0).asap(), None);
-        assert_eq!(ObjectKey::Global(0).asap(), Some(661));
+        assert_eq!(ObjectKey::Global(0).asap(), Some(1501));
         assert_eq!(ObjectKey::Global(GLOBAL_GO_COUNT).asap(), None);
         // The numbers that collide when two objects are told apart by ASAP only.
         assert_eq!(
-            zone_asap(MAX_ZONES + 1, 8),
-            client_asap(1, 8),
+            zone_asap(MAX_ZONES + 1, crate::knx::group_objects::ZGO_VOLUME),
+            client_asap(1, crate::knx::group_objects::CGO_LATENCY),
             "zone 11 shares ASAPs with client 1"
         );
     }
