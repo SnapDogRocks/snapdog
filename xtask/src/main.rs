@@ -221,7 +221,7 @@ struct CoGroup {
 
 const ZONE_GROUPS: &[CoGroup] = &[
     CoGroup {
-        title_de: "Wiedergabe",
+        title_de: "Playback",
         title_en: "Playback",
         indices: &[
             ZGO_PLAY,
@@ -237,7 +237,7 @@ const ZONE_GROUPS: &[CoGroup] = &[
         ],
     },
     CoGroup {
-        title_de: "Lautstärke",
+        title_de: "Volume",
         title_en: "Volume",
         indices: &[
             ZGO_VOLUME,
@@ -249,7 +249,7 @@ const ZONE_GROUPS: &[CoGroup] = &[
         ],
     },
     CoGroup {
-        title_de: "Zufallswiedergabe / Wiederholung",
+        title_de: "Shuffle / repeat",
         title_en: "Shuffle / Repeat",
         indices: &[
             ZGO_SHUFFLE,
@@ -277,7 +277,7 @@ const ZONE_GROUPS: &[CoGroup] = &[
         ],
     },
     CoGroup {
-        title_de: "Titelinformationen",
+        title_de: "Track information",
         title_en: "Track Info",
         indices: &[
             ZGO_TRACK_TITLE,
@@ -289,7 +289,7 @@ const ZONE_GROUPS: &[CoGroup] = &[
         ],
     },
     CoGroup {
-        title_de: "Präsenz",
+        title_de: "Presence",
         title_en: "Presence",
         indices: &[ZGO_PRESENCE, ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE],
     },
@@ -297,7 +297,7 @@ const ZONE_GROUPS: &[CoGroup] = &[
 
 const CLIENT_GROUPS: &[CoGroup] = &[
     CoGroup {
-        title_de: "Lautstärke",
+        title_de: "Volume",
         title_en: "Volume",
         indices: &[
             CGO_VOLUME,
@@ -309,7 +309,7 @@ const CLIENT_GROUPS: &[CoGroup] = &[
         ],
     },
     CoGroup {
-        title_de: "Latenz und Zone",
+        title_de: "Latency and zone",
         title_en: "Latency and Zone",
         indices: &[CGO_LATENCY, CGO_LATENCY_STATUS, CGO_ZONE, CGO_ZONE_STATUS],
     },
@@ -329,10 +329,10 @@ fn generate_xml() -> String {
     // uses MaskVersion MV-57B0. Every other <ApplicationProgram> attribute is a ProgramInfo
     // default (ProgramType, LoadProcedureStyle, PeiType, DynamicTableManagement, Linkable,
     // MinEtsVersion, IPConfig) matching what SnapDog emitted before the migration.
-    let info = ProgramInfo::new("SnapDog", "MV-57B0", "de-DE", 65281, app_version());
+    let info = ProgramInfo::new("SnapDog", "MV-57B0", "en-US", 65281, app_version());
     let mut x = String::with_capacity(128 * 1024);
     build_app().write_knx_document(&info, "SnapDog xtask", "1.0", &mut x);
-    // English, Dutch, Spanish and French next to the German base texts.
+    // The base texts are English, the other languages come from xtask/i18n.
     i18n::add_translations(&x)
 }
 
@@ -352,8 +352,8 @@ fn build_app() -> knx_rs_prod::author::AppProgram {
     // Catalog — the product/hardware refs are derived by the author from the shared HW_*
     // identity, so they can't drift from <Hardware>.
     app.add_catalog_section(
-        CatalogSection::new("SnapDog", "SnapDog", "SnapDog", "de-DE").with_item(CatalogItem::new(
-            "SnapDog", "1", HW_SERIAL, HW_VERSION, HW_ORDER, "de-DE",
+        CatalogSection::new("SnapDog", "SnapDog", "SnapDog", "en-US").with_item(CatalogItem::new(
+            "SnapDog", "1", HW_SERIAL, HW_VERSION, HW_ORDER, "en-US",
         )),
     );
 
@@ -361,7 +361,7 @@ fn build_app() -> knx_rs_prod::author::AppProgram {
     // makes ETS import it as a registered M-00FA (OpenKNX) product without a test license.
     app.add_hardware(
         Hardware::new(HW_SERIAL, HW_VERSION, "SnapDog")
-            .with_product(Product::new(HW_ORDER, "SnapDog", "de-DE"))
+            .with_product(Product::new(HW_ORDER, "SnapDog", "en-US"))
             .with_program(Hardware2Program::new("MT-5", "0001/1")),
     );
 
@@ -423,7 +423,7 @@ fn app_version() -> u32 {
 #[allow(clippy::too_many_lines)]
 fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     // Bool
-    pt_enum(x, "YesNo", 8, &[("Nein", 0), ("Ja", 1)]);
+    pt_enum(x, "YesNo", 8, &[("No", 0), ("Yes", 1)]);
     // Text types
     pt_text(x, "Name", 160);
     pt_text(x, "Text20", 160);
@@ -473,17 +473,17 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
         "Codec",
         8,
         &[
-            ("PCM (unkomprimiert)", 0),
-            ("FLAC (verlustfrei)", 1),
+            ("PCM (uncompressed)", 0),
+            ("FLAC (lossless)", 1),
             ("f32lz4", 2),
-            ("f32lz4e (verschlüsselt)", 3),
+            ("f32lz4e (encrypted)", 3),
         ],
     );
     pt_enum(
         x,
         "SourceConflict",
         8,
-        &[("Letzte Quelle gewinnt", 0), ("Empfänger hat Vorrang", 1)],
+        &[("Last source wins", 0), ("Receiver has priority", 1)],
     );
     // Zone choice for a client and zone count 1..=MAX_ZONES (dynamic, like the client count).
     let zone_choice: Vec<String> = (1..=MAX_ZONES).map(|n| format!("Zone {n}")).collect();
@@ -496,9 +496,9 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     let zone_counts: Vec<String> = (1..=MAX_ZONES)
         .map(|n| {
             if n == 1 {
-                "1 Zone".into()
+                "1 zone".into()
             } else {
-                format!("{n} Zonen")
+                format!("{n} zones")
             }
         })
         .collect();
@@ -512,9 +512,9 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     let client_labels: Vec<String> = (1..=MAX_CLIENTS)
         .map(|n| {
             if n == 1 {
-                "1 Client".into()
+                "1 client".into()
             } else {
-                format!("{n} Clients")
+                format!("{n} clients")
             }
         })
         .collect();
@@ -528,9 +528,9 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     let radio_labels: Vec<String> = (1..=mem::MAX_RADIOS)
         .map(|n| {
             if n == 1 {
-                "1 Sender".into()
+                "1 station".into()
             } else {
-                format!("{n} Sender")
+                format!("{n} stations")
             }
         })
         .collect();
@@ -544,9 +544,9 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     let api_key_labels: Vec<String> = (1..=MAX_API_KEYS)
         .map(|n| {
             if n == 1 {
-                "1 API-Key".into()
+                "1 API key".into()
             } else {
-                format!("{n} API-Keys")
+                format!("{n} API keys")
             }
         })
         .collect();
@@ -563,14 +563,14 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
         "Heartbeat",
         8,
         &[
-            ("1 Minute", 1),
-            ("3 Minuten", 3),
-            ("5 Minuten", 5),
-            ("10 Minuten", 10),
-            ("15 Minuten", 15),
-            ("30 Minuten", 30),
-            ("45 Minuten", 45),
-            ("60 Minuten", 60),
+            ("1 minute", 1),
+            ("3 minutes", 3),
+            ("5 minutes", 5),
+            ("10 minutes", 10),
+            ("15 minutes", 15),
+            ("30 minutes", 30),
+            ("45 minutes", 45),
+            ("60 minutes", 60),
         ],
     );
 }
@@ -626,7 +626,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "000",
         "NumZones",
         "NumZones",
-        "Anzahl Zonen",
+        "Number of zones",
         "10",
         mem::NUM_ZONES,
         8,
@@ -643,7 +643,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "002",
             "DefVol",
             "Percent",
-            "Standard-Lautstärke",
+            "Default volume",
             "50",
             mem::ZONE_DEF_VOL + i,
             8,
@@ -659,7 +659,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "003",
             "MaxVol",
             "Percent",
-            "Max. Lautstärke",
+            "Max. volume",
             "100",
             mem::ZONE_MAX_VOL + i,
             8,
@@ -675,7 +675,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "004",
             "AirPlay",
             "YesNo",
-            "AirPlay aktiviert",
+            "AirPlay enabled",
             "1",
             mem::ZONE_AIRPLAY + i,
             8,
@@ -691,7 +691,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "005",
             "Spotify",
             "YesNo",
-            "Spotify aktiviert",
+            "Spotify enabled",
             "1",
             mem::ZONE_SPOTIFY + i,
             8,
@@ -707,7 +707,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "006",
             "PresEn",
             "YesNo",
-            "Präsenz aktiviert",
+            "Presence enabled",
             "0",
             mem::ZONE_PRESENCE_EN + i,
             8,
@@ -723,7 +723,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "007",
             "PresTO",
             "UInt16",
-            "Präsenz Auto-Off (s)",
+            "Presence auto-off (s)",
             "900",
             mem::ZONE_PRESENCE_TO + i * 2,
             16,
@@ -739,7 +739,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "008",
             "PresSrc",
             "UInt8",
-            "Präsenz-Quelle (0=keine, 1..20=Radio)",
+            "Presence source (0=none, 1..20=radio)",
             "0",
             mem::ZONE_PRES_SRC + i,
             8,
@@ -759,7 +759,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "003",
         "NumClients",
         "NumClients",
-        "Anzahl Clients",
+        "Number of clients",
         "10",
         mem::NUM_CLIENTS,
         8,
@@ -774,7 +774,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "002",
             "DefZone",
             "ZoneSelect",
-            "Standard-Zone",
+            "Default zone",
             "1",
             mem::CLIENT_DEF_ZONE + i,
             8,
@@ -790,7 +790,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "003",
             "DefVol",
             "Percent",
-            "Standard-Lautstärke",
+            "Default volume",
             "100",
             mem::CLIENT_DEF_VOL + i,
             8,
@@ -806,7 +806,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "004",
             "MaxVol",
             "Percent",
-            "Max. Lautstärke",
+            "Max. volume",
             "100",
             mem::CLIENT_MAX_VOL + i,
             8,
@@ -822,7 +822,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "005",
             "DefLat",
             "UInt8",
-            "Standard-Latenz (ms)",
+            "Default latency (ms)",
             "0",
             mem::CLIENT_DEF_LAT + i,
             8,
@@ -837,7 +837,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "001",
         "HttpPort",
         "UInt16",
-        "HTTP Port",
+        "HTTP port",
         "5555",
         mem::GLOBAL_HTTP_PORT,
         16,
@@ -849,7 +849,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "002",
         "LogLvl",
         "LogLevel",
-        "Log Level",
+        "Log level",
         "2",
         mem::GLOBAL_LOG_LVL,
         8,
@@ -862,7 +862,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "004",
         "SRate",
         "SampleRate",
-        "Sample Rate",
+        "Sample rate",
         "1",
         mem::GLOBAL_SRATE,
         8,
@@ -874,7 +874,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "005",
         "BitD",
         "BitDepth",
-        "Bit Depth",
+        "Bit depth",
         "0",
         mem::GLOBAL_BITD,
         8,
@@ -898,7 +898,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "007",
         "SrcConflict",
         "SourceConflict",
-        "Quellen-Konflikt",
+        "Source conflict",
         "0",
         mem::GLOBAL_SRC_CONFLICT,
         8,
@@ -910,7 +910,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "008",
         "ZoneFade",
         "UInt16",
-        "Zonenwechsel-Fade (ms)",
+        "Zone switch fade (ms)",
         "200",
         mem::GLOBAL_ZONE_FADE,
         16,
@@ -922,7 +922,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "009",
         "SrcFade",
         "UInt16",
-        "Quellenwechsel-Fade (ms)",
+        "Source switch fade (ms)",
         "200",
         mem::GLOBAL_SRC_FADE,
         16,
@@ -939,7 +939,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "020",
         "NumRadios",
         "NumRadios",
-        "Anzahl Radiosender",
+        "Number of radio stations",
         "10",
         mem::NUM_RADIOS,
         8,
@@ -956,7 +956,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "000",
             "Name",
             "Name",
-            "Zonenname",
+            "Zone name",
             &format!("Zone {z}"),
             mem::ZONE_NAME + i * mem::ZONE_NAME_SIZE,
             mem::ZONE_NAME_SIZE as u16 * 8,
@@ -972,7 +972,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "010",
             "AirName",
             "Name",
-            "AirPlay-Name (leer = Zonenname)",
+            "AirPlay name (empty = zone name)",
             "",
             mem::ZONE_AIRPLAY_NAME + i * mem::ZONE_AIRPLAY_NAME_SIZE,
             mem::ZONE_AIRPLAY_NAME_SIZE as u16 * 8,
@@ -988,7 +988,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "011",
             "SpotName",
             "Name",
-            "Spotify-Name (leer = Zonenname)",
+            "Spotify name (empty = zone name)",
             "",
             mem::ZONE_SPOTIFY_NAME + i * mem::ZONE_SPOTIFY_NAME_SIZE,
             mem::ZONE_SPOTIFY_NAME_SIZE as u16 * 8,
@@ -1004,7 +1004,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "000",
             "Name",
             "Name",
-            "Clientname",
+            "Client name",
             &format!("Client {c}"),
             mem::CLIENT_NAME + i * mem::CLIENT_NAME_SIZE,
             mem::CLIENT_NAME_SIZE as u16 * 8,
@@ -1020,7 +1020,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "010",
             "MAC",
             "MAC",
-            "MAC-Adresse",
+            "MAC address",
             "",
             mem::CLIENT_MAC + i * mem::CLIENT_MAC_SIZE,
             mem::CLIENT_MAC_SIZE as u16 * 8,
@@ -1036,7 +1036,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "011",
             "Icon",
             "Name",
-            "Icon (Emoji)",
+            "Icon (emoji)",
             "",
             mem::CLIENT_ICON + i * mem::CLIENT_ICON_SIZE,
             mem::CLIENT_ICON_SIZE as u16 * 8,
@@ -1061,7 +1061,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "011",
         "SubUser",
         "Text20",
-        "Subsonic Benutzer",
+        "Subsonic user",
         "",
         mem::GLOBAL_SUB_USER,
         mem::GLOBAL_SUB_USER_SIZE as u16 * 8,
@@ -1073,7 +1073,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "012",
         "SubPass",
         "Text20",
-        "Subsonic Passwort",
+        "Subsonic password",
         "",
         mem::GLOBAL_SUB_PASS,
         mem::GLOBAL_SUB_PASS_SIZE as u16 * 8,
@@ -1085,7 +1085,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "013",
         "MqttBrk",
         "Text40",
-        "MQTT Broker",
+        "MQTT broker",
         "",
         mem::GLOBAL_MQTT_BROKER,
         mem::GLOBAL_MQTT_BROKER_SIZE as u16 * 8,
@@ -1097,7 +1097,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "014",
         "MqttTop",
         "Text20",
-        "MQTT Base Topic",
+        "MQTT base topic",
         "snapdog",
         mem::GLOBAL_MQTT_TOPIC,
         mem::GLOBAL_MQTT_TOPIC_SIZE as u16 * 8,
@@ -1110,7 +1110,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "015",
         "MqttPass",
         "Text20",
-        "MQTT Passwort",
+        "MQTT password",
         "",
         mem::GLOBAL_MQTT_PASS,
         mem::GLOBAL_MQTT_PASS_SIZE as u16 * 8,
@@ -1122,7 +1122,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "016",
         "AirPass",
         "Text20",
-        "AirPlay Passwort",
+        "AirPlay password",
         "",
         mem::GLOBAL_AIRPLAY_PASS,
         mem::GLOBAL_AIRPLAY_PASS_SIZE as u16 * 8,
@@ -1134,7 +1134,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "017",
         "Psk",
         "Text64",
-        "Snapcast PSK (Verschlüsselung)",
+        "Snapcast PSK (encryption)",
         "",
         mem::GLOBAL_PSK,
         mem::GLOBAL_PSK_SIZE as u16 * 8,
@@ -1148,7 +1148,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "021",
         "NumApiKeys",
         "NumApiKeys",
-        "Anzahl API-Keys",
+        "Number of API keys",
         "1",
         mem::GLOBAL_NUM_API_KEYS,
         8,
@@ -1162,7 +1162,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             &num,
             &format!("ApiKey{k}"),
             "Text40",
-            &format!("API-Key {k}"),
+            &format!("API key {k}"),
             "",
             mem::GLOBAL_API_KEYS + (k - 1) * mem::GLOBAL_API_KEY_SIZE,
             mem::GLOBAL_API_KEY_SIZE as u16 * 8,
@@ -1176,7 +1176,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
         "040",
         "Heartbeat",
         "Heartbeat",
-        "Heartbeat-Intervall",
+        "Heartbeat interval",
         "5",
         mem::GLOBAL_HEARTBEAT,
         8,
@@ -1191,7 +1191,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "000",
             "Name",
             "Text20",
-            "Stationsname",
+            "Station name",
             "",
             mem::RADIO_NAME + i * mem::RADIO_NAME_SIZE,
             mem::RADIO_NAME_SIZE as u16 * 8,
@@ -1435,7 +1435,7 @@ fn go_com_object(
         suffix,
         name,
         number as u32,
-        go.name_de,
+        go.name,
         go.name,
         go.size_str,
         Dpt::new(main.parse().unwrap_or(0), sub.parse().unwrap_or(0)),
@@ -1707,14 +1707,14 @@ fn build_radio_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::auth
     Dyn::ParameterBlock {
         suffix: "Radios".to_string(),
         name: "Radios".to_string(),
-        text: "Radiosender".to_string(),
+        text: "Radio stations".to_string(),
         text_param_ref: None,
         show_in_com_object_tree: false,
         children,
     }
 }
 
-/// Top-level "Allgemein" block holding the number-of-zones dropdown. Displayed via the
+/// Top-level "General" block holding the number-of-zones dropdown. Displayed via the
 /// `P-` parameter ref (like the channel name fields); the zone `<choose>` conditions gate
 /// on the same parameter's `UP-` ref.
 fn build_general_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::Dyn {
@@ -1778,7 +1778,7 @@ fn build_general_block(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::au
     Dyn::ParameterBlock {
         suffix: "General".to_string(),
         name: "General".to_string(),
-        text: "Allgemein".to_string(),
+        text: "General".to_string(),
         text_param_ref: None,
         show_in_com_object_tree: false,
         children,
@@ -1823,10 +1823,10 @@ fn push_info_section(out: &mut Vec<knx_rs_prod::author::Dyn>) {
     let info_lines = [
         "SnapDog — Multiroom Audio Server".to_string(),
         "© 2026 Fabian Schmieder".to_string(),
-        "Lizenz: GPL-3.0-only · Open-Source-Firmware".to_string(),
-        "Quellcode & Support: github.com/SnapDogRocks/snapdog".to_string(),
+        "License: GPL-3.0-only · open-source firmware".to_string(),
+        "Source code & support: github.com/SnapDogRocks/snapdog".to_string(),
         format!(
-            "Produkt-DB v{KNXPROD_APP_VERSION} · App 0x{KNXPROD_APP_NUMBER:04X} · HW {KNXPROD_HW_VERSION} · KNXnet/IP System B"
+            "Product DB v{KNXPROD_APP_VERSION} · App 0x{KNXPROD_APP_NUMBER:04X} · HW {KNXPROD_HW_VERSION} · KNXnet/IP System B"
         ),
     ];
     for (i, line) in info_lines.iter().enumerate() {
@@ -1889,7 +1889,7 @@ fn build_channel_block(
             app,
             &mut block,
             &format!("{id_prefix}-Einstellungen"),
-            "Einstellungen",
+            "Settings",
             &id_refs,
         );
     }

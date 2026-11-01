@@ -322,9 +322,10 @@ Decided with the maintainer: the knxprod is not in production use, so the number
   `ZGO_PLAYLIST_STEP_UPDOWN`, keys `track_step_updown` and `playlist_step_updown`), the four next and
   previous objects are 1.017, a zone has 41 objects. The version stays 13: it has not been released yet, so
   one version number per release is enough. The numbers of the other objects did not move.
-- Added beyond the RFC: every text of the product database is translated into English, Dutch,
-  Spanish and French (`xtask/src/i18n.rs`, injected into the generated XML, the golden file covers
-  it). A new text without a translation stops the generation. The version-mismatch message also has
+- Added beyond the RFC: every text of the product database is translated. English is the base
+  language, the translations (German, Dutch, Spanish, French, Italian, Polish, Portuguese) are one
+  file per language in `xtask/i18n/` keyed by the English text and injected into the generated XML by
+  `xtask/src/i18n.rs`; the golden file covers them. A new text without a translation stops the generation. The version-mismatch message also has
   a German text, its base text is English.
 - Stale device memory: the memory file (`knx-memory.bin`, format version 3) carries the product
   database version of the build that wrote it. A file with another version, or without one (format
