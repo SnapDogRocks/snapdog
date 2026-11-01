@@ -56,7 +56,7 @@
           "200": {
             "description": "Total client count",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "minimum": 0
@@ -147,7 +147,7 @@
           "200": {
             "description": "Connection status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -333,7 +333,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "string"
               }
@@ -505,7 +505,7 @@
           "200": {
             "description": "Client icon name",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -555,7 +555,7 @@
           "200": {
             "description": "Current client latency in milliseconds",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32"
@@ -602,7 +602,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "integer",
                 "format": "int32"
@@ -615,7 +615,7 @@
           "200": {
             "description": "Updated client latency in milliseconds",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32"
@@ -666,7 +666,7 @@
           "200": {
             "description": "Client mute status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -712,7 +712,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "boolean"
               }
@@ -724,7 +724,7 @@
           "200": {
             "description": "Updated client mute status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -774,7 +774,7 @@
           "200": {
             "description": "New client mute status after toggling",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -824,7 +824,7 @@
           "200": {
             "description": "Client friendly name",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -870,7 +870,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "string"
               }
@@ -882,7 +882,7 @@
           "200": {
             "description": "Updated friendly name",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -1070,7 +1070,7 @@
           "200": {
             "description": "Current client volume",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32"
@@ -1129,7 +1129,7 @@
           "200": {
             "description": "Updated client volume",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32"
@@ -1190,7 +1190,7 @@
           "200": {
             "description": "Assigned zone index",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "minimum": 0
@@ -1237,7 +1237,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "integer",
                 "minimum": 0
@@ -1250,7 +1250,7 @@
           "200": {
             "description": "Assigned zone index",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "minimum": 0
@@ -1368,7 +1368,7 @@
           "200": {
             "description": "Programming mode status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -1412,7 +1412,7 @@
         "operationId": "set_programming_mode",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "boolean"
               }
@@ -1424,7 +1424,7 @@
           "200": {
             "description": "Updated programming mode status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -2194,7 +2194,7 @@
           "200": {
             "description": "Total zone count",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "minimum": 0
@@ -2481,7 +2481,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "string"
               }
@@ -2633,7 +2633,7 @@
           "200": {
             "description": "Zone icon character",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -2683,7 +2683,7 @@
           "200": {
             "description": "Zone mute status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -2729,7 +2729,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "boolean"
               }
@@ -2827,7 +2827,7 @@
           "200": {
             "description": "Zone name",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -3110,7 +3110,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "integer",
                 "format": "int32"
@@ -3216,7 +3216,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "integer",
                 "format": "int32"
@@ -3270,7 +3270,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "string"
               }
@@ -3335,7 +3335,7 @@
           "200": {
             "description": "Playback status string",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -3385,7 +3385,7 @@
           "200": {
             "description": "Active playlist index",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "minimum": 0
@@ -3432,7 +3432,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "integer",
                 "minimum": 0
@@ -3488,7 +3488,7 @@
           "200": {
             "description": "Playlist track count",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32"
@@ -3589,7 +3589,7 @@
           "200": {
             "description": "Active playlist display name",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -3639,7 +3639,7 @@
           "200": {
             "description": "Current occupancy status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -3685,7 +3685,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "boolean"
               }
@@ -3740,7 +3740,7 @@
           "200": {
             "description": "Presence sensor system status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -3786,7 +3786,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "boolean"
               }
@@ -3841,7 +3841,7 @@
           "200": {
             "description": "Auto-off timeout in seconds",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32",
@@ -3889,7 +3889,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "integer",
                 "format": "int32",
@@ -3946,7 +3946,7 @@
           "200": {
             "description": "True if auto-off countdown timer is active",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -4226,7 +4226,7 @@
           "200": {
             "description": "Shuffle status",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -4272,7 +4272,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "boolean"
               }
@@ -4413,7 +4413,7 @@
           "200": {
             "description": "Current track index (0-based)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32"
@@ -4464,7 +4464,7 @@
           "200": {
             "description": "Track album title",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -4514,7 +4514,7 @@
           "200": {
             "description": "Track artist name",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -4564,7 +4564,7 @@
           "200": {
             "description": "Track duration in milliseconds",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int64"
@@ -4665,7 +4665,7 @@
           "200": {
             "description": "True if active track is playing",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -4715,7 +4715,7 @@
           "200": {
             "description": "Current playback position in milliseconds",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int64"
@@ -4827,7 +4827,7 @@
           "200": {
             "description": "Track progress fraction (0.0 to 1.0)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "number",
                   "format": "double"
@@ -4874,7 +4874,7 @@
         ],
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
                 "type": "number",
                 "format": "double"
@@ -4930,7 +4930,7 @@
           "200": {
             "description": "Track title",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -4980,7 +4980,7 @@
           "200": {
             "description": "Current zone volume",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32"
@@ -5039,7 +5039,7 @@
           "200": {
             "description": "Updated zone volume",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32"

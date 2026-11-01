@@ -116,6 +116,32 @@ fn the_contract_declares_the_api_key_and_the_401() {
     }
 }
 
+/// Scalar bodies are JSON on the wire (`Json<bool>`, `Json<i32>`, ...), so the contract must not
+/// call them `text/plain`; only the 401 of the auth middleware is plain text.
+#[test]
+fn scalar_bodies_are_documented_as_json() {
+    let doc: serde_json::Value =
+        serde_json::to_value(ApiDoc::openapi()).expect("openapi serializes");
+    for (path, item) in doc["paths"].as_object().expect("paths") {
+        for (verb, op) in item.as_object().expect("path item") {
+            if let Some(content) = op["requestBody"]["content"].as_object() {
+                assert!(content.get("text/plain").is_none(), "{verb} {path} request");
+            }
+            for (status, response) in op["responses"].as_object().expect("responses") {
+                if status == "401" {
+                    continue;
+                }
+                if let Some(content) = response["content"].as_object() {
+                    assert!(
+                        content.get("text/plain").is_none(),
+                        "{verb} {path} {status} response"
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Zone and client indexes start at 1, whatever the Rust type of the parameter says.
 #[test]
 fn index_parameters_start_at_one() {

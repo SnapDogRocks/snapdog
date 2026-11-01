@@ -227,7 +227,25 @@ impl Modify for Contract {
     }
 }
 
+/// utoipa documents a bare `bool`, number or `String` body as `text/plain`. The handlers read
+/// and write them with `Json<T>`, so on the wire they are JSON (`true`, `40`, `"Kitchen"`).
+macro_rules! retype_json {
+    ($content:expr, $remove:ident) => {
+        if let Some(body) = $content.$remove("text/plain") {
+            $content.entry("application/json".into()).or_insert(body);
+        }
+    };
+}
+
 fn document_operation(op: &mut Operation) {
+    if let Some(RefOr::T(body)) = &mut op.request_body {
+        retype_json!(body.content, remove);
+    }
+    for response in op.responses.responses.values_mut() {
+        if let RefOr::T(response) = response {
+            retype_json!(response.content, shift_remove);
+        }
+    }
     // The middleware answers with a plain-text body, not an `ErrorBody`.
     op.responses
         .responses
