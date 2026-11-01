@@ -339,7 +339,7 @@ opened as a pull request without the maintainer's yes for that action.
 | WP | Content | Where | Depends on |
 |---|---|---|---|
 | WP-0 | This RFC accepted; HAI-0007 status line and §14 updated to point here | `snapdog` branch `docs/rfc-ha-integration` | – |
-| WP-1 | S-1 and the two OpenAPI corrections, S-7 with golden tests (`S:` rows) | `snapdog`, own branch, no config or net files | WP-0 |
+| WP-1 | S-1 and the OpenAPI corrections (bearer scheme and 401, index minimum 1, 422 on client EQ and speaker), S-7 with golden tests (`S:` rows). **Done locally** on `feat/ha-api-prereqs` (two commits, not pushed). The AsyncAPI document is checked by the repository's own tests only, not yet by an external validator | `snapdog`, own branch, no config or net files | WP-0 |
 | WP-2 | Library skeleton: client, models from `openapi.json`, socket, fake-server tests, `check_coverage.py` | `pysnapdog` | S-7 for the WebSocket part; starts on REST |
 | WP-3 | Integration alpha: config flow, zeroconf, reauth, coordinator, zone `media_player` (transport, volume, mute, shuffle, repeat, position) | `snapdog-homeassistant` | WP-2 |
 | WP-4 | Sources, `play_media`, browse, covers, sound mode, TTS target | same | S-1 |
