@@ -14,9 +14,13 @@ use tokio::sync::RwLock;
 
 use crate::audio::eq::{EqBand, EqConfig, FilterType};
 
+/// The project moved from `pierreaubert/spinorama` (now a 404) to the `spinorama-org` organisation.
 const GITHUB_RAW_BASE: &str =
-    "https://raw.githubusercontent.com/pierreaubert/spinorama/develop/datas/eq";
-const INDEX_URL: &str = "https://api.github.com/repos/pierreaubert/spinorama/contents/datas/eq";
+    "https://raw.githubusercontent.com/spinorama-org/spinorama/main/datas/eq";
+/// The git tree of the profile directory. The contents API stops at 1000 entries and the
+/// directory has more, the tree API lists them all and says when it had to cut the list.
+const INDEX_URL: &str =
+    "https://api.github.com/repos/spinorama-org/spinorama/git/trees/main:datas/eq";
 const INDEX_CACHE_DURATION: std::time::Duration = std::time::Duration::from_hours(24);
 
 /// Cached speaker profile database.
@@ -90,15 +94,11 @@ impl SpeakerDb {
         if !resp.status().is_success() {
             anyhow::bail!("GitHub API returned {} (rate limit?)", resp.status());
         }
-        let entries: Vec<GitHubEntry> = resp
-            .json()
+        let body = resp
+            .text()
             .await
-            .context("Failed to parse GitHub directory listing")?;
-        let names: Vec<String> = entries
-            .into_iter()
-            .filter(|e| e.entry_type == "dir")
-            .map(|e| e.name)
-            .collect();
+            .context("Failed to read the GitHub directory listing")?;
+        let names = parse_index(&body)?;
         let mut inner = self.inner.write().await;
         inner.index.clone_from(&names);
         inner.index_fetched_at = Some(std::time::Instant::now());
@@ -107,10 +107,10 @@ impl SpeakerDb {
     }
 
     async fn fetch_profile(&self, speaker: &str) -> Result<EqConfig> {
-        let url = format!("{GITHUB_RAW_BASE}/{speaker}/iir-autoeq.txt");
+        let url = profile_url(speaker)?;
         let resp = self
             .client
-            .get(&url)
+            .get(url)
             .send()
             .await
             .with_context(|| format!("Failed to fetch profile for '{speaker}'"))?;
@@ -137,11 +137,44 @@ impl Default for SpeakerDb {
     }
 }
 
+/// Raw URL of a speaker's profile. The name is one path segment, so a `/`, `?` or `#` in it
+/// cannot reach another file.
+fn profile_url(speaker: &str) -> Result<url::Url> {
+    let mut url = url::Url::parse(GITHUB_RAW_BASE).context("invalid speaker profile base URL")?;
+    url.path_segments_mut()
+        .map_err(|()| anyhow::anyhow!("speaker profile base URL cannot hold a path"))?
+        .push(speaker)
+        .push("iir-autoeq.txt");
+    Ok(url)
+}
+
+#[derive(serde::Deserialize)]
+struct GitHubTree {
+    tree: Vec<GitHubEntry>,
+    #[serde(default)]
+    truncated: bool,
+}
+
 #[derive(serde::Deserialize)]
 struct GitHubEntry {
-    name: String,
+    path: String,
     #[serde(rename = "type")]
     entry_type: String,
+}
+
+/// The speaker names in a GitHub tree listing: its directories.
+fn parse_index(body: &str) -> Result<Vec<String>> {
+    let tree: GitHubTree =
+        serde_json::from_str(body).context("Failed to parse GitHub directory listing")?;
+    if tree.truncated {
+        anyhow::bail!("GitHub cut the speaker listing short");
+    }
+    Ok(tree
+        .tree
+        .into_iter()
+        .filter(|e| e.entry_type == "tree")
+        .map(|e| e.path)
+        .collect())
 }
 
 /// Parse `EqualizerAPO` format into [`EqConfig`].
@@ -201,6 +234,35 @@ fn parse_autoeq(text: &str, speaker: &str) -> EqConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_index_lists_the_directories_only() {
+        let body = r#"{"tree":[{"path":"ADS L520","type":"tree"},{"path":"README.md","type":"blob"}],"truncated":false}"#;
+        assert_eq!(parse_index(body).unwrap(), vec!["ADS L520".to_string()]);
+    }
+
+    #[test]
+    fn a_cut_listing_is_an_error_not_a_short_list() {
+        let body = r#"{"tree":[{"path":"A","type":"tree"}],"truncated":true}"#;
+        assert!(parse_index(body).is_err());
+    }
+
+    #[test]
+    fn a_listing_that_is_not_a_tree_is_an_error() {
+        assert!(parse_index(r#"{"message":"Not Found"}"#).is_err());
+    }
+
+    #[test]
+    fn a_speaker_name_stays_one_path_segment() {
+        let url = profile_url("ADS L520").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://raw.githubusercontent.com/spinorama-org/spinorama/main/datas/eq/ADS%20L520/iir-autoeq.txt"
+        );
+        let url = profile_url("a/../b?c#d").unwrap();
+        assert_eq!(url.path_segments().unwrap().count(), 7);
+        assert!(url.query().is_none() && url.fragment().is_none());
+    }
 
     #[test]
     fn parse_autoeq_basic() {
