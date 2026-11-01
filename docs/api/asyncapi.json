@@ -1,0 +1,657 @@
+{
+  "asyncapi": "3.0.0",
+  "channels": {
+    "notifications": {
+      "address": "/ws",
+      "messages": {
+        "client_state_changed": {
+          "$ref": "#/components/messages/client_state_changed"
+        },
+        "playback_error": {
+          "$ref": "#/components/messages/playback_error"
+        },
+        "zone_changed": {
+          "$ref": "#/components/messages/zone_changed"
+        },
+        "zone_eq_changed": {
+          "$ref": "#/components/messages/zone_eq_changed"
+        },
+        "zone_presence_changed": {
+          "$ref": "#/components/messages/zone_presence_changed"
+        },
+        "zone_progress": {
+          "$ref": "#/components/messages/zone_progress"
+        },
+        "zone_volume_changed": {
+          "$ref": "#/components/messages/zone_volume_changed"
+        }
+      }
+    }
+  },
+  "components": {
+    "messages": {
+      "client_state_changed": {
+        "contentType": "application/json",
+        "name": "client_state_changed",
+        "payload": {
+          "description": "Client connection or volume state changed.",
+          "properties": {
+            "client": {
+              "description": "Client index (1-based).",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "connected": {
+              "description": "Whether the client is connected to Snapcast.",
+              "type": "boolean"
+            },
+            "is_snapdog": {
+              "description": "Whether this is a `SnapDog` client (supports EQ).",
+              "type": "boolean"
+            },
+            "muted": {
+              "description": "Whether the client is muted.",
+              "type": "boolean"
+            },
+            "type": {
+              "enum": [
+                "client_state_changed"
+              ],
+              "type": "string"
+            },
+            "volume": {
+              "description": "Client volume (0–100).",
+              "format": "int32",
+              "type": "integer"
+            },
+            "zone": {
+              "description": "Zone the client belongs to (1-based).",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "client",
+            "volume",
+            "muted",
+            "connected",
+            "zone",
+            "is_snapdog",
+            "type"
+          ],
+          "type": "object"
+        },
+        "title": "Client connection or volume state changed."
+      },
+      "playback_error": {
+        "contentType": "application/json",
+        "name": "playback_error",
+        "payload": {
+          "description": "Playback error occurred.",
+          "properties": {
+            "details": {
+              "description": "Technical details (e.g. source error description).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "description": "Primary user-facing error message.",
+              "type": "string"
+            },
+            "recoverable": {
+              "description": "Whether the error is recoverable.",
+              "type": "boolean"
+            },
+            "type": {
+              "enum": [
+                "playback_error"
+              ],
+              "type": "string"
+            },
+            "zone": {
+              "description": "Zone index (1-based).",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "zone",
+            "message",
+            "recoverable",
+            "type"
+          ],
+          "type": "object"
+        },
+        "title": "Playback error occurred."
+      },
+      "zone_changed": {
+        "contentType": "application/json",
+        "name": "zone_changed",
+        "payload": {
+          "description": "Full zone state update.",
+          "properties": {
+            "album": {
+              "description": "Track album.",
+              "type": "string"
+            },
+            "album_artist": {
+              "description": "Album artist.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "artist": {
+              "description": "Track artist.",
+              "type": "string"
+            },
+            "bitrate_kbps": {
+              "description": "Audio bitrate in kbps.",
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "can_next": {
+              "description": "Whether next track is available.",
+              "type": "boolean"
+            },
+            "can_playlist_next": {
+              "description": "Whether there's a next playlist.",
+              "type": "boolean"
+            },
+            "can_playlist_prev": {
+              "description": "Whether there's a previous playlist.",
+              "type": "boolean"
+            },
+            "can_prev": {
+              "description": "Whether previous track is available.",
+              "type": "boolean"
+            },
+            "content_type": {
+              "description": "MIME content type.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cover_url": {
+              "description": "Cover art URL.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "disc_number": {
+              "description": "Disc number.",
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "duration_ms": {
+              "description": "Total track duration in milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "genre": {
+              "description": "Genre tag.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "muted": {
+              "description": "Whether the zone is muted.",
+              "type": "boolean"
+            },
+            "playback": {
+              "description": "Playback state: \"playing\", \"paused\", or \"stopped\".",
+              "type": "string"
+            },
+            "playlist": {
+              "description": "Current playlist index (0-based).",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "playlist_name": {
+              "description": "Name of the active playlist.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "playlist_total": {
+              "description": "Total number of playlists available.",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "position_ms": {
+              "description": "Current playback position in milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "repeat": {
+              "$ref": "#/components/schemas/RepeatMode",
+              "description": "Repeat mode."
+            },
+            "seekable": {
+              "description": "Whether the track supports seeking.",
+              "type": "boolean"
+            },
+            "shuffle": {
+              "description": "Whether shuffle is enabled.",
+              "type": "boolean"
+            },
+            "source": {
+              "description": "Active source name.",
+              "type": "string"
+            },
+            "title": {
+              "description": "Track title.",
+              "type": "string"
+            },
+            "track_count": {
+              "description": "Total tracks in playlist.",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "track_index": {
+              "description": "Current track index in playlist.",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "track_number": {
+              "description": "Track number.",
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "zone_changed"
+              ],
+              "type": "string"
+            },
+            "volume": {
+              "description": "Zone volume (0–100).",
+              "format": "int32",
+              "type": "integer"
+            },
+            "year": {
+              "description": "Release year.",
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "zone": {
+              "description": "Zone index (1-based).",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "zone",
+            "playback",
+            "source",
+            "shuffle",
+            "repeat",
+            "title",
+            "artist",
+            "album",
+            "duration_ms",
+            "position_ms",
+            "seekable",
+            "can_playlist_next",
+            "can_playlist_prev",
+            "can_next",
+            "can_prev",
+            "volume",
+            "muted",
+            "type"
+          ],
+          "type": "object"
+        },
+        "title": "Full zone state update."
+      },
+      "zone_eq_changed": {
+        "contentType": "application/json",
+        "name": "zone_eq_changed",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EqConfig",
+              "description": "Updated EQ configuration (flattened into the JSON object)."
+            },
+            {
+              "properties": {
+                "zone": {
+                  "description": "Zone index (1-based).",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "zone"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Zone equalizer configuration changed.",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "zone_eq_changed"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ],
+          "description": "Zone equalizer configuration changed."
+        },
+        "title": "Zone equalizer configuration changed."
+      },
+      "zone_presence_changed": {
+        "contentType": "application/json",
+        "name": "zone_presence_changed",
+        "payload": {
+          "description": "Zone presence state changed.",
+          "properties": {
+            "enabled": {
+              "description": "Whether presence-triggered playback is enabled.",
+              "type": "boolean"
+            },
+            "presence": {
+              "description": "Whether presence is detected.",
+              "type": "boolean"
+            },
+            "timer_active": {
+              "description": "Whether the auto-off timer is running.",
+              "type": "boolean"
+            },
+            "type": {
+              "enum": [
+                "zone_presence_changed"
+              ],
+              "type": "string"
+            },
+            "zone": {
+              "description": "Zone index (1-based).",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "zone",
+            "presence",
+            "enabled",
+            "timer_active",
+            "type"
+          ],
+          "type": "object"
+        },
+        "title": "Zone presence state changed."
+      },
+      "zone_progress": {
+        "contentType": "application/json",
+        "name": "zone_progress",
+        "payload": {
+          "description": "Periodic playback position update for a zone.",
+          "properties": {
+            "buffered_ms": {
+              "description": "Buffered position in milliseconds (for stream-and-cache progress).",
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "duration_ms": {
+              "description": "Total track duration in milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "position_ms": {
+              "description": "Current playback position in milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "zone_progress"
+              ],
+              "type": "string"
+            },
+            "zone": {
+              "description": "Zone index (1-based).",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "zone",
+            "position_ms",
+            "duration_ms",
+            "type"
+          ],
+          "type": "object"
+        },
+        "summary": "Reserved: the server never sends this event yet.",
+        "title": "Periodic playback position update for a zone.",
+        "x-reserved": true
+      },
+      "zone_volume_changed": {
+        "contentType": "application/json",
+        "name": "zone_volume_changed",
+        "payload": {
+          "description": "Zone volume changed (high-frequency, lightweight).",
+          "properties": {
+            "muted": {
+              "description": "Whether the zone is muted.",
+              "type": "boolean"
+            },
+            "type": {
+              "enum": [
+                "zone_volume_changed"
+              ],
+              "type": "string"
+            },
+            "volume": {
+              "description": "Zone volume (0–100).",
+              "format": "int32",
+              "type": "integer"
+            },
+            "zone": {
+              "description": "Zone index (1-based).",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "zone",
+            "volume",
+            "muted",
+            "type"
+          ],
+          "type": "object"
+        },
+        "title": "Zone volume changed (high-frequency, lightweight)."
+      }
+    },
+    "schemas": {
+      "EqBand": {
+        "description": "Single EQ band configuration.",
+        "properties": {
+          "freq": {
+            "description": "Center frequency in Hz.",
+            "format": "float",
+            "type": "number"
+          },
+          "gain": {
+            "description": "Gain in dB (positive = boost, negative = cut). Ignored for low/high pass.",
+            "format": "float",
+            "type": "number"
+          },
+          "q": {
+            "description": "Q factor controlling bandwidth. Higher values = narrower band.",
+            "format": "float",
+            "type": "number"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FilterType",
+            "description": "Filter type (low shelf, high shelf, peaking, low pass, high pass)."
+          }
+        },
+        "required": [
+          "freq",
+          "gain",
+          "q",
+          "type"
+        ],
+        "type": "object"
+      },
+      "EqConfig": {
+        "description": "Full EQ configuration for a zone.",
+        "properties": {
+          "bands": {
+            "description": "Ordered list of biquad filter bands applied in series.",
+            "items": {
+              "$ref": "#/components/schemas/EqBand"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "description": "Whether the EQ is active. When `false`, audio passes through unmodified.",
+            "type": "boolean"
+          },
+          "preset": {
+            "description": "Name of the preset this config was loaded from, if any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "bands"
+        ],
+        "type": "object"
+      },
+      "FilterType": {
+        "description": "Filter type for an EQ band.",
+        "enum": [
+          "low_shelf",
+          "high_shelf",
+          "peaking",
+          "low_pass",
+          "high_pass"
+        ],
+        "type": "string"
+      },
+      "RepeatMode": {
+        "description": "Repeat mode for zone playback.",
+        "enum": [
+          "off",
+          "track",
+          "playlist"
+        ],
+        "type": "string"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "description": "A configured API key. Send it as `Authorization: Bearer <key>` or, for a client that cannot set headers on the upgrade request, as the `token` query parameter. Not needed when the server has no `api_keys`.",
+        "in": "query",
+        "name": "token",
+        "type": "httpApiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "State changes the server pushes on `/ws`. Every message is a JSON text frame with a `type` tag and absolute values, never a delta. All messages travel on one ordered channel. The server sends no initial state: read it over the REST API, open the socket first and apply what arrives while you read. A client that falls behind is closed with code 1013 and has to reconnect and read the state again. A server that shuts down closes with 1001. The server pings every 30 seconds.",
+    "title": "SnapDog WebSocket notifications",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "receiveNotifications": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/notifications"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notifications/messages/zone_changed"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/zone_volume_changed"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/zone_progress"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/client_state_changed"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/zone_eq_changed"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/zone_presence_changed"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/playback_error"
+        }
+      ]
+    }
+  },
+  "servers": {
+    "snapdog": {
+      "description": "Use `wss` when the server has TLS enabled.",
+      "host": "{host}:{port}",
+      "pathname": "/ws",
+      "protocol": "ws",
+      "security": [
+        {
+          "$ref": "#/components/securitySchemes/bearer"
+        }
+      ],
+      "variables": {
+        "host": {
+          "description": "Host name or address of the SnapDog server"
+        },
+        "port": {
+          "default": "5555"
+        }
+      }
+    }
+  }
+}

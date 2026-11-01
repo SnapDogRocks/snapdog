@@ -26,6 +26,7 @@ fn main() {
     match cmd.as_str() {
         "ci" => ci(),
         "gen-api-spec" => gen_api_spec(),
+        "gen-asyncapi" => gen_asyncapi(),
         "knxprod" | "" => knxprod(),
         arg if std::path::Path::new(arg)
             .extension()
@@ -38,6 +39,7 @@ fn main() {
             eprintln!("Commands:");
             eprintln!("  knxprod [path]  Generate ETS XML and .knxprod (default)");
             eprintln!("  gen-api-spec    Generate OpenAPI JSON specification");
+            eprintln!("  gen-asyncapi    Generate the AsyncAPI document of /ws");
             eprintln!("  ci              Run all CI checks locally");
             std::process::exit(1);
         }
@@ -65,6 +67,24 @@ fn gen_api_spec() {
 
     std::fs::write(&out_path, json).expect("failed to write OpenAPI JSON file");
     eprintln!("✅ Generated OpenAPI specification at: {out_path}");
+}
+
+/// Write the `AsyncAPI` document of the WebSocket stream (default `docs/api/asyncapi.json`).
+fn gen_asyncapi() {
+    let json = snapdog::api::asyncapi::document_json();
+    let out_path = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "docs/api/asyncapi.json".to_string());
+
+    if let Some(parent) = std::path::Path::new(&out_path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).expect("failed to create output directory");
+    }
+
+    std::fs::write(&out_path, json).expect("failed to write AsyncAPI JSON file");
+    eprintln!("✅ Generated AsyncAPI document at: {out_path}");
 }
 
 /// Run all CI checks locally (mirrors .github/workflows/ci.yml).

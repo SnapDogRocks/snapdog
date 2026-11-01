@@ -3,6 +3,7 @@
 
 //! REST API and WebSocket server via axum.
 
+pub mod asyncapi;
 mod auth;
 #[cfg(feature = "api-docs")]
 pub mod console;
