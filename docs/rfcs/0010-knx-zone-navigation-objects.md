@@ -192,7 +192,7 @@ mute, system fault, KNX time. `GGO_*` follow the new order of `GLOBAL_GOS`.
 
 The existing `Play`, `Pause`, `Stop`, `Track Next`, `Track Previous`, `Playlist Next` and
 `Playlist Previous` keep reacting to any value. `Track Next`, `Track Previous`, `Playlist Next` and
-`Playlist Previous` are declared as DPT 1.017 (`DPT_Trigger`) since version 14, which says what they
+`Playlist Previous` are declared as DPT 1.017 (`DPT_Trigger`), which says what they
 do; the behaviour is unchanged. DPT 1.007 (`DPT_Step`) is 0 = decrease,
 1 = increase; the Step objects map increase to next and evaluate the value. DPT 1.008 (`DPT_UpDown`)
 is 0 = up, 1 = down. `Track Step Up/Down` and `Playlist Step Up/Down` are the same two objects for a
@@ -314,14 +314,14 @@ Decided with the maintainer: the knxprod is not in production use, so the number
 - Done: T2 (objects, constants, `ZONE_GO_SLOTS`, `CLIENT_GO_SLOTS`, `GLOBAL_GO_SLOTS`, `locate`), T3
   (`decode_switch` rejects an empty payload), T4 (strides, descriptor table with empty descriptors
   for reserved numbers; the device-mode integration tests run with 1520 table entries), T5
-  (`KNXPROD_APP_VERSION` 14, layout hash covers the slots and strides, knxprod and XML regenerated,
+  (`KNXPROD_APP_VERSION` 13, layout hash covers the slots and strides, knxprod and XML regenerated,
   unsigned like the committed one), T6 (TOML keys, example, macOS settings field list,
   `docs/knx-bridge.md`, `docs/upgrading.md`).
 - Track Number and Track Number Status (4.2) and the grouping of the global objects (4.1b) are done.
 - KZO-DEC-5 is done: `Track Step Up/Down` and `Playlist Step Up/Down` (1.008, `ZGO_TRACK_STEP_UPDOWN`,
   `ZGO_PLAYLIST_STEP_UPDOWN`, keys `track_step_updown` and `playlist_step_updown`), the four next and
-  previous objects are 1.017, a zone has 41 objects, `KNXPROD_APP_VERSION` 14. The numbers of the other
-  objects did not move.
+  previous objects are 1.017, a zone has 41 objects. The version stays 13: it has not been released yet, so
+  one version number per release is enough. The numbers of the other objects did not move.
 - Added beyond the RFC: every text of the product database is translated into English, Dutch,
   Spanish and French (`xtask/src/i18n.rs`, injected into the generated XML, the golden file covers
   it). A new text without a translation stops the generation. The version-mismatch message also has

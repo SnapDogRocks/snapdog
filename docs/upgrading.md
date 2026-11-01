@@ -3,10 +3,10 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
-## KNX device mode: new object numbers and eight new zone objects (product database version 14)
+## KNX device mode: new object numbers and eight new zone objects (product database version 13)
 
 Applies to everyone who programmed SnapDog's KNX device from ETS. The product database is
-a beta, version 14 renumbers every group object compared to the last release.
+a beta, version 13 renumbers every group object compared to the last release.
 
 ### What changed
 

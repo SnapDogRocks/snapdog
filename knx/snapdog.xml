@@ -8,7 +8,7 @@
         </CatalogSection>
       </Catalog>
       <ApplicationPrograms>
-        <ApplicationProgram Id="M-00FA_A-FF01-01-0000" ProgramType="ApplicationProgram" MaskVersion="MV-57B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="14" ReplacesVersions="0 1 2 3 4 5 6 7 8 9 10 11 12 13">
+        <ApplicationProgram Id="M-00FA_A-FF01-01-0000" ProgramType="ApplicationProgram" MaskVersion="MV-57B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="13" ReplacesVersions="0 1 2 3 4 5 6 7 8 9 10 11 12">
           <Static>
             <Code>
               <RelativeSegment Id="M-00FA_A-FF01-01-0000_RS-04-00000" Name="Parameters" Offset="0" Size="12190" LoadStateMachine="4" />
@@ -4292,7 +4292,7 @@
                 <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-8" Text="© 2026 Fabian Schmieder" UIHint="Information" />
                 <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-9" Text="Lizenz: GPL-3.0-only · Open-Source-Firmware" UIHint="Information" />
                 <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-10" Text="Quellcode &amp; Support: github.com/SnapDogRocks/snapdog" UIHint="Information" />
-                <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-11" Text="Produkt-DB v14 · App 0xFF01 · HW 1 · KNXnet/IP System B" UIHint="Information" />
+                <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-11" Text="Produkt-DB v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" UIHint="Information" />
               </ParameterBlock>
               <choose ParamRefId="M-00FA_A-FF01-01-0000_UP-1_R-101">
                 <when test="&gt;=1">
@@ -9698,7 +9698,7 @@
               <Translation AttributeName="Text" Text="Source code &amp; support: github.com/SnapDogRocks/snapdog" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-11">
-              <Translation AttributeName="Text" Text="Product DB v14 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
+              <Translation AttributeName="Text" Text="Product DB v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-12">
               <Translation AttributeName="Text" Text="Settings" />
@@ -14822,7 +14822,7 @@
               <Translation AttributeName="Text" Text="Broncode &amp; support: github.com/SnapDogRocks/snapdog" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-11">
-              <Translation AttributeName="Text" Text="Productdatabase v14 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
+              <Translation AttributeName="Text" Text="Productdatabase v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-12">
               <Translation AttributeName="Text" Text="Instellingen" />
@@ -20278,7 +20278,7 @@
               <Translation AttributeName="Text" Text="Código fuente y soporte: github.com/SnapDogRocks/snapdog" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-11">
-              <Translation AttributeName="Text" Text="BD de producto v14 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
+              <Translation AttributeName="Text" Text="BD de producto v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PB-2">
               <Translation AttributeName="Text" Text="Zona 1: {{0: ...}}" />
@@ -25811,7 +25811,7 @@
               <Translation AttributeName="Text" Text="Code source et support : github.com/SnapDogRocks/snapdog" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-11">
-              <Translation AttributeName="Text" Text="BD produit v14 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
+              <Translation AttributeName="Text" Text="BD produit v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-12">
               <Translation AttributeName="Text" Text="Paramètres" />

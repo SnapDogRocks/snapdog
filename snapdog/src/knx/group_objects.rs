@@ -58,7 +58,7 @@ pub const HARDWARE_TYPE: [u8; 6] = [0x00, 0x00, 0xFF, 0x01, 0x01, 0x00];
 /// **Bump [`KNXPROD_APP_VERSION`] whenever the KNX memory layout changes** — ETS decides
 /// its download scope by this version, so an unchanged version after a layout change
 /// would leave a device mis-parameterized (see the xtask layout-lock guard).
-pub const KNXPROD_APP_VERSION: u32 = 14;
+pub const KNXPROD_APP_VERSION: u32 = 13;
 /// ETS `ApplicationNumber` (== hardware order number `0xFF01`).
 pub const KNXPROD_APP_NUMBER: u16 = 0xFF01;
 /// Hardware revision (the version byte of [`HARDWARE_TYPE`]).
