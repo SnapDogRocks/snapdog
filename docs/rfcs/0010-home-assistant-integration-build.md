@@ -188,6 +188,23 @@ wrong key, no key, a closed port, and zones 0 and 9 (404) all behaved as designe
 - Not checked: write operations, WebSocket events, the cover endpoints (no cover in the test
   setup) and a SnapDog client with EQ (none connected).
 
+**Second pass on the WP-1 branch (2026-11-01).** The build of `feat/ha-api-prereqs` ran with the
+same local configuration and `pysnapdog` exercised it, writes included:
+
+- The same binary answers every scalar body as `application/json` (`40`, `true`, `"Kitchen"`),
+  while the document said `text/plain` for 100 request and response bodies. A client generated
+  from the document would have been refused. The WP-1 branch corrects this (third commit).
+- Every write that was tried produced an event on `/ws`: zone volume and mute
+  (`zone_volume_changed`, `zone_changed`), shuffle and repeat (`zone_changed`), presence
+  (`zone_presence_changed`), zone EQ (`zone_eq_changed`). The question whether every state change
+  emits an event is answered for zones. **Not checked:** client changes, because no client was
+  connected, so `client_state_changed` has only been seen in the fake server of the library.
+- `PUT .../presence` on a zone made the server try its radio and raised one `playback_error`
+  (the test radio is unreachable). The event is real and carries the zone.
+- Error bodies of the live server fit the library's error classes: 404 `zone not found`, 400 for
+  a non-HTTP URL, 422 for a client without EQ, 409 for the KNX programming mode outside device
+  mode, 503 for the updater and for `/speakers`.
+
 **Emitting `zone_progress`** (HAI-T4) is dropped from the plan: the integration works with the
 once-per-second `zone_changed`; the variant is either removed or documented as reserved as part
 of S-7, so the AsyncAPI document does not list a dead event as live.
@@ -265,7 +282,7 @@ checks each operation individually; the table groups for reading.
 | M-Z06 | `PUT .../shuffle`, `POST .../shuffle/toggle` | `shuffle_set` | I: `test_media_player_shuffle_repeat` | yes |
 | M-Z07 | `PUT .../repeat`, `POST .../repeat/toggle` | `repeat_set` (`off`, `one`, `all`) | same | yes |
 | M-Z08 | `PUT .../track/position`, `PUT .../track/progress`, `GET` of both | `media_seek` (position); progress derived, not exposed | I: `test_media_player_seek` | yes |
-| M-Z09 | `GET .../playback`, `/track`, `/track/*` (title, artist, album, duration, metadata, playing, position, progress) | media attributes from the snapshot and `zone_changed`; REST reads only in the snapshot and library | L: `test_track_reads`; I: `test_media_player_state` | yes |
+| M-Z09 | `GET .../playback`, `/track`, `/track/*` (title, artist, album, duration, metadata, playing, position, progress) | media attributes from the snapshot and `zone_changed`; the single-field reads have no call of their own: `TrackMetadata` and `Zone` carry the values, and the exclusion table of `check_coverage.py` says so | L: `test_zone_track`; I: `test_media_player_state` | yes |
 | M-Z10 | `GET/PUT .../playlist`, `/playlist/count`, `/info`, `/name`, `POST .../play/playlist`, `.../next/playlist`, `.../previous/playlist` | `select_source`, `source_list`, `media_playlist`, buttons next and previous playlist | I: `test_source_select`, `test_playlist_buttons` | yes |
 | M-Z11 | `POST .../play/track`, `.../play/playlist/{p}/track`, `.../play/subsonic/{id}` | `play_media` `track`, `snapdog.play_playlist_track` | I: `test_play_media_track`, `test_service_play_playlist_track` | yes |
 | M-Z12 | `POST .../play/url` | `play_media` `url`, `tts.speak` target, `media_source` | I: `test_play_media_url`, `test_tts_target` | yes (TTS) |
@@ -340,7 +357,7 @@ opened as a pull request without the maintainer's yes for that action.
 |---|---|---|---|
 | WP-0 | This RFC accepted; HAI-0007 status line and §14 updated to point here | `snapdog` branch `docs/rfc-ha-integration` | – |
 | WP-1 | S-1 and the OpenAPI corrections (bearer scheme and 401, index minimum 1, 422 on client EQ and speaker), S-7 with golden tests (`S:` rows). **Done locally** on `feat/ha-api-prereqs` (two commits, not pushed). The AsyncAPI document is checked by the repository's own tests only, not yet by an external validator | `snapdog`, own branch, no config or net files | WP-0 |
-| WP-2 | Library skeleton: client, models from `openapi.json`, socket, fake-server tests, `check_coverage.py` | `pysnapdog` | S-7 for the WebSocket part; starts on REST |
+| WP-2 | Library: client, models from `openapi.json`, socket and listener, fake-server tests built from the pinned specs, `check_coverage.py`. **Done locally** (commit `72cf902`, 312 tests, 100 % coverage, not pushed, no remote yet) | `pysnapdog` | S-7 for the WebSocket part; starts on REST |
 | WP-3 | Integration alpha: config flow, zeroconf, reauth, coordinator, zone `media_player` (transport, volume, mute, shuffle, repeat, position) | `snapdog-homeassistant` | WP-2 |
 | WP-4 | Sources, `play_media`, browse, covers, sound mode, TTS target | same | S-1 |
 | WP-5 | Client entities, presence, EQ, speaker, server, update, KNX, services, `event` | same | WP-3 |
