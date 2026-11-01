@@ -3,6 +3,38 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## KNX device mode: new object numbers and four new zone objects (product database version 12)
+
+Applies to everyone who programmed SnapDog's KNX device from ETS. The product database is
+a beta, version 12 renumbers every group object.
+
+### What changed
+
+- The objects of a zone are grouped in tens (transport 1 to 10, volume and mute 11 to 20, play
+  modes 21 to 30, playlist 31 to 40, track info 41 to 50, presence 51 to 60), a client has
+  three groups (volume and mute, latency and zone, connection), and the device-level objects
+  moved to 1501 to 1505. Numbers in a group that no object uses are reserved for later
+  additions.
+- New zone objects: Play/Pause (1.001, 1 plays, 0 pauses), Track Step and Playlist Step (1.007,
+  1 goes to the next, 0 to the previous) and Playlist Name (16.001, 14 characters, status).
+  The existing objects behave as before; Play, Pause, Stop and the next and previous objects
+  still react to any value.
+- All texts in the product database exist in German, English, Dutch, Spanish and French.
+- New `[zone.knx]` keys for client mode and TOML-programmed devices: `play_pause`, `track_step`,
+  `playlist_step`, `playlist_name_status`.
+
+### What to do
+
+1. Stop SnapDog and move `knx-memory.bin` out of the way (`/var/lib/snapdog` in the container and the
+   systemd unit, the working directory otherwise). It holds the address and association tables of the
+   old product database. SnapDog does not compare them with the product version, so until ETS has
+   downloaded the new tables the old ones would link addresses to the wrong objects.
+2. Start the new SnapDog, import the new `snapdog.knxprod` and update the SnapDog device in the ETS
+   project.
+3. Check that every group address is linked to the object you meant, the numbers changed. This has
+   not been tested against an ETS project yet; ETS may keep the links or drop them.
+4. Download the device.
+
 ## Release builds include AirPlay 2 and use it by default (`ap2`)
 
 First release after 0.28.2. This is a breaking change.

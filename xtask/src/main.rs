@@ -6,18 +6,22 @@
 //! Uses GO definitions from `snapdog::knx::group_objects` (SSOT) and outputs
 //! a complete ETS-compatible XML that `knx-prod` can convert to .knxprod.
 
+mod i18n;
+
 use snapdog::knx::group_objects::{
     CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
-    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GOS,
-    GLOBAL_GO_COUNT, GLOBAL_GOS, GoDefinition, KNXPROD_APP_NUMBER, KNXPROD_APP_VERSION,
-    KNXPROD_HW_VERSION, MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, ZGO_CONTROL_STATUS, ZGO_MUTE,
-    ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT,
-    ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
+    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, CLIENT_GO_SLOTS,
+    CLIENT_GO_STRIDE, CLIENT_GOS, GLOBAL_GO_COUNT, GLOBAL_GOS, GoDefinition, KNXPROD_APP_NUMBER,
+    KNXPROD_APP_VERSION, KNXPROD_HW_VERSION, MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT,
+    ZGO_CONTROL_STATUS, ZGO_MUTE, ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY,
+    ZGO_PLAY_PAUSE, ZGO_PLAYLIST, ZGO_PLAYLIST_NAME, ZGO_PLAYLIST_NEXT, ZGO_PLAYLIST_PREVIOUS,
+    ZGO_PLAYLIST_STATUS, ZGO_PLAYLIST_STEP, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
     ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
     ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
     ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
-    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
-    ZGO_VOLUME_STATUS, ZONE_GOS, mem,
+    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_TITLE, ZGO_VOLUME,
+    ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS, ZONE_GO_SLOTS, ZONE_GO_STRIDE, ZONE_GOS, client_asap,
+    global_asap, mem, zone_asap,
 };
 
 const AID: &str = "M-00FA_A-FF01-01-0000";
@@ -166,12 +170,11 @@ fn knxprod() {
         knx_rs_prod::parse::extract_metadata_from_str(&xml).map_or(20, |m| m.ns_version);
     std::fs::write(&xml_path, xml).expect("failed to write XML");
     eprintln!(
-        "  Generated {xml_path} ({} zones × {} COs + {} clients × {} COs = {} COs)",
+        "  Generated {xml_path} ({} zones × {} COs + {} clients × {} COs, object numbers 1 to {TOTAL_GO_COUNT})",
         MAX_ZONES,
         ZONE_GOS.len(),
         MAX_CLIENTS,
         CLIENT_GOS.len(),
-        MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len()
     );
 
     // Step 2: package the .knxprod. When `SNAPDOG_ETS_KEY` points at an ETS signing key
@@ -222,10 +225,12 @@ const ZONE_GROUPS: &[CoGroup] = &[
             ZGO_PLAY,
             ZGO_PAUSE,
             ZGO_STOP,
-            ZGO_TRACK_NEXT,
-            ZGO_TRACK_PREVIOUS,
+            ZGO_PLAY_PAUSE,
             ZGO_CONTROL_STATUS,
             ZGO_TRACK_PLAYING,
+            ZGO_TRACK_NEXT,
+            ZGO_TRACK_PREVIOUS,
+            ZGO_TRACK_STEP,
         ],
     },
     CoGroup {
@@ -263,6 +268,8 @@ const ZONE_GROUPS: &[CoGroup] = &[
             ZGO_PLAYLIST_STATUS,
             ZGO_PLAYLIST_NEXT,
             ZGO_PLAYLIST_PREVIOUS,
+            ZGO_PLAYLIST_STEP,
+            ZGO_PLAYLIST_NAME,
         ],
     },
     CoGroup {
@@ -319,7 +326,8 @@ fn generate_xml() -> String {
     let info = ProgramInfo::new("SnapDog", "MV-57B0", "de-DE", 65281, app_version());
     let mut x = String::with_capacity(128 * 1024);
     build_app().write_knx_document(&info, "SnapDog xtask", "1.0", &mut x);
-    x
+    // English, Dutch, Spanish and French next to the German base texts.
+    i18n::add_translations(&x)
 }
 
 /// The single typed product model behind the whole `.knxprod` document. Every `<Static>`
@@ -1255,7 +1263,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
 /// Committed fingerprint of the exact ETS memory layout. Update this **together with**
 /// `KNXPROD_APP_VERSION` (`group_objects.rs`) whenever the layout changes — the assertion
 /// below prints the new value.
-const EXPECTED_LAYOUT_HASH: u64 = 0x3298_e5c0_ecd8_640d;
+const EXPECTED_LAYOUT_HASH: u64 = 0x43d2_68f5_57c9_4ced;
 
 /// Guard: fail `.knxprod` generation when the ETS product definition drifts from the
 /// committed fingerprint. ETS decides download scope by `ApplicationVersion`; a change
@@ -1300,8 +1308,14 @@ fn assert_layout_locked(spans: &[(usize, usize)]) {
         ZONE_GOS.len(),
         CLIENT_GOS.len(),
         GLOBAL_GO_COUNT,
+        ZONE_GO_STRIDE,
+        CLIENT_GO_STRIDE,
     ] {
         h = feed(h, v);
+    }
+    // The object numbers: a slot that moves changes every association in an ETS project.
+    for slot in ZONE_GO_SLOTS.iter().chain(&CLIENT_GO_SLOTS) {
+        h = feed(h, *slot);
     }
     for (off, size) in spans {
         h = feed(h, *off);
@@ -1371,7 +1385,7 @@ fn register_com_objects(
         std::collections::HashMap::new();
     for z in 1..=MAX_ZONES {
         for (i, go) in ZONE_GOS.iter().enumerate() {
-            let num = (z - 1) * ZONE_GOS.len() + i + 1;
+            let num = usize::from(zone_asap(z, i));
             let suffix = format!("Z{z:02}{i:03}");
             let (_, r) = app.add_com_object(go_com_object(
                 &suffix,
@@ -1384,7 +1398,7 @@ fn register_com_objects(
     }
     for c in 1..=MAX_CLIENTS {
         for (i, go) in CLIENT_GOS.iter().enumerate() {
-            let num = MAX_ZONES * ZONE_GOS.len() + (c - 1) * CLIENT_GOS.len() + i + 1;
+            let num = usize::from(client_asap(c, i));
             let suffix = format!("C{c:02}{i:03}");
             let (_, r) = app.add_com_object(go_com_object(
                 &suffix,
@@ -1397,7 +1411,7 @@ fn register_com_objects(
     }
     // Global (device-level) COs follow every zone and client CO.
     for (i, go) in GLOBAL_GOS.iter().enumerate() {
-        let num = MAX_ZONES * ZONE_GOS.len() + MAX_CLIENTS * CLIENT_GOS.len() + i + 1;
+        let num = usize::from(global_asap(i));
         let suffix = format!("GG{i:03}");
         let (_, r) = app.add_com_object(go_com_object(&suffix, go.name, num, go));
         oref.insert(suffix, r);

@@ -25,9 +25,17 @@ pub const ZONE_GO_COUNT: usize = ZONE_GOS.len();
 /// Number of group objects per client.
 pub const CLIENT_GO_COUNT: usize = CLIENT_GOS.len();
 
-/// Total number of group objects.
+/// Object numbers reserved per zone. A zone's objects sit in groups of ten (see
+/// [`ZONE_GO_SLOTS`]), so the stride is larger than [`ZONE_GO_COUNT`] and leaves room to add objects
+/// without moving any number.
+pub const ZONE_GO_STRIDE: usize = 60;
+
+/// Object numbers reserved per client (three groups of ten, see [`CLIENT_GO_SLOTS`]).
+pub const CLIENT_GO_STRIDE: usize = 30;
+
+/// Total number of group object numbers, defined or reserved (the size of the group object table).
 pub const TOTAL_GO_COUNT: usize =
-    MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIENT_GO_COUNT + GLOBAL_GO_COUNT;
+    MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE + GLOBAL_GO_COUNT;
 
 /// Device hardware type, served as `PID_HARDWARE_TYPE` (device object, PID 78).
 ///
@@ -46,7 +54,7 @@ pub const HARDWARE_TYPE: [u8; 6] = [0x00, 0x00, 0xFF, 0x01, 0x01, 0x00];
 /// **Bump [`KNXPROD_APP_VERSION`] whenever the KNX memory layout changes** — ETS decides
 /// its download scope by this version, so an unchanged version after a layout change
 /// would leave a device mis-parameterized (see the xtask layout-lock guard).
-pub const KNXPROD_APP_VERSION: u32 = 11;
+pub const KNXPROD_APP_VERSION: u32 = 12;
 /// ETS `ApplicationNumber` (== hardware order number `0xFF01`).
 pub const KNXPROD_APP_NUMBER: u16 = 0xFF01;
 /// Hardware revision (the version byte of [`HARDWARE_TYPE`]).
@@ -88,6 +96,9 @@ const BIDIR: GoFlags = GoFlags {
     transmit: true,
     update: true,
 };
+
+/// DPT 1.007 — Step (0 = decrease, 1 = increase; here previous and next).
+pub const DPT_STEP: Dpt = Dpt::new(1, 7);
 
 /// DPT 3.007 — Controlled dimming.
 pub const DPT_CONTROL_DIMMING: Dpt = Dpt::new(3, 7);
@@ -152,7 +163,7 @@ impl GoFlags {
     }
 }
 
-// ── Zone group objects (33 per zone) ──────────────────────────
+// ── Zone group objects (37 per zone, in six groups) ───────────
 
 /// Create a receive-only GO definition.
 const fn go_recv(
@@ -212,11 +223,41 @@ const fn go_bidir(
     }
 }
 
-/// Zone group object definitions (33 per zone).
+/// Zone group object definitions (37 per zone).
+///
+/// Listed in object-number order: the position here is the object's *index* (`ZGO_*`), its number
+/// inside the zone comes from [`ZONE_GO_SLOTS`]. Six groups of ten numbers: transport (0), volume and
+/// mute (1), play modes (2), playlist (3), track info (4), presence (5). Numbers left over in a group
+/// are reserved.
 pub const ZONE_GOS: &[GoDefinition] = &[
+    // ── Group 0: Transport (numbers 1 to 10 of the zone) ──
     go_recv("Play", "Play", "Play", DPT_SWITCH, "DPST-1-1", "1 Bit"),
     go_recv("Pause", "Pause", "Pause", DPT_SWITCH, "DPST-1-1", "1 Bit"),
     go_recv("Stop", "Stop", "Stop", DPT_SWITCH, "DPST-1-1", "1 Bit"),
+    go_recv(
+        "Play/Pause",
+        "Wiedergabe/Pause",
+        "Play/Pause",
+        DPT_SWITCH,
+        "DPST-1-1",
+        "1 Bit",
+    ),
+    go_send(
+        "Control Status",
+        "Wiedergabe Status",
+        "Playback Status",
+        DPT_SWITCH,
+        "DPST-1-1",
+        "1 Bit",
+    ),
+    go_send(
+        "Track Playing",
+        "Titel spielt",
+        "Track Playing",
+        DPT_SWITCH,
+        "DPST-1-1",
+        "1 Bit",
+    ),
     go_recv(
         "Track Next",
         "Nächster Titel",
@@ -233,6 +274,15 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-1-1",
         "1 Bit",
     ),
+    go_recv(
+        "Track Step",
+        "Titel Schritt",
+        "Track Step",
+        DPT_STEP,
+        "DPST-1-7",
+        "1 Bit",
+    ),
+    // ── Group 1: Volume and mute (numbers 11 to 20 of the zone) ──
     go_recv(
         "Volume",
         "Lautstärke",
@@ -274,22 +324,7 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-1-1",
         "1 Bit",
     ),
-    go_send(
-        "Control Status",
-        "Wiedergabe Status",
-        "Playback Status",
-        DPT_SWITCH,
-        "DPST-1-1",
-        "1 Bit",
-    ),
-    go_send(
-        "Track Playing",
-        "Titel spielt",
-        "Track Playing",
-        DPT_SWITCH,
-        "DPST-1-1",
-        "1 Bit",
-    ),
+    // ── Group 2: Play modes (numbers 21 to 30 of the zone) ──
     go_recv(
         "Shuffle",
         "Zufallswiedergabe",
@@ -362,6 +397,7 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-1-1",
         "1 Bit",
     ),
+    // ── Group 3: Playlist (numbers 31 to 40 of the zone) ──
     go_recv(
         "Playlist",
         "Playlist",
@@ -394,6 +430,23 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-1-1",
         "1 Bit",
     ),
+    go_recv(
+        "Playlist Step",
+        "Playlist Schritt",
+        "Playlist Step",
+        DPT_STEP,
+        "DPST-1-7",
+        "1 Bit",
+    ),
+    go_send(
+        "Playlist Name",
+        "Playlist Name",
+        "Playlist Name",
+        DPT_STRING_8859_1,
+        "DPST-16-1",
+        "14 Bytes",
+    ),
+    // ── Group 4: Track info (numbers 41 to 50 of the zone) ──
     go_send(
         "Track Title",
         "Titel",
@@ -426,6 +479,7 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-5-1",
         "1 Byte",
     ),
+    // ── Group 5: Presence (numbers 51 to 60 of the zone) ──
     // Retriggerable presence trigger: each telegram (re)arms the auto-off timer and starts
     // playback of the zone's configured presence source. Timeout & source are ETS
     // parameters (Präsenz Auto-Off / Präsenz-Quelle), not group objects.
@@ -617,19 +671,20 @@ pub const GGO_KNX_TIME: usize = 4;
 /// [`GLOBAL_GOS`]). Globals follow every zone and client GO.
 #[must_use]
 pub const fn global_asap(go_index: usize) -> u16 {
-    (MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIENT_GO_COUNT + go_index + 1) as u16
+    (MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE + go_index + 1) as u16
 }
 
 /// Compute the 1-based ASAP for a zone group object.
 ///
-/// Zone `zone_index` (1-based), GO `go_index` (0-based within `ZONE_GOS`).
+/// Zone `zone_index` (1-based), GO `go_index` (0-based within `ZONE_GOS`, the `ZGO_*` constants).
 #[must_use]
 pub const fn zone_asap(zone_index: usize, go_index: usize) -> u16 {
-    ((zone_index - 1) * ZONE_GO_COUNT + go_index + 1) as u16
+    ((zone_index - 1) * ZONE_GO_STRIDE + ZONE_GO_SLOTS[go_index] + 1) as u16
 }
 
 // ── Named GO indices (zone) ───────────────────────────────────
-// Use these instead of magic numbers when mapping GAs to GOs.
+// Use these instead of magic numbers when mapping GAs to GOs. The index is the position in
+// `ZONE_GOS`, not the object number (see `zone_asap`).
 
 /// Zone GO index.
 pub const ZGO_PLAY: usize = 0;
@@ -638,65 +693,73 @@ pub const ZGO_PAUSE: usize = 1;
 /// Zone GO index.
 pub const ZGO_STOP: usize = 2;
 /// Zone GO index.
-pub const ZGO_TRACK_NEXT: usize = 3;
+pub const ZGO_PLAY_PAUSE: usize = 3;
 /// Zone GO index.
-pub const ZGO_TRACK_PREVIOUS: usize = 4;
+pub const ZGO_CONTROL_STATUS: usize = 4;
 /// Zone GO index.
-pub const ZGO_VOLUME: usize = 5;
+pub const ZGO_TRACK_PLAYING: usize = 5;
 /// Zone GO index.
-pub const ZGO_VOLUME_STATUS: usize = 6;
+pub const ZGO_TRACK_NEXT: usize = 6;
 /// Zone GO index.
-pub const ZGO_VOLUME_DIM: usize = 7;
+pub const ZGO_TRACK_PREVIOUS: usize = 7;
 /// Zone GO index.
-pub const ZGO_MUTE: usize = 8;
+pub const ZGO_TRACK_STEP: usize = 8;
 /// Zone GO index.
-pub const ZGO_MUTE_STATUS: usize = 9;
+pub const ZGO_VOLUME: usize = 9;
 /// Zone GO index.
-pub const ZGO_MUTE_TOGGLE: usize = 10;
+pub const ZGO_VOLUME_STATUS: usize = 10;
 /// Zone GO index.
-pub const ZGO_CONTROL_STATUS: usize = 11;
+pub const ZGO_VOLUME_DIM: usize = 11;
 /// Zone GO index.
-pub const ZGO_TRACK_PLAYING: usize = 12;
+pub const ZGO_MUTE: usize = 12;
 /// Zone GO index.
-pub const ZGO_SHUFFLE: usize = 13;
+pub const ZGO_MUTE_STATUS: usize = 13;
 /// Zone GO index.
-pub const ZGO_SHUFFLE_STATUS: usize = 14;
+pub const ZGO_MUTE_TOGGLE: usize = 14;
 /// Zone GO index.
-pub const ZGO_SHUFFLE_TOGGLE: usize = 15;
+pub const ZGO_SHUFFLE: usize = 15;
 /// Zone GO index.
-pub const ZGO_REPEAT: usize = 16;
+pub const ZGO_SHUFFLE_STATUS: usize = 16;
 /// Zone GO index.
-pub const ZGO_REPEAT_STATUS: usize = 17;
+pub const ZGO_SHUFFLE_TOGGLE: usize = 17;
 /// Zone GO index.
-pub const ZGO_REPEAT_TOGGLE: usize = 18;
+pub const ZGO_REPEAT: usize = 18;
 /// Zone GO index.
-pub const ZGO_TRACK_REPEAT: usize = 19;
+pub const ZGO_REPEAT_STATUS: usize = 19;
 /// Zone GO index.
-pub const ZGO_TRACK_REPEAT_STATUS: usize = 20;
+pub const ZGO_REPEAT_TOGGLE: usize = 20;
 /// Zone GO index.
-pub const ZGO_TRACK_REPEAT_TOGGLE: usize = 21;
+pub const ZGO_TRACK_REPEAT: usize = 21;
 /// Zone GO index.
-pub const ZGO_PLAYLIST: usize = 22;
+pub const ZGO_TRACK_REPEAT_STATUS: usize = 22;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_STATUS: usize = 23;
+pub const ZGO_TRACK_REPEAT_TOGGLE: usize = 23;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_NEXT: usize = 24;
+pub const ZGO_PLAYLIST: usize = 24;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_PREVIOUS: usize = 25;
+pub const ZGO_PLAYLIST_STATUS: usize = 25;
 /// Zone GO index.
-pub const ZGO_TRACK_TITLE: usize = 26;
+pub const ZGO_PLAYLIST_NEXT: usize = 26;
 /// Zone GO index.
-pub const ZGO_TRACK_ARTIST: usize = 27;
+pub const ZGO_PLAYLIST_PREVIOUS: usize = 27;
 /// Zone GO index.
-pub const ZGO_TRACK_ALBUM: usize = 28;
+pub const ZGO_PLAYLIST_STEP: usize = 28;
 /// Zone GO index.
-pub const ZGO_TRACK_PROGRESS: usize = 29;
-/// Zone GO index — retriggerable presence trigger input.
-pub const ZGO_PRESENCE: usize = 30;
+pub const ZGO_PLAYLIST_NAME: usize = 29;
 /// Zone GO index.
-pub const ZGO_PRESENCE_ENABLE: usize = 31;
-/// Zone GO index — status: presence-triggered playback / auto-off timer active.
-pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 32;
+pub const ZGO_TRACK_TITLE: usize = 30;
+/// Zone GO index.
+pub const ZGO_TRACK_ARTIST: usize = 31;
+/// Zone GO index.
+pub const ZGO_TRACK_ALBUM: usize = 32;
+/// Zone GO index.
+pub const ZGO_TRACK_PROGRESS: usize = 33;
+/// Zone GO index.
+pub const ZGO_PRESENCE: usize = 34;
+/// Zone GO index.
+pub const ZGO_PRESENCE_ENABLE: usize = 35;
+/// Zone GO index.
+pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 36;
 
 // ── Named GO indices (client) ─────────────────────────────────
 
@@ -722,6 +785,136 @@ pub const CGO_ZONE: usize = 8;
 pub const CGO_ZONE_STATUS: usize = 9;
 /// Client GO index.
 pub const CGO_CONNECTED: usize = 10;
+
+// ── Object numbers: slots inside a zone or client block ───────
+
+/// Slot of group `group` (0-based) at position `position` (0 to 9): groups are ten numbers wide.
+const fn slot(group: usize, position: usize) -> usize {
+    group * 10 + position
+}
+
+/// Slot (offset inside the zone's block of [`ZONE_GO_STRIDE`] numbers) of each zone object, in the
+/// order of [`ZONE_GOS`]. Numbers that no slot names are reserved.
+pub const ZONE_GO_SLOTS: [usize; ZONE_GO_COUNT] = [
+    slot(0, 0),
+    slot(0, 1),
+    slot(0, 2),
+    slot(0, 3),
+    slot(0, 4),
+    slot(0, 5),
+    slot(0, 6),
+    slot(0, 7),
+    slot(0, 8),
+    slot(1, 0),
+    slot(1, 1),
+    slot(1, 2),
+    slot(1, 3),
+    slot(1, 4),
+    slot(1, 5),
+    slot(2, 0),
+    slot(2, 1),
+    slot(2, 2),
+    slot(2, 3),
+    slot(2, 4),
+    slot(2, 5),
+    slot(2, 6),
+    slot(2, 7),
+    slot(2, 8),
+    slot(3, 0),
+    slot(3, 1),
+    slot(3, 2),
+    slot(3, 3),
+    slot(3, 4),
+    slot(3, 5),
+    slot(4, 0),
+    slot(4, 1),
+    slot(4, 2),
+    slot(4, 3),
+    slot(5, 0),
+    slot(5, 1),
+    slot(5, 2),
+];
+
+/// Slot of each client object, in the order of [`CLIENT_GOS`]: volume and mute (group 0), latency and
+/// zone (group 1), connection (group 2).
+pub const CLIENT_GO_SLOTS: [usize; CLIENT_GO_COUNT] = [
+    slot(0, 0),
+    slot(0, 1),
+    slot(0, 2),
+    slot(0, 3),
+    slot(0, 4),
+    slot(0, 5),
+    slot(1, 0),
+    slot(1, 1),
+    slot(1, 2),
+    slot(1, 3),
+    slot(2, 0),
+];
+
+/// Whether `slots` is strictly increasing and every slot is below `stride`.
+const fn slots_valid(slots: &[usize], stride: usize) -> bool {
+    let mut i = 0;
+    while i < slots.len() {
+        if slots[i] >= stride || (i > 0 && slots[i] <= slots[i - 1]) {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+const _: () = assert!(slots_valid(&ZONE_GO_SLOTS, ZONE_GO_STRIDE));
+const _: () = assert!(slots_valid(&CLIENT_GO_SLOTS, CLIENT_GO_STRIDE));
+
+/// Where an object number points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GoLocation {
+    /// Zone `zone` (1-based), object index `go` in [`ZONE_GOS`].
+    Zone {
+        /// Zone number, 1-based.
+        zone: usize,
+        /// Index in [`ZONE_GOS`] (the `ZGO_*` constants).
+        go: usize,
+    },
+    /// Client `client` (1-based), object index `go` in [`CLIENT_GOS`].
+    Client {
+        /// Client number, 1-based.
+        client: usize,
+        /// Index in [`CLIENT_GOS`] (the `CGO_*` constants).
+        go: usize,
+    },
+    /// Device-level object, index in [`GLOBAL_GOS`].
+    Global(usize),
+}
+
+/// What the object number `asap` is, `None` for a reserved number or one outside the table.
+#[must_use]
+pub fn locate(asap: u16) -> Option<GoLocation> {
+    let n = usize::from(asap).checked_sub(1)?;
+    let zones_end = MAX_ZONES * ZONE_GO_STRIDE;
+    let clients_end = zones_end + MAX_CLIENTS * CLIENT_GO_STRIDE;
+    if n < zones_end {
+        let go = ZONE_GO_SLOTS
+            .iter()
+            .position(|s| *s == n % ZONE_GO_STRIDE)?;
+        Some(GoLocation::Zone {
+            zone: n / ZONE_GO_STRIDE + 1,
+            go,
+        })
+    } else if n < clients_end {
+        let n = n - zones_end;
+        let go = CLIENT_GO_SLOTS
+            .iter()
+            .position(|s| *s == n % CLIENT_GO_STRIDE)?;
+        Some(GoLocation::Client {
+            client: n / CLIENT_GO_STRIDE + 1,
+            go,
+        })
+    } else {
+        let go = n - clients_end;
+        (go < GLOBAL_GO_COUNT).then_some(GoLocation::Global(go))
+    }
+}
 
 // ── ETS Memory Layout (SSOT — used by xtask and device.rs) ───
 
@@ -878,21 +1071,20 @@ pub mod mem {
 /// Client `client_index` (1-based), GO `go_index` (0-based within `CLIENT_GOS`).
 #[must_use]
 pub const fn client_asap(client_index: usize, go_index: usize) -> u16 {
-    (MAX_ZONES * ZONE_GO_COUNT + (client_index - 1) * CLIENT_GO_COUNT + go_index + 1) as u16
+    (MAX_ZONES * ZONE_GO_STRIDE
+        + (client_index - 1) * CLIENT_GO_STRIDE
+        + CLIENT_GO_SLOTS[go_index]
+        + 1) as u16
 }
 
-/// The definition of the object with this ASAP number, `None` outside `1..=TOTAL_GO_COUNT`.
+/// The definition of the object with this ASAP number, `None` for a reserved number or one outside
+/// `1..=TOTAL_GO_COUNT`.
 #[must_use]
 pub fn definition_of(asap: u16) -> Option<&'static GoDefinition> {
-    let n = usize::from(asap).checked_sub(1)?;
-    let zones_end = MAX_ZONES * ZONE_GO_COUNT;
-    let clients_end = zones_end + MAX_CLIENTS * CLIENT_GO_COUNT;
-    if n < zones_end {
-        ZONE_GOS.get(n % ZONE_GO_COUNT)
-    } else if n < clients_end {
-        CLIENT_GOS.get((n - zones_end) % CLIENT_GO_COUNT)
-    } else {
-        GLOBAL_GOS.get(n - clients_end)
+    match locate(asap)? {
+        GoLocation::Zone { go, .. } => ZONE_GOS.get(go),
+        GoLocation::Client { go, .. } => CLIENT_GOS.get(go),
+        GoLocation::Global(go) => GLOBAL_GOS.get(go),
     }
 }
 
@@ -941,54 +1133,231 @@ mod tests {
 
     #[test]
     fn zone_go_count() {
-        assert_eq!(ZONE_GOS.len(), 33);
+        assert_eq!(ZONE_GOS.len(), 37);
+        assert_eq!(ZONE_GO_SLOTS.len(), 37);
     }
 
     #[test]
     fn client_go_count() {
         assert_eq!(CLIENT_GOS.len(), 11);
+        assert_eq!(CLIENT_GO_SLOTS.len(), 11);
     }
 
     #[test]
     fn total_go_count() {
-        // 10 zones × 33 + 30 clients × 11 + 5 global.
-        assert_eq!(TOTAL_GO_COUNT, 665);
+        // 10 zones x 60 + 30 clients x 30 + 5 global; defined or reserved.
+        assert_eq!(TOTAL_GO_COUNT, 10 * 60 + 30 * 30 + 5);
+        assert_eq!(TOTAL_GO_COUNT, 1505);
     }
 
     #[test]
     fn zone_asap_layout() {
-        // Zone 1, first GO → ASAP 1
-        assert_eq!(zone_asap(1, 0), 1);
-        // Zone 1, last GO (index 32) → ASAP 33
-        assert_eq!(zone_asap(1, 32), 33);
-        // Zone 2, first GO → ASAP 34
-        assert_eq!(zone_asap(2, 0), 34);
-        // Zone 10, last GO → ASAP 330
-        assert_eq!(zone_asap(10, 32), 330);
+        // Zone 1, Play: group 0, position 0 -> number 1.
+        assert_eq!(zone_asap(1, ZGO_PLAY), 1);
+        // Group 0 has nine objects, positions 0 to 8, the tenth number is reserved.
+        assert_eq!(zone_asap(1, ZGO_TRACK_STEP), 9);
+        // Group 1 starts at the tenth number after the group before it: Volume is number 11.
+        assert_eq!(zone_asap(1, ZGO_VOLUME), 11);
+        assert_eq!(zone_asap(1, ZGO_MUTE_TOGGLE), 16);
+        // Group 3 (playlist) starts at 31, group 4 (track info) at 41, group 5 (presence) at 51.
+        assert_eq!(zone_asap(1, ZGO_PLAYLIST), 31);
+        assert_eq!(zone_asap(1, ZGO_TRACK_TITLE), 41);
+        assert_eq!(zone_asap(1, ZGO_PRESENCE), 51);
+        assert_eq!(zone_asap(1, ZGO_PRESENCE_TIMER_ACTIVE), 53);
+        // Zone 2 starts one stride later, zone 10 last object is 9 x 60 + 53.
+        assert_eq!(zone_asap(2, ZGO_PLAY), 61);
+        assert_eq!(zone_asap(10, ZGO_PRESENCE_TIMER_ACTIVE), 593);
     }
 
     #[test]
     fn client_asap_layout() {
-        // Client 1, first GO → ASAP 331 (after 10×33 zone GOs)
-        assert_eq!(client_asap(1, 0), 331);
-        // Client 1, last GO → ASAP 341
-        assert_eq!(client_asap(1, 10), 341);
-        // Client 10, last GO → ASAP 440
-        assert_eq!(client_asap(10, 10), 440);
+        // Client 1 starts after the 600 zone numbers.
+        assert_eq!(client_asap(1, CGO_VOLUME), 601);
+        assert_eq!(client_asap(1, CGO_MUTE_TOGGLE), 606);
+        // Group 1 (latency and zone) starts ten numbers after group 0.
+        assert_eq!(client_asap(1, CGO_LATENCY), 611);
+        assert_eq!(client_asap(1, CGO_ZONE_STATUS), 614);
+        // Group 2 (connection).
+        assert_eq!(client_asap(1, CGO_CONNECTED), 621);
+        assert_eq!(client_asap(2, CGO_VOLUME), 631);
+        assert_eq!(client_asap(MAX_CLIENTS, CGO_CONNECTED), 1491);
     }
 
     #[test]
     fn global_asap_layout() {
-        // Globals follow all zone + client GOs: 10×33 + 30×11 = 660 → first global ASAP 661.
-        assert_eq!(global_asap(0), 661);
-        assert_eq!(global_asap(GLOBAL_GOS.len() - 1), 665);
+        // Globals follow all zone and client numbers: 600 + 900 = 1500.
+        assert_eq!(global_asap(0), 1501);
+        assert_eq!(global_asap(GLOBAL_GOS.len() - 1), 1505);
     }
 
     #[test]
-    fn no_asap_overlap() {
+    fn blocks_do_not_overlap() {
         let last_zone = zone_asap(MAX_ZONES, ZONE_GO_COUNT - 1);
         let first_client = client_asap(1, 0);
-        assert_eq!(last_zone + 1, first_client);
+        assert!(last_zone < first_client);
+        let last_client = client_asap(MAX_CLIENTS, CLIENT_GO_COUNT - 1);
+        assert!(last_client < global_asap(0));
+    }
+
+    #[test]
+    fn slots_follow_the_groups_of_ten() {
+        // Each group is ten numbers wide, so the tens digit of a slot is its group.
+        let group = |slot: usize| slot / 10;
+        for (name, go) in [
+            ("Play", ZGO_PLAY),
+            ("Play/Pause", ZGO_PLAY_PAUSE),
+            ("Track Step", ZGO_TRACK_STEP),
+        ] {
+            assert_eq!(group(ZONE_GO_SLOTS[go]), 0, "{name} is a transport object");
+        }
+        for go in [
+            ZGO_VOLUME,
+            ZGO_VOLUME_STATUS,
+            ZGO_VOLUME_DIM,
+            ZGO_MUTE,
+            ZGO_MUTE_STATUS,
+            ZGO_MUTE_TOGGLE,
+        ] {
+            assert_eq!(group(ZONE_GO_SLOTS[go]), 1);
+        }
+        for go in [ZGO_SHUFFLE, ZGO_REPEAT, ZGO_TRACK_REPEAT_TOGGLE] {
+            assert_eq!(group(ZONE_GO_SLOTS[go]), 2);
+        }
+        for go in [ZGO_PLAYLIST, ZGO_PLAYLIST_STEP, ZGO_PLAYLIST_NAME] {
+            assert_eq!(group(ZONE_GO_SLOTS[go]), 3);
+        }
+        for go in [
+            ZGO_TRACK_TITLE,
+            ZGO_TRACK_ARTIST,
+            ZGO_TRACK_ALBUM,
+            ZGO_TRACK_PROGRESS,
+        ] {
+            assert_eq!(group(ZONE_GO_SLOTS[go]), 4);
+        }
+        for go in [ZGO_PRESENCE, ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE] {
+            assert_eq!(group(ZONE_GO_SLOTS[go]), 5);
+        }
+        for go in [CGO_VOLUME, CGO_MUTE_TOGGLE] {
+            assert_eq!(group(CLIENT_GO_SLOTS[go]), 0);
+        }
+        for go in [CGO_LATENCY, CGO_ZONE_STATUS] {
+            assert_eq!(group(CLIENT_GO_SLOTS[go]), 1);
+        }
+        assert_eq!(group(CLIENT_GO_SLOTS[CGO_CONNECTED]), 2);
+    }
+
+    #[test]
+    fn a_status_object_follows_its_command() {
+        for (command, status) in [
+            (ZGO_VOLUME, ZGO_VOLUME_STATUS),
+            (ZGO_MUTE, ZGO_MUTE_STATUS),
+            (ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS),
+            (ZGO_REPEAT, ZGO_REPEAT_STATUS),
+            (ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS),
+            (ZGO_PLAYLIST, ZGO_PLAYLIST_STATUS),
+        ] {
+            assert_eq!(ZONE_GO_SLOTS[status], ZONE_GO_SLOTS[command] + 1);
+        }
+    }
+
+    #[test]
+    fn every_defined_object_is_found_by_its_number() {
+        for zone in 1..=MAX_ZONES {
+            for go in 0..ZONE_GO_COUNT {
+                assert_eq!(
+                    locate(zone_asap(zone, go)),
+                    Some(GoLocation::Zone { zone, go })
+                );
+            }
+        }
+        for client in 1..=MAX_CLIENTS {
+            for go in 0..CLIENT_GO_COUNT {
+                assert_eq!(
+                    locate(client_asap(client, go)),
+                    Some(GoLocation::Client { client, go })
+                );
+            }
+        }
+        for go in 0..GLOBAL_GO_COUNT {
+            assert_eq!(locate(global_asap(go)), Some(GoLocation::Global(go)));
+        }
+    }
+
+    #[test]
+    fn reserved_numbers_have_no_object() {
+        // Number 10 is the reserved end of zone 1's transport group, 17 follows the mute group.
+        assert_eq!(locate(10), None);
+        assert_eq!(locate(17), None);
+        // 54 to 60 are reserved at the end of every zone.
+        assert_eq!(locate(54), None);
+        assert_eq!(locate(60), None);
+        assert_eq!(
+            locate(zone_asap(MAX_ZONES, ZGO_PRESENCE_TIMER_ACTIVE) + 1),
+            None
+        );
+        // Client 1: the tail of group 0 and group 2.
+        assert_eq!(locate(607), None);
+        assert_eq!(locate(622), None);
+        // Outside the table.
+        assert_eq!(locate(0), None);
+        assert_eq!(locate(TOTAL_GO_COUNT as u16 + 1), None);
+    }
+
+    #[test]
+    fn object_numbers_are_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for zone in 1..=MAX_ZONES {
+            for go in 0..ZONE_GO_COUNT {
+                assert!(seen.insert(zone_asap(zone, go)));
+            }
+        }
+        for client in 1..=MAX_CLIENTS {
+            for go in 0..CLIENT_GO_COUNT {
+                assert!(seen.insert(client_asap(client, go)));
+            }
+        }
+        for go in 0..GLOBAL_GO_COUNT {
+            assert!(seen.insert(global_asap(go)));
+        }
+        assert_eq!(
+            seen.len(),
+            MAX_ZONES * ZONE_GO_COUNT + MAX_CLIENTS * CLIENT_GO_COUNT + GLOBAL_GO_COUNT
+        );
+    }
+
+    #[test]
+    fn index_constants_name_their_definition() {
+        for (go, name) in [
+            (ZGO_PLAY, "Play"),
+            (ZGO_PLAY_PAUSE, "Play/Pause"),
+            (ZGO_TRACK_NEXT, "Track Next"),
+            (ZGO_TRACK_STEP, "Track Step"),
+            (ZGO_VOLUME, "Volume"),
+            (ZGO_SHUFFLE_TOGGLE, "Shuffle Toggle"),
+            (ZGO_PLAYLIST_STEP, "Playlist Step"),
+            (ZGO_PLAYLIST_NAME, "Playlist Name"),
+            (ZGO_TRACK_PROGRESS, "Track Progress"),
+            (ZGO_PRESENCE_TIMER_ACTIVE, "Presence Timer Active"),
+        ] {
+            assert_eq!(ZONE_GOS[go].name, name);
+        }
+        assert_eq!(CLIENT_GOS[CGO_ZONE].name, "Zone");
+        assert_eq!(CLIENT_GOS[CGO_CONNECTED].name, "Connected");
+    }
+
+    #[test]
+    fn the_new_objects_have_the_documented_dpt_and_flags() {
+        let step = &ZONE_GOS[ZGO_TRACK_STEP];
+        assert_eq!(step.dpt_str, "DPST-1-7");
+        assert!(step.flags.write && !step.flags.read);
+        assert_eq!(ZONE_GOS[ZGO_PLAYLIST_STEP].dpt_str, "DPST-1-7");
+        let play_pause = &ZONE_GOS[ZGO_PLAY_PAUSE];
+        assert_eq!(play_pause.dpt_str, "DPST-1-1");
+        assert!(play_pause.flags.write);
+        let name = &ZONE_GOS[ZGO_PLAYLIST_NAME];
+        assert_eq!(name.dpt_str, "DPST-16-1");
+        assert_eq!(name.size_str, "14 Bytes");
+        assert!(name.flags.read && name.flags.transmit && !name.flags.write);
     }
 
     #[test]
@@ -1011,6 +1380,8 @@ mod tests {
     fn definition_of_finds_the_object_by_asap() {
         assert_eq!(definition_of(0).map(|d| d.name), None);
         assert_eq!(definition_of(1).map(|d| d.name), Some("Play"));
+        assert_eq!(definition_of(10).map(|d| d.name), None, "reserved");
+        assert_eq!(definition_of(11).map(|d| d.name), Some("Volume"));
         assert_eq!(
             definition_of(zone_asap(MAX_ZONES, ZGO_VOLUME_STATUS)).map(|d| d.name),
             Some("Volume Status")
@@ -1023,7 +1394,7 @@ mod tests {
             definition_of(global_asap(4)).map(|d| d.name),
             Some("KNX Time")
         );
-        assert_eq!(definition_of(666).map(|d| d.name), None);
+        assert_eq!(definition_of(1506).map(|d| d.name), None);
     }
 
     #[test]
@@ -1047,9 +1418,13 @@ mod tests {
         // The 14-byte strings and the 3-byte time keep their sizes.
         assert_eq!(desc(zone_asap(1, ZGO_TRACK_TITLE)) & 0xFF, 14);
         assert_eq!(desc(global_asap(GGO_KNX_TIME)) & 0xFF, 9);
-        // Every descriptor is one of the three flag sets with a plausible size.
+        // Every defined object communicates, a reserved number has an empty descriptor.
         for asap in 1..=TOTAL_GO_COUNT as u16 {
-            assert_ne!(desc(asap) & (1 << 10), 0, "communication enabled on {asap}");
+            if definition_of(asap).is_some() {
+                assert_ne!(desc(asap) & (1 << 10), 0, "communication enabled on {asap}");
+            } else {
+                assert_eq!(desc(asap), 0, "reserved number {asap} has no descriptor");
+            }
         }
     }
 

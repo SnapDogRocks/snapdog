@@ -47,8 +47,13 @@ and the association table of that stack. The product has 10 zones and 30 clients
 addresses of a zone above 10 or a client above 30 are ignored with a warning.
 
 - The device stack tells the bridge which group **object** the bus updated, by ASAP
-  number (zone `z`, object `i`: `(z-1)*33 + i + 1`, clients and the five device-level
-  objects follow, see `group_objects.rs`). `object_command` in `mod.rs` maps the ASAP to
+  number. The numbers are laid out in groups of ten so that related objects sit together in
+  ETS and every group keeps free numbers for later additions: zone `z` starts at
+  `(z-1)*60 + 1` (six groups: transport, volume and mute, play modes, playlist, track info,
+  presence), client `c` at `600 + (c-1)*30 + 1` (three groups: volume and mute, latency and
+  zone, connection), and the five device-level objects at 1501 to 1505. Numbers no object
+  names are reserved and have no descriptor (`group_objects::locate` tells what a number is).
+  `object_command` in `mod.rs` maps the ASAP to
   the command. The configuration is not consulted, so an ETS-derived configuration
   (`--knx-device` without `--config`, no group addresses in it) works.
 - The object flags are enforced. The group object table of the product (flags and sizes

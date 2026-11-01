@@ -295,12 +295,13 @@ use super::group_objects::{
     CGO_MUTE_TOGGLE, CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS,
     CLIENT_GOS, GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE, GGO_SYSTEM_FAULT,
     MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZGO_CONTROL_STATUS, ZGO_MUTE,
-    ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAYLIST, ZGO_PLAYLIST_NEXT,
-    ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
-    ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
-    ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
-    ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
-    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
+    ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAY_PAUSE, ZGO_PLAYLIST,
+    ZGO_PLAYLIST_NAME, ZGO_PLAYLIST_NEXT, ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS,
+    ZGO_PLAYLIST_STEP, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT,
+    ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE,
+    ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING,
+    ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
+    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
     ZGO_VOLUME_STATUS, ZONE_GOS,
 };
 
@@ -828,8 +829,8 @@ pub(super) struct TableSummary {
 impl TableSummary {
     /// Read the counts from `bau`.
     pub(super) fn of(bau: &Bau) -> Self {
-        let zone_end = (MAX_ZONES * group_objects::ZONE_GO_COUNT) as u16;
-        let client_end = zone_end + (MAX_CLIENTS * group_objects::CLIENT_GO_COUNT) as u16;
+        let zone_end = (MAX_ZONES * group_objects::ZONE_GO_STRIDE) as u16;
+        let client_end = zone_end + (MAX_CLIENTS * group_objects::CLIENT_GO_STRIDE) as u16;
         let mut s = Self {
             group_addresses: bau.address_table().entry_count(),
             associations: bau.association_table().entry_count(),
@@ -1616,6 +1617,10 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) ->
             (&knx.playlist_status, ZGO_PLAYLIST_STATUS),
             (&knx.playlist_next, ZGO_PLAYLIST_NEXT),
             (&knx.playlist_previous, ZGO_PLAYLIST_PREVIOUS),
+            (&knx.playlist_step, ZGO_PLAYLIST_STEP),
+            (&knx.playlist_name_status, ZGO_PLAYLIST_NAME),
+            (&knx.play_pause, ZGO_PLAY_PAUSE),
+            (&knx.track_step, ZGO_TRACK_STEP),
             (&knx.track_title_status, ZGO_TRACK_TITLE),
             (&knx.track_artist_status, ZGO_TRACK_ARTIST),
             (&knx.track_album_status, ZGO_TRACK_ALBUM),
