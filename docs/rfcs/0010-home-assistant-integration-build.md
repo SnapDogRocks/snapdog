@@ -167,6 +167,27 @@ the OpenAPI document are small and additive and belong with S-1 (found while che
 server enforces `Authorization: Bearer` and answers 401, and `zone_index` has `minimum: 0` while
 the code counts from 1 (**checked in `get_zone` only**).
 
+### Check against a running server (2026-11-01)
+
+The `snapdog` debug build of 31 October (version 0.29.0, older than `main`) ran with a local-only
+configuration (two zones, two clients, an API key, no MQTT, no KNX). Every `GET` operation of
+`openapi.json` was called and each JSON body validated against its schema: 57 operations, 54
+without a finding. `pysnapdog` ran against the same server: version, status, zones, zone, a
+wrong key, no key, a closed port, and zones 0 and 9 (404) all behaved as designed. Findings:
+
+- `GET /clients/{n}/eq` and `GET /clients/{n}/speaker` answer **422** with an `ErrorBody` ("not a
+  SnapDog client") for a client that is not a SnapDog client. The document lists only 200, 400
+  and 404 (`/eq`) and 200 and 404 (`/speaker`). Document the 422. For the integration this
+  confirms that EQ and speaker entities exist only when `is_snapdog` is true (M-C07, M-C08).
+- `GET /speakers` answered **503** throughout, because the server fetches the list live from
+  GitHub and got `404 Not Found` there (log: "GitHub API returned 404 Not Found (rate limit?)").
+  503 is documented. Whether the upstream location has moved or this is a rate limit is not
+  established. The speaker `select` must be unavailable on 503 instead of failing the setup.
+- The 401 body is `text/plain`, not an `ErrorBody`. The library decides by status and is not
+  affected, the document should say so with the 401.
+- Not checked: write operations, WebSocket events, the cover endpoints (no cover in the test
+  setup) and a SnapDog client with EQ (none connected).
+
 **Emitting `zone_progress`** (HAI-T4) is dropped from the plan: the integration works with the
 once-per-second `zone_changed`; the variant is either removed or documented as reserved as part
 of S-7, so the AsyncAPI document does not list a dead event as live.
