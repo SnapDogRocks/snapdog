@@ -90,7 +90,7 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ClientInfo>> {
                 let cs = store.clients.get(&c.index);
                 ClientInfo {
                     index: c.index,
-                    name: c.name.clone(),
+                    name: cs.map_or_else(|| c.name.clone(), |s| s.name.clone()),
                     mac: c.mac.clone(),
                     zone_index: cs.map_or(c.zone_index, |s| s.zone_index),
                     icon: c.icon.clone(),
@@ -128,7 +128,9 @@ async fn get_client(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     let cs = state.store.read().await.clients.get(&idx).cloned();
     Ok::<_, ApiError>(Json(ClientInfo {
         index: cfg.index,
-        name: cfg.name.clone(),
+        name: cs
+            .as_ref()
+            .map_or_else(|| cfg.name.clone(), |s| s.name.clone()),
         mac: cfg.mac.clone(),
         zone_index: cs.as_ref().map_or(cfg.zone_index, |s| s.zone_index),
         icon: cfg.icon.clone(),
