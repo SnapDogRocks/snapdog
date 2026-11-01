@@ -65,6 +65,20 @@ const TABLE: &[Entry] = &[
         "Progreso",
         "Progression",
     ),
+    e(
+        "Titelnummer",
+        "Track Number",
+        "Tracknummer",
+        "Número de pista",
+        "Numéro de piste",
+    ),
+    e(
+        "Titelnummer Status",
+        "Track Number Status",
+        "Tracknummer status",
+        "Estado del número de pista",
+        "État du numéro de piste",
+    ),
     e("Interpret", "Track Artist", "Artiest", "Artista", "Artiste"),
     e(
         "KNX Uhrzeit",

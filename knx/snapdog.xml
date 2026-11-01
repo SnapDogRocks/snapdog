@@ -8,7 +8,7 @@
         </CatalogSection>
       </Catalog>
       <ApplicationPrograms>
-        <ApplicationProgram Id="M-00FA_A-FF01-01-0000" ProgramType="ApplicationProgram" MaskVersion="MV-57B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="12" ReplacesVersions="0 1 2 3 4 5 6 7 8 9 10 11">
+        <ApplicationProgram Id="M-00FA_A-FF01-01-0000" ProgramType="ApplicationProgram" MaskVersion="MV-57B0" Name="SnapDog" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de-DE" DynamicTableManagement="false" Linkable="true" MinEtsVersion="5.0" IPConfig="Custom" ApplicationNumber="65281" ApplicationVersion="13" ReplacesVersions="0 1 2 3 4 5 6 7 8 9 10 11 12">
           <Static>
             <Code>
               <RelativeSegment Id="M-00FA_A-FF01-01-0000_RS-04-00000" Name="Parameters" Offset="0" Size="12190" LoadStateMachine="4" />
@@ -2727,6 +2727,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-42" Name="Zone 1 Track Artist" Number="42" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-43" Name="Zone 1 Track Album" Number="43" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-44" Name="Zone 1 Track Progress" Number="44" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-45" Name="Zone 1 Track Number" Number="45" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-46" Name="Zone 1 Track Number Status" Number="46" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-51" Name="Zone 1 Presence" Number="51" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-52" Name="Zone 1 Presence Enable" Number="52" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-53" Name="Zone 1 Presence Timer Active" Number="53" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2764,6 +2766,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-102" Name="Zone 2 Track Artist" Number="102" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-103" Name="Zone 2 Track Album" Number="103" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-104" Name="Zone 2 Track Progress" Number="104" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-105" Name="Zone 2 Track Number" Number="105" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-106" Name="Zone 2 Track Number Status" Number="106" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-111" Name="Zone 2 Presence" Number="111" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-112" Name="Zone 2 Presence Enable" Number="112" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-113" Name="Zone 2 Presence Timer Active" Number="113" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2801,6 +2805,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-162" Name="Zone 3 Track Artist" Number="162" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-163" Name="Zone 3 Track Album" Number="163" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-164" Name="Zone 3 Track Progress" Number="164" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-165" Name="Zone 3 Track Number" Number="165" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-166" Name="Zone 3 Track Number Status" Number="166" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-171" Name="Zone 3 Presence" Number="171" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-172" Name="Zone 3 Presence Enable" Number="172" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-173" Name="Zone 3 Presence Timer Active" Number="173" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2838,6 +2844,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-222" Name="Zone 4 Track Artist" Number="222" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-223" Name="Zone 4 Track Album" Number="223" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-224" Name="Zone 4 Track Progress" Number="224" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-225" Name="Zone 4 Track Number" Number="225" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-226" Name="Zone 4 Track Number Status" Number="226" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-231" Name="Zone 4 Presence" Number="231" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-232" Name="Zone 4 Presence Enable" Number="232" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-233" Name="Zone 4 Presence Timer Active" Number="233" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2875,6 +2883,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-282" Name="Zone 5 Track Artist" Number="282" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-283" Name="Zone 5 Track Album" Number="283" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-284" Name="Zone 5 Track Progress" Number="284" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-285" Name="Zone 5 Track Number" Number="285" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-286" Name="Zone 5 Track Number Status" Number="286" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-291" Name="Zone 5 Presence" Number="291" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-292" Name="Zone 5 Presence Enable" Number="292" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-293" Name="Zone 5 Presence Timer Active" Number="293" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2912,6 +2922,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-342" Name="Zone 6 Track Artist" Number="342" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-343" Name="Zone 6 Track Album" Number="343" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-344" Name="Zone 6 Track Progress" Number="344" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-345" Name="Zone 6 Track Number" Number="345" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-346" Name="Zone 6 Track Number Status" Number="346" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-351" Name="Zone 6 Presence" Number="351" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-352" Name="Zone 6 Presence Enable" Number="352" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-353" Name="Zone 6 Presence Timer Active" Number="353" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2949,6 +2961,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-402" Name="Zone 7 Track Artist" Number="402" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-403" Name="Zone 7 Track Album" Number="403" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-404" Name="Zone 7 Track Progress" Number="404" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-405" Name="Zone 7 Track Number" Number="405" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-406" Name="Zone 7 Track Number Status" Number="406" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-411" Name="Zone 7 Presence" Number="411" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-412" Name="Zone 7 Presence Enable" Number="412" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-413" Name="Zone 7 Presence Timer Active" Number="413" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2986,6 +3000,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-462" Name="Zone 8 Track Artist" Number="462" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-463" Name="Zone 8 Track Album" Number="463" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-464" Name="Zone 8 Track Progress" Number="464" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-465" Name="Zone 8 Track Number" Number="465" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-466" Name="Zone 8 Track Number Status" Number="466" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-471" Name="Zone 8 Presence" Number="471" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-472" Name="Zone 8 Presence Enable" Number="472" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-473" Name="Zone 8 Presence Timer Active" Number="473" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -3023,6 +3039,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-522" Name="Zone 9 Track Artist" Number="522" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-523" Name="Zone 9 Track Album" Number="523" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-524" Name="Zone 9 Track Progress" Number="524" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-525" Name="Zone 9 Track Number" Number="525" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-526" Name="Zone 9 Track Number Status" Number="526" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-531" Name="Zone 9 Presence" Number="531" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-532" Name="Zone 9 Presence Enable" Number="532" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-533" Name="Zone 9 Presence Timer Active" Number="533" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -3060,6 +3078,8 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-582" Name="Zone 10 Track Artist" Number="582" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-583" Name="Zone 10 Track Album" Number="583" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-584" Name="Zone 10 Track Progress" Number="584" Text="Fortschritt" FunctionText="Track Progress" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-585" Name="Zone 10 Track Number" Number="585" Text="Titelnummer" FunctionText="Track Number" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-586" Name="Zone 10 Track Number Status" Number="586" Text="Titelnummer Status" FunctionText="Track Number Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-591" Name="Zone 10 Presence" Number="591" Text="Präsenz" FunctionText="Presence" ObjectSize="1 Bit" DatapointType="DPST-1-18" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-592" Name="Zone 10 Presence Enable" Number="592" Text="Präsenz Aktiviert" FunctionText="Presence Enable" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-593" Name="Zone 10 Presence Timer Active" Number="593" Text="Präsenz Timer" FunctionText="Presence Timer Active" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -3394,10 +3414,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-1484" Name="Client 30 Zone Status" Number="1484" Text="Zone Status" FunctionText="Zone Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-1491" Name="Client 30 Connected" Number="1491" Text="Verbunden" FunctionText="Connected" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-1501" Name="Server Online" Number="1501" Text="Server Online" FunctionText="Server Online" ObjectSize="1 Bit" DatapointType="DPST-1-11" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-1502" Name="All Stop" Number="1502" Text="Alle Stopp" FunctionText="All Stop" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-1503" Name="All Mute" Number="1503" Text="Alle Stumm" FunctionText="All Mute" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-1504" Name="System Fault" Number="1504" Text="Systemstörung" FunctionText="System Fault" ObjectSize="1 Bit" DatapointType="DPST-1-5" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-1505" Name="KNX Time" Number="1505" Text="KNX Uhrzeit" FunctionText="KNX Time" ObjectSize="3 Bytes" DatapointType="DPST-10-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-1502" Name="System Fault" Number="1502" Text="Systemstörung" FunctionText="System Fault" ObjectSize="1 Bit" DatapointType="DPST-1-5" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-1503" Name="KNX Time" Number="1503" Text="KNX Uhrzeit" FunctionText="KNX Time" ObjectSize="3 Bytes" DatapointType="DPST-10-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-1511" Name="All Stop" Number="1511" Text="Alle Stopp" FunctionText="All Stop" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-1512" Name="All Mute" Number="1512" Text="Alle Stumm" FunctionText="All Mute" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Enabled" ReadOnInitFlag="Disabled" />
             </ComObjectTable>
             <ComObjectRefs>
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-1_R-1" RefId="M-00FA_A-FF01-01-0000_O-1" />
@@ -3434,6 +3454,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-42_R-42" RefId="M-00FA_A-FF01-01-0000_O-42" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-43_R-43" RefId="M-00FA_A-FF01-01-0000_O-43" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-44_R-44" RefId="M-00FA_A-FF01-01-0000_O-44" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-45_R-45" RefId="M-00FA_A-FF01-01-0000_O-45" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-46_R-46" RefId="M-00FA_A-FF01-01-0000_O-46" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-51_R-51" RefId="M-00FA_A-FF01-01-0000_O-51" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-52_R-52" RefId="M-00FA_A-FF01-01-0000_O-52" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-53_R-53" RefId="M-00FA_A-FF01-01-0000_O-53" />
@@ -3471,6 +3493,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-102_R-102" RefId="M-00FA_A-FF01-01-0000_O-102" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-103_R-103" RefId="M-00FA_A-FF01-01-0000_O-103" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-104_R-104" RefId="M-00FA_A-FF01-01-0000_O-104" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-105_R-105" RefId="M-00FA_A-FF01-01-0000_O-105" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-106_R-106" RefId="M-00FA_A-FF01-01-0000_O-106" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-111_R-111" RefId="M-00FA_A-FF01-01-0000_O-111" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-112_R-112" RefId="M-00FA_A-FF01-01-0000_O-112" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-113_R-113" RefId="M-00FA_A-FF01-01-0000_O-113" />
@@ -3508,6 +3532,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-162_R-162" RefId="M-00FA_A-FF01-01-0000_O-162" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-163_R-163" RefId="M-00FA_A-FF01-01-0000_O-163" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-164_R-164" RefId="M-00FA_A-FF01-01-0000_O-164" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-165_R-165" RefId="M-00FA_A-FF01-01-0000_O-165" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-166_R-166" RefId="M-00FA_A-FF01-01-0000_O-166" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-171_R-171" RefId="M-00FA_A-FF01-01-0000_O-171" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-172_R-172" RefId="M-00FA_A-FF01-01-0000_O-172" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-173_R-173" RefId="M-00FA_A-FF01-01-0000_O-173" />
@@ -3545,6 +3571,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-222_R-222" RefId="M-00FA_A-FF01-01-0000_O-222" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-223_R-223" RefId="M-00FA_A-FF01-01-0000_O-223" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-224_R-224" RefId="M-00FA_A-FF01-01-0000_O-224" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-225_R-225" RefId="M-00FA_A-FF01-01-0000_O-225" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-226_R-226" RefId="M-00FA_A-FF01-01-0000_O-226" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-231_R-231" RefId="M-00FA_A-FF01-01-0000_O-231" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-232_R-232" RefId="M-00FA_A-FF01-01-0000_O-232" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-233_R-233" RefId="M-00FA_A-FF01-01-0000_O-233" />
@@ -3582,6 +3610,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-282_R-282" RefId="M-00FA_A-FF01-01-0000_O-282" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-283_R-283" RefId="M-00FA_A-FF01-01-0000_O-283" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-284_R-284" RefId="M-00FA_A-FF01-01-0000_O-284" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-285_R-285" RefId="M-00FA_A-FF01-01-0000_O-285" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-286_R-286" RefId="M-00FA_A-FF01-01-0000_O-286" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-291_R-291" RefId="M-00FA_A-FF01-01-0000_O-291" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-292_R-292" RefId="M-00FA_A-FF01-01-0000_O-292" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-293_R-293" RefId="M-00FA_A-FF01-01-0000_O-293" />
@@ -3619,6 +3649,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-342_R-342" RefId="M-00FA_A-FF01-01-0000_O-342" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-343_R-343" RefId="M-00FA_A-FF01-01-0000_O-343" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-344_R-344" RefId="M-00FA_A-FF01-01-0000_O-344" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-345_R-345" RefId="M-00FA_A-FF01-01-0000_O-345" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-346_R-346" RefId="M-00FA_A-FF01-01-0000_O-346" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-351_R-351" RefId="M-00FA_A-FF01-01-0000_O-351" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-352_R-352" RefId="M-00FA_A-FF01-01-0000_O-352" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-353_R-353" RefId="M-00FA_A-FF01-01-0000_O-353" />
@@ -3656,6 +3688,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-402_R-402" RefId="M-00FA_A-FF01-01-0000_O-402" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-403_R-403" RefId="M-00FA_A-FF01-01-0000_O-403" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-404_R-404" RefId="M-00FA_A-FF01-01-0000_O-404" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-405_R-405" RefId="M-00FA_A-FF01-01-0000_O-405" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-406_R-406" RefId="M-00FA_A-FF01-01-0000_O-406" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-411_R-411" RefId="M-00FA_A-FF01-01-0000_O-411" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-412_R-412" RefId="M-00FA_A-FF01-01-0000_O-412" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-413_R-413" RefId="M-00FA_A-FF01-01-0000_O-413" />
@@ -3693,6 +3727,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-462_R-462" RefId="M-00FA_A-FF01-01-0000_O-462" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-463_R-463" RefId="M-00FA_A-FF01-01-0000_O-463" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-464_R-464" RefId="M-00FA_A-FF01-01-0000_O-464" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-465_R-465" RefId="M-00FA_A-FF01-01-0000_O-465" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-466_R-466" RefId="M-00FA_A-FF01-01-0000_O-466" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-471_R-471" RefId="M-00FA_A-FF01-01-0000_O-471" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-472_R-472" RefId="M-00FA_A-FF01-01-0000_O-472" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-473_R-473" RefId="M-00FA_A-FF01-01-0000_O-473" />
@@ -3730,6 +3766,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-522_R-522" RefId="M-00FA_A-FF01-01-0000_O-522" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-523_R-523" RefId="M-00FA_A-FF01-01-0000_O-523" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-524_R-524" RefId="M-00FA_A-FF01-01-0000_O-524" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-525_R-525" RefId="M-00FA_A-FF01-01-0000_O-525" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-526_R-526" RefId="M-00FA_A-FF01-01-0000_O-526" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-531_R-531" RefId="M-00FA_A-FF01-01-0000_O-531" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-532_R-532" RefId="M-00FA_A-FF01-01-0000_O-532" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-533_R-533" RefId="M-00FA_A-FF01-01-0000_O-533" />
@@ -3767,6 +3805,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-582_R-582" RefId="M-00FA_A-FF01-01-0000_O-582" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-583_R-583" RefId="M-00FA_A-FF01-01-0000_O-583" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-584_R-584" RefId="M-00FA_A-FF01-01-0000_O-584" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-585_R-585" RefId="M-00FA_A-FF01-01-0000_O-585" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-586_R-586" RefId="M-00FA_A-FF01-01-0000_O-586" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-591_R-591" RefId="M-00FA_A-FF01-01-0000_O-591" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-592_R-592" RefId="M-00FA_A-FF01-01-0000_O-592" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-593_R-593" RefId="M-00FA_A-FF01-01-0000_O-593" />
@@ -4103,8 +4143,8 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-1501_R-1501" RefId="M-00FA_A-FF01-01-0000_O-1501" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-1502_R-1502" RefId="M-00FA_A-FF01-01-0000_O-1502" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-1503_R-1503" RefId="M-00FA_A-FF01-01-0000_O-1503" />
-              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-1504_R-1504" RefId="M-00FA_A-FF01-01-0000_O-1504" />
-              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-1505_R-1505" RefId="M-00FA_A-FF01-01-0000_O-1505" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-1511_R-1511" RefId="M-00FA_A-FF01-01-0000_O-1511" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-1512_R-1512" RefId="M-00FA_A-FF01-01-0000_O-1512" />
             </ComObjectRefs>
             <AddressTable MaxEntries="2047" />
             <AssociationTable MaxEntries="2047" />
@@ -4212,7 +4252,7 @@
                 <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-8" Text="© 2026 Fabian Schmieder" UIHint="Information" />
                 <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-9" Text="Lizenz: GPL-3.0-only · Open-Source-Firmware" UIHint="Information" />
                 <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-10" Text="Quellcode &amp; Support: github.com/SnapDogRocks/snapdog" UIHint="Information" />
-                <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-11" Text="Produkt-DB v12 · App 0xFF01 · HW 1 · KNXnet/IP System B" UIHint="Information" />
+                <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-11" Text="Produkt-DB v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" UIHint="Information" />
               </ParameterBlock>
               <choose ParamRefId="M-00FA_A-FF01-01-0000_UP-1_R-101">
                 <when test="&gt;=1">
@@ -4267,6 +4307,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-42_R-42" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-43_R-43" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-44_R-44" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-45_R-45" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-46_R-46" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-18" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-51_R-51" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-52_R-52" />
@@ -4327,6 +4369,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-102_R-102" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-103_R-103" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-104_R-104" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-105_R-105" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-106_R-106" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-25" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-111_R-111" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-112_R-112" />
@@ -4387,6 +4431,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-162_R-162" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-163_R-163" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-164_R-164" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-165_R-165" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-166_R-166" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-32" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-171_R-171" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-172_R-172" />
@@ -4447,6 +4493,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-222_R-222" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-223_R-223" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-224_R-224" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-225_R-225" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-226_R-226" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-39" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-231_R-231" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-232_R-232" />
@@ -4507,6 +4555,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-282_R-282" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-283_R-283" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-284_R-284" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-285_R-285" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-286_R-286" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-46" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-291_R-291" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-292_R-292" />
@@ -4567,6 +4617,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-342_R-342" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-343_R-343" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-344_R-344" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-345_R-345" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-346_R-346" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-53" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-351_R-351" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-352_R-352" />
@@ -4627,6 +4679,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-402_R-402" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-403_R-403" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-404_R-404" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-405_R-405" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-406_R-406" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-60" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-411_R-411" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-412_R-412" />
@@ -4687,6 +4741,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-462_R-462" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-463_R-463" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-464_R-464" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-465_R-465" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-466_R-466" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-67" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-471_R-471" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-472_R-472" />
@@ -4747,6 +4803,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-522_R-522" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-523_R-523" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-524_R-524" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-525_R-525" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-526_R-526" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-74" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-531_R-531" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-532_R-532" />
@@ -4807,6 +4865,8 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-582_R-582" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-583_R-583" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-584_R-584" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-585_R-585" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-586_R-586" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-81" Text="Präsenz" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-591_R-591" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-592_R-592" />
@@ -6062,8 +6122,8 @@
                 <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-1501_R-1501" />
                 <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-1502_R-1502" />
                 <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-1503_R-1503" />
-                <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-1504_R-1504" />
-                <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-1505_R-1505" />
+                <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-1511_R-1511" />
+                <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-1512_R-1512" />
               </ParameterBlock>
             </ChannelIndependentBlock>
           </Dynamic>
@@ -7690,6 +7750,12 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-44">
               <Translation AttributeName="Text" Text="Track Progress" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-45">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-46">
+              <Translation AttributeName="Text" Text="Track Number Status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-51">
               <Translation AttributeName="Text" Text="Presence" />
             </TranslationElement>
@@ -7782,6 +7848,12 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-104">
               <Translation AttributeName="Text" Text="Track Progress" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-105">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-106">
+              <Translation AttributeName="Text" Text="Track Number Status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-111">
               <Translation AttributeName="Text" Text="Presence" />
@@ -7876,6 +7948,12 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-164">
               <Translation AttributeName="Text" Text="Track Progress" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-165">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-166">
+              <Translation AttributeName="Text" Text="Track Number Status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-171">
               <Translation AttributeName="Text" Text="Presence" />
             </TranslationElement>
@@ -7968,6 +8046,12 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-224">
               <Translation AttributeName="Text" Text="Track Progress" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-225">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-226">
+              <Translation AttributeName="Text" Text="Track Number Status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-231">
               <Translation AttributeName="Text" Text="Presence" />
@@ -8062,6 +8146,12 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-284">
               <Translation AttributeName="Text" Text="Track Progress" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-285">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-286">
+              <Translation AttributeName="Text" Text="Track Number Status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-291">
               <Translation AttributeName="Text" Text="Presence" />
             </TranslationElement>
@@ -8154,6 +8244,12 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-344">
               <Translation AttributeName="Text" Text="Track Progress" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-345">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-346">
+              <Translation AttributeName="Text" Text="Track Number Status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-351">
               <Translation AttributeName="Text" Text="Presence" />
@@ -8248,6 +8344,12 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-404">
               <Translation AttributeName="Text" Text="Track Progress" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-405">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-406">
+              <Translation AttributeName="Text" Text="Track Number Status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-411">
               <Translation AttributeName="Text" Text="Presence" />
             </TranslationElement>
@@ -8340,6 +8442,12 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-464">
               <Translation AttributeName="Text" Text="Track Progress" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-465">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-466">
+              <Translation AttributeName="Text" Text="Track Number Status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-471">
               <Translation AttributeName="Text" Text="Presence" />
@@ -8434,6 +8542,12 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-524">
               <Translation AttributeName="Text" Text="Track Progress" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-525">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-526">
+              <Translation AttributeName="Text" Text="Track Number Status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-531">
               <Translation AttributeName="Text" Text="Presence" />
             </TranslationElement>
@@ -8526,6 +8640,12 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-584">
               <Translation AttributeName="Text" Text="Track Progress" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-585">
+              <Translation AttributeName="Text" Text="Track Number" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-586">
+              <Translation AttributeName="Text" Text="Track Number Status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-591">
               <Translation AttributeName="Text" Text="Presence" />
@@ -9437,16 +9557,16 @@
               <Translation AttributeName="Text" Text="Connected" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1502">
-              <Translation AttributeName="Text" Text="All Stop" />
-            </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1503">
-              <Translation AttributeName="Text" Text="All Mute" />
-            </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1504">
               <Translation AttributeName="Text" Text="System Fault" />
             </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1505">
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1503">
               <Translation AttributeName="Text" Text="KNX Time" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1511">
+              <Translation AttributeName="Text" Text="All Stop" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1512">
+              <Translation AttributeName="Text" Text="All Mute" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PB-1">
               <Translation AttributeName="Text" Text="General" />
@@ -9458,7 +9578,7 @@
               <Translation AttributeName="Text" Text="Source code &amp; support: github.com/SnapDogRocks/snapdog" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-11">
-              <Translation AttributeName="Text" Text="Product DB v12 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
+              <Translation AttributeName="Text" Text="Product DB v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-12">
               <Translation AttributeName="Text" Text="Settings" />
@@ -11854,6 +11974,14 @@
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-45">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-46">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-51">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
               <Translation AttributeName="FunctionText" Text="Aanwezigheid" />
@@ -11990,6 +12118,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-104">
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-105">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-106">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-111">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
@@ -12128,6 +12264,14 @@
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-165">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-166">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-171">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
               <Translation AttributeName="FunctionText" Text="Aanwezigheid" />
@@ -12264,6 +12408,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-224">
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-225">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-226">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-231">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
@@ -12402,6 +12554,14 @@
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-285">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-286">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-291">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
               <Translation AttributeName="FunctionText" Text="Aanwezigheid" />
@@ -12538,6 +12698,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-344">
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-345">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-346">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-351">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
@@ -12676,6 +12844,14 @@
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-405">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-406">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-411">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
               <Translation AttributeName="FunctionText" Text="Aanwezigheid" />
@@ -12812,6 +12988,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-464">
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-465">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-466">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-471">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
@@ -12950,6 +13134,14 @@
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-525">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-526">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-531">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
               <Translation AttributeName="FunctionText" Text="Aanwezigheid" />
@@ -13086,6 +13278,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-584">
               <Translation AttributeName="Text" Text="Voortgang" />
               <Translation AttributeName="FunctionText" Text="Voortgang" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-585">
+              <Translation AttributeName="Text" Text="Tracknummer" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-586">
+              <Translation AttributeName="Text" Text="Tracknummer status" />
+              <Translation AttributeName="FunctionText" Text="Tracknummer status" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-591">
               <Translation AttributeName="Text" Text="Aanwezigheid" />
@@ -14394,20 +14594,20 @@
               <Translation AttributeName="FunctionText" Text="Server online" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1502">
-              <Translation AttributeName="Text" Text="Alles stoppen" />
-              <Translation AttributeName="FunctionText" Text="Alles stoppen" />
-            </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1503">
-              <Translation AttributeName="Text" Text="Alles dempen" />
-              <Translation AttributeName="FunctionText" Text="Alles dempen" />
-            </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1504">
               <Translation AttributeName="Text" Text="Systeemstoring" />
               <Translation AttributeName="FunctionText" Text="Systeemstoring" />
             </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1505">
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1503">
               <Translation AttributeName="Text" Text="KNX-tijd" />
               <Translation AttributeName="FunctionText" Text="KNX-tijd" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1511">
+              <Translation AttributeName="Text" Text="Alles stoppen" />
+              <Translation AttributeName="FunctionText" Text="Alles stoppen" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1512">
+              <Translation AttributeName="Text" Text="Alles dempen" />
+              <Translation AttributeName="FunctionText" Text="Alles dempen" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_M-1">
               <Translation AttributeName="Text" Text="Applicatie- en firmwareversie komen niet overeen." />
@@ -14422,7 +14622,7 @@
               <Translation AttributeName="Text" Text="Broncode &amp; support: github.com/SnapDogRocks/snapdog" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-11">
-              <Translation AttributeName="Text" Text="Productdatabase v12 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
+              <Translation AttributeName="Text" Text="Productdatabase v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-12">
               <Translation AttributeName="Text" Text="Instellingen" />
@@ -17018,6 +17218,14 @@
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-45">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-46">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-51">
               <Translation AttributeName="Text" Text="Presencia" />
               <Translation AttributeName="FunctionText" Text="Presencia" />
@@ -17165,6 +17373,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-104">
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-105">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-106">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-111">
               <Translation AttributeName="Text" Text="Presencia" />
@@ -17314,6 +17530,14 @@
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-165">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-166">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-171">
               <Translation AttributeName="Text" Text="Presencia" />
               <Translation AttributeName="FunctionText" Text="Presencia" />
@@ -17461,6 +17685,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-224">
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-225">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-226">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-231">
               <Translation AttributeName="Text" Text="Presencia" />
@@ -17610,6 +17842,14 @@
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-285">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-286">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-291">
               <Translation AttributeName="Text" Text="Presencia" />
               <Translation AttributeName="FunctionText" Text="Presencia" />
@@ -17757,6 +17997,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-344">
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-345">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-346">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-351">
               <Translation AttributeName="Text" Text="Presencia" />
@@ -17906,6 +18154,14 @@
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-405">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-406">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-411">
               <Translation AttributeName="Text" Text="Presencia" />
               <Translation AttributeName="FunctionText" Text="Presencia" />
@@ -18053,6 +18309,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-464">
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-465">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-466">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-471">
               <Translation AttributeName="Text" Text="Presencia" />
@@ -18202,6 +18466,14 @@
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-525">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-526">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-531">
               <Translation AttributeName="Text" Text="Presencia" />
               <Translation AttributeName="FunctionText" Text="Presencia" />
@@ -18349,6 +18621,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-584">
               <Translation AttributeName="Text" Text="Progreso" />
               <Translation AttributeName="FunctionText" Text="Progreso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-585">
+              <Translation AttributeName="Text" Text="Número de pista" />
+              <Translation AttributeName="FunctionText" Text="Número de pista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-586">
+              <Translation AttributeName="Text" Text="Estado del número de pista" />
+              <Translation AttributeName="FunctionText" Text="Estado del número de pista" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-591">
               <Translation AttributeName="Text" Text="Presencia" />
@@ -19687,20 +19967,20 @@
               <Translation AttributeName="FunctionText" Text="Servidor en línea" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1502">
-              <Translation AttributeName="Text" Text="Detener todo" />
-              <Translation AttributeName="FunctionText" Text="Detener todo" />
-            </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1503">
-              <Translation AttributeName="Text" Text="Silenciar todo" />
-              <Translation AttributeName="FunctionText" Text="Silenciar todo" />
-            </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1504">
               <Translation AttributeName="Text" Text="Fallo del sistema" />
               <Translation AttributeName="FunctionText" Text="Fallo del sistema" />
             </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1505">
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1503">
               <Translation AttributeName="Text" Text="Hora KNX" />
               <Translation AttributeName="FunctionText" Text="Hora KNX" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1511">
+              <Translation AttributeName="Text" Text="Detener todo" />
+              <Translation AttributeName="FunctionText" Text="Detener todo" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1512">
+              <Translation AttributeName="Text" Text="Silenciar todo" />
+              <Translation AttributeName="FunctionText" Text="Silenciar todo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_M-1">
               <Translation AttributeName="Text" Text="La versión de la aplicación y la del firmware no coinciden." />
@@ -19718,7 +19998,7 @@
               <Translation AttributeName="Text" Text="Código fuente y soporte: github.com/SnapDogRocks/snapdog" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-11">
-              <Translation AttributeName="Text" Text="BD de producto v12 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
+              <Translation AttributeName="Text" Text="BD de producto v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PB-2">
               <Translation AttributeName="Text" Text="Zona 1: {{0: ...}}" />
@@ -22511,6 +22791,14 @@
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-45">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-46">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-51">
               <Translation AttributeName="Text" Text="Présence" />
               <Translation AttributeName="FunctionText" Text="Présence" />
@@ -22648,6 +22936,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-104">
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-105">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-106">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-111">
               <Translation AttributeName="Text" Text="Présence" />
@@ -22787,6 +23083,14 @@
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-165">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-166">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-171">
               <Translation AttributeName="Text" Text="Présence" />
               <Translation AttributeName="FunctionText" Text="Présence" />
@@ -22924,6 +23228,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-224">
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-225">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-226">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-231">
               <Translation AttributeName="Text" Text="Présence" />
@@ -23063,6 +23375,14 @@
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-285">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-286">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-291">
               <Translation AttributeName="Text" Text="Présence" />
               <Translation AttributeName="FunctionText" Text="Présence" />
@@ -23200,6 +23520,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-344">
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-345">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-346">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-351">
               <Translation AttributeName="Text" Text="Présence" />
@@ -23339,6 +23667,14 @@
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-405">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-406">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-411">
               <Translation AttributeName="Text" Text="Présence" />
               <Translation AttributeName="FunctionText" Text="Présence" />
@@ -23476,6 +23812,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-464">
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-465">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-466">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-471">
               <Translation AttributeName="Text" Text="Présence" />
@@ -23615,6 +23959,14 @@
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-525">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-526">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-531">
               <Translation AttributeName="Text" Text="Présence" />
               <Translation AttributeName="FunctionText" Text="Présence" />
@@ -23752,6 +24104,14 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-584">
               <Translation AttributeName="Text" Text="Progression" />
               <Translation AttributeName="FunctionText" Text="Progression" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-585">
+              <Translation AttributeName="Text" Text="Numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="Numéro de piste" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-586">
+              <Translation AttributeName="Text" Text="État du numéro de piste" />
+              <Translation AttributeName="FunctionText" Text="État du numéro de piste" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-591">
               <Translation AttributeName="Text" Text="Présence" />
@@ -25060,20 +25420,20 @@
               <Translation AttributeName="FunctionText" Text="Serveur en ligne" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1502">
-              <Translation AttributeName="Text" Text="Tout arrêter" />
-              <Translation AttributeName="FunctionText" Text="Tout arrêter" />
-            </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1503">
-              <Translation AttributeName="Text" Text="Tout couper" />
-              <Translation AttributeName="FunctionText" Text="Tout couper" />
-            </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1504">
               <Translation AttributeName="Text" Text="Défaut système" />
               <Translation AttributeName="FunctionText" Text="Défaut système" />
             </TranslationElement>
-            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1505">
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1503">
               <Translation AttributeName="Text" Text="Heure KNX" />
               <Translation AttributeName="FunctionText" Text="Heure KNX" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1511">
+              <Translation AttributeName="Text" Text="Tout arrêter" />
+              <Translation AttributeName="FunctionText" Text="Tout arrêter" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-1512">
+              <Translation AttributeName="Text" Text="Tout couper" />
+              <Translation AttributeName="FunctionText" Text="Tout couper" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_M-1">
               <Translation AttributeName="Text" Text="La version de l'application et celle du firmware ne correspondent pas." />
@@ -25091,7 +25451,7 @@
               <Translation AttributeName="Text" Text="Code source et support : github.com/SnapDogRocks/snapdog" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-11">
-              <Translation AttributeName="Text" Text="BD produit v12 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
+              <Translation AttributeName="Text" Text="BD produit v13 · App 0xFF01 · HW 1 · KNXnet/IP System B" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PS-12">
               <Translation AttributeName="Text" Text="Paramètres" />

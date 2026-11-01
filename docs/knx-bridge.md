@@ -51,7 +51,8 @@ addresses of a zone above 10 or a client above 30 are ignored with a warning.
   ETS and every group keeps free numbers for later additions: zone `z` starts at
   `(z-1)*60 + 1` (six groups: transport, volume and mute, play modes, playlist, track info,
   presence), client `c` at `600 + (c-1)*30 + 1` (three groups: volume and mute, latency and
-  zone, connection), and the five device-level objects at 1501 to 1505. Numbers no object
+  zone, connection), and the five device-level objects in two groups (system status 1501 to 1503, all zones
+  1511 and 1512). Numbers no object
   names are reserved and have no descriptor (`group_objects::locate` tells what a number is).
   `object_command` in `mod.rs` maps the ASAP to
   the command. The configuration is not consulted, so an ETS-derived configuration

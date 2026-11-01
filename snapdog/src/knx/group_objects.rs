@@ -33,9 +33,13 @@ pub const ZONE_GO_STRIDE: usize = 60;
 /// Object numbers reserved per client (three groups of ten, see [`CLIENT_GO_SLOTS`]).
 pub const CLIENT_GO_STRIDE: usize = 30;
 
+/// Object numbers reserved for the device-level objects (two groups of ten, see
+/// [`GLOBAL_GO_SLOTS`]).
+pub const GLOBAL_GO_STRIDE: usize = 20;
+
 /// Total number of group object numbers, defined or reserved (the size of the group object table).
 pub const TOTAL_GO_COUNT: usize =
-    MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE + GLOBAL_GO_COUNT;
+    MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE + GLOBAL_GO_STRIDE;
 
 /// Device hardware type, served as `PID_HARDWARE_TYPE` (device object, PID 78).
 ///
@@ -54,7 +58,7 @@ pub const HARDWARE_TYPE: [u8; 6] = [0x00, 0x00, 0xFF, 0x01, 0x01, 0x00];
 /// **Bump [`KNXPROD_APP_VERSION`] whenever the KNX memory layout changes** — ETS decides
 /// its download scope by this version, so an unchanged version after a layout change
 /// would leave a device mis-parameterized (see the xtask layout-lock guard).
-pub const KNXPROD_APP_VERSION: u32 = 12;
+pub const KNXPROD_APP_VERSION: u32 = 13;
 /// ETS `ApplicationNumber` (== hardware order number `0xFF01`).
 pub const KNXPROD_APP_NUMBER: u16 = 0xFF01;
 /// Hardware revision (the version byte of [`HARDWARE_TYPE`]).
@@ -163,7 +167,7 @@ impl GoFlags {
     }
 }
 
-// ── Zone group objects (37 per zone, in six groups) ───────────
+// ── Zone group objects (39 per zone, in six groups) ───────────
 
 /// Create a receive-only GO definition.
 const fn go_recv(
@@ -479,6 +483,23 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-5-1",
         "1 Byte",
     ),
+    // Jump to a track of the active playlist by its number (1 is the first track).
+    go_recv(
+        "Track Number",
+        "Titelnummer",
+        "Track Number",
+        DPT_VALUE_1_UCOUNT,
+        "DPST-5-10",
+        "1 Byte",
+    ),
+    go_send(
+        "Track Number Status",
+        "Titelnummer Status",
+        "Track Number Status",
+        DPT_VALUE_1_UCOUNT,
+        "DPST-5-10",
+        "1 Byte",
+    ),
     // ── Group 5: Presence (numbers 51 to 60 of the zone) ──
     // Retriggerable presence trigger: each telegram (re)arms the auto-off timer and starts
     // playback of the zone's configured presence source. Timeout & source are ETS
@@ -603,6 +624,7 @@ pub const CLIENT_GOS: &[GoDefinition] = &[
 
 /// Device-level group objects, shared by the whole server.
 pub const GLOBAL_GOS: &[GoDefinition] = &[
+    // ── Group 0: System status (numbers 1501 to 1510) ──
     // Cyclic heartbeat — sent every `heartbeat` interval (an ETS parameter) so the bus can
     // detect the server going offline.
     go_send(
@@ -611,24 +633,6 @@ pub const GLOBAL_GOS: &[GoDefinition] = &[
         "Server Online",
         DPT_STATE,
         "DPST-1-11",
-        "1 Bit",
-    ),
-    // Stop playback in every zone (e.g. a leaving-home scene).
-    go_recv(
-        "All Stop",
-        "Alle Stopp",
-        "All Stop",
-        DPT_TRIGGER,
-        "DPST-1-17",
-        "1 Bit",
-    ),
-    // Mute / unmute every zone at once; the status is sent back on change.
-    go_bidir(
-        "All Mute",
-        "Alle Stumm",
-        "All Mute",
-        DPT_SWITCH,
-        "DPST-1-1",
         "1 Bit",
     ),
     // Set when the server enters a fault state, cleared when it recovers.
@@ -649,6 +653,25 @@ pub const GLOBAL_GOS: &[GoDefinition] = &[
         "DPST-10-1",
         "3 Bytes",
     ),
+    // ── Group 1: All zones (numbers 1511 to 1520) ──
+    // Stop playback in every zone (e.g. a leaving-home scene).
+    go_recv(
+        "All Stop",
+        "Alle Stopp",
+        "All Stop",
+        DPT_TRIGGER,
+        "DPST-1-17",
+        "1 Bit",
+    ),
+    // Mute / unmute every zone at once; the status is sent back on change.
+    go_bidir(
+        "All Mute",
+        "Alle Stumm",
+        "All Mute",
+        DPT_SWITCH,
+        "DPST-1-1",
+        "1 Bit",
+    ),
 ];
 
 /// Number of global group objects.
@@ -658,20 +681,21 @@ pub const GLOBAL_GO_COUNT: usize = GLOBAL_GOS.len();
 
 /// Global GO index — cyclic "server online" heartbeat (send).
 pub const GGO_SERVER_ONLINE: usize = 0;
-/// Global GO index — "all stop" trigger (receive).
-pub const GGO_ALL_STOP: usize = 1;
-/// Global GO index — "all mute" switch (bidirectional).
-pub const GGO_ALL_MUTE: usize = 2;
 /// Global GO index — "system fault" alarm (send).
-pub const GGO_SYSTEM_FAULT: usize = 3;
+pub const GGO_SYSTEM_FAULT: usize = 1;
 /// Global GO index — KNX time-of-day clock input (receive).
-pub const GGO_KNX_TIME: usize = 4;
+pub const GGO_KNX_TIME: usize = 2;
+/// Global GO index — "all stop" trigger (receive).
+pub const GGO_ALL_STOP: usize = 3;
+/// Global GO index — "all mute" switch (bidirectional).
+pub const GGO_ALL_MUTE: usize = 4;
 
 /// Compute the 1-based ASAP for a global group object (0-based `go_index` within
 /// [`GLOBAL_GOS`]). Globals follow every zone and client GO.
 #[must_use]
 pub const fn global_asap(go_index: usize) -> u16 {
-    (MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE + go_index + 1) as u16
+    (MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE + GLOBAL_GO_SLOTS[go_index] + 1)
+        as u16
 }
 
 /// Compute the 1-based ASAP for a zone group object.
@@ -755,11 +779,15 @@ pub const ZGO_TRACK_ALBUM: usize = 32;
 /// Zone GO index.
 pub const ZGO_TRACK_PROGRESS: usize = 33;
 /// Zone GO index.
-pub const ZGO_PRESENCE: usize = 34;
+pub const ZGO_TRACK_NUMBER: usize = 34;
 /// Zone GO index.
-pub const ZGO_PRESENCE_ENABLE: usize = 35;
+pub const ZGO_TRACK_NUMBER_STATUS: usize = 35;
 /// Zone GO index.
-pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 36;
+pub const ZGO_PRESENCE: usize = 36;
+/// Zone GO index.
+pub const ZGO_PRESENCE_ENABLE: usize = 37;
+/// Zone GO index.
+pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 38;
 
 // ── Named GO indices (client) ─────────────────────────────────
 
@@ -830,6 +858,8 @@ pub const ZONE_GO_SLOTS: [usize; ZONE_GO_COUNT] = [
     slot(4, 1),
     slot(4, 2),
     slot(4, 3),
+    slot(4, 4),
+    slot(4, 5),
     slot(5, 0),
     slot(5, 1),
     slot(5, 2),
@@ -851,6 +881,11 @@ pub const CLIENT_GO_SLOTS: [usize; CLIENT_GO_COUNT] = [
     slot(2, 0),
 ];
 
+/// Slot of each device-level object, in the order of [`GLOBAL_GOS`]: system status (group 0),
+/// all zones (group 1).
+pub const GLOBAL_GO_SLOTS: [usize; GLOBAL_GO_COUNT] =
+    [slot(0, 0), slot(0, 1), slot(0, 2), slot(1, 0), slot(1, 1)];
+
 /// Whether `slots` is strictly increasing and every slot is below `stride`.
 const fn slots_valid(slots: &[usize], stride: usize) -> bool {
     let mut i = 0;
@@ -865,6 +900,7 @@ const fn slots_valid(slots: &[usize], stride: usize) -> bool {
 
 const _: () = assert!(slots_valid(&ZONE_GO_SLOTS, ZONE_GO_STRIDE));
 const _: () = assert!(slots_valid(&CLIENT_GO_SLOTS, CLIENT_GO_STRIDE));
+const _: () = assert!(slots_valid(&GLOBAL_GO_SLOTS, GLOBAL_GO_STRIDE));
 
 /// Where an object number points.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -911,8 +947,8 @@ pub fn locate(asap: u16) -> Option<GoLocation> {
             go,
         })
     } else {
-        let go = n - clients_end;
-        (go < GLOBAL_GO_COUNT).then_some(GoLocation::Global(go))
+        let go = GLOBAL_GO_SLOTS.iter().position(|s| *s == n - clients_end)?;
+        Some(GoLocation::Global(go))
     }
 }
 
@@ -1133,8 +1169,8 @@ mod tests {
 
     #[test]
     fn zone_go_count() {
-        assert_eq!(ZONE_GOS.len(), 37);
-        assert_eq!(ZONE_GO_SLOTS.len(), 37);
+        assert_eq!(ZONE_GOS.len(), 39);
+        assert_eq!(ZONE_GO_SLOTS.len(), 39);
     }
 
     #[test]
@@ -1145,9 +1181,9 @@ mod tests {
 
     #[test]
     fn total_go_count() {
-        // 10 zones x 60 + 30 clients x 30 + 5 global; defined or reserved.
-        assert_eq!(TOTAL_GO_COUNT, 10 * 60 + 30 * 30 + 5);
-        assert_eq!(TOTAL_GO_COUNT, 1505);
+        // 10 zones x 60 + 30 clients x 30 + 20 global; defined or reserved.
+        assert_eq!(TOTAL_GO_COUNT, 10 * 60 + 30 * 30 + 20);
+        assert_eq!(TOTAL_GO_COUNT, 1520);
     }
 
     #[test]
@@ -1185,9 +1221,13 @@ mod tests {
 
     #[test]
     fn global_asap_layout() {
-        // Globals follow all zone and client numbers: 600 + 900 = 1500.
-        assert_eq!(global_asap(0), 1501);
-        assert_eq!(global_asap(GLOBAL_GOS.len() - 1), 1505);
+        // Globals follow all zone and client numbers: 600 + 900 = 1500. System status first,
+        // then the objects for all zones, each group starting at a multiple of ten plus one.
+        assert_eq!(global_asap(GGO_SERVER_ONLINE), 1501);
+        assert_eq!(global_asap(GGO_SYSTEM_FAULT), 1502);
+        assert_eq!(global_asap(GGO_KNX_TIME), 1503);
+        assert_eq!(global_asap(GGO_ALL_STOP), 1511);
+        assert_eq!(global_asap(GGO_ALL_MUTE), 1512);
     }
 
     #[test]
@@ -1391,10 +1431,13 @@ mod tests {
             Some("Volume")
         );
         assert_eq!(
-            definition_of(global_asap(4)).map(|d| d.name),
+            definition_of(global_asap(GGO_KNX_TIME)).map(|d| d.name),
             Some("KNX Time")
         );
-        assert_eq!(definition_of(1506).map(|d| d.name), None);
+        // Reserved numbers and numbers past the table have no object.
+        assert_eq!(definition_of(1504).map(|d| d.name), None);
+        assert_eq!(definition_of(1513).map(|d| d.name), None);
+        assert_eq!(definition_of(1521).map(|d| d.name), None);
     }
 
     #[test]

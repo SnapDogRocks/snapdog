@@ -56,9 +56,10 @@ use group_objects::{
     ZGO_PLAYLIST_STATUS, ZGO_PLAYLIST_STEP, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
     ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
     ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
-    ZGO_TRACK_NEXT, ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
-    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_TITLE, ZGO_VOLUME,
-    ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
+    ZGO_TRACK_NEXT, ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS, ZGO_TRACK_PLAYING,
+    ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
+    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
+    ZGO_VOLUME_STATUS,
 };
 use sink::{ObjectKey, StatusSink};
 use transport::{Incoming, KnxListener, KnxPublisher};
@@ -481,6 +482,7 @@ async fn publish_all_mute_status<P: KnxPublisher>(
     .await;
 }
 
+#[allow(clippy::too_many_lines)] // one write per status object
 async fn publish_zone_state<P: KnxPublisher>(
     zone_index: usize,
     config: &AppConfig,
@@ -557,6 +559,16 @@ async fn publish_zone_state<P: KnxPublisher>(
         knx.playlist_name_status.as_deref(),
         DPT_STRING_8859_1,
         &DptValue::from(zone.playlist_name.as_deref().unwrap_or("")),
+    )
+    .await;
+    sink.write(
+        go(ZGO_TRACK_NUMBER_STATUS),
+        knx.track_number_status.as_deref(),
+        DPT_VALUE_1_UCOUNT,
+        &DptValue::from(
+            zone.playlist_track_index
+                .map_or(0, |i| u8::try_from(i + 1).unwrap_or(u8::MAX)),
+        ),
     )
     .await;
     sink.write(
@@ -833,6 +845,7 @@ fn zone_ga_map(
             (&knx.playlist_next, "playlist_next"),
             (&knx.playlist_previous, "playlist_previous"),
             (&knx.playlist_step, "playlist_step"),
+            (&knx.track_number, "track_number"),
             (&knx.play_pause, "play_pause"),
             (&knx.track_step, "track_step"),
             (&knx.presence, "presence"),
@@ -926,6 +939,7 @@ fn status_addresses(config: &AppConfig) -> Vec<(String, String)> {
             (&k.track_playing_status, "track_playing_status"),
             (&k.track_repeat_status, "track_repeat_status"),
             (&k.playlist_status, "playlist_status"),
+            (&k.track_number_status, "track_number_status"),
             (&k.shuffle_status, "shuffle_status"),
             (&k.repeat_status, "repeat_status"),
             (&k.presence_enable_status, "presence_enable_status"),
@@ -1060,6 +1074,7 @@ const ZONE_ACTIONS: &[(usize, &str)] = &[
     (ZGO_PLAYLIST_NEXT, "playlist_next"),
     (ZGO_PLAYLIST_PREVIOUS, "playlist_previous"),
     (ZGO_PLAYLIST_STEP, "playlist_step"),
+    (ZGO_TRACK_NUMBER, "track_number"),
     (ZGO_PLAY_PAUSE, "play_pause"),
     (ZGO_TRACK_STEP, "track_step"),
     (ZGO_PRESENCE, "presence"),
@@ -1245,6 +1260,10 @@ async fn execute<S: BuildHasher + Sync>(
                 "volume" => decode_percent(data).map(|v| ZoneCommand::SetVolume(i32::from(v))),
                 "volume_dim" => decode_dim(data).map(ZoneCommand::AdjustVolume),
                 "playlist" => decode_u8(data).map(|v| ZoneCommand::SetPlaylist(v as usize, 0)),
+                // Numbered from 1; 0 names no track.
+                "track_number" => decode_u8(data)
+                    .and_then(|v| usize::from(v).checked_sub(1))
+                    .map(ZoneCommand::SetTrack),
                 "playlist_next" => Some(ZoneCommand::NextPlaylist),
                 "playlist_previous" => Some(ZoneCommand::PreviousPlaylist),
                 // The value counts for these three: a malformed or empty payload is not a 0.
@@ -1696,6 +1715,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_track_number_counts_from_one_and_zero_names_no_track() {
+        let number = |n: u8| dpt::encode(DPT_VALUE_1_UCOUNT, &DptValue::from(n)).unwrap();
+        assert!(matches!(
+            run_object(ZGO_TRACK_NUMBER, &number(1)).await[..],
+            [ZoneCommand::SetTrack(0)]
+        ));
+        assert!(matches!(
+            run_object(ZGO_TRACK_NUMBER, &number(12)).await[..],
+            [ZoneCommand::SetTrack(11)]
+        ));
+        assert!(run_object(ZGO_TRACK_NUMBER, &number(0)).await.is_empty());
+        assert!(run_object(ZGO_TRACK_NUMBER, &[]).await.is_empty());
+    }
+
+    #[tokio::test]
     async fn the_single_trigger_objects_ignore_the_value() {
         for value in [true, false] {
             assert!(matches!(
@@ -2116,6 +2150,45 @@ zone = "Z1"
         chk("1/1/4", DPT_SWITCH, &[0x00]); // repeat != Track → track_repeat_status off
         chk("1/1/5", DPT_SWITCH, &[0x01]); // control_status = playing
         chk("1/1/6", DPT_SWITCH, &[0x01]); // track_playing_status = playing (== control)
+    }
+
+    #[tokio::test]
+    async fn the_track_number_status_counts_from_one_and_is_zero_without_a_track() {
+        let toml = r#"
+[[zone]]
+name = "Z1"
+[zone.knx]
+track_number_status = "1/1/9"
+
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        let status = |track_index: Option<usize>| {
+            let (cfg, store) = (&cfg, &store);
+            async move {
+                store
+                    .write()
+                    .await
+                    .zones
+                    .get_mut(&1)
+                    .unwrap()
+                    .playlist_track_index = track_index;
+                let mock = Rec::default();
+                let mut sink = StatusSink::new(&mock);
+                publish_zone_state(1, cfg, store, &mut sink).await;
+                let w = written(&mock);
+                let (_, d, v) = w.iter().find(|(g, _, _)| g == "1/1/9").expect("write");
+                assert_eq!(*d, DPT_VALUE_1_UCOUNT);
+                dpt::encode(*d, v).unwrap()
+            }
+        };
+        assert_eq!(status(None).await, vec![0]);
+        assert_eq!(status(Some(0)).await, vec![1]);
+        assert_eq!(status(Some(11)).await, vec![12]);
     }
 
     #[tokio::test]
