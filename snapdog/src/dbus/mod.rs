@@ -38,8 +38,11 @@ mod mpris {
     /// Highest `.instanceN` suffix tried when the plain name is taken.
     const MAX_INSTANCE: u32 = 10;
 
-    /// Highest zone number `dbus/snapdog.conf` allows callers to reach on the system bus.
-    const POLICY_MAX_ZONES: usize = 16;
+    /// Highest zone number `dbus/snapdog.conf` allows callers to reach on the system bus: the
+    /// highest zone the product has. The policy file lists the names by hand, so the test
+    /// `policy_file_is_exactly_what_bus_names_requires` fails when `MAX_ZONES` changes and the file
+    /// does not.
+    const POLICY_MAX_ZONES: usize = crate::knx::group_objects::MAX_ZONES;
 
     /// Bus names to request for a zone in order: the plain name, then `.instance2.zoneN` to
     /// `.instance10.zoneN`.

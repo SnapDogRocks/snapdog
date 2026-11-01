@@ -9,11 +9,14 @@
 
 use knx_rs_core::dpt::{DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_UCOUNT, Dpt};
 
-/// Maximum number of zones supported.
-pub const MAX_ZONES: usize = 10;
+/// Maximum number of zones the product supports. The single source: the object numbers, the ETS
+/// product database (zone count, zone choice, parameter blocks), the device-state arrays and the
+/// D-Bus policy limit all derive from it. Change it here and let the tests name what else has to
+/// follow (the D-Bus policy file, the golden product XML, the documentation).
+pub const MAX_ZONES: usize = 16;
 
 /// Maximum number of clients supported.
-pub const MAX_CLIENTS: usize = 30;
+pub const MAX_CLIENTS: usize = 64;
 
 /// Maximum number of HTTP API keys supported. The active count is chosen in ETS via a
 /// dropdown (default 1); keys `1..=count` are shown and read.
@@ -644,7 +647,7 @@ pub const CLIENT_GOS: &[GoDefinition] = &[
 
 /// Device-level group objects, shared by the whole server.
 pub const GLOBAL_GOS: &[GoDefinition] = &[
-    // ── Group 0: System status (numbers 1501 to 1510) ──
+    // ── Group 0: System status (numbers 2881 to 2890) ──
     // Cyclic heartbeat — sent every `heartbeat` interval (an ETS parameter) so the bus can
     // detect the server going offline.
     go_send(
@@ -673,7 +676,7 @@ pub const GLOBAL_GOS: &[GoDefinition] = &[
         "DPST-10-1",
         "3 Bytes",
     ),
-    // ── Group 1: All zones (numbers 1511 to 1520) ──
+    // ── Group 1: All zones (numbers 2891 to 2900) ──
     // Stop playback in every zone (e.g. a leaving-home scene).
     go_recv(
         "All Stop",
@@ -1207,9 +1210,9 @@ mod tests {
 
     #[test]
     fn total_go_count() {
-        // 10 zones x 60 + 30 clients x 30 + 20 global; defined or reserved.
-        assert_eq!(TOTAL_GO_COUNT, 10 * 60 + 30 * 30 + 20);
-        assert_eq!(TOTAL_GO_COUNT, 1520);
+        // 16 zones x 60 + 64 clients x 30 + 20 global; defined or reserved.
+        assert_eq!(TOTAL_GO_COUNT, 16 * 60 + 64 * 30 + 20);
+        assert_eq!(TOTAL_GO_COUNT, 2900);
     }
 
     #[test]
@@ -1234,27 +1237,27 @@ mod tests {
 
     #[test]
     fn client_asap_layout() {
-        // Client 1 starts after the 600 zone numbers.
-        assert_eq!(client_asap(1, CGO_VOLUME), 601);
-        assert_eq!(client_asap(1, CGO_MUTE_TOGGLE), 606);
+        // Client 1 starts after the 960 zone numbers.
+        assert_eq!(client_asap(1, CGO_VOLUME), 961);
+        assert_eq!(client_asap(1, CGO_MUTE_TOGGLE), 966);
         // Group 1 (latency and zone) starts ten numbers after group 0.
-        assert_eq!(client_asap(1, CGO_LATENCY), 611);
-        assert_eq!(client_asap(1, CGO_ZONE_STATUS), 614);
+        assert_eq!(client_asap(1, CGO_LATENCY), 971);
+        assert_eq!(client_asap(1, CGO_ZONE_STATUS), 974);
         // Group 2 (connection).
-        assert_eq!(client_asap(1, CGO_CONNECTED), 621);
-        assert_eq!(client_asap(2, CGO_VOLUME), 631);
-        assert_eq!(client_asap(MAX_CLIENTS, CGO_CONNECTED), 1491);
+        assert_eq!(client_asap(1, CGO_CONNECTED), 981);
+        assert_eq!(client_asap(2, CGO_VOLUME), 991);
+        assert_eq!(client_asap(MAX_CLIENTS, CGO_CONNECTED), 2871);
     }
 
     #[test]
     fn global_asap_layout() {
-        // Globals follow all zone and client numbers: 600 + 900 = 1500. System status first,
+        // Globals follow all zone and client numbers: 960 + 1920 = 2880. System status first,
         // then the objects for all zones, each group starting at a multiple of ten plus one.
-        assert_eq!(global_asap(GGO_SERVER_ONLINE), 1501);
-        assert_eq!(global_asap(GGO_SYSTEM_FAULT), 1502);
-        assert_eq!(global_asap(GGO_KNX_TIME), 1503);
-        assert_eq!(global_asap(GGO_ALL_STOP), 1511);
-        assert_eq!(global_asap(GGO_ALL_MUTE), 1512);
+        assert_eq!(global_asap(GGO_SERVER_ONLINE), 2881);
+        assert_eq!(global_asap(GGO_SYSTEM_FAULT), 2882);
+        assert_eq!(global_asap(GGO_KNX_TIME), 2883);
+        assert_eq!(global_asap(GGO_ALL_STOP), 2891);
+        assert_eq!(global_asap(GGO_ALL_MUTE), 2892);
     }
 
     #[test]
@@ -1366,8 +1369,8 @@ mod tests {
             None
         );
         // Client 1: the tail of group 0 and group 2.
-        assert_eq!(locate(607), None);
-        assert_eq!(locate(622), None);
+        assert_eq!(locate(967), None);
+        assert_eq!(locate(982), None);
         // Outside the table.
         assert_eq!(locate(0), None);
         assert_eq!(locate(TOTAL_GO_COUNT as u16 + 1), None);
@@ -1486,9 +1489,9 @@ mod tests {
             Some("KNX Time")
         );
         // Reserved numbers and numbers past the table have no object.
-        assert_eq!(definition_of(1504).map(|d| d.name), None);
-        assert_eq!(definition_of(1513).map(|d| d.name), None);
-        assert_eq!(definition_of(1521).map(|d| d.name), None);
+        assert_eq!(definition_of(2884).map(|d| d.name), None);
+        assert_eq!(definition_of(2893).map(|d| d.name), None);
+        assert_eq!(definition_of(2901).map(|d| d.name), None);
     }
 
     #[test]

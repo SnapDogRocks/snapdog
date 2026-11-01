@@ -28,7 +28,7 @@ use super::transport::{KnxPublisher, Target};
 /// `ZONE_GOS` / `CLIENT_GOS`, or its index in `GLOBAL_GOS`.
 ///
 /// The ASAP number is the device stack's name for the same thing, and it only exists for the
-/// 10 zones and 30 clients the product database has. Client mode has no such limit, so state
+/// 16 zones and 64 clients the product database has. Client mode has no such limit, so state
 /// that is kept per object (what was sent last) must not be keyed by ASAP: zone 11 would share
 /// its key with client 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -43,7 +43,7 @@ pub enum ObjectKey {
 
 impl ObjectKey {
     /// The device stack's ASAP number, `None` for an object the product database does not have
-    /// (a zone above 10, a client above 30).
+    /// (a zone above 16, a client above 64).
     #[must_use]
     pub fn asap(self) -> Option<u16> {
         match self {
@@ -558,30 +558,30 @@ mod tests {
         assert_eq!(ObjectKey::Zone(1, 0).asap(), Some(1));
         assert_eq!(
             ObjectKey::Zone(MAX_ZONES, ZONE_GO_COUNT - 1).asap(),
-            Some(593)
+            Some(953)
         );
         assert_eq!(ObjectKey::Zone(MAX_ZONES + 1, 0).asap(), None);
         assert_eq!(ObjectKey::Zone(0, 0).asap(), None);
         assert_eq!(ObjectKey::Zone(1, ZONE_GO_COUNT).asap(), None);
-        assert_eq!(ObjectKey::Client(1, 0).asap(), Some(601));
+        assert_eq!(ObjectKey::Client(1, 0).asap(), Some(961));
         assert_eq!(ObjectKey::Client(MAX_CLIENTS + 1, 0).asap(), None);
-        assert_eq!(ObjectKey::Global(0).asap(), Some(1501));
+        assert_eq!(ObjectKey::Global(0).asap(), Some(2881));
         assert_eq!(ObjectKey::Global(GLOBAL_GO_COUNT).asap(), None);
         // The numbers that collide when two objects are told apart by ASAP only.
         assert_eq!(
             zone_asap(MAX_ZONES + 1, crate::knx::group_objects::ZGO_VOLUME),
             client_asap(1, crate::knx::group_objects::CGO_LATENCY),
-            "zone 11 shares ASAPs with client 1"
+            "the zone after the last shares ASAPs with client 1"
         );
     }
 
     #[tokio::test]
-    async fn client_mode_zone_11_does_not_share_memory_with_client_1() {
-        // Client mode has no limit on zones. Zone 11's mute status (object 9) and client 1's
-        // zone status (object 8) are different objects whose ASAP numbers are both 340.
+    async fn client_mode_the_zone_after_the_last_does_not_share_memory_with_client_1() {
+        // Client mode has no limit on zones. The mute status (object 9) of the zone after the last
+        // and client 1's zone status (object 8) are different objects whose ASAP numbers collide.
         let rec = Recorder::<true>::default();
         let mut sink = StatusSink::new(&rec);
-        let zone_11_mute = ObjectKey::Zone(11, 9);
+        let zone_11_mute = ObjectKey::Zone(MAX_ZONES + 1, 9);
         let client_1_zone = ObjectKey::Client(1, 8);
         sink.write(zone_11_mute, Some("3/0/1"), DPT_SWITCH, &true.into())
             .await;
@@ -592,12 +592,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn device_mode_has_no_object_for_zone_11() {
-        // Writing zone 11 to ASAP 340 would overwrite client 1's object.
+    async fn device_mode_has_no_object_for_the_zone_after_the_last() {
+        // Writing that zone to its ASAP would overwrite client 1's object.
         let rec = Recorder::<false>::default();
         let mut sink = StatusSink::new(&rec);
-        sink.write(ObjectKey::Zone(11, 9), None, DPT_SWITCH, &true.into())
-            .await;
+        sink.write(
+            ObjectKey::Zone(MAX_ZONES + 1, 9),
+            None,
+            DPT_SWITCH,
+            &true.into(),
+        )
+        .await;
         assert_eq!(rec.count(), 0);
     }
 

@@ -37,22 +37,22 @@ global keys in `[knx]`.
   TCP and KNX IP Secure are not supported.
 - There is no limit on zones and clients. State kept per object (what was sent last) is
   keyed by `ObjectKey` (zone or client index plus object kind), not by ASAP number, which
-  exists only for 10 zones and 30 clients.
+  exists only for 16 zones and 64 clients.
 
 ## Device mode (`role = "device"`, `--knx-device`)
 
 snapdog is a KNXnet/IP server (UDP 3671, multicast group 224.0.23.12, IPv4) with a
 device stack that ETS programs through a tunnel or a router. ETS fills the address table
-and the association table of that stack. The product has 10 zones and 30 clients; TOML
-addresses of a zone above 10 or a client above 30 are ignored with a warning.
+and the association table of that stack. The product has 16 zones and 64 clients; TOML
+addresses of a zone above 16 or a client above 64 are ignored with a warning.
 
 - The device stack tells the bridge which group **object** the bus updated, by ASAP
   number. The numbers are laid out in groups of ten so that related objects sit together in
   ETS and every group keeps free numbers for later additions: zone `z` starts at
   `(z-1)*60 + 1` (six groups: transport, volume and mute, play modes, playlist, track info,
-  presence), client `c` at `600 + (c-1)*30 + 1` (three groups: volume and mute, latency and
-  zone, connection), and the five device-level objects in two groups (system status 1501 to 1503, all zones
-  1511 and 1512). Numbers no object
+  presence), client `c` at `960 + (c-1)*30 + 1` (three groups: volume and mute, latency and
+  zone, connection), and the five device-level objects in two groups (system status 2881 to 2883, all zones
+  2891 and 2892). Numbers no object
   names are reserved and have no descriptor (`group_objects::locate` tells what a number is).
   `object_command` in `mod.rs` maps the ASAP to
   the command. The configuration is not consulted, so an ETS-derived configuration

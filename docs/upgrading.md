@@ -10,11 +10,17 @@ a beta, version 13 renumbers every group object compared to the last release.
 
 ### What changed
 
+- The product now has 16 zones and 64 clients (it had 10 and 30). The number of active zones, clients
+  and radio stations is set in ETS, objects of inactive ones are hidden. Zone `z` starts at
+  `(z-1)*60 + 1`, so zone 1 to 10 keep their numbers; client 1 starts at 961 and the device-level
+  objects at 2881, because the client block follows the 16 zones. The parameter memory grows from
+  12.2 KB to 14.7 KB. TOML addresses of a zone above 16 or a client above 64 are ignored with a
+  warning. This has not been tried in ETS with a real project yet.
 - The objects of a zone are grouped in tens (transport 1 to 10, volume and mute 11 to 20, play
   modes 21 to 30, playlist 31 to 40, track info 41 to 50, presence 51 to 60), a client has
   three groups (volume and mute, latency and zone, connection), and the device-level objects
-  sit in two groups (system status 1501 to 1503: Server Online, System Fault, KNX Time; all
-  zones 1511 and 1512: All Stop, All Mute). Numbers in a group that no object uses are reserved
+  sit in two groups (system status 2881 to 2883: Server Online, System Fault, KNX Time; all
+  zones 2891 and 2892: All Stop, All Mute). Numbers in a group that no object uses are reserved
   for later additions.
 - New zone objects: Play/Pause (1.001, 1 plays, 0 pauses), Track Step and Playlist Step (1.007,
   1 goes to the next, 0 to the previous), Playlist Name (16.001, 14 characters, status) and
