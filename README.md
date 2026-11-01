@@ -40,7 +40,7 @@ SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system
 | 🏢 **KNX** | Building automation — client mode (tunnel/router) or device mode (ETS-programmable, 39 group objects per zone, 11 per client, plus 5 device-level global objects, in the languages German, English, Dutch, Spanish and French) |
 | 🌐 **REST API** | ~100 endpoints, full zone/client/media control |
 | 📡 **WebSocket** | Real-time state push notifications |
-| 🖥️ **WebUI** | Responsive SPA, drag-and-drop, tabbed EQ overlay, i18n (5 languages) |
+| 🖥️ **WebUI** | Responsive SPA, drag-and-drop, tabbed EQ overlay, i18n (8 languages: English, German, French, Spanish, Italian, Dutch, Polish, Portuguese) |
 
 ## Quick Start
 

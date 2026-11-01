@@ -12,6 +12,8 @@ const messageImports: Record<Locale, () => Promise<{ default: Record<string, unk
   es: () => import("../../messages/es.json"),
   it: () => import("../../messages/it.json"),
   nl: () => import("../../messages/nl.json"),
+  pl: () => import("../../messages/pl.json"),
+  pt: () => import("../../messages/pt.json"),
 };
 
 export function I18nProvider({ children }: { children: ReactNode }) {
