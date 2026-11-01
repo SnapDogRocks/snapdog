@@ -111,7 +111,7 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
 ```text
 snapdog (Rust)  --REST + /ws-->  pysnapdog (PyPI, async)  -->  custom_components/snapdog
 S-1, S-3, S-4, S-6, S-7          models, client, WS runner        config flow, coordinator,
-openapi.json, ws-events.json     coverage manifest                platforms, services, repairs
+openapi.json, asyncapi.json      coverage manifest                platforms, services, repairs
 ```
 
 - **Library `pysnapdog`.** `SnapDogClient(session, host, port, api_key, tls)` with one method
@@ -145,7 +145,7 @@ of HAI-0007 answered: additive means 1). None touches `snapdog/src/config`, `sna
 | S-3 | WebSocket `hello` (server id, version, `api_version`, capabilities such as `zone_links`) and `snapshot` (all zones, clients, EQ, presence, playlists), **sent only on opt-in** (`/ws?hello=1`, or a first client message), so the WebUI and other clients see no new message type | one-message resync (HAI-REQ-5, HAI-REQ-8) | first |
 | S-4 | Optional API key scopes `read` and `control` | a HA key that cannot change configuration (HAI-0007 §10). A key without a scope keeps full rights, otherwise it would be breaking | after S-3 |
 | S-6 | Zone linking (party mode): a runtime model that makes zones follow a leader's source | `GROUPING`, `join`, `unjoin` | own design RFC first |
-| S-7 | A machine-readable description of the WebSocket events (`docs/api/ws-events.json`, generated from `Notification` by a test, so it cannot drift) and a golden-file test in SnapDog | HAI-REQ-6, shared fixtures for the library | first |
+| S-7 | An AsyncAPI document for `/ws` (`docs/api/asyncapi.json`, message schemas derived from `Notification`, a test keeps it in step so it cannot drift) and a golden-file test in SnapDog. AsyncAPI is the standard description of event interfaces, the counterpart of OpenAPI (version to be checked before building) | HAI-REQ-6, shared fixtures for the library | first |
 
 **Dropped from HAI-0007 §5, numbers kept so the discussion stays traceable.** S-2 (signed cover
 URL): no consumer left, see HAI-DEC-8. S-5 (stable `id`): see HAI-DEC-12. Both would also have
@@ -157,7 +157,7 @@ rights.
 
 **Emitting `zone_progress`** (HAI-T4) is dropped from the plan: the integration works with the
 once-per-second `zone_changed`; the variant is either removed or documented as reserved as part
-of S-7, so the events file does not list a dead event as live.
+of S-7, so the AsyncAPI document does not list a dead event as live.
 
 ## 6. Entity and service model
 
@@ -266,7 +266,7 @@ checks each operation individually; the table groups for reading.
 | M-W04 | `zone_eq_changed` | EQ entities | I: `test_ws_eq` | yes |
 | M-W05 | `zone_presence_changed` | presence entities | I: `test_ws_presence` | yes |
 | M-W06 | `playback_error` | `event` entity and a persistent repair-free log line; recoverable flag in the event data | I: `test_ws_playback_error` | yes |
-| M-W07 | `zone_progress` | **excluded** until emitted (S-7 decides); the event file marks it reserved | coverage exclusion table | — |
+| M-W07 | `zone_progress` | **excluded** until emitted (S-7 decides); the AsyncAPI document marks it reserved | coverage exclusion table | — |
 | M-W08 | `hello` and `snapshot` (S-3, requested by the integration on connect) | version and `api_version` check, capability flags, full resync | L: `test_hello_snapshot`; I: `test_resync_after_reconnect` | yes |
 | M-W09 | Socket loss, close 1001 and 1013, 64-connection limit (HTTP 503) | entities unavailable, one log line each way, backoff, repair for a refused connection | I: `test_reconnect`, `test_too_slow_close`, `test_ws_limit_repair` | yes |
 | M-D01 | mDNS `_snapdog._tcp` | zeroconf flow, confirm step, `unique_id` = `server_id` | I: `test_zeroconf` | yes |
@@ -290,7 +290,7 @@ MQTT. The only link is M-X02: a repair when both entity sets are active.
 1. `pysnapdog` CI runs `scripts/check_coverage.py`: every `operationId` or
    path+method in the pinned `openapi.json` must appear in `COVERAGE` (library method) **and**
    in the integration's `matrix.yaml` (row id, or an exclusion with a reason). The same for
-   every `type` in `ws-events.json` (S-7).
+   every message `type` in `asyncapi.json` (S-7).
 2. `snapdog-homeassistant` CI runs `scripts/check_matrix.py`: each row id in
    `docs/matrix.yaml` names a test that exists (collected by pytest); a row without a test, or
    a test marked `@pytest.mark.row("M-…")` for no row, fails.
