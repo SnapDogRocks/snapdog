@@ -2,7 +2,7 @@
 rfc: KZO-0010
 title: KNX zone objects for wall switches, single-address navigation and a play/pause switch
 status: in-progress      # draft | accepted | in-progress | done | superseded
-version: 0.3.1           # v0.3: implemented on the branch feat/knx-object-groups, not merged
+version: 0.4.0           # v0.4: rocker objects (1.008) and 1.017 for next and previous
 created: 2026-11-01
 updated: 2026-11-01
 target_repo: snapdog
@@ -96,10 +96,10 @@ Undefined numbers are reserved: they get no object in the knxprod and no descrip
 | | 3 | **Play/Pause** | recv | 1.001 | new, 1 plays, 0 pauses |
 | | 4 | Control Status | send | 1.001 | polarity: KZO-T1 |
 | | 5 | Track Playing | send | 1.001 | |
-| | 6 | Track Next | recv | 1.001 | any value |
-| | 7 | Track Previous | recv | 1.001 | any value |
+| | 6 | Track Next | recv | 1.017 | any value (was 1.001) |
+| | 7 | Track Previous | recv | 1.017 | any value (was 1.001) |
 | | 8 | **Track Step** | recv | 1.007 | new, 1 next, 0 previous |
-| | 9 | reserved | | | |
+| | 9 | **Track Step Up/Down** | recv | 1.008 | new, 1 down is next, 0 up is previous (rocker) |
 | **1 Volume and mute** | 0 | Volume | recv | 5.001 | |
 | | 1 | Volume Status | send | 5.001 | |
 | | 2 | Volume Dim | recv | 3.007 | |
@@ -119,11 +119,12 @@ Undefined numbers are reserved: they get no object in the knxprod and no descrip
 | | 9 | reserved | | | |
 | **3 Playlist** | 0 | Playlist | recv | 5.010 | unified index, 0 is radio |
 | | 1 | Playlist Status | send | 5.010 | |
-| | 2 | Playlist Next | recv | 1.001 | any value |
-| | 3 | Playlist Previous | recv | 1.001 | any value |
+| | 2 | Playlist Next | recv | 1.017 | any value (was 1.001) |
+| | 3 | Playlist Previous | recv | 1.017 | any value (was 1.001) |
 | | 4 | **Playlist Step** | recv | 1.007 | new, 1 next, 0 previous |
 | | 5 | **Playlist Name** | send | 16.001 | new, 14 bytes |
-| | 6 to 9 | reserved | | | |
+| | 6 | **Playlist Step Up/Down** | recv | 1.008 | new, 1 down is next, 0 up is previous (rocker) |
+| | 7 to 9 | reserved | | | |
 | **4 Track info** | 0 | Track Title | send | 16.001 | |
 | | 1 | Track Artist | send | 16.001 | |
 | | 2 | Track Album | send | 16.001 | |
@@ -190,13 +191,20 @@ The global objects were one run of five (1501 to 1505) in the order server onlin
 mute, system fault, KNX time. `GGO_*` follow the new order of `GLOBAL_GOS`.
 
 The existing `Play`, `Pause`, `Stop`, `Track Next`, `Track Previous`, `Playlist Next` and
-`Playlist Previous` keep reacting to any value. DPT 1.007 (`DPT_Step`) is 0 = decrease,
-1 = increase; the Step objects map increase to next and evaluate the value. A malformed or empty
+`Playlist Previous` keep reacting to any value. `Track Next`, `Track Previous`, `Playlist Next` and
+`Playlist Previous` are declared as DPT 1.017 (`DPT_Trigger`), which says what they
+do; the behaviour is unchanged. DPT 1.007 (`DPT_Step`) is 0 = decrease,
+1 = increase; the Step objects map increase to next and evaluate the value. DPT 1.008 (`DPT_UpDown`)
+is 0 = up, 1 = down. `Track Step Up/Down` and `Playlist Step Up/Down` are the same two objects for a
+rocker that is parametrised as up/down (a blind-style rocker on a wall switch, for example): down
+(1) is next, up (0) is previous, like scrolling a list. They evaluate the value exactly as the Step
+objects do. The DPT of an object is fixed in the product database, so the rocker variants are
+objects of their own and not a parameter of the 1.007 ones. A malformed or empty
 payload is ignored (`decode_bool` returns false for an empty payload, so the Step decoder must not
 reuse it unchanged, KZO-T3).
 
-TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `playlist_step`, `playlist_name_status`,
-`track_number`, `track_number_status`.
+TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `track_step_updown`, `playlist_step`,
+`playlist_step_updown`, `playlist_name_status`, `track_number`, `track_number_status`.
 
 ### 4.2 Candidates, to decide together before the bump
 
@@ -250,6 +258,12 @@ TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `playlist_step`, `play
 - **KZO-DEC-2.** DPT of Play/Pause: 1.001 (proposal, same as `Control Status` and `Mute`) or 1.010
   (`DPT_Start`: 1 start, 0 stop). 1.010 would suggest Stop, which this object does not do.
 - **KZO-DEC-3.** Step objects evaluate the value, single-trigger objects keep ignoring it.
+- **KZO-DEC-5.** Rocker objects: DPT 1.008 is added as separate objects (`Track Step Up/Down`,
+  `Playlist Step Up/Down`) next to the 1.007 ones, because the DPT of an object is fixed in the
+  product database; a parameter cannot switch it. Down (1) is next, up (0) is previous. The numbers of
+  the existing objects stay: `Track Step Up/Down` takes the free tenth number of group 0,
+  `Playlist Step Up/Down` the first free number of group 3. `Track Next`, `Track Previous`,
+  `Playlist Next` and `Playlist Previous` are declared 1.017 (trigger).
 - **KZO-DEC-4.** Longer text objects: DPT (28.001 UTF-8 or a longer 16.xxx variant), length, and who
   reads them. Open (4.2).
 
@@ -304,6 +318,10 @@ Decided with the maintainer: the knxprod is not in production use, so the number
   unsigned like the committed one), T6 (TOML keys, example, macOS settings field list,
   `docs/knx-bridge.md`, `docs/upgrading.md`).
 - Track Number and Track Number Status (4.2) and the grouping of the global objects (4.1b) are done.
+- KZO-DEC-5 is done: `Track Step Up/Down` and `Playlist Step Up/Down` (1.008, `ZGO_TRACK_STEP_UPDOWN`,
+  `ZGO_PLAYLIST_STEP_UPDOWN`, keys `track_step_updown` and `playlist_step_updown`), the four next and
+  previous objects are 1.017, a zone has 41 objects. The version stays 13: it has not been released yet, so
+  one version number per release is enough. The numbers of the other objects did not move.
 - Added beyond the RFC: every text of the product database is translated into English, Dutch,
   Spanish and French (`xtask/src/i18n.rs`, injected into the generated XML, the golden file covers
   it). A new text without a translation stops the generation. The version-mismatch message also has

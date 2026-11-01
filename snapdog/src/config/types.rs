@@ -1189,6 +1189,8 @@ pub struct RawZoneKnxConfig {
     pub playlist_previous: Option<String>,
     /// Playlist step command (DPT 1.007, 1 = next, 0 = previous).
     pub playlist_step: Option<String>,
+    /// Playlist step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
+    pub playlist_step_updown: Option<String>,
     /// Active playlist name status feedback (DPT 16.001).
     pub playlist_name_status: Option<String>,
     /// Track selection command (DPT 5.010, number in the active playlist, 1 is the first).
@@ -1199,6 +1201,8 @@ pub struct RawZoneKnxConfig {
     pub play_pause: Option<String>,
     /// Track step command (DPT 1.007, 1 = next, 0 = previous).
     pub track_step: Option<String>,
+    /// Track step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
+    pub track_step_updown: Option<String>,
     /// Shuffle command.
     pub shuffle: Option<String>,
     /// Shuffle status feedback.
@@ -1560,6 +1564,8 @@ pub struct ZoneKnxAddresses {
     pub playlist_previous: Option<String>,
     /// Playlist step command (DPT 1.007, 1 = next, 0 = previous).
     pub playlist_step: Option<String>,
+    /// Playlist step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
+    pub playlist_step_updown: Option<String>,
     /// Active playlist name status feedback (DPT 16.001).
     pub playlist_name_status: Option<String>,
     /// Track selection command (DPT 5.010, number in the active playlist, 1 is the first).
@@ -1570,6 +1576,8 @@ pub struct ZoneKnxAddresses {
     pub play_pause: Option<String>,
     /// Track step command (DPT 1.007, 1 = next, 0 = previous).
     pub track_step: Option<String>,
+    /// Track step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
+    pub track_step_updown: Option<String>,
     /// Shuffle command.
     pub shuffle: Option<String>,
     /// Shuffle status feedback.

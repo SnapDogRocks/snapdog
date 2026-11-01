@@ -2699,9 +2699,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-4" Name="Zone 1 Play/Pause" Number="4" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-5" Name="Zone 1 Control Status" Number="5" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-6" Name="Zone 1 Track Playing" Number="6" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-7" Name="Zone 1 Track Next" Number="7" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-8" Name="Zone 1 Track Previous" Number="8" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-7" Name="Zone 1 Track Next" Number="7" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-8" Name="Zone 1 Track Previous" Number="8" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-9" Name="Zone 1 Track Step" Number="9" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-10" Name="Zone 1 Track Step Up/Down" Number="10" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-11" Name="Zone 1 Volume" Number="11" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-12" Name="Zone 1 Volume Status" Number="12" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-13" Name="Zone 1 Volume Dim" Number="13" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2719,10 +2720,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-29" Name="Zone 1 Track Repeat Toggle" Number="29" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-31" Name="Zone 1 Playlist" Number="31" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-32" Name="Zone 1 Playlist Status" Number="32" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-33" Name="Zone 1 Playlist Next" Number="33" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-34" Name="Zone 1 Playlist Previous" Number="34" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-33" Name="Zone 1 Playlist Next" Number="33" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-34" Name="Zone 1 Playlist Previous" Number="34" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-35" Name="Zone 1 Playlist Step" Number="35" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-36" Name="Zone 1 Playlist Name" Number="36" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-37" Name="Zone 1 Playlist Step Up/Down" Number="37" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-41" Name="Zone 1 Track Title" Number="41" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-42" Name="Zone 1 Track Artist" Number="42" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-43" Name="Zone 1 Track Album" Number="43" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2738,9 +2740,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-64" Name="Zone 2 Play/Pause" Number="64" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-65" Name="Zone 2 Control Status" Number="65" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-66" Name="Zone 2 Track Playing" Number="66" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-67" Name="Zone 2 Track Next" Number="67" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-68" Name="Zone 2 Track Previous" Number="68" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-67" Name="Zone 2 Track Next" Number="67" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-68" Name="Zone 2 Track Previous" Number="68" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-69" Name="Zone 2 Track Step" Number="69" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-70" Name="Zone 2 Track Step Up/Down" Number="70" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-71" Name="Zone 2 Volume" Number="71" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-72" Name="Zone 2 Volume Status" Number="72" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-73" Name="Zone 2 Volume Dim" Number="73" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2758,10 +2761,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-89" Name="Zone 2 Track Repeat Toggle" Number="89" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-91" Name="Zone 2 Playlist" Number="91" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-92" Name="Zone 2 Playlist Status" Number="92" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-93" Name="Zone 2 Playlist Next" Number="93" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-94" Name="Zone 2 Playlist Previous" Number="94" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-93" Name="Zone 2 Playlist Next" Number="93" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-94" Name="Zone 2 Playlist Previous" Number="94" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-95" Name="Zone 2 Playlist Step" Number="95" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-96" Name="Zone 2 Playlist Name" Number="96" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-97" Name="Zone 2 Playlist Step Up/Down" Number="97" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-101" Name="Zone 2 Track Title" Number="101" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-102" Name="Zone 2 Track Artist" Number="102" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-103" Name="Zone 2 Track Album" Number="103" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2777,9 +2781,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-124" Name="Zone 3 Play/Pause" Number="124" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-125" Name="Zone 3 Control Status" Number="125" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-126" Name="Zone 3 Track Playing" Number="126" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-127" Name="Zone 3 Track Next" Number="127" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-128" Name="Zone 3 Track Previous" Number="128" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-127" Name="Zone 3 Track Next" Number="127" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-128" Name="Zone 3 Track Previous" Number="128" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-129" Name="Zone 3 Track Step" Number="129" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-130" Name="Zone 3 Track Step Up/Down" Number="130" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-131" Name="Zone 3 Volume" Number="131" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-132" Name="Zone 3 Volume Status" Number="132" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-133" Name="Zone 3 Volume Dim" Number="133" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2797,10 +2802,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-149" Name="Zone 3 Track Repeat Toggle" Number="149" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-151" Name="Zone 3 Playlist" Number="151" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-152" Name="Zone 3 Playlist Status" Number="152" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-153" Name="Zone 3 Playlist Next" Number="153" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-154" Name="Zone 3 Playlist Previous" Number="154" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-153" Name="Zone 3 Playlist Next" Number="153" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-154" Name="Zone 3 Playlist Previous" Number="154" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-155" Name="Zone 3 Playlist Step" Number="155" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-156" Name="Zone 3 Playlist Name" Number="156" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-157" Name="Zone 3 Playlist Step Up/Down" Number="157" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-161" Name="Zone 3 Track Title" Number="161" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-162" Name="Zone 3 Track Artist" Number="162" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-163" Name="Zone 3 Track Album" Number="163" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2816,9 +2822,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-184" Name="Zone 4 Play/Pause" Number="184" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-185" Name="Zone 4 Control Status" Number="185" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-186" Name="Zone 4 Track Playing" Number="186" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-187" Name="Zone 4 Track Next" Number="187" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-188" Name="Zone 4 Track Previous" Number="188" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-187" Name="Zone 4 Track Next" Number="187" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-188" Name="Zone 4 Track Previous" Number="188" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-189" Name="Zone 4 Track Step" Number="189" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-190" Name="Zone 4 Track Step Up/Down" Number="190" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-191" Name="Zone 4 Volume" Number="191" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-192" Name="Zone 4 Volume Status" Number="192" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-193" Name="Zone 4 Volume Dim" Number="193" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2836,10 +2843,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-209" Name="Zone 4 Track Repeat Toggle" Number="209" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-211" Name="Zone 4 Playlist" Number="211" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-212" Name="Zone 4 Playlist Status" Number="212" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-213" Name="Zone 4 Playlist Next" Number="213" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-214" Name="Zone 4 Playlist Previous" Number="214" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-213" Name="Zone 4 Playlist Next" Number="213" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-214" Name="Zone 4 Playlist Previous" Number="214" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-215" Name="Zone 4 Playlist Step" Number="215" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-216" Name="Zone 4 Playlist Name" Number="216" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-217" Name="Zone 4 Playlist Step Up/Down" Number="217" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-221" Name="Zone 4 Track Title" Number="221" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-222" Name="Zone 4 Track Artist" Number="222" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-223" Name="Zone 4 Track Album" Number="223" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2855,9 +2863,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-244" Name="Zone 5 Play/Pause" Number="244" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-245" Name="Zone 5 Control Status" Number="245" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-246" Name="Zone 5 Track Playing" Number="246" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-247" Name="Zone 5 Track Next" Number="247" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-248" Name="Zone 5 Track Previous" Number="248" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-247" Name="Zone 5 Track Next" Number="247" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-248" Name="Zone 5 Track Previous" Number="248" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-249" Name="Zone 5 Track Step" Number="249" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-250" Name="Zone 5 Track Step Up/Down" Number="250" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-251" Name="Zone 5 Volume" Number="251" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-252" Name="Zone 5 Volume Status" Number="252" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-253" Name="Zone 5 Volume Dim" Number="253" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2875,10 +2884,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-269" Name="Zone 5 Track Repeat Toggle" Number="269" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-271" Name="Zone 5 Playlist" Number="271" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-272" Name="Zone 5 Playlist Status" Number="272" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-273" Name="Zone 5 Playlist Next" Number="273" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-274" Name="Zone 5 Playlist Previous" Number="274" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-273" Name="Zone 5 Playlist Next" Number="273" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-274" Name="Zone 5 Playlist Previous" Number="274" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-275" Name="Zone 5 Playlist Step" Number="275" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-276" Name="Zone 5 Playlist Name" Number="276" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-277" Name="Zone 5 Playlist Step Up/Down" Number="277" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-281" Name="Zone 5 Track Title" Number="281" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-282" Name="Zone 5 Track Artist" Number="282" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-283" Name="Zone 5 Track Album" Number="283" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2894,9 +2904,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-304" Name="Zone 6 Play/Pause" Number="304" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-305" Name="Zone 6 Control Status" Number="305" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-306" Name="Zone 6 Track Playing" Number="306" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-307" Name="Zone 6 Track Next" Number="307" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-308" Name="Zone 6 Track Previous" Number="308" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-307" Name="Zone 6 Track Next" Number="307" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-308" Name="Zone 6 Track Previous" Number="308" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-309" Name="Zone 6 Track Step" Number="309" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-310" Name="Zone 6 Track Step Up/Down" Number="310" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-311" Name="Zone 6 Volume" Number="311" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-312" Name="Zone 6 Volume Status" Number="312" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-313" Name="Zone 6 Volume Dim" Number="313" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2914,10 +2925,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-329" Name="Zone 6 Track Repeat Toggle" Number="329" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-331" Name="Zone 6 Playlist" Number="331" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-332" Name="Zone 6 Playlist Status" Number="332" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-333" Name="Zone 6 Playlist Next" Number="333" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-334" Name="Zone 6 Playlist Previous" Number="334" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-333" Name="Zone 6 Playlist Next" Number="333" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-334" Name="Zone 6 Playlist Previous" Number="334" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-335" Name="Zone 6 Playlist Step" Number="335" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-336" Name="Zone 6 Playlist Name" Number="336" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-337" Name="Zone 6 Playlist Step Up/Down" Number="337" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-341" Name="Zone 6 Track Title" Number="341" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-342" Name="Zone 6 Track Artist" Number="342" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-343" Name="Zone 6 Track Album" Number="343" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2933,9 +2945,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-364" Name="Zone 7 Play/Pause" Number="364" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-365" Name="Zone 7 Control Status" Number="365" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-366" Name="Zone 7 Track Playing" Number="366" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-367" Name="Zone 7 Track Next" Number="367" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-368" Name="Zone 7 Track Previous" Number="368" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-367" Name="Zone 7 Track Next" Number="367" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-368" Name="Zone 7 Track Previous" Number="368" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-369" Name="Zone 7 Track Step" Number="369" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-370" Name="Zone 7 Track Step Up/Down" Number="370" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-371" Name="Zone 7 Volume" Number="371" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-372" Name="Zone 7 Volume Status" Number="372" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-373" Name="Zone 7 Volume Dim" Number="373" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2953,10 +2966,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-389" Name="Zone 7 Track Repeat Toggle" Number="389" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-391" Name="Zone 7 Playlist" Number="391" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-392" Name="Zone 7 Playlist Status" Number="392" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-393" Name="Zone 7 Playlist Next" Number="393" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-394" Name="Zone 7 Playlist Previous" Number="394" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-393" Name="Zone 7 Playlist Next" Number="393" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-394" Name="Zone 7 Playlist Previous" Number="394" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-395" Name="Zone 7 Playlist Step" Number="395" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-396" Name="Zone 7 Playlist Name" Number="396" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-397" Name="Zone 7 Playlist Step Up/Down" Number="397" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-401" Name="Zone 7 Track Title" Number="401" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-402" Name="Zone 7 Track Artist" Number="402" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-403" Name="Zone 7 Track Album" Number="403" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2972,9 +2986,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-424" Name="Zone 8 Play/Pause" Number="424" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-425" Name="Zone 8 Control Status" Number="425" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-426" Name="Zone 8 Track Playing" Number="426" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-427" Name="Zone 8 Track Next" Number="427" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-428" Name="Zone 8 Track Previous" Number="428" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-427" Name="Zone 8 Track Next" Number="427" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-428" Name="Zone 8 Track Previous" Number="428" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-429" Name="Zone 8 Track Step" Number="429" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-430" Name="Zone 8 Track Step Up/Down" Number="430" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-431" Name="Zone 8 Volume" Number="431" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-432" Name="Zone 8 Volume Status" Number="432" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-433" Name="Zone 8 Volume Dim" Number="433" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -2992,10 +3007,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-449" Name="Zone 8 Track Repeat Toggle" Number="449" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-451" Name="Zone 8 Playlist" Number="451" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-452" Name="Zone 8 Playlist Status" Number="452" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-453" Name="Zone 8 Playlist Next" Number="453" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-454" Name="Zone 8 Playlist Previous" Number="454" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-453" Name="Zone 8 Playlist Next" Number="453" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-454" Name="Zone 8 Playlist Previous" Number="454" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-455" Name="Zone 8 Playlist Step" Number="455" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-456" Name="Zone 8 Playlist Name" Number="456" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-457" Name="Zone 8 Playlist Step Up/Down" Number="457" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-461" Name="Zone 8 Track Title" Number="461" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-462" Name="Zone 8 Track Artist" Number="462" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-463" Name="Zone 8 Track Album" Number="463" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -3011,9 +3027,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-484" Name="Zone 9 Play/Pause" Number="484" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-485" Name="Zone 9 Control Status" Number="485" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-486" Name="Zone 9 Track Playing" Number="486" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-487" Name="Zone 9 Track Next" Number="487" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-488" Name="Zone 9 Track Previous" Number="488" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-487" Name="Zone 9 Track Next" Number="487" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-488" Name="Zone 9 Track Previous" Number="488" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-489" Name="Zone 9 Track Step" Number="489" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-490" Name="Zone 9 Track Step Up/Down" Number="490" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-491" Name="Zone 9 Volume" Number="491" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-492" Name="Zone 9 Volume Status" Number="492" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-493" Name="Zone 9 Volume Dim" Number="493" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -3031,10 +3048,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-509" Name="Zone 9 Track Repeat Toggle" Number="509" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-511" Name="Zone 9 Playlist" Number="511" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-512" Name="Zone 9 Playlist Status" Number="512" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-513" Name="Zone 9 Playlist Next" Number="513" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-514" Name="Zone 9 Playlist Previous" Number="514" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-513" Name="Zone 9 Playlist Next" Number="513" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-514" Name="Zone 9 Playlist Previous" Number="514" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-515" Name="Zone 9 Playlist Step" Number="515" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-516" Name="Zone 9 Playlist Name" Number="516" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-517" Name="Zone 9 Playlist Step Up/Down" Number="517" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-521" Name="Zone 9 Track Title" Number="521" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-522" Name="Zone 9 Track Artist" Number="522" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-523" Name="Zone 9 Track Album" Number="523" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -3050,9 +3068,10 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-544" Name="Zone 10 Play/Pause" Number="544" Text="Wiedergabe/Pause" FunctionText="Play/Pause" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-545" Name="Zone 10 Control Status" Number="545" Text="Wiedergabe Status" FunctionText="Control Status" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-546" Name="Zone 10 Track Playing" Number="546" Text="Titel spielt" FunctionText="Track Playing" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-547" Name="Zone 10 Track Next" Number="547" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-548" Name="Zone 10 Track Previous" Number="548" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-547" Name="Zone 10 Track Next" Number="547" Text="Nächster Titel" FunctionText="Track Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-548" Name="Zone 10 Track Previous" Number="548" Text="Vorheriger Titel" FunctionText="Track Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-549" Name="Zone 10 Track Step" Number="549" Text="Titel Schritt" FunctionText="Track Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-550" Name="Zone 10 Track Step Up/Down" Number="550" Text="Titel Schritt Auf/Ab" FunctionText="Track Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-551" Name="Zone 10 Volume" Number="551" Text="Lautstärke" FunctionText="Volume" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-552" Name="Zone 10 Volume Status" Number="552" Text="Lautstärke Status" FunctionText="Volume Status" ObjectSize="1 Byte" DatapointType="DPST-5-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-553" Name="Zone 10 Volume Dim" Number="553" Text="Lautstärke Dimmen" FunctionText="Volume Dim" ObjectSize="4 Bit" DatapointType="DPST-3-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -3070,10 +3089,11 @@
               <ComObject Id="M-00FA_A-FF01-01-0000_O-569" Name="Zone 10 Track Repeat Toggle" Number="569" Text="Titel Wdh. Umsch." FunctionText="Track Repeat Toggle" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-571" Name="Zone 10 Playlist" Number="571" Text="Playlist" FunctionText="Playlist" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-572" Name="Zone 10 Playlist Status" Number="572" Text="Playlist Status" FunctionText="Playlist Status" ObjectSize="1 Byte" DatapointType="DPST-5-10" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-573" Name="Zone 10 Playlist Next" Number="573" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
-              <ComObject Id="M-00FA_A-FF01-01-0000_O-574" Name="Zone 10 Playlist Previous" Number="574" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-1" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-573" Name="Zone 10 Playlist Next" Number="573" Text="Nächste Playlist" FunctionText="Playlist Next" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-574" Name="Zone 10 Playlist Previous" Number="574" Text="Vorherige Playlist" FunctionText="Playlist Previous" ObjectSize="1 Bit" DatapointType="DPST-1-17" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-575" Name="Zone 10 Playlist Step" Number="575" Text="Playlist Schritt" FunctionText="Playlist Step" ObjectSize="1 Bit" DatapointType="DPST-1-7" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-576" Name="Zone 10 Playlist Name" Number="576" Text="Playlist Name" FunctionText="Playlist Name" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
+              <ComObject Id="M-00FA_A-FF01-01-0000_O-577" Name="Zone 10 Playlist Step Up/Down" Number="577" Text="Playlist Schritt Auf/Ab" FunctionText="Playlist Step Up/Down" ObjectSize="1 Bit" DatapointType="DPST-1-8" Priority="Low" ReadFlag="Disabled" WriteFlag="Enabled" CommunicationFlag="Enabled" TransmitFlag="Disabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-581" Name="Zone 10 Track Title" Number="581" Text="Titel" FunctionText="Track Title" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-582" Name="Zone 10 Track Artist" Number="582" Text="Interpret" FunctionText="Track Artist" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
               <ComObject Id="M-00FA_A-FF01-01-0000_O-583" Name="Zone 10 Track Album" Number="583" Text="Album" FunctionText="Track Album" ObjectSize="14 Bytes" DatapointType="DPST-16-1" Priority="Low" ReadFlag="Enabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" />
@@ -3429,6 +3449,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-7_R-7" RefId="M-00FA_A-FF01-01-0000_O-7" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-8_R-8" RefId="M-00FA_A-FF01-01-0000_O-8" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-9_R-9" RefId="M-00FA_A-FF01-01-0000_O-9" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-10_R-10" RefId="M-00FA_A-FF01-01-0000_O-10" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-11_R-11" RefId="M-00FA_A-FF01-01-0000_O-11" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-12_R-12" RefId="M-00FA_A-FF01-01-0000_O-12" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-13_R-13" RefId="M-00FA_A-FF01-01-0000_O-13" />
@@ -3450,6 +3471,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-34_R-34" RefId="M-00FA_A-FF01-01-0000_O-34" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-35_R-35" RefId="M-00FA_A-FF01-01-0000_O-35" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-36_R-36" RefId="M-00FA_A-FF01-01-0000_O-36" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-37_R-37" RefId="M-00FA_A-FF01-01-0000_O-37" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-41_R-41" RefId="M-00FA_A-FF01-01-0000_O-41" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-42_R-42" RefId="M-00FA_A-FF01-01-0000_O-42" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-43_R-43" RefId="M-00FA_A-FF01-01-0000_O-43" />
@@ -3468,6 +3490,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-67_R-67" RefId="M-00FA_A-FF01-01-0000_O-67" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-68_R-68" RefId="M-00FA_A-FF01-01-0000_O-68" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-69_R-69" RefId="M-00FA_A-FF01-01-0000_O-69" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-70_R-70" RefId="M-00FA_A-FF01-01-0000_O-70" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-71_R-71" RefId="M-00FA_A-FF01-01-0000_O-71" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-72_R-72" RefId="M-00FA_A-FF01-01-0000_O-72" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-73_R-73" RefId="M-00FA_A-FF01-01-0000_O-73" />
@@ -3489,6 +3512,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-94_R-94" RefId="M-00FA_A-FF01-01-0000_O-94" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-95_R-95" RefId="M-00FA_A-FF01-01-0000_O-95" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-96_R-96" RefId="M-00FA_A-FF01-01-0000_O-96" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-97_R-97" RefId="M-00FA_A-FF01-01-0000_O-97" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-101_R-101" RefId="M-00FA_A-FF01-01-0000_O-101" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-102_R-102" RefId="M-00FA_A-FF01-01-0000_O-102" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-103_R-103" RefId="M-00FA_A-FF01-01-0000_O-103" />
@@ -3507,6 +3531,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-127_R-127" RefId="M-00FA_A-FF01-01-0000_O-127" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-128_R-128" RefId="M-00FA_A-FF01-01-0000_O-128" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-129_R-129" RefId="M-00FA_A-FF01-01-0000_O-129" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-130_R-130" RefId="M-00FA_A-FF01-01-0000_O-130" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-131_R-131" RefId="M-00FA_A-FF01-01-0000_O-131" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-132_R-132" RefId="M-00FA_A-FF01-01-0000_O-132" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-133_R-133" RefId="M-00FA_A-FF01-01-0000_O-133" />
@@ -3528,6 +3553,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-154_R-154" RefId="M-00FA_A-FF01-01-0000_O-154" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-155_R-155" RefId="M-00FA_A-FF01-01-0000_O-155" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-156_R-156" RefId="M-00FA_A-FF01-01-0000_O-156" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-157_R-157" RefId="M-00FA_A-FF01-01-0000_O-157" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-161_R-161" RefId="M-00FA_A-FF01-01-0000_O-161" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-162_R-162" RefId="M-00FA_A-FF01-01-0000_O-162" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-163_R-163" RefId="M-00FA_A-FF01-01-0000_O-163" />
@@ -3546,6 +3572,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-187_R-187" RefId="M-00FA_A-FF01-01-0000_O-187" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-188_R-188" RefId="M-00FA_A-FF01-01-0000_O-188" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-189_R-189" RefId="M-00FA_A-FF01-01-0000_O-189" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-190_R-190" RefId="M-00FA_A-FF01-01-0000_O-190" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-191_R-191" RefId="M-00FA_A-FF01-01-0000_O-191" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-192_R-192" RefId="M-00FA_A-FF01-01-0000_O-192" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-193_R-193" RefId="M-00FA_A-FF01-01-0000_O-193" />
@@ -3567,6 +3594,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-214_R-214" RefId="M-00FA_A-FF01-01-0000_O-214" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-215_R-215" RefId="M-00FA_A-FF01-01-0000_O-215" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-216_R-216" RefId="M-00FA_A-FF01-01-0000_O-216" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-217_R-217" RefId="M-00FA_A-FF01-01-0000_O-217" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-221_R-221" RefId="M-00FA_A-FF01-01-0000_O-221" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-222_R-222" RefId="M-00FA_A-FF01-01-0000_O-222" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-223_R-223" RefId="M-00FA_A-FF01-01-0000_O-223" />
@@ -3585,6 +3613,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-247_R-247" RefId="M-00FA_A-FF01-01-0000_O-247" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-248_R-248" RefId="M-00FA_A-FF01-01-0000_O-248" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-249_R-249" RefId="M-00FA_A-FF01-01-0000_O-249" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-250_R-250" RefId="M-00FA_A-FF01-01-0000_O-250" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-251_R-251" RefId="M-00FA_A-FF01-01-0000_O-251" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-252_R-252" RefId="M-00FA_A-FF01-01-0000_O-252" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-253_R-253" RefId="M-00FA_A-FF01-01-0000_O-253" />
@@ -3606,6 +3635,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-274_R-274" RefId="M-00FA_A-FF01-01-0000_O-274" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-275_R-275" RefId="M-00FA_A-FF01-01-0000_O-275" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-276_R-276" RefId="M-00FA_A-FF01-01-0000_O-276" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-277_R-277" RefId="M-00FA_A-FF01-01-0000_O-277" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-281_R-281" RefId="M-00FA_A-FF01-01-0000_O-281" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-282_R-282" RefId="M-00FA_A-FF01-01-0000_O-282" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-283_R-283" RefId="M-00FA_A-FF01-01-0000_O-283" />
@@ -3624,6 +3654,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-307_R-307" RefId="M-00FA_A-FF01-01-0000_O-307" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-308_R-308" RefId="M-00FA_A-FF01-01-0000_O-308" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-309_R-309" RefId="M-00FA_A-FF01-01-0000_O-309" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-310_R-310" RefId="M-00FA_A-FF01-01-0000_O-310" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-311_R-311" RefId="M-00FA_A-FF01-01-0000_O-311" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-312_R-312" RefId="M-00FA_A-FF01-01-0000_O-312" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-313_R-313" RefId="M-00FA_A-FF01-01-0000_O-313" />
@@ -3645,6 +3676,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-334_R-334" RefId="M-00FA_A-FF01-01-0000_O-334" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-335_R-335" RefId="M-00FA_A-FF01-01-0000_O-335" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-336_R-336" RefId="M-00FA_A-FF01-01-0000_O-336" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-337_R-337" RefId="M-00FA_A-FF01-01-0000_O-337" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-341_R-341" RefId="M-00FA_A-FF01-01-0000_O-341" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-342_R-342" RefId="M-00FA_A-FF01-01-0000_O-342" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-343_R-343" RefId="M-00FA_A-FF01-01-0000_O-343" />
@@ -3663,6 +3695,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-367_R-367" RefId="M-00FA_A-FF01-01-0000_O-367" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-368_R-368" RefId="M-00FA_A-FF01-01-0000_O-368" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-369_R-369" RefId="M-00FA_A-FF01-01-0000_O-369" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-370_R-370" RefId="M-00FA_A-FF01-01-0000_O-370" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-371_R-371" RefId="M-00FA_A-FF01-01-0000_O-371" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-372_R-372" RefId="M-00FA_A-FF01-01-0000_O-372" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-373_R-373" RefId="M-00FA_A-FF01-01-0000_O-373" />
@@ -3684,6 +3717,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-394_R-394" RefId="M-00FA_A-FF01-01-0000_O-394" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-395_R-395" RefId="M-00FA_A-FF01-01-0000_O-395" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-396_R-396" RefId="M-00FA_A-FF01-01-0000_O-396" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-397_R-397" RefId="M-00FA_A-FF01-01-0000_O-397" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-401_R-401" RefId="M-00FA_A-FF01-01-0000_O-401" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-402_R-402" RefId="M-00FA_A-FF01-01-0000_O-402" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-403_R-403" RefId="M-00FA_A-FF01-01-0000_O-403" />
@@ -3702,6 +3736,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-427_R-427" RefId="M-00FA_A-FF01-01-0000_O-427" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-428_R-428" RefId="M-00FA_A-FF01-01-0000_O-428" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-429_R-429" RefId="M-00FA_A-FF01-01-0000_O-429" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-430_R-430" RefId="M-00FA_A-FF01-01-0000_O-430" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-431_R-431" RefId="M-00FA_A-FF01-01-0000_O-431" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-432_R-432" RefId="M-00FA_A-FF01-01-0000_O-432" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-433_R-433" RefId="M-00FA_A-FF01-01-0000_O-433" />
@@ -3723,6 +3758,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-454_R-454" RefId="M-00FA_A-FF01-01-0000_O-454" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-455_R-455" RefId="M-00FA_A-FF01-01-0000_O-455" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-456_R-456" RefId="M-00FA_A-FF01-01-0000_O-456" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-457_R-457" RefId="M-00FA_A-FF01-01-0000_O-457" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-461_R-461" RefId="M-00FA_A-FF01-01-0000_O-461" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-462_R-462" RefId="M-00FA_A-FF01-01-0000_O-462" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-463_R-463" RefId="M-00FA_A-FF01-01-0000_O-463" />
@@ -3741,6 +3777,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-487_R-487" RefId="M-00FA_A-FF01-01-0000_O-487" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-488_R-488" RefId="M-00FA_A-FF01-01-0000_O-488" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-489_R-489" RefId="M-00FA_A-FF01-01-0000_O-489" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-490_R-490" RefId="M-00FA_A-FF01-01-0000_O-490" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-491_R-491" RefId="M-00FA_A-FF01-01-0000_O-491" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-492_R-492" RefId="M-00FA_A-FF01-01-0000_O-492" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-493_R-493" RefId="M-00FA_A-FF01-01-0000_O-493" />
@@ -3762,6 +3799,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-514_R-514" RefId="M-00FA_A-FF01-01-0000_O-514" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-515_R-515" RefId="M-00FA_A-FF01-01-0000_O-515" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-516_R-516" RefId="M-00FA_A-FF01-01-0000_O-516" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-517_R-517" RefId="M-00FA_A-FF01-01-0000_O-517" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-521_R-521" RefId="M-00FA_A-FF01-01-0000_O-521" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-522_R-522" RefId="M-00FA_A-FF01-01-0000_O-522" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-523_R-523" RefId="M-00FA_A-FF01-01-0000_O-523" />
@@ -3780,6 +3818,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-547_R-547" RefId="M-00FA_A-FF01-01-0000_O-547" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-548_R-548" RefId="M-00FA_A-FF01-01-0000_O-548" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-549_R-549" RefId="M-00FA_A-FF01-01-0000_O-549" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-550_R-550" RefId="M-00FA_A-FF01-01-0000_O-550" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-551_R-551" RefId="M-00FA_A-FF01-01-0000_O-551" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-552_R-552" RefId="M-00FA_A-FF01-01-0000_O-552" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-553_R-553" RefId="M-00FA_A-FF01-01-0000_O-553" />
@@ -3801,6 +3840,7 @@
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-574_R-574" RefId="M-00FA_A-FF01-01-0000_O-574" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-575_R-575" RefId="M-00FA_A-FF01-01-0000_O-575" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-576_R-576" RefId="M-00FA_A-FF01-01-0000_O-576" />
+              <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-577_R-577" RefId="M-00FA_A-FF01-01-0000_O-577" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-581_R-581" RefId="M-00FA_A-FF01-01-0000_O-581" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-582_R-582" RefId="M-00FA_A-FF01-01-0000_O-582" />
               <ComObjectRef Id="M-00FA_A-FF01-01-0000_O-583_R-583" RefId="M-00FA_A-FF01-01-0000_O-583" />
@@ -4278,6 +4318,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-7_R-7" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-8_R-8" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-9_R-9" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-10_R-10" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-14" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-11_R-11" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-12_R-12" />
@@ -4302,6 +4343,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-34_R-34" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-35_R-35" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-36_R-36" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-37_R-37" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-17" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-41_R-41" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-42_R-42" />
@@ -4340,6 +4382,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-67_R-67" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-68_R-68" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-69_R-69" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-70_R-70" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-21" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-71_R-71" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-72_R-72" />
@@ -4364,6 +4407,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-94_R-94" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-95_R-95" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-96_R-96" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-97_R-97" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-24" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-101_R-101" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-102_R-102" />
@@ -4402,6 +4446,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-127_R-127" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-128_R-128" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-129_R-129" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-130_R-130" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-28" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-131_R-131" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-132_R-132" />
@@ -4426,6 +4471,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-154_R-154" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-155_R-155" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-156_R-156" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-157_R-157" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-31" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-161_R-161" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-162_R-162" />
@@ -4464,6 +4510,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-187_R-187" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-188_R-188" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-189_R-189" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-190_R-190" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-35" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-191_R-191" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-192_R-192" />
@@ -4488,6 +4535,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-214_R-214" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-215_R-215" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-216_R-216" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-217_R-217" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-38" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-221_R-221" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-222_R-222" />
@@ -4526,6 +4574,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-247_R-247" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-248_R-248" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-249_R-249" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-250_R-250" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-42" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-251_R-251" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-252_R-252" />
@@ -4550,6 +4599,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-274_R-274" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-275_R-275" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-276_R-276" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-277_R-277" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-45" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-281_R-281" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-282_R-282" />
@@ -4588,6 +4638,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-307_R-307" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-308_R-308" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-309_R-309" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-310_R-310" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-49" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-311_R-311" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-312_R-312" />
@@ -4612,6 +4663,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-334_R-334" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-335_R-335" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-336_R-336" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-337_R-337" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-52" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-341_R-341" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-342_R-342" />
@@ -4650,6 +4702,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-367_R-367" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-368_R-368" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-369_R-369" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-370_R-370" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-56" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-371_R-371" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-372_R-372" />
@@ -4674,6 +4727,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-394_R-394" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-395_R-395" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-396_R-396" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-397_R-397" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-59" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-401_R-401" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-402_R-402" />
@@ -4712,6 +4766,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-427_R-427" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-428_R-428" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-429_R-429" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-430_R-430" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-63" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-431_R-431" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-432_R-432" />
@@ -4736,6 +4791,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-454_R-454" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-455_R-455" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-456_R-456" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-457_R-457" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-66" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-461_R-461" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-462_R-462" />
@@ -4774,6 +4830,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-487_R-487" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-488_R-488" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-489_R-489" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-490_R-490" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-70" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-491_R-491" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-492_R-492" />
@@ -4798,6 +4855,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-514_R-514" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-515_R-515" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-516_R-516" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-517_R-517" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-73" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-521_R-521" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-522_R-522" />
@@ -4836,6 +4894,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-547_R-547" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-548_R-548" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-549_R-549" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-550_R-550" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-77" Text="Lautstärke" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-551_R-551" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-552_R-552" />
@@ -4860,6 +4919,7 @@
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-574_R-574" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-575_R-575" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-576_R-576" />
+                    <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-577_R-577" />
                     <ParameterSeparator Id="M-00FA_A-FF01-01-0000_PS-80" Text="Titelinformationen" UIHint="Headline" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-581_R-581" />
                     <ComObjectRefRef RefId="M-00FA_A-FF01-01-0000_O-582_R-582" />
@@ -7684,6 +7744,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-9">
               <Translation AttributeName="Text" Text="Track Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-10">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-11">
               <Translation AttributeName="Text" Text="Volume" />
             </TranslationElement>
@@ -7738,6 +7801,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-35">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-37">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-41">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -7782,6 +7848,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-69">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-70">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-71">
               <Translation AttributeName="Text" Text="Volume" />
@@ -7837,6 +7906,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-95">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-97">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-101">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -7881,6 +7953,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-129">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-130">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-131">
               <Translation AttributeName="Text" Text="Volume" />
@@ -7936,6 +8011,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-155">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-157">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-161">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -7980,6 +8058,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-189">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-190">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-191">
               <Translation AttributeName="Text" Text="Volume" />
@@ -8035,6 +8116,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-215">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-217">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-221">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -8079,6 +8163,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-249">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-250">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-251">
               <Translation AttributeName="Text" Text="Volume" />
@@ -8134,6 +8221,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-275">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-277">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-281">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -8178,6 +8268,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-309">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-310">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-311">
               <Translation AttributeName="Text" Text="Volume" />
@@ -8233,6 +8326,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-335">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-337">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-341">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -8277,6 +8373,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-369">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-370">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-371">
               <Translation AttributeName="Text" Text="Volume" />
@@ -8332,6 +8431,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-395">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-397">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-401">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -8376,6 +8478,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-429">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-430">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-431">
               <Translation AttributeName="Text" Text="Volume" />
@@ -8431,6 +8536,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-455">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-457">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-461">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -8475,6 +8583,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-489">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-490">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-491">
               <Translation AttributeName="Text" Text="Volume" />
@@ -8530,6 +8641,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-515">
               <Translation AttributeName="Text" Text="Playlist Step" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-517">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-521">
               <Translation AttributeName="Text" Text="Track Title" />
             </TranslationElement>
@@ -8574,6 +8688,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-549">
               <Translation AttributeName="Text" Text="Track Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-550">
+              <Translation AttributeName="Text" Text="Track Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-551">
               <Translation AttributeName="Text" Text="Volume" />
@@ -8628,6 +8745,9 @@
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-575">
               <Translation AttributeName="Text" Text="Playlist Step" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-577">
+              <Translation AttributeName="Text" Text="Playlist Step Up/Down" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-581">
               <Translation AttributeName="Text" Text="Track Title" />
@@ -11881,6 +12001,10 @@
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-10">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-11">
               <Translation AttributeName="Text" Text="Volume" />
             </TranslationElement>
@@ -11960,6 +12084,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-37">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-41">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -12025,6 +12153,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-69">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-70">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-71">
               <Translation AttributeName="Text" Text="Volume" />
@@ -12105,6 +12237,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-97">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-101">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -12170,6 +12306,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-129">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-130">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-131">
               <Translation AttributeName="Text" Text="Volume" />
@@ -12250,6 +12390,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-157">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-161">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -12315,6 +12459,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-189">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-190">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-191">
               <Translation AttributeName="Text" Text="Volume" />
@@ -12395,6 +12543,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-217">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-221">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -12460,6 +12612,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-249">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-250">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-251">
               <Translation AttributeName="Text" Text="Volume" />
@@ -12540,6 +12696,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-277">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-281">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -12605,6 +12765,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-309">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-310">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-311">
               <Translation AttributeName="Text" Text="Volume" />
@@ -12685,6 +12849,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-337">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-341">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -12750,6 +12918,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-369">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-370">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-371">
               <Translation AttributeName="Text" Text="Volume" />
@@ -12830,6 +13002,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-397">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-401">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -12895,6 +13071,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-429">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-430">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-431">
               <Translation AttributeName="Text" Text="Volume" />
@@ -12975,6 +13155,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-457">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-461">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -13040,6 +13224,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-489">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-490">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-491">
               <Translation AttributeName="Text" Text="Volume" />
@@ -13120,6 +13308,10 @@
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-517">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-521">
               <Translation AttributeName="FunctionText" Text="Titel" />
             </TranslationElement>
@@ -13185,6 +13377,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-549">
               <Translation AttributeName="Text" Text="Nummer stap" />
               <Translation AttributeName="FunctionText" Text="Nummer stap" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-550">
+              <Translation AttributeName="Text" Text="Nummer stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Nummer stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-551">
               <Translation AttributeName="Text" Text="Volume" />
@@ -13264,6 +13460,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-576">
               <Translation AttributeName="Text" Text="Naam playlist" />
               <Translation AttributeName="FunctionText" Text="Naam playlist" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-577">
+              <Translation AttributeName="Text" Text="Playlist stap omhoog/omlaag" />
+              <Translation AttributeName="FunctionText" Text="Playlist stap omhoog/omlaag" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-581">
               <Translation AttributeName="FunctionText" Text="Titel" />
@@ -17118,6 +17318,10 @@
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-10">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-11">
               <Translation AttributeName="Text" Text="Volumen" />
               <Translation AttributeName="FunctionText" Text="Volumen" />
@@ -17202,6 +17406,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-37">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-41">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -17273,6 +17481,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-69">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-70">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-71">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -17358,6 +17570,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-97">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-101">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -17429,6 +17645,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-129">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-130">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-131">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -17514,6 +17734,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-157">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-161">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -17585,6 +17809,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-189">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-190">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-191">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -17670,6 +17898,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-217">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-221">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -17741,6 +17973,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-249">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-250">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-251">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -17826,6 +18062,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-277">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-281">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -17897,6 +18137,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-309">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-310">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-311">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -17982,6 +18226,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-337">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-341">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -18053,6 +18301,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-369">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-370">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-371">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -18138,6 +18390,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-397">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-401">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -18209,6 +18465,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-429">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-430">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-431">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -18294,6 +18554,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-457">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-461">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -18365,6 +18629,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-489">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-490">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-491">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -18450,6 +18718,10 @@
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-517">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-521">
               <Translation AttributeName="Text" Text="Título" />
               <Translation AttributeName="FunctionText" Text="Título" />
@@ -18521,6 +18793,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-549">
               <Translation AttributeName="Text" Text="Pista: paso" />
               <Translation AttributeName="FunctionText" Text="Pista: paso" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-550">
+              <Translation AttributeName="Text" Text="Pista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Pista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-551">
               <Translation AttributeName="Text" Text="Volumen" />
@@ -18605,6 +18881,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-576">
               <Translation AttributeName="Text" Text="Nombre de la lista" />
               <Translation AttributeName="FunctionText" Text="Nombre de la lista" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-577">
+              <Translation AttributeName="Text" Text="Lista: paso arriba/abajo" />
+              <Translation AttributeName="FunctionText" Text="Lista: paso arriba/abajo" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-581">
               <Translation AttributeName="Text" Text="Título" />
@@ -22697,6 +22977,10 @@
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-10">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-11">
               <Translation AttributeName="Text" Text="Volume" />
             </TranslationElement>
@@ -22776,6 +23060,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-37">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-41">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -22842,6 +23130,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-69">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-70">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-71">
               <Translation AttributeName="Text" Text="Volume" />
@@ -22922,6 +23214,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-97">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-101">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -22988,6 +23284,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-129">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-130">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-131">
               <Translation AttributeName="Text" Text="Volume" />
@@ -23068,6 +23368,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-157">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-161">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -23134,6 +23438,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-189">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-190">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-191">
               <Translation AttributeName="Text" Text="Volume" />
@@ -23214,6 +23522,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-217">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-221">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -23280,6 +23592,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-249">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-250">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-251">
               <Translation AttributeName="Text" Text="Volume" />
@@ -23360,6 +23676,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-277">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-281">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -23426,6 +23746,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-309">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-310">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-311">
               <Translation AttributeName="Text" Text="Volume" />
@@ -23506,6 +23830,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-337">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-341">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -23572,6 +23900,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-369">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-370">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-371">
               <Translation AttributeName="Text" Text="Volume" />
@@ -23652,6 +23984,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-397">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-401">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -23718,6 +24054,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-429">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-430">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-431">
               <Translation AttributeName="Text" Text="Volume" />
@@ -23798,6 +24138,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-457">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-461">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -23864,6 +24208,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-489">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-490">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-491">
               <Translation AttributeName="Text" Text="Volume" />
@@ -23944,6 +24292,10 @@
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-517">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-521">
               <Translation AttributeName="Text" Text="Titre" />
               <Translation AttributeName="FunctionText" Text="Titre" />
@@ -24010,6 +24362,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-549">
               <Translation AttributeName="Text" Text="Titre: pas" />
               <Translation AttributeName="FunctionText" Text="Titre: pas" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-550">
+              <Translation AttributeName="Text" Text="Titre: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Titre: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-551">
               <Translation AttributeName="Text" Text="Volume" />
@@ -24089,6 +24445,10 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-576">
               <Translation AttributeName="Text" Text="Nom de la playlist" />
               <Translation AttributeName="FunctionText" Text="Nom de la playlist" />
+            </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-577">
+              <Translation AttributeName="Text" Text="Playlist: pas haut/bas" />
+              <Translation AttributeName="FunctionText" Text="Playlist: pas haut/bas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_O-581">
               <Translation AttributeName="Text" Text="Titre" />

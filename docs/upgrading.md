@@ -3,10 +3,10 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
-## KNX device mode: new object numbers and six new zone objects (product database version 13)
+## KNX device mode: new object numbers and eight new zone objects (product database version 13)
 
 Applies to everyone who programmed SnapDog's KNX device from ETS. The product database is
-a beta, version 13 renumbers every group object.
+a beta, version 13 renumbers every group object compared to the last release.
 
 ### What changed
 
@@ -19,11 +19,15 @@ a beta, version 13 renumbers every group object.
 - New zone objects: Play/Pause (1.001, 1 plays, 0 pauses), Track Step and Playlist Step (1.007,
   1 goes to the next, 0 to the previous), Playlist Name (16.001, 14 characters, status) and
   Track Number with its status (5.010, counted from 1, the status is 0 without a track).
-  The existing objects behave as before; Play, Pause, Stop and the next and previous objects
-  still react to any value.
+  Two more objects take a rocker that sends up/down (DPT 1.008, for example a blind-style rocker
+  on a wall switch): Track Step Up/Down (number 10 of the zone) and Playlist Step Up/Down (number
+  37). Down (1) goes to the next, up (0) to the previous. Next and previous track and playlist are
+  now declared as DPT 1.017 (trigger) instead of 1.001. The existing objects behave as before;
+  Play, Pause, Stop and the next and previous objects still react to any value.
 - All texts in the product database exist in German, English, Dutch, Spanish and French.
 - New `[zone.knx]` keys for client mode and TOML-programmed devices: `play_pause`, `track_step`,
-  `playlist_step`, `playlist_name_status`, `track_number`, `track_number_status`.
+  `track_step_updown`, `playlist_step`, `playlist_step_updown`, `playlist_name_status`, `track_number`,
+  `track_number_status`.
 
 ### What to do
 

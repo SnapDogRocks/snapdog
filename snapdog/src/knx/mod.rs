@@ -53,13 +53,13 @@ use group_objects::{
     GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE, GGO_SYSTEM_FAULT,
     ZGO_CONTROL_STATUS, ZGO_MUTE, ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY,
     ZGO_PLAY_PAUSE, ZGO_PLAYLIST, ZGO_PLAYLIST_NAME, ZGO_PLAYLIST_NEXT, ZGO_PLAYLIST_PREVIOUS,
-    ZGO_PLAYLIST_STATUS, ZGO_PLAYLIST_STEP, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
-    ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
-    ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
-    ZGO_TRACK_NEXT, ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS, ZGO_TRACK_PLAYING,
-    ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
-    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
-    ZGO_VOLUME_STATUS,
+    ZGO_PLAYLIST_STATUS, ZGO_PLAYLIST_STEP, ZGO_PLAYLIST_STEP_UPDOWN, ZGO_PRESENCE,
+    ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS,
+    ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP,
+    ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS,
+    ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
+    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_STEP_UPDOWN,
+    ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
 };
 use sink::{ObjectKey, StatusSink};
 use transport::{Incoming, KnxListener, KnxPublisher};
@@ -845,9 +845,11 @@ fn zone_ga_map(
             (&knx.playlist_next, "playlist_next"),
             (&knx.playlist_previous, "playlist_previous"),
             (&knx.playlist_step, "playlist_step"),
+            (&knx.playlist_step_updown, "playlist_step_updown"),
             (&knx.track_number, "track_number"),
             (&knx.play_pause, "play_pause"),
             (&knx.track_step, "track_step"),
+            (&knx.track_step_updown, "track_step_updown"),
             (&knx.presence, "presence"),
             (&knx.presence_enable, "presence_enable"),
         ];
@@ -1074,9 +1076,11 @@ const ZONE_ACTIONS: &[(usize, &str)] = &[
     (ZGO_PLAYLIST_NEXT, "playlist_next"),
     (ZGO_PLAYLIST_PREVIOUS, "playlist_previous"),
     (ZGO_PLAYLIST_STEP, "playlist_step"),
+    (ZGO_PLAYLIST_STEP_UPDOWN, "playlist_step_updown"),
     (ZGO_TRACK_NUMBER, "track_number"),
     (ZGO_PLAY_PAUSE, "play_pause"),
     (ZGO_TRACK_STEP, "track_step"),
+    (ZGO_TRACK_STEP_UPDOWN, "track_step_updown"),
     (ZGO_PRESENCE, "presence"),
     (ZGO_PRESENCE_ENABLE, "presence_enable"),
 ];
@@ -1266,7 +1270,8 @@ async fn execute<S: BuildHasher + Sync>(
                     .map(ZoneCommand::SetTrack),
                 "playlist_next" => Some(ZoneCommand::NextPlaylist),
                 "playlist_previous" => Some(ZoneCommand::PreviousPlaylist),
-                // The value counts for these three: a malformed or empty payload is not a 0.
+                // The value counts for these: a malformed or empty payload is not a 0. The up/down
+                // variants (DPT 1.008) read the bit like the step ones: 1 = down = next, 0 = up = previous.
                 "play_pause" => decode_switch(data).map(|play| {
                     if play {
                         ZoneCommand::Play
@@ -1274,14 +1279,14 @@ async fn execute<S: BuildHasher + Sync>(
                         ZoneCommand::Pause
                     }
                 }),
-                "track_step" => decode_switch(data).map(|next| {
+                "track_step" | "track_step_updown" => decode_switch(data).map(|next| {
                     if next {
                         ZoneCommand::Next
                     } else {
                         ZoneCommand::Previous
                     }
                 }),
-                "playlist_step" => decode_switch(data).map(|next| {
+                "playlist_step" | "playlist_step_updown" => decode_switch(data).map(|next| {
                     if next {
                         ZoneCommand::NextPlaylist
                     } else {
@@ -1712,6 +1717,29 @@ mod tests {
         ));
         assert!(run_object(ZGO_TRACK_STEP, &[]).await.is_empty());
         assert!(run_object(ZGO_PLAYLIST_STEP, &[]).await.is_empty());
+    }
+
+    /// DPT 1.008 (up/down) for a rocker: pressing down (1) goes forward, pressing up (0) back.
+    #[tokio::test]
+    async fn the_up_down_objects_go_forward_on_down_and_back_on_up() {
+        assert!(matches!(
+            run_object(ZGO_TRACK_STEP_UPDOWN, &encode_bool(true)).await[..],
+            [ZoneCommand::Next]
+        ));
+        assert!(matches!(
+            run_object(ZGO_TRACK_STEP_UPDOWN, &encode_bool(false)).await[..],
+            [ZoneCommand::Previous]
+        ));
+        assert!(matches!(
+            run_object(ZGO_PLAYLIST_STEP_UPDOWN, &encode_bool(true)).await[..],
+            [ZoneCommand::NextPlaylist]
+        ));
+        assert!(matches!(
+            run_object(ZGO_PLAYLIST_STEP_UPDOWN, &encode_bool(false)).await[..],
+            [ZoneCommand::PreviousPlaylist]
+        ));
+        assert!(run_object(ZGO_TRACK_STEP_UPDOWN, &[]).await.is_empty());
+        assert!(run_object(ZGO_PLAYLIST_STEP_UPDOWN, &[]).await.is_empty());
     }
 
     #[tokio::test]
@@ -2376,9 +2404,9 @@ zone = "Z1"
         assert_eq!(object_command(u16::MAX), None);
         // Reserved numbers command nothing, whatever sits next to them.
         assert_eq!(
-            object_command(10),
+            object_command(17),
             None,
-            "reserved end of the transport group"
+            "reserved number after the mute group"
         );
         assert_eq!(object_command(54), None, "reserved end of the zone block");
         // Adjacent ASAPs at the block borders land on the right side.
@@ -2404,6 +2432,14 @@ zone = "Z1"
         assert_eq!(
             object_command(zone_asap(2, ZGO_PLAYLIST_STEP)),
             Some(Command::Zone(2, "playlist_step"))
+        );
+        assert_eq!(
+            object_command(zone_asap(2, ZGO_TRACK_STEP_UPDOWN)),
+            Some(Command::Zone(2, "track_step_updown"))
+        );
+        assert_eq!(
+            object_command(zone_asap(2, ZGO_PLAYLIST_STEP_UPDOWN)),
+            Some(Command::Zone(2, "playlist_step_updown"))
         );
         assert_eq!(
             object_command(zone_asap(2, ZGO_PLAYLIST_NAME)),

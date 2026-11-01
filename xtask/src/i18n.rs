@@ -148,6 +148,13 @@ const TABLE: &[Entry] = &[
         "Playlist: pas",
     ),
     e(
+        "Playlist Schritt Auf/Ab",
+        "Playlist Step Up/Down",
+        "Playlist stap omhoog/omlaag",
+        "Lista: paso arriba/abajo",
+        "Playlist: pas haut/bas",
+    ),
+    e(
         "Playlist Status",
         "Playlist Status",
         "Playlist status",
@@ -212,6 +219,13 @@ const TABLE: &[Entry] = &[
         "Nummer stap",
         "Pista: paso",
         "Titre: pas",
+    ),
+    e(
+        "Titel Schritt Auf/Ab",
+        "Track Step Up/Down",
+        "Nummer stap omhoog/omlaag",
+        "Pista: paso arriba/abajo",
+        "Titre: pas haut/bas",
     ),
     e(
         "Titel Wdh. Status",
