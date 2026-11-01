@@ -28,7 +28,7 @@ owners: [metaneutrons]
 
 **Outcome.** A Home Assistant (HA) user installs one custom integration, SnapDog is found by
 zeroconf, and everything SnapDog exposes through its REST API and WebSocket is available in
-HA: every zone as a `media_player` with local push, every client as a set of entities, the
+HA, except zone linking, which SnapDog does not have: every zone as a `media_player` with local push, every client as a set of entities, the
 server as a diagnostic device, services for what has no entity, translations in German and
 English, diagnostics and repairs. "Complete" is defined by the acceptance matrix in §7, which
 a script in CI checks against `openapi.json` and the WebSocket event list, so that a new
@@ -83,9 +83,10 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
   client, models, PyPI package of the same name). Both licensed Apache-2.0 (maintainer, 2026-11-01). Both are created locally
   first, with no remote and no push without consent per action. `pysnapdog` is developed in its
   own repository from the start and published to PyPI before the first integration release.
-- **HAI-DEC-7 (decided: yes, as a separate design).** Zone linking (S-6) gets its own RFC
-  before any code; `GROUPING` and the `join`/`unjoin` services depend on it and stay behind
-  a capability flag until then.
+- **HAI-DEC-7 (decided: no).** No zone linking, so no `GROUPING`, `join` or `unjoin`. A SnapDog
+  zone is fixed by configuration and clients move between zones (the `select` and
+  `snapdog.move_client`); zones do not join. This is a deliberate limit and sits in the
+  exclusion table (M-X04), not in the API plan.
 - **HAI-DEC-8.** The integration needs no server change for covers. It fetches cover art itself
   with the header and hands it to HA through `async_get_media_image` and `media_image_hash`,
   so a protected server works. The signed cover URL proposed in HAI-0007 §5 item 2 is dropped
@@ -110,7 +111,7 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
 
 ```text
 snapdog (Rust)  --REST + /ws-->  pysnapdog (PyPI, async)  -->  custom_components/snapdog
-S-1, S-3, S-4, S-6, S-7          models, client, WS runner        config flow, coordinator,
+S-1, S-7                      models, client, WS runner        config flow, coordinator,
 openapi.json, asyncapi.json      coverage manifest                platforms, services, repairs
 ```
 
@@ -121,9 +122,14 @@ openapi.json, asyncapi.json      coverage manifest                platforms, ser
   session (`inject-websession`).
 - **Coordinator.** No `update_interval`. At setup: REST snapshot (`/zones`, `/clients`,
   `/media/playlists`, `/system/status`, `/system/version`, `/eq/presets`). Then the socket
-  keeps `coordinator.data` current. After every reconnect, and after close code 1013, a new
-  snapshot (S-3 replaces N calls with one message). Entities are unavailable while the socket
-  is down, with one log line when lost and one when back.
+  keeps `coordinator.data` current. After every reconnect, and after close code 1013, the same
+  load again, the way the WebUI loads its state (`useAppStore.loadAll`: zones and clients, then
+  metadata and EQ per zone, in parallel). Order against the gap between reading and
+  subscribing: open the socket first, buffer its events, read over REST, then apply the buffered
+  events on top. `zone_changed` carries the full zone state, so the newest one wins. The smaller
+  events (volume, presence) are not strictly ordered without sequence numbers (**unverified**
+  for every event type). Entities are unavailable while the socket is down, with one log line
+  when lost and one when back.
 - **Position.** `zone_changed` arrives about once a second while playing. The zone entity sets
   `media_position` and `media_position_updated_at` only when the position departs from the
   extrapolated value by more than a tolerance, or the track, state or duration changes
@@ -142,18 +148,24 @@ of HAI-0007 answered: additive means 1). None touches `snapdog/src/config`, `sna
 | # | Addition | Needed for | Order |
 |---|---|---|---|
 | S-1 | `GET /api/v1/eq/presets` (names, and the band set of each) | `select_sound_mode`, client EQ preset select | first |
-| S-3 | WebSocket `hello` (server id, version, `api_version`, capabilities such as `zone_links`) and `snapshot` (all zones, clients, EQ, presence, playlists), **sent only on opt-in** (`/ws?hello=1`, or a first client message), so the WebUI and other clients see no new message type | one-message resync (HAI-REQ-5, HAI-REQ-8) | first |
-| S-4 | Optional API key scopes `read` and `control` | a HA key that cannot change configuration (HAI-0007 §10). A key without a scope keeps full rights, otherwise it would be breaking | after S-3 |
-| S-6 | Zone linking (party mode): a runtime model that makes zones follow a leader's source | `GROUPING`, `join`, `unjoin` | own design RFC first |
 | S-7 | An AsyncAPI document for `/ws` (`docs/api/asyncapi.json`, message schemas derived from `Notification`, a test keeps it in step so it cannot drift) and a golden-file test in SnapDog. AsyncAPI is the standard description of event interfaces, the counterpart of OpenAPI (version to be checked before building) | HAI-REQ-6, shared fixtures for the library | first |
 
-**Dropped from HAI-0007 §5, numbers kept so the discussion stays traceable.** S-2 (signed cover
-URL): no consumer left, see HAI-DEC-8. S-5 (stable `id`): see HAI-DEC-12. Both would also have
-touched code outside this RFC's boundary (MQTT state, `snapdog/src/config`).
+**Dropped from HAI-0007 §5 and from earlier drafts, numbers kept so the discussion stays
+traceable.**
+- S-2 (signed cover URL): no consumer left, see HAI-DEC-8.
+- S-3 (WebSocket hello and snapshot): the WebUI loads its state with a handful of parallel REST
+  calls (`loadAll`), the integration does the same (§4). Server id and API version are already
+  in the mDNS record, the version in `/system/version`.
+- S-4 (key scopes): not wanted for now. A Home Assistant key can do everything a key can do
+  (HAI-0007 §10 names this as a residual risk).
+- S-5 (stable `id`): see HAI-DEC-12.
+- S-6 (zone linking): see HAI-DEC-7.
 
-**Breaking changes.** None. S-1, S-6 (once designed) and S-7 add endpoints, files or tests. S-3
-is additive only because it is opt-in. S-4 is additive only while an unscoped key keeps all
-rights.
+**Breaking changes.** None. S-1 adds an endpoint, S-7 a document and a test. Two corrections to
+the OpenAPI document are small and additive and belong with S-1 (found while checking
+`pysnapdog` against it, 2026-11-01): the document declares no `securitySchemes` although the
+server enforces `Authorization: Bearer` and answers 401, and `zone_index` has `minimum: 0` while
+the code counts from 1 (**checked in `get_zone` only**).
 
 **Emitting `zone_progress`** (HAI-T4) is dropped from the plan: the integration works with the
 once-per-second `zone_changed`; the variant is either removed or documented as reserved as part
@@ -178,7 +190,7 @@ As HAI-0007 §6.3, plus the decisions that were still open there:
 - **Features** `PLAY`, `PAUSE`, `STOP`, `NEXT_TRACK`, `PREVIOUS_TRACK`, `SEEK` (only when
   `seekable`), `VOLUME_SET`, `VOLUME_STEP`, `VOLUME_MUTE`, `SHUFFLE_SET`, `REPEAT_SET`,
   `SELECT_SOURCE`, `SELECT_SOUND_MODE`, `PLAY_MEDIA`, `BROWSE_MEDIA`, `MEDIA_ENQUEUE` is not
-  offered. `GROUPING`, `join`, `unjoin` only when the `hello` lists `zone_links` (S-6).
+  offered. No `GROUPING`, `join` or `unjoin` (HAI-DEC-7).
 - **Source list** the unified playlists from `/media/playlists` (index 0 radio, 1 and up
   Subsonic). AirPlay and Spotify are receivers that start themselves: they show as `source`
   attribute and `app_name`, not as selectable sources (**unverified**: confirm in the
@@ -267,16 +279,15 @@ checks each operation individually; the table groups for reading.
 | M-W05 | `zone_presence_changed` | presence entities | I: `test_ws_presence` | yes |
 | M-W06 | `playback_error` | `event` entity and a persistent repair-free log line; recoverable flag in the event data | I: `test_ws_playback_error` | yes |
 | M-W07 | `zone_progress` | **excluded** until emitted (S-7 decides); the AsyncAPI document marks it reserved | coverage exclusion table | — |
-| M-W08 | `hello` and `snapshot` (S-3, requested by the integration on connect) | version and `api_version` check, capability flags, full resync | L: `test_hello_snapshot`; I: `test_resync_after_reconnect` | yes |
+| M-W08 | Initial load and resync (REST, as the WebUI does it) with the socket opened first | full state after setup, after a reconnect and after close 1013, no event lost between read and subscribe | I: `test_initial_load`, `test_resync_after_reconnect`, `test_events_buffered_during_load` | yes |
 | M-W09 | Socket loss, close 1001 and 1013, 64-connection limit (HTTP 503) | entities unavailable, one log line each way, backoff, repair for a refused connection | I: `test_reconnect`, `test_too_slow_close`, `test_ws_limit_repair` | yes |
 | M-D01 | mDNS `_snapdog._tcp` | zeroconf flow, confirm step, `unique_id` = `server_id` | I: `test_zeroconf` | yes |
 | M-D02 | TXT `server_id` change of address | entry updated, no duplicate | I: `test_zeroconf_updates_host` | yes |
 | M-D03 | TXT `auth`, `tls`, `base_url`, `snapcast_port`, `docker`, `api_version` | API key step, TLS verify switch, repair for a `localhost` base URL, diagnostics, version check | I: `test_flow_auth`, `test_flow_tls`, `test_repair_base_url`, `test_api_version_repair` | yes |
 | M-A01 | Bearer key, 401 | key step, `reauth` flow on `ConfigEntryAuthFailed`, `reconfigure` for host and port | I: `test_reauth`, `test_reconfigure` | yes |
-| M-A02 | Key scopes (S-4) | the flow tells which scope the key has; a `read` key makes controls unavailable with an explanation | I: `test_scoped_key` | when S-4 ships |
 | M-X01 | Diagnostics | `async_get_config_entry_diagnostics`, key, host and `base_url` redacted | I: `test_diagnostics_snapshot` (syrupy) | yes |
 | M-X02 | Both MQTT discovery and the integration active | repair that names the way to switch discovery off | I: `test_repair_double_entities` | when MQTT is present |
-| M-X04 | Zone linking (S-6) | `GROUPING`, `join`, `unjoin`, `group_members` when the capability is set | I: `test_grouping` | when S-6 ships |
+| M-X04 | Zone linking | **excluded**: SnapDog has no model for it (HAI-DEC-7) | coverage exclusion table | — |
 | M-X05 | Translations | `de.json` and `en.json` with equal keys, entity, service, exception, issue and flow strings | CI: `check_translations.py` | yes (UI language switch) |
 
 ### 7.3 MQTT and stage 1
@@ -307,19 +318,16 @@ opened as a pull request without the maintainer's yes for that action.
 | WP | Content | Where | Depends on |
 |---|---|---|---|
 | WP-0 | This RFC accepted; HAI-0007 status line and §14 updated to point here | `snapdog` branch `docs/rfc-ha-integration` | – |
-| WP-1 | S-1, S-3, S-7 with golden tests (`S:` rows) | `snapdog`, own branch, no config or net files | WP-0 |
-| WP-2 | Library skeleton: client, models from `openapi.json`, socket, fake-server tests, `check_coverage.py` | `pysnapdog` | S-3, S-7 for the full set; starts on REST |
+| WP-1 | S-1 and the two OpenAPI corrections, S-7 with golden tests (`S:` rows) | `snapdog`, own branch, no config or net files | WP-0 |
+| WP-2 | Library skeleton: client, models from `openapi.json`, socket, fake-server tests, `check_coverage.py` | `pysnapdog` | S-7 for the WebSocket part; starts on REST |
 | WP-3 | Integration alpha: config flow, zeroconf, reauth, coordinator, zone `media_player` (transport, volume, mute, shuffle, repeat, position) | `snapdog-homeassistant` | WP-2 |
 | WP-4 | Sources, `play_media`, browse, covers, sound mode, TTS target | same | S-1 |
 | WP-5 | Client entities, presence, EQ, speaker, server, update, KNX, services, `event` | same | WP-3 |
 | WP-6 | Diagnostics, repairs, translations, dynamic and stale devices, docs, hassfest and HACS actions, matrix scripts | same | WP-5 |
-| WP-8 | S-4 (scopes) | `snapdog` | WP-1 |
-| WP-10 | S-6: own RFC, then code and `GROUPING` | `snapdog`, integration | RFC accepted |
-| WP-11 | End-to-end job against the real `snapdog` demo backend; Live pass | CI and a HA | WP-6 |
+| WP-7 | End-to-end job against the real `snapdog` demo backend; Live pass | CI and a HA | WP-6 |
 
-Rough effort for one developer who knows the code: WP-1 3 to 4 days, WP-2 4 to 6, WP-3 5 to 7,
-WP-4 3 to 4, WP-5 5 to 7, WP-6 4 to 6, WP-8 2, WP-10 design plus 6 to 10,
-WP-11 2 (about 35 to 50 working days with S-6, 25 to 35 without). These are estimates, not
+Rough effort for one developer who knows the code: WP-1 2 to 3 days, WP-2 4 to 6, WP-3 5 to 7,
+WP-4 3 to 4, WP-5 5 to 7, WP-6 4 to 6, WP-7 2 (about 25 to 35 working days). These are estimates, not
 measurements.
 
 ### CI and quality gates
@@ -359,9 +367,8 @@ The maintainer's instance is 2026.10.4 without `mqtt` and `hacs`.
 
 Risks as in HAI-0007 §13, plus:
 
-1. **Reordering the configuration.** The index is the identity (HAI-DEC-12). If a user reorders `[[zone]]`, HA attaches history and areas to the wrong zone without an error. The documentation says so; if reports come in, S-5 can be revisited.
-2. **S-6 is a design, not a task.** If zone linking is not wanted, M-X04 becomes an exclusion
-   and "complete" is declared without grouping. This is the only row that can fall out of 100 %.
+1. **Reordering the configuration.** The index is the identity (HAI-DEC-12). If a user reorders `[[zone]]`, HA attaches history and areas to the wrong zone without an error. The documentation says so; if reports come in, the question can be reopened.
+2. **Two rows are exclusions, not features.** Zone linking (M-X04) and the knxprod download (M-S05) are deliberate gaps. "Complete" means: every operation is mapped or excluded with a reason, not that every SnapDog capability has an HA counterpart.
 3. **The matrix counts operations, not behaviour.** A row that passes with a mock can still be
    wrong against the real server. The `E:` tests and the Live column exist for that; they are
    thinner than the mocks.
