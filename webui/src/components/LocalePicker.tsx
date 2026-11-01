@@ -12,6 +12,8 @@ const labels: Record<Locale, string> = {
   es: "Español",
   it: "Italiano",
   nl: "Nederlands",
+  pl: "Polski",
+  pt: "Português",
 };
 
 function GlobeIcon({ size = 16 }: { size?: number }) {
