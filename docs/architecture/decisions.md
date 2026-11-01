@@ -236,11 +236,12 @@ the backend.
 ### Consequences
 
 - **TLS 1.3** only where the platform library has it (OpenSSL yes, Secure Transport
-  no: Apple platforms fall back to 1.2; Windows depends on the release and was not
-  tested).
-- **macOS client keys** must be RSA: Secure Transport cannot import a PKCS#8 EC key
-  from PEM (`Unknown format in import`, verified with native-tls 0.2.18 on macOS).
-  Keys must be unencrypted PKCS#8; the config check says how to convert.
+  no: Apple platforms fall back to 1.2; SChannel yes on Windows Server 2025, build
+  26100, measured; older Windows releases were not tested).
+- **macOS and Windows client keys** must be RSA: Secure Transport cannot import a PKCS#8
+  EC key from PEM (`Unknown format in import`, verified with native-tls 0.2.18 on macOS),
+  and SChannel refuses it as well (`os error 5`, access denied, measured on Windows
+  Server 2025). Keys must be unencrypted PKCS#8; the config check says how to convert.
 - An IPv6 literal cannot be combined with TLS (the certificate is matched against
   the name the socket layer is given).
 - Certificates and credentials are read once, at start. Rotation needs a restart.
@@ -253,7 +254,12 @@ the backend.
 
 - **Linux (OpenSSL):** the TLS tests pass in CI (Rust Core on Linux runners, including `mqtt_tier2` against mosquitto and the config tests for key and certificate handling). An OpenSSL-only difference showed up and was fixed: a key that does not belong to its certificate is noticed when the connector is built, not when the identity is read, and the error now names `client_cert` and `client_key` on every platform.
 - **macOS (Secure Transport):** local runs.
-- **Windows (SChannel):** the MQTT unit tests (`cargo test -p snapdog --lib mqtt`, 169 tests) pass on Windows 11 ARM64 with MSVC. SChannel did not notice a key that does not belong to its certificate until the handshake, so the two config tests for key and certificate handling failed there. `client_key` is now compared with `client_cert` by rustls before the platform library is involved (#373), which gives the same early error on every platform. Not yet run on Windows: `mqtt_tier2` against a real broker, so the negotiated TLS version and the accepted key formats (EC keys in particular) are still unknown. Tracked in #371.
+- **Windows (SChannel):** the MQTT unit tests (`cargo test -p snapdog --lib mqtt`, 169 tests) pass on Windows 11 ARM64 with MSVC. SChannel did not notice a key that does not belong to its certificate until the handshake, so the two config tests for key and certificate handling failed there. `client_key` is now compared with `client_cert` by rustls before the platform library is involved (#373), which gives the same early error on every platform. Windows Server 2025 x86_64 (build 26100): `cargo test -p snapdog --lib` 621 passed, and `mqtt_tier2` against mosquitto 2.0.18 passed (#375).
+  On 2026-11-01 the shipped debug binary was run against mosquitto 2.1.2 (Docker on another host, throwaway OpenSSL PKI), one scenario per start of `snapdog.exe` with `[mqtt]` set and `--check-config` first:
+  - A TLS 1.3 only listener accepted the connection, so SChannel negotiates TLS 1.3 on this release. A TLS 1.2 only server was not tested (the listener option did not restrict the version in mosquitto 2.1.2).
+  - Connection by IP address with an IP SAN certificate and a private `ca_file`: connected. Without `ca_file` (Windows trust store): refused, chain ends in an untrusted root (`os error -2146762487`). A foreign CA: refused with the same error. A certificate for another name: refused, name mismatch (`os error -2146762481`). TLS to a plaintext port: refused (`unexpected EOF during handshake`). There was no plaintext fallback in any case.
+  - Mutual TLS with an RSA PKCS#8 client key: connected. Without a client certificate the broker closed the connection and SnapDog retried with the error `Das Format der empfangenen Nachricht war unerwartet oder fehlerhaft` (`os error -2146893018`), which does not say that a client certificate is missing. An EC PKCS#8 key: refused at `--check-config` with `do not make a TLS identity ... Zugriff verweigert (os error 5)`. PKCS#1 and SEC1 keys: refused by the config check with the instruction to convert to PKCS#8. A key that does not belong to the certificate: refused by the config check (#373).
+  - Not measured: Windows 10/11 and Server 2019/2022 (other SChannel versions), a public CA from the Windows trust store, and TLS 1.2 against SChannel. These are the known limits of this verification (#371).
 
 ### Revisit triggers
 

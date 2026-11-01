@@ -259,7 +259,8 @@ broker = "192.168.1.10:1883"
 # client_key = "/etc/snapdog/mqtt-client.key"   # ... and its key, unencrypted PKCS#8
 #                                               # ("BEGIN PRIVATE KEY"). Convert with
 #                                               # `openssl pkey -in old.key -out client.key`.
-#                                               # macOS imports RSA keys only (Secure Transport).
+#                                               # macOS (Secure Transport) and Windows (SChannel)
+#                                               # import RSA keys only; an EC key is refused there.
 #                                               # Or SNAPDOG_MQTT_CLIENT_CERT / _CLIENT_KEY.
 # In KNX device mode ETS sets broker and base topic (an ETS broker field of up to 40 bytes
 # holds e.g. "mqtts://mqtt.example.org:8883"); username and TLS files come from the
