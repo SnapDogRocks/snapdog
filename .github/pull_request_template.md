@@ -16,3 +16,4 @@
       (`type(scope): description`, `!` or `BREAKING CHANGE:` for breaking
       changes) — it becomes the commit message on `main` after squash merge
       and drives the release version and changelog.
+- [ ] I have read the [Contribution Licence](https://github.com/SnapDogRocks/snapdog/blob/main/CONTRIBUTION-LICENSE.md) ([Deutsch](https://github.com/SnapDogRocks/snapdog/blob/main/CONTRIBUTION-LICENSE.de.md)) (CONTRIBUTION-LICENSE v1) and license this contribution under its terms.
