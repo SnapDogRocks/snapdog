@@ -63,8 +63,10 @@ const ETS_MEMORY_PATH: &str = "knx-memory.bin";
 
 // ── Persistence format ────────────────────────────────────────
 //
-// Version 2: [magic 4B] [version 1B] [length 2B (LE)] [payload …] [configured IA 2B (LE)]
-//            [assigned IA 2B (LE)] [crc32 4B (LE) over payload and both addresses]
+// Version 3: [magic 4B] [version 1B] [length 2B (LE)] [payload …] [configured IA 2B (LE)]
+//            [assigned IA 2B (LE)] [product database version 4B (LE)]
+//            [crc32 4B (LE) over payload, both addresses and the product database version]
+// Version 2 (read only): the same without the product database version.
 // Version 1 (read only): the same without the two addresses; the CRC covers the payload.
 // Atomic write via temp file + rename.
 
@@ -72,7 +74,11 @@ const ETS_MEMORY_PATH: &str = "knx-memory.bin";
 const PERSIST_MAGIC: &[u8; 4] = b"SDKM";
 
 /// Current persistence format version. Bump when memory layout changes.
-const PERSIST_VERSION: u8 = 2;
+const PERSIST_VERSION: u8 = 3;
+
+/// The second format, with the individual address record but without the product database
+/// version. Such a file predates the object numbers of the current layout.
+const PERSIST_VERSION_2: u8 = 2;
 
 /// The first format, without the individual address record.
 const PERSIST_VERSION_1: u8 = 1;
@@ -80,8 +86,11 @@ const PERSIST_VERSION_1: u8 = 1;
 /// Header size: magic (4) + version (1) + length (2).
 const PERSIST_HEADER: usize = 7;
 
-/// Size of the individual address record in version 2.
+/// Size of the individual address record (versions 2 and 3).
 const PERSIST_IA_RECORD: usize = 4;
+
+/// Size of the product database version that follows the address record in version 3.
+const PERSIST_LAYOUT_RECORD: usize = 4;
 
 /// The individual address a device has, and the one it was configured with when it got it.
 ///
@@ -102,8 +111,22 @@ struct IaRecord {
 struct Persisted {
     /// The saved BAU state.
     payload: Vec<u8>,
-    /// The individual address record (version 2 files).
+    /// The individual address record (version 2 and 3 files).
     ia: Option<IaRecord>,
+    /// The product database version ([`group_objects::KNXPROD_APP_VERSION`]) of the build that
+    /// saved the file (version 3 files). It fixes the object numbers the association table
+    /// refers to.
+    layout: Option<u32>,
+}
+
+impl Persisted {
+    /// Whether the saved programming refers to the object numbers of this build.
+    ///
+    /// A file without a product database version, or with another one, was programmed against
+    /// a different layout: restoring it would link group addresses to the wrong objects.
+    fn matches_layout(&self) -> bool {
+        self.layout == Some(group_objects::KNXPROD_APP_VERSION)
+    }
 }
 
 /// Numbers the snapshots in the order they were taken, so that a slow writer holding an older
@@ -140,14 +163,17 @@ fn persist_generation(
             ),
         )
     })?;
-    let mut record = Vec::with_capacity(PERSIST_IA_RECORD);
+    let mut record = Vec::with_capacity(PERSIST_IA_RECORD + PERSIST_LAYOUT_RECORD);
     record.extend_from_slice(&ia.configured.to_le_bytes());
     record.extend_from_slice(&ia.assigned.to_le_bytes());
+    record.extend_from_slice(&group_objects::KNXPROD_APP_VERSION.to_le_bytes());
     let mut crc = crc32fast::Hasher::new();
     crc.update(payload);
     crc.update(&record);
 
-    let mut buf = Vec::with_capacity(PERSIST_HEADER + payload.len() + PERSIST_IA_RECORD + 4);
+    let mut buf = Vec::with_capacity(
+        PERSIST_HEADER + payload.len() + PERSIST_IA_RECORD + PERSIST_LAYOUT_RECORD + 4,
+    );
     buf.extend_from_slice(PERSIST_MAGIC);
     buf.push(PERSIST_VERSION);
     buf.extend_from_slice(&len.to_le_bytes());
@@ -242,13 +268,13 @@ fn load_memory(path: &std::path::Path) -> Result<Persisted> {
     );
     let version = data[4];
     anyhow::ensure!(
-        version == PERSIST_VERSION || version == PERSIST_VERSION_1,
+        version == PERSIST_VERSION || version == PERSIST_VERSION_2 || version == PERSIST_VERSION_1,
         "unsupported version {version} (expected {PERSIST_VERSION})"
     );
-    let record_len = if version == PERSIST_VERSION {
-        PERSIST_IA_RECORD
-    } else {
-        0
+    let record_len = match version {
+        PERSIST_VERSION => PERSIST_IA_RECORD + PERSIST_LAYOUT_RECORD,
+        PERSIST_VERSION_2 => PERSIST_IA_RECORD,
+        _ => 0,
     };
 
     let len = u16::from_le_bytes([data[5], data[6]]) as usize;
@@ -279,9 +305,14 @@ fn load_memory(path: &std::path::Path) -> Result<Persisted> {
             assigned: u16::from_le_bytes([r[2], r[3]]),
         }
     });
+    let layout = (version == PERSIST_VERSION).then(|| {
+        let at = PERSIST_HEADER + len + PERSIST_IA_RECORD;
+        u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]])
+    });
     Ok(Persisted {
         payload: data[PERSIST_HEADER..PERSIST_HEADER + len].to_vec(),
         ia,
+        layout,
     })
 }
 
@@ -902,7 +933,16 @@ fn restore_state(bau: &mut Bau, path: &std::path::Path) {
                 );
                 device_object::set_individual_address(bau.device_mut(), ia);
             }
-            if bau.restore(&saved.payload).is_ok() {
+            if !saved.matches_layout() {
+                // The individual address stays, so that ETS reaches the device to program it.
+                tracing::warn!(
+                    path = %path.display(),
+                    saved = ?saved.layout,
+                    current = group_objects::KNXPROD_APP_VERSION,
+                    "The ETS programming in the memory file belongs to another product database version; \
+                     ignoring it. Import the current knxprod in ETS and download to the device again"
+                );
+            } else if bau.restore(&saved.payload).is_ok() {
                 tracing::info!(
                     path = %path.display(),
                     addr_table = ?bau.addr_table_object().load_state(),
@@ -1511,6 +1551,9 @@ fn spawn_persist(state: Vec<u8>, path: PathBuf, ia: IaRecord) -> tokio::task::Jo
 /// real KNX device transport starts (KEA-0004 boot-time apply).
 pub(super) fn load_persisted_ets_params(ia: IndividualAddress) -> Option<EtsParams> {
     let saved = load_memory(std::path::Path::new(ETS_MEMORY_PATH)).ok()?;
+    if !saved.matches_layout() {
+        return None;
+    }
     let mut bau = build_bau(ia);
     if bau.restore(&saved.payload).is_err() || !ets_programmed(&bau) {
         return None;
@@ -2212,7 +2255,7 @@ mod tests {
     fn persist_envelope_byte_layout() {
         // Pin the on-disk format (the IT-T43 §9.2 Bau.save drift risk):
         // ["SDKM"][1 version][2 len LE][payload][2 configured IA LE][2 assigned IA LE]
-        // [4 crc32 LE over payload and both addresses].
+        // [4 product database version LE][4 crc32 LE over everything before it].
         let dir = std::env::temp_dir().join("snapdog_test_envelope");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("envelope.bin");
@@ -2222,7 +2265,7 @@ mod tests {
         let n = payload.len();
 
         assert_eq!(&raw[0..4], b"SDKM", "magic");
-        assert_eq!(raw[4], 2, "version byte");
+        assert_eq!(raw[4], 3, "version byte");
         assert_eq!(
             u16::from_le_bytes([raw[5], raw[6]]),
             n as u16,
@@ -2240,16 +2283,21 @@ mod tests {
             &[0x01, 0x12],
             "assigned address, LE"
         );
-        let crc = u32::from_le_bytes(raw[h + n + 4..h + n + 8].try_into().unwrap());
+        assert_eq!(
+            u32::from_le_bytes(raw[h + n + 4..h + n + 8].try_into().unwrap()),
+            group_objects::KNXPROD_APP_VERSION,
+            "product database version, LE"
+        );
+        let crc = u32::from_le_bytes(raw[h + n + 8..h + n + 12].try_into().unwrap());
         assert_eq!(
             crc,
-            super::crc32(&raw[h..h + n + 4]),
-            "trailing CRC32 is little-endian and covers payload and addresses"
+            super::crc32(&raw[h..h + n + 8]),
+            "trailing CRC32 is little-endian and covers payload, addresses and version"
         );
         assert_eq!(
             raw.len(),
-            h + n + 4 + 4,
-            "header + payload + addresses + CRC"
+            h + n + 8 + 4,
+            "header + payload + addresses + version + CRC"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -2272,6 +2320,71 @@ mod tests {
         let loaded = super::load_memory(&path).unwrap();
         assert_eq!(loaded.payload, payload);
         assert_eq!(loaded.ia, None);
+        assert_eq!(loaded.layout, None);
+        assert!(
+            !loaded.matches_layout(),
+            "a file without a product database version belongs to an older layout"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_matches_the_layout_of_the_build_that_wrote_it_only() {
+        let dir = std::env::temp_dir().join("snapdog_test_layout_stamp");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("stamp.bin");
+        super::persist_memory(&path, &[1, 2, 3], IA).unwrap();
+        let loaded = super::load_memory(&path).unwrap();
+        assert_eq!(loaded.layout, Some(group_objects::KNXPROD_APP_VERSION));
+        assert!(loaded.matches_layout());
+
+        // A file written under another product database version, with a valid CRC.
+        let mut raw = std::fs::read(&path).unwrap();
+        let at = super::PERSIST_HEADER + 3 + super::PERSIST_IA_RECORD;
+        raw[at..at + 4].copy_from_slice(&(group_objects::KNXPROD_APP_VERSION - 1).to_le_bytes());
+        let crc_at = raw.len() - 4;
+        let crc = crc32fast::hash(&raw[super::PERSIST_HEADER..crc_at]);
+        raw[crc_at..].copy_from_slice(&crc.to_le_bytes());
+        std::fs::write(&path, &raw).unwrap();
+        let loaded = super::load_memory(&path).unwrap();
+        assert!(!loaded.matches_layout());
+        assert_eq!(loaded.ia, Some(IA), "the individual address is still read");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_stale_file_is_not_restored_but_keeps_the_individual_address() {
+        let dir = std::env::temp_dir().join("snapdog_test_stale_restore");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("stale.bin");
+        // A version 2 file: programmed before the object numbers were regrouped.
+        let payload = [5u8, 6, 7];
+        let mut record = Vec::new();
+        record.extend_from_slice(&IA.configured.to_le_bytes());
+        record.extend_from_slice(&IA.assigned.to_le_bytes());
+        let mut raw = b"SDKM".to_vec();
+        raw.push(2);
+        raw.extend_from_slice(&3u16.to_le_bytes());
+        raw.extend_from_slice(&payload);
+        raw.extend_from_slice(&record);
+        let mut covered = payload.to_vec();
+        covered.extend_from_slice(&record);
+        raw.extend_from_slice(&crc32fast::hash(&covered).to_le_bytes());
+        std::fs::write(&path, &raw).unwrap();
+
+        let mut bau = build_bau(IndividualAddress::from_raw(IA.configured));
+        super::restore_state(&mut bau, &path);
+        assert_eq!(
+            bau.individual_address().raw(),
+            IA.assigned,
+            "ETS can still reach the device under the address it assigned"
+        );
+        assert!(
+            !super::ets_programmed(&bau),
+            "the association table of the old layout is not loaded"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
