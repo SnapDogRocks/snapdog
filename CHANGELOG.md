@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.30.0](https://github.com/SnapDogRocks/snapdog/compare/v0.29.1...v0.30.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **knx:** group the KNX objects, add navigation and track number objects ([#397](https://github.com/SnapDogRocks/snapdog/issues/397))
+
+### Features
+
+* **api:** describe the /ws notifications as AsyncAPI ([904af25](https://github.com/SnapDogRocks/snapdog/commit/904af25e31f6a50b50984b13d8900c6e2cc21acd))
+* **api:** list the EQ presets and correct the OpenAPI contract ([904af25](https://github.com/SnapDogRocks/snapdog/commit/904af25e31f6a50b50984b13d8900c6e2cc21acd))
+* **config:** bind by interface name ([#384](https://github.com/SnapDogRocks/snapdog/issues/384)) ([a3f5b01](https://github.com/SnapDogRocks/snapdog/commit/a3f5b01df42fc64547dac168f91997a1ca087076))
+* **contrib:** add contribution licence and declaration check ([#398](https://github.com/SnapDogRocks/snapdog/issues/398)) ([9641384](https://github.com/SnapDogRocks/snapdog/commit/9641384011577ef48aa15d65bbf23feb41f67f94))
+* **knx:** group the KNX objects, add navigation and track number objects ([#397](https://github.com/SnapDogRocks/snapdog/issues/397)) ([0d1abdf](https://github.com/SnapDogRocks/snapdog/commit/0d1abdf20d213f8918ff0fb75dc89ae1b1811998))
+* **mdns:** limit the announcement to the interfaces of bind ([#385](https://github.com/SnapDogRocks/snapdog/issues/385)) ([4eb8b0f](https://github.com/SnapDogRocks/snapdog/commit/4eb8b0fe0d435c3649c627811347325195595e18))
+* **net:** show where a bind address came from ([#387](https://github.com/SnapDogRocks/snapdog/issues/387)) ([1a66e40](https://github.com/SnapDogRocks/snapdog/commit/1a66e40734e82e289096741a45b92c711d69b4ff))
+
+
+### Bug Fixes
+
+* **airplay:** keep the AirPlay 2 server identity across restarts ([#399](https://github.com/SnapDogRocks/snapdog/issues/399)) ([8eb1f57](https://github.com/SnapDogRocks/snapdog/commit/8eb1f57f915f4c4d7645f2a38b007b223abc1e73)), closes [#344](https://github.com/SnapDogRocks/snapdog/issues/344)
+* **api:** document scalar bodies as application/json ([904af25](https://github.com/SnapDogRocks/snapdog/commit/904af25e31f6a50b50984b13d8900c6e2cc21acd))
+* **api:** show a renamed client under its new name ([#390](https://github.com/SnapDogRocks/snapdog/issues/390)) ([5a4a98a](https://github.com/SnapDogRocks/snapdog/commit/5a4a98ac69689fabcbf78816f4018430a1b50155))
+* **ci:** queue eligible Dependabot pull requests ([#395](https://github.com/SnapDogRocks/snapdog/issues/395)) ([1be746e](https://github.com/SnapDogRocks/snapdog/commit/1be746e2128c7204589d393b59e6c5fba8dfd3e0))
+* **speakers:** read the profiles from the spinorama-org repository ([#389](https://github.com/SnapDogRocks/snapdog/issues/389)) ([4fe8fe2](https://github.com/SnapDogRocks/snapdog/commit/4fe8fe244c37895227f79eca68950945e6bd69f7))
+* **webui:** show the client count for a zone without clients ([#392](https://github.com/SnapDogRocks/snapdog/issues/392)) ([64f0614](https://github.com/SnapDogRocks/snapdog/commit/64f0614c208a9f9c3c6e8271b91daec0f1e42367))
+
 ## [0.29.1](https://github.com/SnapDogRocks/snapdog/compare/v0.29.0...v0.29.1) (2026-10-31)
 
 
