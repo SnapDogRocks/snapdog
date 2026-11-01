@@ -205,6 +205,28 @@ same local configuration and `pysnapdog` exercised it, writes included:
   a non-HTTP URL, 422 for a client without EQ, 409 for the KNX programming mode outside device
   mode, 503 for the updater and for `/speakers`.
 
+**Third pass: local dirty build with a connected client and the home server (2026-11-01).**
+`dirty/ha-test` (main with #387, WP-1 and two fixes) ran with a real `snapdog-client`
+(24 of 24 checks: client volume, mute, latency, zone, rename, EQ, speaker, events). The home
+server (`play.schmieder.eu`, 0.29.0, Subsonic attached) was read completely (38 of 47 reads,
+the rest are documented states) and zone 1 was driven at 15 % volume and restored afterwards:
+volume, shuffle, repeat, `play_playlist`, `play_playlist_track`, `play_track`, seek by position,
+offset and progress, pause, resume, next, previous, playlist next and previous, stop. Findings:
+
+- `GET /speakers` was a server bug: `pierreaubert/spinorama` is gone and the project lives at
+  `spinorama-org/spinorama`. Fixed on `fix/spinorama-source`.
+- `GET /clients` and `/clients/{n}` ignored a rename (`fix/client-name-in-list`).
+- `POST .../play/subsonic/{id}` starts the stream (`source` becomes `subsonic_track`, state
+  `playing`) but leaves title, position and duration empty. The integration uses
+  `play_playlist_track` for browsable tracks and treats the Subsonic-id call as audio only.
+- Zone mute needs a connected client: the command goes to the Snapcast group, which exists only
+  while a client is connected. With none, `PUT .../mute` changes nothing and emits no event.
+- A relative volume (`"+8"`) is added to the last known value, which lags a moment. The
+  integration sends absolute values.
+- `cover_art` of a track may name a cover URL that answers 404 (radio), and the `track` number
+  of a track is 1-based while the track path index is 0-based.
+- Playlist changes (`next/previous`) take about three seconds to show in `playlist/info`.
+
 **Emitting `zone_progress`** (HAI-T4) is dropped from the plan: the integration works with the
 once-per-second `zone_changed`; the variant is either removed or documented as reserved as part
 of S-7, so the AsyncAPI document does not list a dead event as live.
