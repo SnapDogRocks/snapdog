@@ -30,7 +30,11 @@ a beta, version 13 renumbers every group object compared to the last release.
   37). Down (1) goes to the next, up (0) to the previous. Next and previous track and playlist are
   now declared as DPT 1.017 (trigger) instead of 1.001. The existing objects behave as before;
   Play, Pause, Stop and the next and previous objects still react to any value.
-- All texts in the product database exist in German, English, Dutch, Spanish and French.
+- All texts in the product database exist in eight languages. English is the base language of
+  the product (ETS shows it when it has no translation for the project language), German, Dutch,
+  Spanish, French, Italian, Polish and Portuguese (Portugal) are translations. The German status
+  objects are named like the MDT product databases: "Status" first ("Status Lautstärke" instead
+  of "Lautstärke Status").
 - New `[zone.knx]` keys for client mode and TOML-programmed devices: `play_pause`, `track_step`,
   `track_step_updown`, `playlist_step`, `playlist_step_updown`, `playlist_name_status`, `track_number`,
   `track_number_status`.
