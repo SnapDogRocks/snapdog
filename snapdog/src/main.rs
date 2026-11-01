@@ -652,12 +652,20 @@ pub async fn run_app() -> Result<()> {
             .mdns
             .advertise_snapcast
             .then_some(config.snapcast.streaming_port);
-        match advertise_mdns(&config.name, config.http.port, txt.clone(), snapcast_port) {
+        let mdns_scope = config.mdns_scope();
+        match advertise_mdns(
+            &config.name,
+            config.http.port,
+            txt.clone(),
+            snapcast_port,
+            mdns_scope.as_deref(),
+        ) {
             Ok(handle) => {
                 tracing::info!(
                     port = config.http.port,
                     name = %config.name,
                     ?txt,
+                    scope = ?mdns_scope,
                     "mDNS: advertising _snapdog._tcp"
                 );
                 Some(handle)
@@ -999,14 +1007,23 @@ impl Drop for MdnsAdvertisement {
 /// Advertise the `SnapDog` server over mDNS: `_snapdog._tcp` (HTTP/API + web UI, with
 /// the full TXT record) and, optionally, a bare `_snapcast._tcp` for standard
 /// Snapcast clients. `enable_addr_auto()` publishes A/AAAA for every host interface,
-/// so no explicit IP/interface configuration is needed.
+/// so no explicit IP/interface configuration is needed. With a `scope` (the `bind`
+/// addresses of the announced services) the announcement is limited to the interfaces
+/// that carry those addresses.
 fn advertise_mdns(
     name: &str,
     http_port: u16,
     txt: std::collections::HashMap<String, String>,
     snapcast_port: Option<u16>,
+    scope: Option<&[std::net::IpAddr]>,
 ) -> Result<MdnsAdvertisement, mdns_sd::Error> {
     let daemon = mdns_sd::ServiceDaemon::new()?;
+    if let Some(addrs) = scope {
+        daemon.disable_interface(mdns_sd::IfKind::All)?;
+        for addr in addrs {
+            daemon.enable_interface(mdns_sd::IfKind::Addr(*addr))?;
+        }
+    }
     let host = format!("{}.local.", gethostname::gethostname().to_string_lossy());
     let mut fullnames = Vec::new();
 

@@ -2352,4 +2352,49 @@ mod interface_bind_tests {
         assert_eq!(config.http.bind, ["::"]);
         assert_eq!(config.snapcast.streaming_bind, Some(ip("10.0.0.5")));
     }
+
+    fn scope_of(toml: &str) -> Option<Vec<std::net::IpAddr>> {
+        load(toml).unwrap().mdns_scope()
+    }
+
+    #[test]
+    fn the_announcement_is_not_limited_without_a_bind() {
+        assert_eq!(scope_of(""), None);
+        assert_eq!(scope_of("[http]\nbind = \"0.0.0.0\"\n"), None);
+        assert_eq!(scope_of("[http]\nbind = [\"eth0\", \"::\"]\n"), None);
+    }
+
+    #[test]
+    fn the_announcement_follows_the_http_bind() {
+        assert_eq!(
+            scope_of("[network]\nbind = \"eth0\"\n"),
+            Some(vec![ip("192.168.1.10"), ip("fd00::10")])
+        );
+        assert_eq!(
+            scope_of("[http]\nbind = [\"127.0.0.1\", \"eth1\"]\n"),
+            Some(vec![ip("10.0.0.5"), ip("10.0.0.6"), ip("127.0.0.1")])
+        );
+    }
+
+    #[test]
+    fn a_host_name_that_is_not_an_address_leaves_the_announcement_unlimited() {
+        assert_eq!(scope_of("[http]\nbind = \"somehost\"\n"), None);
+        assert_eq!(
+            scope_of("[http]\nbind = \"localhost\"\n"),
+            Some(vec![ip("127.0.0.1")])
+        );
+    }
+
+    #[test]
+    fn the_snapcast_announcement_widens_the_scope_to_where_the_stream_listens() {
+        let on = "[mdns]\nadvertise_snapcast = true\n";
+        // Stream on all interfaces: announcing it on a subset would be wrong the other way.
+        assert_eq!(scope_of(&format!("[http]\nbind = \"eth0\"\n{on}")), None);
+        assert_eq!(
+            scope_of(&format!(
+                "[http]\nbind = \"192.168.1.10\"\n[snapcast]\nstreaming_bind = \"10.0.0.5\"\n{on}"
+            )),
+            Some(vec![ip("10.0.0.5"), ip("192.168.1.10")])
+        );
+    }
 }
