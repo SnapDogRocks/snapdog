@@ -34,6 +34,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -57,6 +63,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -77,7 +89,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -90,6 +102,12 @@
                   "$ref": "#/components/schemas/ClientInfo"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -121,7 +139,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -134,6 +152,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -165,7 +189,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -180,8 +204,14 @@
               }
             }
           },
-          "400": {
-            "description": "Client does not support EQ",
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Client not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -190,8 +220,8 @@
               }
             }
           },
-          "404": {
-            "description": "Client not found",
+          "422": {
+            "description": "Client does not support EQ (not a SnapDog client)",
             "content": {
               "application/json": {
                 "schema": {
@@ -217,7 +247,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -252,8 +282,24 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Client does not support EQ (not a SnapDog client)",
             "content": {
               "application/json": {
                 "schema": {
@@ -281,7 +327,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -316,8 +362,24 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Client does not support EQ (not a SnapDog client)",
             "content": {
               "application/json": {
                 "schema": {
@@ -345,7 +407,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           },
           {
@@ -390,8 +452,24 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Client or band not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Client does not support EQ (not a SnapDog client)",
             "content": {
               "application/json": {
                 "schema": {
@@ -419,7 +497,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -432,6 +510,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -463,7 +547,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -477,6 +561,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -506,7 +596,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -531,6 +621,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -562,7 +658,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -575,6 +671,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -604,7 +706,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -627,6 +729,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -658,7 +766,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -671,6 +779,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -702,7 +816,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -715,6 +829,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -744,7 +864,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -767,6 +887,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -798,7 +924,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -813,8 +939,24 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Client does not support speaker correction (not a SnapDog client)",
             "content": {
               "application/json": {
                 "schema": {
@@ -840,7 +982,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -875,8 +1017,24 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Client or speaker profile not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Client does not support speaker correction (not a SnapDog client)",
             "content": {
               "application/json": {
                 "schema": {
@@ -904,7 +1062,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -918,6 +1076,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -947,7 +1111,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -983,6 +1147,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Client not found",
             "content": {
@@ -1012,7 +1182,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -1026,6 +1196,12 @@
                   "minimum": 0
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -1055,7 +1231,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -1082,6 +1258,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Client or Zone not found",
             "content": {
@@ -1090,6 +1272,37 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/eq/presets": {
+      "get": {
+        "tags": [
+          "equalizer"
+        ],
+        "summary": "List EQ presets",
+        "description": "Returns every preset name that `POST .../eq/preset` accepts, with the bands each one sets.",
+        "operationId": "list_presets",
+        "responses": {
+          "200": {
+            "description": "Available presets, in a fixed order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EqPreset"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           }
         }
@@ -1106,6 +1319,12 @@
         "responses": {
           "200": {
             "description": "The .knxprod product database (ZIP)"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -1126,6 +1345,12 @@
                   "$ref": "#/components/schemas/ProductInfo"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           }
         }
@@ -1148,6 +1373,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "409": {
@@ -1200,6 +1431,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "409": {
             "description": "KNX device mode not active",
             "content": {
@@ -1244,6 +1481,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -1277,6 +1520,12 @@
                   "$ref": "#/components/schemas/PlaylistDetails"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -1329,6 +1578,12 @@
               "image/*": {}
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Playlist or cover not found",
             "content": {
@@ -1374,6 +1629,12 @@
                   }
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -1440,6 +1701,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Playlist or track not found",
             "content": {
@@ -1500,6 +1767,12 @@
               "image/*": {}
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Track or cover not found",
             "content": {
@@ -1533,6 +1806,12 @@
                   }
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "503": {
@@ -1571,6 +1850,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Speaker profile not found"
           }
@@ -1598,6 +1883,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -1618,6 +1909,12 @@
                   "$ref": "#/components/schemas/SystemStatus"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           }
         }
@@ -1640,6 +1937,12 @@
                   "$ref": "#/components/schemas/UpdateStatus"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "502": {
@@ -1684,6 +1987,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "502": {
             "description": "The updater sidecar did not answer or refused (for example an operation is running)",
             "content": {
@@ -1724,6 +2033,12 @@
                   "$ref": "#/components/schemas/UpdateStatus"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "502": {
@@ -1777,6 +2092,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "422": {
             "description": "Malformed body or unknown field (plain-text rejection)"
           },
@@ -1820,6 +2141,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -1845,6 +2172,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -1868,6 +2201,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -1888,7 +2227,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -1901,6 +2240,12 @@
                   "$ref": "#/components/schemas/ZoneInfo"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -1932,7 +2277,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -1949,6 +2294,12 @@
                   }
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           }
         }
@@ -1970,7 +2321,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -1979,6 +2330,12 @@
             "description": "Zone cover art image binary",
             "content": {
               "image/*": {}
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           }
         }
@@ -2000,7 +2357,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2013,6 +2370,12 @@
                   "$ref": "#/components/schemas/EqConfig"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -2042,7 +2405,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2077,6 +2440,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Zone not found",
             "content": {
@@ -2106,7 +2475,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2141,6 +2510,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Zone not found",
             "content": {
@@ -2170,7 +2545,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           },
           {
@@ -2215,6 +2590,12 @@
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "404": {
             "description": "Zone or band not found",
             "content": {
@@ -2244,7 +2625,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2257,6 +2638,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -2288,7 +2675,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2301,6 +2688,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -2330,7 +2723,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2347,6 +2740,12 @@
         "responses": {
           "200": {
             "description": "Updated mute status"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2377,13 +2776,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Mute toggled successfully"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2414,7 +2819,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2427,6 +2832,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -2458,13 +2869,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Skipped to next track"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2495,13 +2912,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Switched to next playlist"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2532,13 +2955,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Playback paused"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2569,13 +2998,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Playback resumed"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2606,7 +3041,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2623,6 +3058,12 @@
         "responses": {
           "200": {
             "description": "Playlist playback triggered"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2653,7 +3094,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           },
           {
@@ -2681,6 +3122,12 @@
         "responses": {
           "200": {
             "description": "Playlist track playback started"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone or playlist not found",
@@ -2711,7 +3158,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           },
           {
@@ -2727,6 +3174,12 @@
         "responses": {
           "200": {
             "description": "Subsonic track playback started"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone or track not found",
@@ -2757,7 +3210,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2775,6 +3228,12 @@
         "responses": {
           "200": {
             "description": "Track play command sent"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2805,7 +3264,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2831,6 +3290,12 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -2862,7 +3327,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2875,6 +3340,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -2906,7 +3377,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2920,6 +3391,12 @@
                   "minimum": 0
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -2949,7 +3426,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -2967,6 +3444,12 @@
         "responses": {
           "200": {
             "description": "Playlist changed successfully"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -2997,7 +3480,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3011,6 +3494,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3042,7 +3531,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3055,6 +3544,12 @@
                   "$ref": "#/components/schemas/ZonePlaylistInfo"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3086,7 +3581,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3099,6 +3594,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3130,7 +3631,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3143,6 +3644,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3172,7 +3679,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3189,6 +3696,12 @@
         "responses": {
           "200": {
             "description": "Presence status updated successfully"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3219,7 +3732,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3232,6 +3745,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3261,7 +3780,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3278,6 +3797,12 @@
         "responses": {
           "200": {
             "description": "Presence sensor status updated"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3308,7 +3833,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3323,6 +3848,12 @@
                   "minimum": 0
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3352,7 +3883,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3371,6 +3902,12 @@
         "responses": {
           "200": {
             "description": "Presence timeout updated"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3401,7 +3938,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3414,6 +3951,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3445,13 +3988,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Skipped to previous track"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3482,13 +4031,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Switched to previous playlist"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3519,7 +4074,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3532,6 +4087,12 @@
                   "$ref": "#/components/schemas/RepeatMode"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3561,7 +4122,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3578,6 +4139,12 @@
         "responses": {
           "200": {
             "description": "Repeat mode updated"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3608,13 +4175,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Repeat mode toggled"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3645,7 +4218,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3658,6 +4231,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3687,7 +4266,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3704,6 +4283,12 @@
         "responses": {
           "200": {
             "description": "Shuffle status updated"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3734,13 +4319,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Shuffle status toggled"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3771,13 +4362,19 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
         "responses": {
           "200": {
             "description": "Playback stopped"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -3808,7 +4405,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3822,6 +4419,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3853,7 +4456,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3866,6 +4469,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3897,7 +4506,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3910,6 +4519,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3941,7 +4556,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3955,6 +4570,12 @@
                   "format": "int64"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -3986,7 +4607,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -3999,6 +4620,12 @@
                   "$ref": "#/components/schemas/ZoneTrackMetadata"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -4030,7 +4657,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -4043,6 +4670,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -4074,7 +4707,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -4088,6 +4721,12 @@
                   "format": "int64"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -4117,7 +4756,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -4143,6 +4782,12 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -4174,7 +4819,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -4188,6 +4833,12 @@
                   "format": "double"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -4217,7 +4868,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -4235,6 +4886,12 @@
         "responses": {
           "200": {
             "description": "Seek command processed"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
           },
           "404": {
             "description": "Zone not found",
@@ -4265,7 +4922,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -4278,6 +4935,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -4309,7 +4972,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -4323,6 +4986,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -4352,7 +5021,7 @@
             "required": true,
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         ],
@@ -4386,6 +5055,12 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "404": {
@@ -4544,6 +5219,27 @@
               "null"
             ],
             "description": "Name of the preset this config was loaded from, if any."
+          }
+        }
+      },
+      "EqPreset": {
+        "type": "object",
+        "description": "A named EQ preset with the bands it applies.",
+        "required": [
+          "name",
+          "bands"
+        ],
+        "properties": {
+          "bands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EqBand"
+            },
+            "description": "Bands the preset sets. Empty for `flat`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Preset name, as accepted by the `eq/preset` calls of zones and clients."
           }
         }
       },
@@ -5619,8 +6315,21 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "One of the configured `api_keys`. Not needed when none is configured."
+      }
     }
   },
+  "security": [
+    {},
+    {
+      "bearer": []
+    }
+  ],
   "tags": [
     {
       "name": "system",

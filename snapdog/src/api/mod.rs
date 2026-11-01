@@ -303,6 +303,7 @@ pub fn build_router(state: &SharedState) -> Router {
                 .merge(routes::client_eq::router(state.clone()))
                 .merge(routes::speakers::client_speaker_router(state.clone())),
         )
+        .nest("/api/v1/eq", routes::eq::presets_router())
         .nest("/api/v1/media", routes::media::router(state.clone()))
         .nest("/api/v1/system", routes::system::router(state.clone()))
         .nest("/api/v1/knx", routes::knx::router(state.clone()))
