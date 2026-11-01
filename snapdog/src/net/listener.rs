@@ -433,7 +433,11 @@ fn via_of(config: &AppConfig, ip: IpAddr) -> Option<String> {
 /// plans.
 #[must_use]
 pub fn table(config: &AppConfig) -> Vec<Row> {
-    let bound = bound();
+    table_from(config, &bound())
+}
+
+/// [`table`] with the bound listeners given, so a test does not depend on the process registry.
+pub(crate) fn table_from(config: &AppConfig, bound: &[Listener]) -> Vec<Row> {
     let mut rows = Vec::new();
     let mut seen_bound = Vec::new();
     for listener in planned(config) {

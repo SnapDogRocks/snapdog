@@ -2405,7 +2405,7 @@ mod interface_bind_tests {
     fn the_listener_table_says_which_entry_an_address_came_from() {
         let config =
             load("[network]\nbind = \"eth1\"\n[http]\nbind = [\"eth0\", \"127.0.0.1\"]\n").unwrap();
-        let rows = crate::net::listener::table(&config);
+        let rows = crate::net::listener::table_from(&config, &[]);
         let via = |addr: &str| {
             rows.iter()
                 .find(|r| r.service == "HTTP API" && r.address == addr)
@@ -2428,7 +2428,7 @@ mod interface_bind_tests {
     #[test]
     fn loopback_is_named_as_the_origin() {
         let config = load("[http]\nbind = \"loopback\"\n").unwrap();
-        let rows = crate::net::listener::table(&config);
+        let rows = crate::net::listener::table_from(&config, &[]);
         let http: Vec<_> = rows.iter().filter(|r| r.service == "HTTP API").collect();
         assert_eq!(http.len(), 2);
         assert!(http.iter().all(|r| r.via.as_deref() == Some("loopback")));
