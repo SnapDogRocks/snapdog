@@ -58,7 +58,7 @@ pub const HARDWARE_TYPE: [u8; 6] = [0x00, 0x00, 0xFF, 0x01, 0x01, 0x00];
 /// **Bump [`KNXPROD_APP_VERSION`] whenever the KNX memory layout changes** — ETS decides
 /// its download scope by this version, so an unchanged version after a layout change
 /// would leave a device mis-parameterized (see the xtask layout-lock guard).
-pub const KNXPROD_APP_VERSION: u32 = 13;
+pub const KNXPROD_APP_VERSION: u32 = 14;
 /// ETS `ApplicationNumber` (== hardware order number `0xFF01`).
 pub const KNXPROD_APP_NUMBER: u16 = 0xFF01;
 /// Hardware revision (the version byte of [`HARDWARE_TYPE`]).
@@ -104,6 +104,10 @@ const BIDIR: GoFlags = GoFlags {
 /// DPT 1.007 — Step (0 = decrease, 1 = increase; here previous and next).
 pub const DPT_STEP: Dpt = Dpt::new(1, 7);
 
+/// DPT 1.008 — Up/Down (0 = up, 1 = down). For a blind-style rocker: down is next, up is previous,
+/// like scrolling a list.
+pub const DPT_UPDOWN: Dpt = Dpt::new(1, 8);
+
 /// DPT 3.007 — Controlled dimming.
 pub const DPT_CONTROL_DIMMING: Dpt = Dpt::new(3, 7);
 
@@ -116,7 +120,7 @@ pub const DPT_TIME_PERIOD_SEC: Dpt = Dpt::new(7, 5);
 /// DPT 1.011 — State (used for the cyclic "server online" heartbeat).
 pub const DPT_STATE: Dpt = Dpt::new(1, 11);
 
-/// DPT 1.017 — Trigger (used for the global "all stop" command).
+/// DPT 1.017 — Trigger (the global "all stop" command, and next and previous track and playlist).
 pub const DPT_TRIGGER: Dpt = Dpt::new(1, 17);
 
 /// DPT 1.005 — Alarm (used for the global "system fault" status).
@@ -227,7 +231,7 @@ const fn go_bidir(
     }
 }
 
-/// Zone group object definitions (37 per zone).
+/// Zone group object definitions (41 per zone).
 ///
 /// Listed in object-number order: the position here is the object's *index* (`ZGO_*`), its number
 /// inside the zone comes from [`ZONE_GO_SLOTS`]. Six groups of ten numbers: transport (0), volume and
@@ -266,16 +270,16 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "Track Next",
         "Nächster Titel",
         "Next Track",
-        DPT_SWITCH,
-        "DPST-1-1",
+        DPT_TRIGGER,
+        "DPST-1-17",
         "1 Bit",
     ),
     go_recv(
         "Track Previous",
         "Vorheriger Titel",
         "Previous Track",
-        DPT_SWITCH,
-        "DPST-1-1",
+        DPT_TRIGGER,
+        "DPST-1-17",
         "1 Bit",
     ),
     go_recv(
@@ -284,6 +288,14 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "Track Step",
         DPT_STEP,
         "DPST-1-7",
+        "1 Bit",
+    ),
+    go_recv(
+        "Track Step Up/Down",
+        "Titel Schritt Auf/Ab",
+        "Track Step Up/Down",
+        DPT_UPDOWN,
+        "DPST-1-8",
         "1 Bit",
     ),
     // ── Group 1: Volume and mute (numbers 11 to 20 of the zone) ──
@@ -422,16 +434,16 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "Playlist Next",
         "Nächste Playlist",
         "Next Playlist",
-        DPT_SWITCH,
-        "DPST-1-1",
+        DPT_TRIGGER,
+        "DPST-1-17",
         "1 Bit",
     ),
     go_recv(
         "Playlist Previous",
         "Vorherige Playlist",
         "Previous Playlist",
-        DPT_SWITCH,
-        "DPST-1-1",
+        DPT_TRIGGER,
+        "DPST-1-17",
         "1 Bit",
     ),
     go_recv(
@@ -449,6 +461,14 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         DPT_STRING_8859_1,
         "DPST-16-1",
         "14 Bytes",
+    ),
+    go_recv(
+        "Playlist Step Up/Down",
+        "Playlist Schritt Auf/Ab",
+        "Playlist Step Up/Down",
+        DPT_UPDOWN,
+        "DPST-1-8",
+        "1 Bit",
     ),
     // ── Group 4: Track info (numbers 41 to 50 of the zone) ──
     go_send(
@@ -729,65 +749,69 @@ pub const ZGO_TRACK_PREVIOUS: usize = 7;
 /// Zone GO index.
 pub const ZGO_TRACK_STEP: usize = 8;
 /// Zone GO index.
-pub const ZGO_VOLUME: usize = 9;
+pub const ZGO_TRACK_STEP_UPDOWN: usize = 9;
 /// Zone GO index.
-pub const ZGO_VOLUME_STATUS: usize = 10;
+pub const ZGO_VOLUME: usize = 10;
 /// Zone GO index.
-pub const ZGO_VOLUME_DIM: usize = 11;
+pub const ZGO_VOLUME_STATUS: usize = 11;
 /// Zone GO index.
-pub const ZGO_MUTE: usize = 12;
+pub const ZGO_VOLUME_DIM: usize = 12;
 /// Zone GO index.
-pub const ZGO_MUTE_STATUS: usize = 13;
+pub const ZGO_MUTE: usize = 13;
 /// Zone GO index.
-pub const ZGO_MUTE_TOGGLE: usize = 14;
+pub const ZGO_MUTE_STATUS: usize = 14;
 /// Zone GO index.
-pub const ZGO_SHUFFLE: usize = 15;
+pub const ZGO_MUTE_TOGGLE: usize = 15;
 /// Zone GO index.
-pub const ZGO_SHUFFLE_STATUS: usize = 16;
+pub const ZGO_SHUFFLE: usize = 16;
 /// Zone GO index.
-pub const ZGO_SHUFFLE_TOGGLE: usize = 17;
+pub const ZGO_SHUFFLE_STATUS: usize = 17;
 /// Zone GO index.
-pub const ZGO_REPEAT: usize = 18;
+pub const ZGO_SHUFFLE_TOGGLE: usize = 18;
 /// Zone GO index.
-pub const ZGO_REPEAT_STATUS: usize = 19;
+pub const ZGO_REPEAT: usize = 19;
 /// Zone GO index.
-pub const ZGO_REPEAT_TOGGLE: usize = 20;
+pub const ZGO_REPEAT_STATUS: usize = 20;
 /// Zone GO index.
-pub const ZGO_TRACK_REPEAT: usize = 21;
+pub const ZGO_REPEAT_TOGGLE: usize = 21;
 /// Zone GO index.
-pub const ZGO_TRACK_REPEAT_STATUS: usize = 22;
+pub const ZGO_TRACK_REPEAT: usize = 22;
 /// Zone GO index.
-pub const ZGO_TRACK_REPEAT_TOGGLE: usize = 23;
+pub const ZGO_TRACK_REPEAT_STATUS: usize = 23;
 /// Zone GO index.
-pub const ZGO_PLAYLIST: usize = 24;
+pub const ZGO_TRACK_REPEAT_TOGGLE: usize = 24;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_STATUS: usize = 25;
+pub const ZGO_PLAYLIST: usize = 25;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_NEXT: usize = 26;
+pub const ZGO_PLAYLIST_STATUS: usize = 26;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_PREVIOUS: usize = 27;
+pub const ZGO_PLAYLIST_NEXT: usize = 27;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_STEP: usize = 28;
+pub const ZGO_PLAYLIST_PREVIOUS: usize = 28;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_NAME: usize = 29;
+pub const ZGO_PLAYLIST_STEP: usize = 29;
 /// Zone GO index.
-pub const ZGO_TRACK_TITLE: usize = 30;
+pub const ZGO_PLAYLIST_NAME: usize = 30;
 /// Zone GO index.
-pub const ZGO_TRACK_ARTIST: usize = 31;
+pub const ZGO_PLAYLIST_STEP_UPDOWN: usize = 31;
 /// Zone GO index.
-pub const ZGO_TRACK_ALBUM: usize = 32;
+pub const ZGO_TRACK_TITLE: usize = 32;
 /// Zone GO index.
-pub const ZGO_TRACK_PROGRESS: usize = 33;
+pub const ZGO_TRACK_ARTIST: usize = 33;
 /// Zone GO index.
-pub const ZGO_TRACK_NUMBER: usize = 34;
+pub const ZGO_TRACK_ALBUM: usize = 34;
 /// Zone GO index.
-pub const ZGO_TRACK_NUMBER_STATUS: usize = 35;
+pub const ZGO_TRACK_PROGRESS: usize = 35;
 /// Zone GO index.
-pub const ZGO_PRESENCE: usize = 36;
+pub const ZGO_TRACK_NUMBER: usize = 36;
 /// Zone GO index.
-pub const ZGO_PRESENCE_ENABLE: usize = 37;
+pub const ZGO_TRACK_NUMBER_STATUS: usize = 37;
 /// Zone GO index.
-pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 38;
+pub const ZGO_PRESENCE: usize = 38;
+/// Zone GO index.
+pub const ZGO_PRESENCE_ENABLE: usize = 39;
+/// Zone GO index.
+pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 40;
 
 // ── Named GO indices (client) ─────────────────────────────────
 
@@ -833,6 +857,7 @@ pub const ZONE_GO_SLOTS: [usize; ZONE_GO_COUNT] = [
     slot(0, 6),
     slot(0, 7),
     slot(0, 8),
+    slot(0, 9),
     slot(1, 0),
     slot(1, 1),
     slot(1, 2),
@@ -854,6 +879,7 @@ pub const ZONE_GO_SLOTS: [usize; ZONE_GO_COUNT] = [
     slot(3, 3),
     slot(3, 4),
     slot(3, 5),
+    slot(3, 6),
     slot(4, 0),
     slot(4, 1),
     slot(4, 2),
@@ -1169,8 +1195,8 @@ mod tests {
 
     #[test]
     fn zone_go_count() {
-        assert_eq!(ZONE_GOS.len(), 39);
-        assert_eq!(ZONE_GO_SLOTS.len(), 39);
+        assert_eq!(ZONE_GOS.len(), 41);
+        assert_eq!(ZONE_GO_SLOTS.len(), 41);
     }
 
     #[test]
@@ -1190,8 +1216,9 @@ mod tests {
     fn zone_asap_layout() {
         // Zone 1, Play: group 0, position 0 -> number 1.
         assert_eq!(zone_asap(1, ZGO_PLAY), 1);
-        // Group 0 has nine objects, positions 0 to 8, the tenth number is reserved.
+        // Group 0 is full: ten objects, positions 0 to 9.
         assert_eq!(zone_asap(1, ZGO_TRACK_STEP), 9);
+        assert_eq!(zone_asap(1, ZGO_TRACK_STEP_UPDOWN), 10);
         // Group 1 starts at the tenth number after the group before it: Volume is number 11.
         assert_eq!(zone_asap(1, ZGO_VOLUME), 11);
         assert_eq!(zone_asap(1, ZGO_MUTE_TOGGLE), 16);
@@ -1325,9 +1352,12 @@ mod tests {
 
     #[test]
     fn reserved_numbers_have_no_object() {
-        // Number 10 is the reserved end of zone 1's transport group, 17 follows the mute group.
-        assert_eq!(locate(10), None);
+        // Number 10 is the rocker step of zone 1's transport group, which is full. 17 follows the
+        // mute group, 30 ends the play modes, 38 follows the playlist group's last object.
+        assert!(locate(10).is_some());
         assert_eq!(locate(17), None);
+        assert_eq!(locate(30), None);
+        assert_eq!(locate(38), None);
         // 54 to 60 are reserved at the end of every zone.
         assert_eq!(locate(54), None);
         assert_eq!(locate(60), None);
@@ -1372,10 +1402,12 @@ mod tests {
             (ZGO_PLAY_PAUSE, "Play/Pause"),
             (ZGO_TRACK_NEXT, "Track Next"),
             (ZGO_TRACK_STEP, "Track Step"),
+            (ZGO_TRACK_STEP_UPDOWN, "Track Step Up/Down"),
             (ZGO_VOLUME, "Volume"),
             (ZGO_SHUFFLE_TOGGLE, "Shuffle Toggle"),
             (ZGO_PLAYLIST_STEP, "Playlist Step"),
             (ZGO_PLAYLIST_NAME, "Playlist Name"),
+            (ZGO_PLAYLIST_STEP_UPDOWN, "Playlist Step Up/Down"),
             (ZGO_TRACK_PROGRESS, "Track Progress"),
             (ZGO_PRESENCE_TIMER_ACTIVE, "Presence Timer Active"),
         ] {
@@ -1391,6 +1423,21 @@ mod tests {
         assert_eq!(step.dpt_str, "DPST-1-7");
         assert!(step.flags.write && !step.flags.read);
         assert_eq!(ZONE_GOS[ZGO_PLAYLIST_STEP].dpt_str, "DPST-1-7");
+        // The rocker variants: DPT 1.008, same bit meaning as the Step objects.
+        for go in [ZGO_TRACK_STEP_UPDOWN, ZGO_PLAYLIST_STEP_UPDOWN] {
+            let updown = &ZONE_GOS[go];
+            assert_eq!(updown.dpt_str, "DPST-1-8");
+            assert!(updown.flags.write && !updown.flags.read);
+        }
+        // Next and previous are triggers (1.017); they react to any value.
+        for go in [
+            ZGO_TRACK_NEXT,
+            ZGO_TRACK_PREVIOUS,
+            ZGO_PLAYLIST_NEXT,
+            ZGO_PLAYLIST_PREVIOUS,
+        ] {
+            assert_eq!(ZONE_GOS[go].dpt_str, "DPST-1-17");
+        }
         let play_pause = &ZONE_GOS[ZGO_PLAY_PAUSE];
         assert_eq!(play_pause.dpt_str, "DPST-1-1");
         assert!(play_pause.flags.write);
@@ -1420,7 +1467,11 @@ mod tests {
     fn definition_of_finds_the_object_by_asap() {
         assert_eq!(definition_of(0).map(|d| d.name), None);
         assert_eq!(definition_of(1).map(|d| d.name), Some("Play"));
-        assert_eq!(definition_of(10).map(|d| d.name), None, "reserved");
+        assert_eq!(
+            definition_of(10).map(|d| d.name),
+            Some("Track Step Up/Down")
+        );
+        assert_eq!(definition_of(17).map(|d| d.name), None, "reserved");
         assert_eq!(definition_of(11).map(|d| d.name), Some("Volume"));
         assert_eq!(
             definition_of(zone_asap(MAX_ZONES, ZGO_VOLUME_STATUS)).map(|d| d.name),
