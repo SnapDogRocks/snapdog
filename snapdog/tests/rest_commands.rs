@@ -316,3 +316,24 @@ async fn client_eq_requires_snapdog_client() {
         StatusCode::NOT_FOUND
     );
 }
+
+// ── A renamed client shows its new name everywhere ────────────
+
+#[tokio::test]
+async fn a_renamed_client_has_its_new_name_in_the_list_and_the_details() {
+    let app = common::test_app();
+    let (_, before) = app.get("/api/v1/clients/1").await;
+    assert_ne!(before["name"], "Kitchen");
+
+    let (s, _) = app
+        .request("PUT", "/api/v1/clients/1/name", Some(json!("Kitchen")))
+        .await;
+    assert!(s.is_success());
+
+    let (_, one) = app.get("/api/v1/clients/1").await;
+    assert_eq!(one["name"], "Kitchen");
+    let (_, all) = app.get("/api/v1/clients").await;
+    assert_eq!(all[0]["name"], "Kitchen");
+    let (_, name) = app.get("/api/v1/clients/1/name").await;
+    assert_eq!(name, "Kitchen");
+}
