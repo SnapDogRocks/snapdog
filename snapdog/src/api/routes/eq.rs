@@ -7,6 +7,8 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
+use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::api::SharedState;
 use crate::api::error::{ApiError, ErrorBody};
@@ -37,6 +39,40 @@ pub(super) fn resolve_preset(name: &str) -> Result<EqConfig, ApiError> {
         bands,
         preset: Some(name.to_string()),
     })
+}
+
+/// A named EQ preset with the bands it applies.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct EqPreset {
+    /// Preset name, as accepted by the `eq/preset` calls of zones and clients.
+    pub name: &'static str,
+    /// Bands the preset sets. Empty for `flat`.
+    pub bands: Vec<EqBand>,
+}
+
+/// Router for the preset list, nested at `/api/v1/eq`.
+pub fn presets_router() -> Router {
+    Router::new().route("/presets", get(list_presets))
+}
+
+/// List EQ presets
+///
+/// Returns every preset name that `POST .../eq/preset` accepts, with the bands each one sets.
+#[utoipa::path(
+    get,
+    path = "/api/v1/eq/presets",
+    responses(
+        (status = 200, description = "Available presets, in a fixed order", body = Vec<EqPreset>)
+    ),
+    tag = "equalizer"
+)]
+async fn list_presets() -> Json<Vec<EqPreset>> {
+    Json(
+        eq::preset_names()
+            .iter()
+            .filter_map(|&name| eq::preset(name).map(|bands| EqPreset { name, bands }))
+            .collect(),
+    )
 }
 
 pub fn router(state: SharedState) -> Router {

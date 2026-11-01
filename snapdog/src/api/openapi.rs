@@ -3,7 +3,12 @@
 
 //! `OpenAPI` documentation registry.
 
-use utoipa::OpenApi;
+use utoipa::openapi::path::Operation;
+use utoipa::openapi::response::ResponseBuilder;
+use utoipa::openapi::schema::Schema;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityRequirement, SecurityScheme};
+use utoipa::openapi::{ContentBuilder, RefOr};
+use utoipa::{Modify, OpenApi};
 
 use crate::api::error::ErrorBody;
 use crate::api::routes::system::{self, SystemStatus, VersionInfo};
@@ -11,6 +16,7 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
 /// Registry of all endpoints and schemas exposed in the REST API.
 #[derive(OpenApi)]
 #[openapi(
+    modifiers(&Contract),
     paths(
         system::get_status,
         system::get_version,
@@ -31,6 +37,7 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
         crate::api::routes::eq::set_eq,
         crate::api::routes::eq::set_band,
         crate::api::routes::eq::apply_preset,
+        crate::api::routes::eq::list_presets,
 
         // Client Equalizer
         crate::api::routes::client_eq::get_eq,
@@ -147,6 +154,7 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
             snapdog_common::PlaybackControl,
 
             // Route-specific request/response schemas
+            crate::api::routes::eq::EqPreset,
             crate::api::routes::speakers::ApplySpeakerRequest,
             crate::api::routes::clients::ClientInfo,
             crate::api::routes::zones::VolumeValue,
@@ -176,6 +184,90 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
     )
 )]
 pub struct ApiDoc;
+
+/// Corrections that the path attributes cannot express: the `Authorization: Bearer` scheme and
+/// the 401 every protected operation can answer, and the 1-based lower bound of the index
+/// parameters.
+struct Contract;
+
+impl Modify for Contract {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "bearer",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .description(Some(
+                        "One of the configured `api_keys`. Not needed when none is configured.",
+                    ))
+                    .build(),
+            ),
+        );
+        // The empty requirement makes the key optional, as it is when `api_keys` is empty.
+        openapi.security = Some(vec![
+            SecurityRequirement::default(),
+            SecurityRequirement::new("bearer", Vec::<String>::new()),
+        ]);
+
+        for item in openapi.paths.paths.values_mut() {
+            for op in [
+                &mut item.get,
+                &mut item.put,
+                &mut item.post,
+                &mut item.delete,
+                &mut item.patch,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                document_operation(op);
+            }
+        }
+    }
+}
+
+/// utoipa documents a bare `bool`, number or `String` body as `text/plain`. The handlers read
+/// and write them with `Json<T>`, so on the wire they are JSON (`true`, `40`, `"Kitchen"`).
+macro_rules! retype_json {
+    ($content:expr, $remove:ident) => {
+        if let Some(body) = $content.$remove("text/plain") {
+            $content.entry("application/json".into()).or_insert(body);
+        }
+    };
+}
+
+fn document_operation(op: &mut Operation) {
+    if let Some(RefOr::T(body)) = &mut op.request_body {
+        retype_json!(body.content, remove);
+    }
+    for response in op.responses.responses.values_mut() {
+        if let RefOr::T(response) = response {
+            retype_json!(response.content, shift_remove);
+        }
+    }
+    // The middleware answers with a plain-text body, not an `ErrorBody`.
+    op.responses
+        .responses
+        .entry("401".into())
+        .or_insert_with(|| {
+            ResponseBuilder::new()
+                .description("Missing or invalid API key (plain-text body)")
+                .content("text/plain", ContentBuilder::new().build())
+                .build()
+                .into()
+        });
+    for param in op.parameters.iter_mut().flatten() {
+        let RefOr::T(param) = param else { continue };
+        if !matches!(param.name.as_str(), "zone_index" | "client_index") {
+            continue;
+        }
+        if let Some(RefOr::T(Schema::Object(schema))) = &mut param.schema {
+            // `usize` is documented as 0-based; these indexes start at 1.
+            schema.minimum = Some(1.into());
+        }
+    }
+}
 
 /// `GET /api/v1/openapi.json`: the generated `OpenAPI` document. Mounted with the
 /// protected routes in `api/mod.rs`, so it sits behind the API key like they do.

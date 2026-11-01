@@ -36,7 +36,7 @@ use tokio::sync::broadcast;
 use crate::api::SharedState;
 
 /// Notification broadcast to all connected WebSocket clients.
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 pub enum Notification {

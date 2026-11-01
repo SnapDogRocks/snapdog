@@ -76,8 +76,8 @@ async fn send_eq(state: &SharedState, idx: usize, config: &EqConfig) -> Result<(
     ),
     responses(
         (status = 200, description = "Current equalizer configuration", body = EqConfig),
-        (status = 400, description = "Client does not support EQ", body = ErrorBody),
-        (status = 404, description = "Client not found", body = ErrorBody)
+        (status = 404, description = "Client not found", body = ErrorBody),
+        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody)
     ),
     tag = "equalizer"
 )]
@@ -104,7 +104,8 @@ async fn get_eq(State(state): State<SharedState>, Path(idx): Path<usize>) -> imp
     responses(
         (status = 200, description = "Updated equalizer configuration", body = EqConfig),
         (status = 400, description = "Too many bands or validation error", body = ErrorBody),
-        (status = 404, description = "Client not found", body = ErrorBody)
+        (status = 404, description = "Client not found", body = ErrorBody),
+        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody)
     ),
     tag = "equalizer"
 )]
@@ -140,7 +141,8 @@ async fn set_eq(
     responses(
         (status = 200, description = "Updated full equalizer configuration", body = EqConfig),
         (status = 400, description = "Validation error", body = ErrorBody),
-        (status = 404, description = "Client or band not found", body = ErrorBody)
+        (status = 404, description = "Client or band not found", body = ErrorBody),
+        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody)
     ),
     tag = "equalizer"
 )]
@@ -183,7 +185,8 @@ async fn set_band(
     responses(
         (status = 200, description = "Updated full equalizer configuration from preset", body = EqConfig),
         (status = 400, description = "Unknown preset name", body = ErrorBody),
-        (status = 404, description = "Client not found", body = ErrorBody)
+        (status = 404, description = "Client not found", body = ErrorBody),
+        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody)
     ),
     tag = "equalizer"
 )]

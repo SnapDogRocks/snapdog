@@ -87,6 +87,101 @@ fn the_programming_mode_calls_document_the_503() {
     }
 }
 
+/// The API key is declared: a bearer scheme, optional because a server without `api_keys` is
+/// open, and a 401 on every operation, which the middleware answers with plain text.
+#[test]
+fn the_contract_declares_the_api_key_and_the_401() {
+    let doc: serde_json::Value =
+        serde_json::to_value(ApiDoc::openapi()).expect("openapi serializes");
+    assert_eq!(
+        doc["components"]["securitySchemes"]["bearer"]["scheme"],
+        "bearer"
+    );
+    let security = doc["security"].as_array().expect("global security");
+    assert!(
+        security.iter().any(|r| r == &serde_json::json!({})),
+        "the key is optional"
+    );
+    assert!(security.iter().any(|r| r.get("bearer").is_some()));
+
+    for (path, item) in doc["paths"].as_object().expect("paths") {
+        for (verb, op) in item.as_object().expect("path item") {
+            let response = &op["responses"]["401"];
+            assert!(response.is_object(), "{verb} {path} has no 401");
+            assert!(
+                response["content"].get("text/plain").is_some(),
+                "{verb} {path}: the 401 body is plain text"
+            );
+        }
+    }
+}
+
+/// Scalar bodies are JSON on the wire (`Json<bool>`, `Json<i32>`, ...), so the contract must not
+/// call them `text/plain`; only the 401 of the auth middleware is plain text.
+#[test]
+fn scalar_bodies_are_documented_as_json() {
+    let doc: serde_json::Value =
+        serde_json::to_value(ApiDoc::openapi()).expect("openapi serializes");
+    for (path, item) in doc["paths"].as_object().expect("paths") {
+        for (verb, op) in item.as_object().expect("path item") {
+            if let Some(content) = op["requestBody"]["content"].as_object() {
+                assert!(content.get("text/plain").is_none(), "{verb} {path} request");
+            }
+            for (status, response) in op["responses"].as_object().expect("responses") {
+                if status == "401" {
+                    continue;
+                }
+                if let Some(content) = response["content"].as_object() {
+                    assert!(
+                        content.get("text/plain").is_none(),
+                        "{verb} {path} {status} response"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Zone and client indexes start at 1, whatever the Rust type of the parameter says.
+#[test]
+fn index_parameters_start_at_one() {
+    let doc: serde_json::Value =
+        serde_json::to_value(ApiDoc::openapi()).expect("openapi serializes");
+    let mut seen = 0;
+    for item in doc["paths"].as_object().expect("paths").values() {
+        for op in item.as_object().expect("path item").values() {
+            for param in op["parameters"].as_array().into_iter().flatten() {
+                if matches!(param["name"].as_str(), Some("zone_index" | "client_index")) {
+                    seen += 1;
+                    assert_eq!(param["schema"]["minimum"], 1, "{param}");
+                }
+            }
+        }
+    }
+    assert!(seen > 50, "only {seen} index parameters found");
+}
+
+/// A client that is not a SnapDog client answers 422 on EQ and speaker correction.
+#[test]
+fn the_non_snapdog_client_calls_document_the_422() {
+    let doc: serde_json::Value =
+        serde_json::to_value(ApiDoc::openapi()).expect("openapi serializes");
+    for (path, verb) in [
+        ("/api/v1/clients/{client_index}/eq", "get"),
+        ("/api/v1/clients/{client_index}/eq", "put"),
+        ("/api/v1/clients/{client_index}/eq/{band_index}", "put"),
+        ("/api/v1/clients/{client_index}/eq/preset", "post"),
+        ("/api/v1/clients/{client_index}/speaker", "get"),
+        ("/api/v1/clients/{client_index}/speaker", "put"),
+    ] {
+        let responses = &doc["paths"][path][verb]["responses"];
+        assert!(
+            responses.get("422").is_some(),
+            "{verb} {path} has no 422: {responses}"
+        );
+    }
+}
+
 // ── Registered routes versus the spec ──────────────────────────────────────
 //
 // axum cannot list the routes of a built `Router`, so the route tables are read
@@ -103,6 +198,7 @@ fn the_programming_mode_calls_document_the_503() {
 const ROUTERS: &[(&str, &str, &str)] = &[
     ("routes/zones.rs", "router", "/api/v1/zones"),
     ("routes/eq.rs", "router", "/api/v1/zones"),
+    ("routes/eq.rs", "presets_router", "/api/v1/eq"),
     ("routes/clients.rs", "router", "/api/v1/clients"),
     ("routes/client_eq.rs", "router", "/api/v1/clients"),
     (

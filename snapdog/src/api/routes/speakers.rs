@@ -99,7 +99,8 @@ async fn get_profile(
     responses(
         (status = 200, description = "Applied speaker correction configuration", body = EqConfig),
         (status = 400, description = "Invalid request payload (e.g., mutually exclusive options, validation failed)", body = ErrorBody),
-        (status = 404, description = "Client or speaker profile not found", body = ErrorBody)
+        (status = 404, description = "Client or speaker profile not found", body = ErrorBody),
+        (status = 422, description = "Client does not support speaker correction (not a SnapDog client)", body = ErrorBody)
     ),
     tag = "speakers"
 )]
@@ -148,7 +149,8 @@ async fn apply_speaker(
     ),
     responses(
         (status = 200, description = "Active speaker correction configuration", body = EqConfig),
-        (status = 404, description = "Client not found", body = ErrorBody)
+        (status = 404, description = "Client not found", body = ErrorBody),
+        (status = 422, description = "Client does not support speaker correction (not a SnapDog client)", body = ErrorBody)
     ),
     tag = "speakers"
 )]
