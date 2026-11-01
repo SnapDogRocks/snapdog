@@ -336,6 +336,14 @@ pub async fn run_app() -> Result<()> {
                 eprintln!("warning: {warning}");
             }
         }
+        println!(
+            "Interfaces of this host:\n{}",
+            config::interfaces::InterfaceTable::system().inventory()
+        );
+        println!(
+            "Listeners:{}",
+            net::listener::format_table(&net::listener::table(&app_config))
+        );
         println!("Configuration is valid");
         return Ok(());
     }

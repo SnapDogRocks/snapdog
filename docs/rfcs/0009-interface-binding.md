@@ -136,8 +136,10 @@ security boundary; the firewall is, as in LBD-0008.
   `via` in `GET /api/v1/system/listeners` carries the entry from the configuration.
 - `--check-config` first prints the interface inventory of the host (name, addresses), then for
   each service the entries and what they resolved to. This is the answer to "what do I write".
-- Where the inventory is read on another host than the one that runs SnapDog, an unknown name is
-  a warning in `--check-config` and an error at start, as for addresses today.
+- An unknown interface name is an error at load, so also in `--check-config`. The message lists
+  the interfaces of the host. A warning in `--check-config` would need a load without name
+  resolution, which this RFC does not add. Checking a configuration on another host than the
+  one that runs SnapDog is therefore only reliable for addresses, not for names.
 
 ### 2.7 Recipes (go into README and `snapdog.example.toml`)
 

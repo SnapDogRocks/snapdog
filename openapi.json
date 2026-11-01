@@ -4980,6 +4980,13 @@
           "service": {
             "type": "string",
             "description": "Service that owns the listener."
+          },
+          "via": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The `bind` entry this address came from when that was an interface name or `loopback`,\nfor example `eth0`. Absent when the address was written as an address or is the default."
           }
         }
       },

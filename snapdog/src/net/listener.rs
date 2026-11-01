@@ -385,6 +385,10 @@ pub struct Row {
     pub port: u16,
     /// What creates the socket.
     pub backend: String,
+    /// The `bind` entry this address came from when that was an interface name or `loopback`,
+    /// for example `eth0`. Absent when the address was written as an address or is the default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
     /// Whether a `bind` setting reaches this socket.
     pub bind_support: BindSupport,
     /// What the bind support level means for this service, in one sentence.
@@ -414,6 +418,14 @@ fn support_of(listener: &Listener) -> (BindSupport, &'static str) {
     }
 }
 
+fn via_of(config: &AppConfig, ip: IpAddr) -> Option<String> {
+    config
+        .bind_origins
+        .iter()
+        .find(|(addr, _)| *addr == ip)
+        .map(|(_, entry)| entry.clone())
+}
+
 /// Everything the server listens on or is configured to listen on.
 ///
 /// Each row carries the bind support of its service. Listeners bound through this module are
@@ -421,7 +433,11 @@ fn support_of(listener: &Listener) -> (BindSupport, &'static str) {
 /// plans.
 #[must_use]
 pub fn table(config: &AppConfig) -> Vec<Row> {
-    let bound = bound();
+    table_from(config, &bound())
+}
+
+/// [`table`] with the bound listeners given, so a test does not depend on the process registry.
+pub(crate) fn table_from(config: &AppConfig, bound: &[Listener]) -> Vec<Row> {
     let mut rows = Vec::new();
     let mut seen_bound = Vec::new();
     for listener in planned(config) {
@@ -442,34 +458,42 @@ pub fn table(config: &AppConfig) -> Vec<Row> {
             address: shown.addr.ip().to_string(),
             port: shown.addr.port(),
             backend: shown.backend.clone(),
+            via: via_of(config, shown.addr.ip()),
             bind_support,
             note: note.to_owned(),
         });
     }
+    put_bound_http_rows(config, bound, &mut rows);
+    rows
+}
+
+/// A name in `[http].bind` is resolved when the server binds, so the HTTP rows are the bound ones.
+fn put_bound_http_rows(config: &AppConfig, bound: &[Listener], rows: &mut Vec<Row>) {
     if config
         .http
         .bind_addresses()
         .iter()
-        .any(|b| b.parse::<IpAddr>().is_err())
+        .all(|b| b.parse::<IpAddr>().is_ok())
     {
-        rows.retain(|r| r.service != "HTTP API");
-        for listener in bound.iter().filter(|b| b.service == "HTTP API") {
-            let (bind_support, note) = support_of(listener);
-            rows.insert(
-                0,
-                Row {
-                    service: listener.service.clone(),
-                    protocol: listener.protocol,
-                    address: listener.addr.ip().to_string(),
-                    port: listener.addr.port(),
-                    backend: listener.backend.clone(),
-                    bind_support,
-                    note: note.to_owned(),
-                },
-            );
-        }
+        return;
     }
-    rows
+    rows.retain(|r| r.service != "HTTP API");
+    for listener in bound.iter().filter(|b| b.service == "HTTP API") {
+        let (bind_support, note) = support_of(listener);
+        rows.insert(
+            0,
+            Row {
+                service: listener.service.clone(),
+                protocol: listener.protocol,
+                address: listener.addr.ip().to_string(),
+                port: listener.addr.port(),
+                backend: listener.backend.clone(),
+                via: via_of(config, listener.addr.ip()),
+                bind_support,
+                note: note.to_owned(),
+            },
+        );
+    }
 }
 
 /// The table as the start-up log prints it: one line per listener, aligned in columns.
@@ -488,6 +512,9 @@ pub fn format_table(rows: &[Row]) -> String {
             "\n  {:service$}  {}  {:>address$}:{:<5}  {:backend$}  bind: {}",
             row.service, row.protocol, row.address, row.port, row.backend, row.bind_support,
         );
+        if let Some(via) = &row.via {
+            let _ = write!(out, "  (via {via})");
+        }
     }
     out
 }
