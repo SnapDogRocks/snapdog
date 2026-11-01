@@ -1191,6 +1191,10 @@ pub struct RawZoneKnxConfig {
     pub playlist_step: Option<String>,
     /// Active playlist name status feedback (DPT 16.001).
     pub playlist_name_status: Option<String>,
+    /// Track selection command (DPT 5.010, number in the active playlist, 1 is the first).
+    pub track_number: Option<String>,
+    /// Track number status feedback (DPT 5.010, 0 when no track is playing).
+    pub track_number_status: Option<String>,
     /// Play/pause command (DPT 1.001, 1 = play, 0 = pause).
     pub play_pause: Option<String>,
     /// Track step command (DPT 1.007, 1 = next, 0 = previous).
@@ -1558,6 +1562,10 @@ pub struct ZoneKnxAddresses {
     pub playlist_step: Option<String>,
     /// Active playlist name status feedback (DPT 16.001).
     pub playlist_name_status: Option<String>,
+    /// Track selection command (DPT 5.010, number in the active playlist, 1 is the first).
+    pub track_number: Option<String>,
+    /// Track number status feedback (DPT 5.010, 0 when no track is playing).
+    pub track_number_status: Option<String>,
     /// Play/pause command (DPT 1.001, 1 = play, 0 = pause).
     pub play_pause: Option<String>,
     /// Track step command (DPT 1.007, 1 = next, 0 = previous).

@@ -141,6 +141,8 @@ fn resolve_zone_knx(_n: usize, raw: RawZoneKnxConfig) -> ZoneKnxAddresses {
         playlist_previous: raw.playlist_previous,
         playlist_step: raw.playlist_step,
         playlist_name_status: raw.playlist_name_status,
+        track_number: raw.track_number,
+        track_number_status: raw.track_number_status,
         play_pause: raw.play_pause,
         track_step: raw.track_step,
         shuffle: raw.shuffle,

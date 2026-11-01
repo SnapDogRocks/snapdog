@@ -912,6 +912,8 @@ fn validate_zone_knx(knx: &RawZoneKnxConfig) -> Result<()> {
         &knx.playlist_previous,
         &knx.playlist_step,
         &knx.playlist_name_status,
+        &knx.track_number,
+        &knx.track_number_status,
         &knx.play_pause,
         &knx.track_step,
         &knx.shuffle,
