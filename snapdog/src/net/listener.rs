@@ -463,31 +463,37 @@ pub(crate) fn table_from(config: &AppConfig, bound: &[Listener]) -> Vec<Row> {
             note: note.to_owned(),
         });
     }
+    put_bound_http_rows(config, bound, &mut rows);
+    rows
+}
+
+/// A name in `[http].bind` is resolved when the server binds, so the HTTP rows are the bound ones.
+fn put_bound_http_rows(config: &AppConfig, bound: &[Listener], rows: &mut Vec<Row>) {
     if config
         .http
         .bind_addresses()
         .iter()
-        .any(|b| b.parse::<IpAddr>().is_err())
+        .all(|b| b.parse::<IpAddr>().is_ok())
     {
-        rows.retain(|r| r.service != "HTTP API");
-        for listener in bound.iter().filter(|b| b.service == "HTTP API") {
-            let (bind_support, note) = support_of(listener);
-            rows.insert(
-                0,
-                Row {
-                    service: listener.service.clone(),
-                    protocol: listener.protocol,
-                    address: listener.addr.ip().to_string(),
-                    port: listener.addr.port(),
-                    backend: listener.backend.clone(),
-                    via: via_of(config, listener.addr.ip()),
-                    bind_support,
-                    note: note.to_owned(),
-                },
-            );
-        }
+        return;
     }
-    rows
+    rows.retain(|r| r.service != "HTTP API");
+    for listener in bound.iter().filter(|b| b.service == "HTTP API") {
+        let (bind_support, note) = support_of(listener);
+        rows.insert(
+            0,
+            Row {
+                service: listener.service.clone(),
+                protocol: listener.protocol,
+                address: listener.addr.ip().to_string(),
+                port: listener.addr.port(),
+                backend: listener.backend.clone(),
+                via: via_of(config, listener.addr.ip()),
+                bind_support,
+                note: note.to_owned(),
+            },
+        );
+    }
 }
 
 /// The table as the start-up log prints it: one line per listener, aligned in columns.
