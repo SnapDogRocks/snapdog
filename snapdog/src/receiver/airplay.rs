@@ -271,10 +271,17 @@ impl super::RemoteControl for ShairplayRemoteBridge {
 /// [`FilePairingStore::shared`] hands every zone the same store per file, so there is one
 /// map and one writer. Writes are serialised by the map's lock and go through a temporary
 /// file and a rename, so a crash never leaves a half-written file.
+///
+/// The store also keeps the server's own long-term identity (an Ed25519 seed) in
+/// `airplay-identity` next to the pairing file. Without it shairplay would generate a new
+/// identity on every start, and a sender that completed a persistent pair-setup would have
+/// the old one stored and have to pair again. All zones share the identity, as they share
+/// the pairing keys.
 #[cfg(feature = "ap2")]
 struct FilePairingStore {
     path: std::path::PathBuf,
     keys: std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>,
+    identity: std::sync::Mutex<Option<[u8; 32]>>,
 }
 
 /// The pairing store every zone of this process uses (`<state_dir>/airplay-pairing`).
@@ -319,10 +326,51 @@ impl FilePairingStore {
                 PairingKeys::default()
             }
         };
+        let identity = Self::read_identity(&Self::identity_path(&path));
         Self {
             path,
             keys: std::sync::Mutex::new(keys),
+            identity: std::sync::Mutex::new(identity),
         }
+    }
+
+    /// The file of the server identity, next to the pairing file.
+    fn identity_path(pairing_path: &std::path::Path) -> std::path::PathBuf {
+        pairing_path.with_file_name("airplay-identity")
+    }
+
+    /// The identity seed as 64 hex digits. A missing file is no identity yet. A file that
+    /// cannot be read or is not a seed is reported and ignored, so a new identity replaces it.
+    fn read_identity(path: &std::path::Path) -> Option<[u8; 32]> {
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "could not read the AirPlay identity file, creating a new identity");
+                return None;
+            }
+        };
+        let seed = decode_seed(text.trim());
+        if seed.is_none() {
+            tracing::warn!(path = %path.display(), "AirPlay identity file is not a 32 byte seed, creating a new identity");
+        }
+        seed
+    }
+
+    /// Write the seed through a temporary file and a rename. The file is a secret, so it
+    /// is created readable by the owner only.
+    fn try_save_identity(&self, seed: [u8; 32]) -> std::io::Result<()> {
+        use std::io::Write as _;
+        let path = Self::identity_path(&self.path);
+        let tmp = path.with_extension("tmp");
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options.open(&tmp)?;
+        file.write_all(encode_seed(seed).as_bytes())?;
+        file.sync_all()?;
+        std::fs::rename(&tmp, &path)
     }
 
     fn save(&self, keys: &PairingKeys) {
@@ -356,6 +404,56 @@ impl PairingStore for FilePairingStore {
             self.save(&keys);
         }
     }
+    fn has_any_pairing(&self) -> bool {
+        self.keys.lock().is_ok_and(|keys| !keys.is_empty())
+    }
+    /// The identity of this installation. The first call creates it, under the lock, so
+    /// zones that start at the same time all get the same one; shairplay then never has
+    /// to generate its own.
+    fn load_identity(&self) -> Option<[u8; 32]> {
+        let mut identity = self.identity.lock().ok()?;
+        if identity.is_none() {
+            let seed = shairplay::crypto::pairing_homekit::generate_identity_seed();
+            *identity = Some(seed);
+            if let Err(e) = self.try_save_identity(seed) {
+                tracing::warn!(error = %e, "could not save the AirPlay identity, senders will have to pair again after a restart");
+            }
+        }
+        *identity
+    }
+    fn save_identity(&self, seed: [u8; 32]) {
+        let Ok(mut identity) = self.identity.lock() else {
+            return;
+        };
+        if identity.is_none() {
+            *identity = Some(seed);
+            if let Err(e) = self.try_save_identity(seed) {
+                tracing::warn!(error = %e, "could not save the AirPlay identity, senders will have to pair again after a restart");
+            }
+        }
+    }
+}
+
+#[cfg(feature = "ap2")]
+fn encode_seed(seed: [u8; 32]) -> String {
+    use std::fmt::Write as _;
+    seed.iter()
+        .fold(String::with_capacity(64), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
+}
+
+#[cfg(feature = "ap2")]
+fn decode_seed(text: &str) -> Option<[u8; 32]> {
+    if text.len() != 64 || !text.is_ascii() {
+        return None;
+    }
+    let mut seed = [0u8; 32];
+    for (byte, pair) in seed.iter_mut().zip(text.as_bytes().chunks(2)) {
+        *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(seed)
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -483,6 +581,152 @@ mod tests {
         let store = FilePairingStore::load(dir.path().join("missing-dir").join("airplay-pairing"));
         store.put("x", key(4));
         assert_eq!(store.get("x"), Some(key(4)));
+    }
+
+    // ── AP2 server identity ───────────────────────────────────────────
+
+    /// The bug (#344): every start made a new identity, so a persistent pairing never
+    /// survived a restart. After a restart the store must hand back the same seed.
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn the_identity_survives_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let first = FilePairingStore::load(path.clone())
+            .load_identity()
+            .unwrap();
+        let restarted = FilePairingStore::load(path);
+        assert_eq!(restarted.load_identity(), Some(first));
+        assert_eq!(
+            restarted.load_identity(),
+            Some(first),
+            "stays stable within a run"
+        );
+        let other = FilePairingStore::load(dir.path().join("elsewhere").join("airplay-pairing"));
+        assert_ne!(
+            other.load_identity(),
+            Some(first),
+            "a different state dir has its own identity"
+        );
+    }
+
+    /// Zones start at the same time. They must not end up with different identities, one
+    /// of which would not match the file after the next restart.
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn zones_that_start_together_share_one_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let handles: Vec<_> = (0..16)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || FilePairingStore::shared(path).load_identity().unwrap())
+            })
+            .collect();
+        let mut seeds = Vec::new();
+        for handle in handles {
+            seeds.push(handle.join().unwrap());
+        }
+        assert!(seeds.windows(2).all(|pair| pair[0] == pair[1]));
+        assert_eq!(FilePairingStore::load(path).load_identity(), Some(seeds[0]));
+    }
+
+    /// Pairing keys and identity are separate files: a change of one never touches the other.
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn identity_and_pairing_keys_do_not_overwrite_each_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let store = FilePairingStore::load(path.clone());
+        let seed = store.load_identity().unwrap();
+        store.put("phone", key(5));
+        store.remove("phone");
+        store.put("laptop", key(6));
+        let restarted = FilePairingStore::load(path.clone());
+        assert_eq!(restarted.load_identity(), Some(seed));
+        assert_eq!(on_disk(&path).keys().collect::<Vec<_>>(), ["laptop"]);
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn has_any_pairing_follows_the_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let store = FilePairingStore::load(path.clone());
+        assert!(!store.has_any_pairing());
+        store.put("phone", key(1));
+        assert!(store.has_any_pairing());
+        assert!(
+            FilePairingStore::load(path).has_any_pairing(),
+            "also after a restart"
+        );
+        store.remove("phone");
+        assert!(!store.has_any_pairing());
+    }
+
+    /// An identity file that is not a seed is replaced, and the replacement is kept.
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn a_broken_identity_file_is_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let identity_file = dir.path().join("airplay-identity");
+        for broken in ["", "not hex", &"zz".repeat(32), &"ab".repeat(31)] {
+            std::fs::write(&identity_file, broken).unwrap();
+            let seed = FilePairingStore::load(path.clone())
+                .load_identity()
+                .unwrap();
+            assert_eq!(
+                FilePairingStore::load(path.clone()).load_identity(),
+                Some(seed),
+                "{broken:?}"
+            );
+        }
+    }
+
+    /// `save_identity` is how shairplay offers a seed it generated itself. A store that
+    /// already has an identity keeps it.
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn save_identity_never_replaces_an_existing_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("airplay-pairing");
+        let store = FilePairingStore::load(path.clone());
+        store.save_identity([7; 32]);
+        assert_eq!(
+            FilePairingStore::load(path.clone()).load_identity(),
+            Some([7; 32])
+        );
+        store.save_identity([8; 32]);
+        assert_eq!(FilePairingStore::load(path).load_identity(), Some([7; 32]));
+    }
+
+    /// The seed is a secret: readable by the owner only, and no temporary file stays.
+    #[cfg(all(feature = "ap2", unix))]
+    #[test]
+    fn the_identity_file_is_private() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let store = FilePairingStore::load(dir.path().join("airplay-pairing"));
+        store.load_identity().unwrap();
+        let mode = std::fs::metadata(dir.path().join("airplay-identity"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["airplay-identity"]);
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn the_seed_round_trips_through_hex() {
+        let seed: [u8; 32] = std::array::from_fn(|i| u8::try_from(i * 8 + 1).unwrap());
+        assert_eq!(decode_seed(&encode_seed(seed)), Some(seed));
+        assert_eq!(decode_seed(&"é".repeat(32)), None);
     }
 
     /// `[airplay].mode` is compiled out without `ap2`: the default `airplay2` must
