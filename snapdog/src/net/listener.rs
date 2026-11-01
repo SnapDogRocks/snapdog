@@ -399,9 +399,10 @@ fn support_of(listener: &Listener) -> (BindSupport, &'static str) {
     match listener.service.as_str() {
         "HTTP API" => (BindSupport::Full, "[http].bind, one listener per address"),
         "Snapcast streaming" => (BindSupport::Full, "[snapcast].streaming_bind, one address"),
-        s if s.starts_with("AirPlay") && cfg!(feature = "ap2") => {
-            (BindSupport::Full, "[airplay].bind")
-        }
+        s if s.starts_with("AirPlay") && cfg!(feature = "ap2") => (
+            BindSupport::Partial,
+            "[airplay].bind limits the TCP listeners; the clock sockets 319 and 320 (UDP) stay on all interfaces (shairplay 0.10)",
+        ),
         s if s.starts_with("AirPlay") => (
             BindSupport::None,
             "this build has no AirPlay 2 (feature ap2): AirPlay listens on all interfaces",
@@ -726,7 +727,7 @@ mod tests {
         assert_eq!(
             support("AirPlay zone 1"),
             if cfg!(feature = "ap2") {
-                BindSupport::Full
+                BindSupport::Partial
             } else {
                 BindSupport::None
             }

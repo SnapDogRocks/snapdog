@@ -496,10 +496,10 @@ instance.
 | WebUI, REST API, WebSocket | 5555 (`[http].port`) | TCP | full | `[http].bind`, `[network].bind` | `[http].api_keys`, optional TLS | Allow from the machines that use the web UI or API |
 | Snapcast audio stream | 1704 (`[snapcast].streaming_port`) | TCP | full, one address | `[snapcast].streaming_bind`, `[network].bind` with one address | None | Allow from your Snapcast clients only: whoever can reach the port can connect as a client and receive the audio |
 | Snapcast JSON-RPC | 1705 (`[snapcast].jsonrpc_tcp_port`) | TCP | none | not configurable | None | Only in builds with the `snapcast-process` feature (released binaries use the embedded server and do not open it). Anyone who can reach it controls the server, and SnapDog's generated `snapserver.conf` does not restrict its address, so block it for everyone but this host |
-| AirPlay | 7001 and up, one per zone (7000 + zone number) | TCP, plus UDP | full with AirPlay 2 (feature `ap2`), none without | `[airplay].bind`, `[network].bind` | Optional `[airplay].password` | Allow the TCP ports from your AirPlay devices. AirPlay also uses UDP: ports 319 and 320 (AirPlay 2 clock) and further UDP ports chosen at run time for audio and timing, so allow UDP from the same devices |
+| AirPlay | 7001 and up, one per zone (7000 + zone number) | TCP, plus UDP | partial with AirPlay 2 (feature `ap2`), none without | `[airplay].bind`, `[network].bind` | Optional `[airplay].password` | Allow the TCP ports from your AirPlay devices. `[airplay].bind` does not reach the AirPlay 2 clock sockets: UDP 319 and 320 stay on all interfaces (`shairplay` 0.10), so limit them in the firewall. AirPlay also uses further UDP ports chosen at run time for audio and timing, so allow UDP from the same devices |
 | Spotify Connect | 7100 and up, one per zone (`[spotify].port` + zone number − 1; 0 = random) | TCP | none | not possible: `[spotify].bind` is an error | The Spotify app's own login | Allow the ports from the phones that cast. Announcements follow `[spotify].zeroconf_backend`: `libmdns` announces on the default-route interface only, `avahi` and `dns-sd` on all |
 | KNX/IP device mode | 3671 | UDP (and the KNX multicast group 224.0.23.12) | partial | `[knx].bind` names the interface for the multicast group | None: KNX/IP has no authentication | The socket stays on all interfaces, so limit 3671/udp in the firewall |
-| mDNS announcements | 5353 | UDP | partial | the HTTP `bind`: the announcement of SnapDog (`_snapdog._tcp`, `_snapcast._tcp`) follows it, the AirPlay announcement does not yet | None | Allow multicast DNS where the devices that discover SnapDog are |
+| mDNS announcements | 5353 | UDP | partial | the HTTP `bind`: the announcement of SnapDog (`_snapdog._tcp`, `_snapcast._tcp`) follows it, the AirPlay announcement does not yet: it is limited on Linux only in part and not at all on macOS, see [shairplay-rust#78](https://github.com/metaneutrons/shairplay-rust/issues/78) | None | Allow multicast DNS where the devices that discover SnapDog are |
 | MQTT | none | | | | | Client only: SnapDog connects out to the broker, nothing listens |
 
 "Full" means the service listens on exactly the configured addresses. "Partial" means the setting has an effect, but
@@ -520,7 +520,7 @@ interface has exactly one IPv4 address (otherwise the message lists the addresse
 they use `[network].bind` only when it resolves to one address, and SnapDog warns (and keeps their default) when it holds more, instead of taking the first.
 `[knx].bind` names the IPv4 interface that joins the KNX multicast group; UDP port 3671 itself stays on all
 interfaces, because the KNX library binds it that way. `[airplay].bind` has an effect only in builds with
-AirPlay 2 (feature `ap2`), and Spotify Connect cannot be bound to an address. `bind` is not a security boundary:
+AirPlay 2 (feature `ap2`), and even there the clock sockets 319 and 320 stay on all interfaces. Spotify Connect cannot be bound to an address. `bind` is not a security boundary:
 use the firewall as well. At start, two services on the same port, or an address that no interface has, stop
 SnapDog with a message that names them; `--check-config` reports the same.
 
