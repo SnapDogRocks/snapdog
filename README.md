@@ -499,7 +499,7 @@ instance.
 | AirPlay | 7001 and up, one per zone (7000 + zone number) | TCP, plus UDP | full with AirPlay 2 (feature `ap2`), none without | `[airplay].bind`, `[network].bind` | Optional `[airplay].password` | Allow the TCP ports from your AirPlay devices. AirPlay also uses UDP: ports 319 and 320 (AirPlay 2 clock) and further UDP ports chosen at run time for audio and timing, so allow UDP from the same devices |
 | Spotify Connect | 7100 and up, one per zone (`[spotify].port` + zone number − 1; 0 = random) | TCP | none | not possible: `[spotify].bind` is an error | The Spotify app's own login | Allow the ports from the phones that cast. Announcements follow `[spotify].zeroconf_backend`: `libmdns` announces on the default-route interface only, `avahi` and `dns-sd` on all |
 | KNX/IP device mode | 3671 | UDP (and the KNX multicast group 224.0.23.12) | partial | `[knx].bind` names the interface for the multicast group | None: KNX/IP has no authentication | The socket stays on all interfaces, so limit 3671/udp in the firewall |
-| mDNS announcements | 5353 | UDP | none | not configurable | None | Allow multicast DNS where the devices that discover SnapDog are |
+| mDNS announcements | 5353 | UDP | partial | the HTTP `bind`: the announcement of SnapDog (`_snapdog._tcp`, `_snapcast._tcp`) follows it, the AirPlay announcement does not yet | None | Allow multicast DNS where the devices that discover SnapDog are |
 | MQTT | none | | | | | Client only: SnapDog connects out to the broker, nothing listens |
 
 "Full" means the service listens on exactly the configured addresses. "Partial" means the setting has an effect, but
@@ -511,14 +511,37 @@ bridged container the bind address is the container's, not the host's, so publis
 **Choosing the addresses.** `[network].bind` states once on which addresses SnapDog listens. A service's own
 `bind` (`[http].bind`, `[airplay].bind`, `[snapcast].streaming_bind`, `[knx].bind`) wins; a service without one uses
 `[network].bind`; without either, each service keeps its default (HTTP `::`, the others every IPv4 interface).
-The addresses are IP addresses, not interface names. `[http].bind` and `[airplay].bind` take a list. The Snapcast
-streaming port and the KNX device server listen on exactly one address: they use `[network].bind` only when it
-holds one address, and SnapDog warns (and keeps their default) when it holds more, instead of taking the first.
+An entry is an IP address, the word `loopback` (`127.0.0.1` and `::1`) or the name of a network interface. A name
+stands for the IPv4 addresses of the interface and its IPv6 addresses except link-local (`fe80::/10`), read when
+the file is loaded. An unknown name stops the start and lists the interfaces that exist. `[http].bind` and
+`[airplay].bind` take a list. The Snapcast
+streaming port and the KNX device server listen on exactly one address: a name works for them only if the
+interface has exactly one IPv4 address (otherwise the message lists the addresses and says what to write), and
+they use `[network].bind` only when it resolves to one address, and SnapDog warns (and keeps their default) when it holds more, instead of taking the first.
 `[knx].bind` names the IPv4 interface that joins the KNX multicast group; UDP port 3671 itself stays on all
 interfaces, because the KNX library binds it that way. `[airplay].bind` has an effect only in builds with
 AirPlay 2 (feature `ap2`), and Spotify Connect cannot be bound to an address. `bind` is not a security boundary:
 use the firewall as well. At start, two services on the same port, or an address that no interface has, stop
 SnapDog with a message that names them; `--check-config` reports the same.
+
+| Situation | Setting |
+|---|---|
+| One network card | nothing |
+| Audio and API on the LAN card only, host has a second card | `[network] bind = ["eth0"]` |
+| API behind a reverse proxy on the same host | `[http] bind = "loopback"` |
+| API on the LAN and on the Nebula overlay, audio on the LAN only | `[network] bind = ["eth0"]`, `[http] bind = ["eth0", "nebula1"]` |
+| VLAN interface | `[network] bind = ["enp1s0.16"]` |
+| Docker with a bridge | publish the port on one address (`-p 192.168.10.5:1704:1704`); names inside the container are the container's |
+| Docker with host networking | as on the host |
+
+A bind on the HTTP API also limits the mDNS announcement of SnapDog to the interfaces that carry those
+addresses, so a service does not listen on `eth0` and announce itself on `nebula1`. The announcement stays on every
+interface if the HTTP API or the announced Snapcast stream has no bind. The AirPlay announcement is made by the
+AirPlay library and still goes out on every interface (Linux) or through Bonjour (macOS).
+
+In the table, `(via eth0)` after a row says that the address came from the entry `eth0`. The API serves it as `via`.
+`snapdog --check-config` prints the interfaces of the machine with their addresses, then the listeners, so the
+output answers what to write.
 
 Port 1704 has no authentication, in SnapDog as in Snapcast. To limit it:
 

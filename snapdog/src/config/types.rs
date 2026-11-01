@@ -1320,6 +1320,9 @@ pub struct AppConfig {
     /// Logging is not set up yet at that point, so the caller emits them with
     /// [`AppConfig::log_notices`] once it is.
     pub notices: Vec<ConfigNotice>,
+    /// Which `bind` entry an address came from, for entries that are not an address
+    /// themselves: an interface name or `loopback`. Used for the `via` of the listener table.
+    pub bind_origins: Vec<(std::net::IpAddr, String)>,
 }
 
 /// Severity of a [`ConfigNotice`].

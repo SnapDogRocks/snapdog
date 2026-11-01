@@ -56,6 +56,8 @@ pub fn load_str(content: &str) -> Result<AppConfig> {
 /// off, and the problem is returned for the log and for `--check-config`. Anything
 /// else that does not parse is an error, with the position TOML reports.
 fn parse(content: &str) -> Result<(FileConfig, Vec<String>, Option<String>)> {
+    // Names that an earlier, failed read left behind do not belong to this one.
+    let _ = interfaces::take_origins();
     let mut unknown = Vec::new();
     let original = match toml::Deserializer::parse(content)
         .and_then(|de| deserialize_collecting(de, &mut unknown))
@@ -385,6 +387,7 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         clients,
         radios,
         notices: Vec::new(),
+        bind_origins: interfaces::take_origins(),
     };
 
     let duplicates = duplicate_spotify_names(&config.zones).map(|m| (NoticeLevel::Warn, m));
@@ -2396,5 +2399,38 @@ mod interface_bind_tests {
             )),
             Some(vec![ip("10.0.0.5"), ip("192.168.1.10")])
         );
+    }
+
+    #[test]
+    fn the_listener_table_says_which_entry_an_address_came_from() {
+        let config =
+            load("[network]\nbind = \"eth1\"\n[http]\nbind = [\"eth0\", \"127.0.0.1\"]\n").unwrap();
+        let rows = crate::net::listener::table(&config);
+        let via = |addr: &str| {
+            rows.iter()
+                .find(|r| r.service == "HTTP API" && r.address == addr)
+                .unwrap_or_else(|| panic!("no HTTP row for {addr}"))
+                .via
+                .clone()
+        };
+        assert_eq!(via("192.168.1.10").as_deref(), Some("eth0"));
+        assert_eq!(via("fd00::10").as_deref(), Some("eth0"));
+        assert_eq!(
+            via("127.0.0.1"),
+            None,
+            "an address written as an address has no via"
+        );
+        let table = crate::net::listener::format_table(&rows);
+        assert!(table.contains("192.168.1.10"), "{table}");
+        assert!(table.contains("(via eth0)"), "{table}");
+    }
+
+    #[test]
+    fn loopback_is_named_as_the_origin() {
+        let config = load("[http]\nbind = \"loopback\"\n").unwrap();
+        let rows = crate::net::listener::table(&config);
+        let http: Vec<_> = rows.iter().filter(|r| r.service == "HTTP API").collect();
+        assert_eq!(http.len(), 2);
+        assert!(http.iter().all(|r| r.via.as_deref() == Some("loopback")));
     }
 }

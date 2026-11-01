@@ -63,6 +63,22 @@ impl InterfaceTable {
             .join(", ")
     }
 
+    /// The table as lines for `--check-config`: one per interface, with its addresses.
+    #[must_use]
+    pub fn inventory(&self) -> String {
+        if self.0.is_empty() {
+            return "  none found".to_owned();
+        }
+        self.0
+            .iter()
+            .map(|i| {
+                let addrs: Vec<String> = i.addrs.iter().map(ToString::to_string).collect();
+                format!("  {}: {}", i.name, addrs.join(", "))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn find(&self, name: &str) -> Option<&Interface> {
         self.0.iter().find(|i| i.name == name)
     }
@@ -193,6 +209,35 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+thread_local! {
+    static ORIGINS: std::cell::RefCell<Vec<(IpAddr, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Remember that `entry` (an interface name or `loopback`) stood for `addrs` while the
+/// configuration was read, so the listener table can say how an address came about.
+fn note_origin(entry: &str, addrs: &[IpAddr]) {
+    let entry = entry.trim();
+    if entry.parse::<IpAddr>().is_ok() {
+        return;
+    }
+    ORIGINS.with(|o| {
+        let mut origins = o.borrow_mut();
+        for ip in addrs {
+            if !origins.iter().any(|(a, _)| a == ip) {
+                origins.push((*ip, entry.to_owned()));
+            }
+        }
+    });
+}
+
+/// The names that stood for addresses since the last call, as `(address, entry)`. The
+/// configuration loader takes them into [`crate::config::AppConfig::bind_origins`].
+#[must_use]
+pub fn take_origins() -> Vec<(IpAddr, String)> {
+    ORIGINS.with(|o| std::mem::take(&mut *o.borrow_mut()))
+}
+
 /// Run `f` with `table` as the interfaces of the host, on this thread only.
 #[cfg(test)]
 pub fn with_table<T>(table: InterfaceTable, f: impl FnOnce() -> T) -> T {
@@ -217,11 +262,13 @@ fn host_table() -> InterfaceTable {
 ///
 /// As [`resolve`].
 pub fn resolve_here(entry: &str) -> Result<Vec<IpAddr>, String> {
-    if needs_table(entry) {
-        resolve(entry, &host_table())
+    let addrs = if needs_table(entry) {
+        resolve(entry, &host_table())?
     } else {
-        resolve(entry, &InterfaceTable::default())
-    }
+        resolve(entry, &InterfaceTable::default())?
+    };
+    note_origin(entry, &addrs);
+    Ok(addrs)
 }
 
 /// [`resolve_single`] against the interfaces of this host.
@@ -230,11 +277,13 @@ pub fn resolve_here(entry: &str) -> Result<Vec<IpAddr>, String> {
 ///
 /// As [`resolve_single`].
 pub fn resolve_single_here(entry: &str) -> Result<IpAddr, String> {
-    if needs_table(entry) {
-        resolve_single(entry, &host_table())
+    let addr = if needs_table(entry) {
+        resolve_single(entry, &host_table())?
     } else {
-        resolve_single(entry, &InterfaceTable::default())
-    }
+        resolve_single(entry, &InterfaceTable::default())?
+    };
+    note_origin(entry, &[addr]);
+    Ok(addr)
 }
 
 #[cfg(test)]

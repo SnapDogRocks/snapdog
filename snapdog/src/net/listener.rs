@@ -385,6 +385,10 @@ pub struct Row {
     pub port: u16,
     /// What creates the socket.
     pub backend: String,
+    /// The `bind` entry this address came from when that was an interface name or `loopback`,
+    /// for example `eth0`. Absent when the address was written as an address or is the default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
     /// Whether a `bind` setting reaches this socket.
     pub bind_support: BindSupport,
     /// What the bind support level means for this service, in one sentence.
@@ -412,6 +416,14 @@ fn support_of(listener: &Listener) -> (BindSupport, &'static str) {
         ),
         _ => (BindSupport::None, ""),
     }
+}
+
+fn via_of(config: &AppConfig, ip: IpAddr) -> Option<String> {
+    config
+        .bind_origins
+        .iter()
+        .find(|(addr, _)| *addr == ip)
+        .map(|(_, entry)| entry.clone())
 }
 
 /// Everything the server listens on or is configured to listen on.
@@ -442,6 +454,7 @@ pub fn table(config: &AppConfig) -> Vec<Row> {
             address: shown.addr.ip().to_string(),
             port: shown.addr.port(),
             backend: shown.backend.clone(),
+            via: via_of(config, shown.addr.ip()),
             bind_support,
             note: note.to_owned(),
         });
@@ -463,6 +476,7 @@ pub fn table(config: &AppConfig) -> Vec<Row> {
                     address: listener.addr.ip().to_string(),
                     port: listener.addr.port(),
                     backend: listener.backend.clone(),
+                    via: via_of(config, listener.addr.ip()),
                     bind_support,
                     note: note.to_owned(),
                 },
@@ -488,6 +502,9 @@ pub fn format_table(rows: &[Row]) -> String {
             "\n  {:service$}  {}  {:>address$}:{:<5}  {:backend$}  bind: {}",
             row.service, row.protocol, row.address, row.port, row.backend, row.bind_support,
         );
+        if let Some(via) = &row.via {
+            let _ = write!(out, "  (via {via})");
+        }
     }
     out
 }

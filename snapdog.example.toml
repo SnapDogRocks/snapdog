@@ -53,20 +53,38 @@ source_switch_fade_ms = 300
 # ── Network ────────────────────────────────────────────────────────────────
 # Which addresses SnapDog listens on, stated once. A service with its own `bind` below
 # uses that; a service without one uses this list; without either, every service keeps its
-# own default (HTTP "::", the others every IPv4 interface). IP addresses, not interface
-# names. Services that listen on exactly one address (Snapcast streaming, KNX) use this
-# only when the list holds exactly one address, and warn when it holds more.
+# own default (HTTP "::", the others every IPv4 interface). An entry is an IP address, the
+# word "loopback" (127.0.0.1 and ::1), or the name of a network interface ("eth0", "en0",
+# "enp1s0.16"). A name stands for the IPv4 addresses of the interface and its IPv6 addresses
+# except link-local, read when the file is loaded. Services that listen on exactly one
+# address (Snapcast streaming, KNX) use this only when the list resolves to exactly one
+# address, and warn when it holds more. An unknown name stops the start and lists the
+# interfaces that exist; `snapdog --check-config` prints them too.
+#
+# Recipes:
+#   one network card                                nothing
+#   audio and API on the LAN card of a host with    [network] bind = ["eth0"]
+#     a second card
+#   API behind a reverse proxy on the same host     [http] bind = "loopback"
+#   API on the LAN and on the Nebula overlay,       [network] bind = ["eth0"]
+#     audio on the LAN only                         [http] bind = ["eth0", "nebula1"]
+#   VLAN interface                                  [network] bind = ["enp1s0.16"]
+#   Docker with a bridge: publish the port on one address (-p 192.168.10.5:1704:1704);
+#     names inside the container are the container's. Docker with host networking: as on
+#     the host.
+# Setting a bind also limits the mDNS announcement of SnapDog to those interfaces.
 # [network]
-# bind = ["192.168.1.10"]
+# bind = ["eth0"]
 
 # ── HTTP Server ────────────────────────────────────────────────────────────
 [http]
 # WebUI + REST API port
 port = 5555
-# Addresses to listen on, one string or a list. Default: [network].bind, then "::" (IPv4
-# and IPv6 where the OS allows); "0.0.0.0" for IPv4 only.
+# Addresses or interface names to listen on, one string or a list. Default: [network].bind,
+# then "::" (IPv4 and IPv6 where the OS allows); "0.0.0.0" for IPv4 only.
 # bind = "::"
 # bind = ["192.168.1.10", "127.0.0.1"]
+# bind = ["eth0", "loopback"]
 # External base URL for absolute links in API responses.
 # Required if behind a reverse proxy or accessed from other hosts.
 base_url = "http://192.168.1.10:5555"
@@ -150,8 +168,9 @@ default_zone = "Ground Floor"
 # mode = "airplay2"
 # Optional: require password for AirPlay connections
 # password = "1234"
-# Optional: listen on specific IP addresses (not interface names). Default: [network].bind,
-# else all. Only effective in builds with AirPlay 2 support (feature ap2).
+# Optional: listen on specific IP addresses or interface names. Default: [network].bind,
+# else all. Only effective in builds with AirPlay 2 support (feature ap2). The AirPlay
+# announcement itself still goes out on every interface.
 # bind = ["192.168.1.10"]
 
 # ── Spotify Connect ────────────────────────────────────────────────────────
@@ -313,6 +332,7 @@ base_topic = "snapdog"
 # Role: "client" (connect to gateway) or "device" (ETS-programmable)
 # role = "client"
 # Device role: the IPv4 address of the interface that joins the KNX multicast group.
+# An interface name works if the interface has exactly one IPv4 address.
 # Default: [network].bind when it holds exactly one IPv4 address, else the system default.
 # The UDP port 3671 itself stays open on all interfaces, the KNX library binds it that way.
 # bind = "192.168.1.10"
