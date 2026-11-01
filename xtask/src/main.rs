@@ -485,40 +485,29 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
         8,
         &[("Letzte Quelle gewinnt", 0), ("Empfänger hat Vorrang", 1)],
     );
-    pt_enum(
-        x,
-        "ZoneSelect",
-        8,
-        &[
-            ("Zone 1", 1),
-            ("Zone 2", 2),
-            ("Zone 3", 3),
-            ("Zone 4", 4),
-            ("Zone 5", 5),
-            ("Zone 6", 6),
-            ("Zone 7", 7),
-            ("Zone 8", 8),
-            ("Zone 9", 9),
-            ("Zone 10", 10),
-        ],
-    );
-    pt_enum(
-        x,
-        "NumZones",
-        8,
-        &[
-            ("1 Zone", 1),
-            ("2 Zonen", 2),
-            ("3 Zonen", 3),
-            ("4 Zonen", 4),
-            ("5 Zonen", 5),
-            ("6 Zonen", 6),
-            ("7 Zonen", 7),
-            ("8 Zonen", 8),
-            ("9 Zonen", 9),
-            ("10 Zonen", 10),
-        ],
-    );
+    // Zone choice for a client and zone count 1..=MAX_ZONES (dynamic, like the client count).
+    let zone_choice: Vec<String> = (1..=MAX_ZONES).map(|n| format!("Zone {n}")).collect();
+    let zone_choice_pairs: Vec<(&str, u16)> = zone_choice
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), (i + 1) as u16))
+        .collect();
+    pt_enum(x, "ZoneSelect", 8, &zone_choice_pairs);
+    let zone_counts: Vec<String> = (1..=MAX_ZONES)
+        .map(|n| {
+            if n == 1 {
+                "1 Zone".into()
+            } else {
+                format!("{n} Zonen")
+            }
+        })
+        .collect();
+    let zone_count_pairs: Vec<(&str, u16)> = zone_counts
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), (i + 1) as u16))
+        .collect();
+    pt_enum(x, "NumZones", 8, &zone_count_pairs);
     // Client count 1..=MAX_CLIENTS (dynamic to avoid a long literal).
     let client_labels: Vec<String> = (1..=MAX_CLIENTS)
         .map(|n| {
@@ -1269,7 +1258,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
 /// Committed fingerprint of the exact ETS memory layout. Update this **together with**
 /// `KNXPROD_APP_VERSION` (`group_objects.rs`) whenever the layout changes — the assertion
 /// below prints the new value.
-const EXPECTED_LAYOUT_HASH: u64 = 0xa3fd_bec4_f961_0f5f;
+const EXPECTED_LAYOUT_HASH: u64 = 0xaa67_d41e_a432_9ccb;
 
 /// Guard: fail `.knxprod` generation when the ETS product definition drifts from the
 /// committed fingerprint. ETS decides download scope by `ApplicationVersion`; a change

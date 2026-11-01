@@ -171,7 +171,7 @@ so client 1 starts at 601 and client 2 at 631.
 
 The 11 objects keep their meaning, DPT, flags and size. `CLIENT_GO_COUNT` stays 11,
 `CLIENT_GO_STRIDE` (30) is new. The global block follows the clients: `global_asap` starts after
-`MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE`, that is at 1501.
+`MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE`, that is at 2881 (1501 while the product had 10 zones and 30 clients).
 
 ### 4.1b The device-level objects, grouped as well
 
@@ -179,15 +179,15 @@ Two groups of ten, `GLOBAL_GO_STRIDE` 20, slots in `GLOBAL_GO_SLOTS`:
 
 | Group | k | Name | Dir | DPT |
 |---|---|---|---|---|
-| **0 System status** (1501 to 1510) | 0 | Server Online | send | 1.011 |
+| **0 System status** (2881 to 2890) | 0 | Server Online | send | 1.011 |
 | | 1 | System Fault | send | 1.005 |
 | | 2 | KNX Time | recv | 10.001 |
 | | 3 to 9 | reserved | | |
-| **1 All zones** (1511 to 1520) | 0 | All Stop | recv | 1.017 |
+| **1 All zones** (2891 to 2900) | 0 | All Stop | recv | 1.017 |
 | | 1 | All Mute | bidir | 1.001 |
 | | 2 to 9 | reserved | | |
 
-The global objects were one run of five (1501 to 1505) in the order server online, all stop, all
+The global objects were one run of five (1501 to 1505 at 10 zones and 30 clients) in the order server online, all stop, all
 mute, system fault, KNX time. `GGO_*` follow the new order of `GLOBAL_GOS`.
 
 The existing `Play`, `Pause`, `Stop`, `Track Next`, `Track Previous`, `Playlist Next` and
@@ -239,7 +239,7 @@ TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `track_step_updown`, `
   `descriptor_table_declares_flags_and_sizes_of_every_object` asserts communication enabled on all
   numbers, so it has to skip the reserved ones.
 - The group object table grows: 10 zones x 60 + 30 clients x 30 + 20 = 1520 descriptors instead of
-  665 (2 bytes each, about 3 KB). Most of the growth is reserved numbers in the client block, which
+  665 (2 bytes each, about 3 KB); 2900 at 16 zones and 64 clients (about 6 KB). Most of the growth is reserved numbers in the client block, which
   has 19 spare numbers per client and no candidate objects yet. Whether the device stack and the
   memory reserved for it take that is not verified (KZO-T4).
 - The client block with groups of ten is a consequence of "the same grouping". A narrower client
@@ -313,7 +313,7 @@ Decided with the maintainer: the knxprod is not in production use, so the number
 - **KZO-DEC-2:** Play/Pause is 1.001. **KZO-DEC-3:** as proposed.
 - Done: T2 (objects, constants, `ZONE_GO_SLOTS`, `CLIENT_GO_SLOTS`, `GLOBAL_GO_SLOTS`, `locate`), T3
   (`decode_switch` rejects an empty payload), T4 (strides, descriptor table with empty descriptors
-  for reserved numbers; the device-mode integration tests run with 1520 table entries), T5
+  for reserved numbers; the device-mode integration tests run with a table of every number, 2900 at 16 zones and 64 clients), T5
   (`KNXPROD_APP_VERSION` 13, layout hash covers the slots and strides, knxprod and XML regenerated,
   unsigned like the committed one), T6 (TOML keys, example, macOS settings field list,
   `docs/knx-bridge.md`, `docs/upgrading.md`).

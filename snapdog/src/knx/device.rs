@@ -337,28 +337,34 @@ use super::group_objects::{
     ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS, ZONE_GOS,
 };
 
-/// Fixed-size array of `MAX_RADIOS` values. A newtype because Rust only derives
-/// `Default` for arrays up to length 32, and `MAX_RADIOS` is 50. `Deref`/`DerefMut`
-/// to the inner array make indexing, `iter()` and assignment transparent.
+/// Fixed-size array of `N` values. A newtype because Rust only derives `Default` for arrays up to
+/// length 32, and there are 50 radios and 64 clients. `Deref`/`DerefMut` to the inner array make
+/// indexing, `iter()` and assignment transparent.
 #[derive(Debug)]
-pub struct Radios<T>([T; mem::MAX_RADIOS]);
+pub struct Slots<T, const N: usize>([T; N]);
 
-impl<T: Default> Default for Radios<T> {
+impl<T: Default, const N: usize> Default for Slots<T, N> {
     fn default() -> Self {
         Self(std::array::from_fn(|_| T::default()))
     }
 }
-impl<T> std::ops::Deref for Radios<T> {
-    type Target = [T; mem::MAX_RADIOS];
+impl<T, const N: usize> std::ops::Deref for Slots<T, N> {
+    type Target = [T; N];
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<T> std::ops::DerefMut for Radios<T> {
+impl<T, const N: usize> std::ops::DerefMut for Slots<T, N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
+
+/// One value per radio station.
+pub type Radios<T> = Slots<T, { mem::MAX_RADIOS }>;
+
+/// One value per client.
+pub type Clients<T> = Slots<T, MAX_CLIENTS>;
 
 /// Parsed ETS parameters from BAU memory.
 #[derive(Debug, Default)]
@@ -371,11 +377,11 @@ pub struct EtsParams {
     pub zone_spotify: [bool; MAX_ZONES],
     pub zone_presence_enabled: [bool; MAX_ZONES],
     pub zone_presence_timeout: [u16; MAX_ZONES],
-    pub client_active: [bool; MAX_CLIENTS],
-    pub client_default_zone: [u8; MAX_CLIENTS],
-    pub client_default_volume: [u8; MAX_CLIENTS],
-    pub client_max_volume: [u8; MAX_CLIENTS],
-    pub client_default_latency: [u8; MAX_CLIENTS],
+    pub client_active: Clients<bool>,
+    pub client_default_zone: Clients<u8>,
+    pub client_default_volume: Clients<u8>,
+    pub client_max_volume: Clients<u8>,
+    pub client_default_latency: Clients<u8>,
     pub http_port: u16,
     pub log_level: u8,
     /// Global Snapcast output sample rate in Hz (decoded from the ETS enum index).
@@ -402,10 +408,10 @@ pub struct EtsParams {
     pub zone_airplay_names: [String; MAX_ZONES],
     /// Per-zone Spotify device names (empty = derive from zone name).
     pub zone_spotify_names: [String; MAX_ZONES],
-    pub client_names: [String; MAX_CLIENTS],
-    pub client_macs: [String; MAX_CLIENTS],
+    pub client_names: Clients<String>,
+    pub client_macs: Clients<String>,
     /// Per-client icons (empty = default icon).
-    pub client_icons: [String; MAX_CLIENTS],
+    pub client_icons: Clients<String>,
     pub subsonic_url: String,
     pub subsonic_user: String,
     pub subsonic_pass: String,
@@ -2795,14 +2801,14 @@ mod tests {
     }
 
     #[test]
-    fn toml_addresses_of_zone_11_are_not_installed_on_client_1() {
-        // zone_asap(11, i) == client_asap(1, i): without the bound, zone 11's play address
-        // would be associated with a client object.
+    fn toml_addresses_of_the_zone_after_the_last_are_not_installed_on_client_1() {
+        // zone_asap(MAX_ZONES + 1, i) == client_asap(1, i): without the bound, that zone's play
+        // address would be associated with a client object.
         let mut toml = String::new();
-        for z in 1..=11 {
+        for z in 1..=MAX_ZONES + 1 {
             let _ =
                 std::fmt::Write::write_fmt(&mut toml, format_args!("[[zone]]\nname = \"Z{z}\"\n"));
-            if z == 11 {
+            if z == MAX_ZONES + 1 {
                 toml.push_str("[zone.knx]\nplay = \"4/0/1\"\n");
             }
         }

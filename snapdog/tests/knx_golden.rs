@@ -4,7 +4,7 @@
 //! IT-T41 — KNX wire contract via the PUBLIC surface + the knx-rs-core dependency
 //! contract. The GroupAddress round-trip and DPT byte encodings are exactly what a
 //! knx-rs upgrade could silently break, so they're pinned here as golden bytes
-//! (the in-source `group_objects` tests cover the 1520-number layout values; this also
+//! (the in-source `group_objects` tests cover the 2900-number layout values; this also
 //! confirms they're reachable through the exported module path).
 
 #![allow(clippy::doc_markdown)] // doc mentions knx-rs / GroupAddress / DPT
@@ -20,20 +20,20 @@ use snapdog::knx::group_objects::{
 use std::str::FromStr;
 
 #[test]
-fn group_object_layout_is_exported_and_totals_1520() {
-    // The table counts every number, defined or reserved: 10 zones x 60, 30 clients x 30, 20 global.
+fn group_object_layout_is_exported_and_totals_2900() {
+    // The table counts every number, defined or reserved: 16 zones x 60, 64 clients x 30, 20 global.
     assert_eq!(
         TOTAL_GO_COUNT,
         MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE + GLOBAL_GO_STRIDE
     );
-    assert_eq!(TOTAL_GO_COUNT, 1520);
-    // 1-based layout: zones [1..=600], clients [601..=1500], globals [1501..=1520].
+    assert_eq!(TOTAL_GO_COUNT, 2900);
+    // 1-based layout: zones [1..=960], clients [961..=2880], globals [2881..=2900].
     assert_eq!(zone_asap(1, 0), 1);
-    assert_eq!(zone_asap(MAX_ZONES, ZONE_GO_COUNT - 1), 593);
-    assert_eq!(client_asap(1, 0), 601);
-    assert_eq!(client_asap(MAX_CLIENTS, CLIENT_GO_COUNT - 1), 1491);
-    assert_eq!(global_asap(0), 1501);
-    assert_eq!(global_asap(GLOBAL_GO_COUNT - 1), 1512);
+    assert_eq!(zone_asap(MAX_ZONES, ZONE_GO_COUNT - 1), 953);
+    assert_eq!(client_asap(1, 0), 961);
+    assert_eq!(client_asap(MAX_CLIENTS, CLIENT_GO_COUNT - 1), 2871);
+    assert_eq!(global_asap(0), 2881);
+    assert_eq!(global_asap(GLOBAL_GO_COUNT - 1), 2892);
     // The object numbers ETS shows an integrator, pinned for the first zone: a group starts at a
     // multiple of ten plus one.
     assert_eq!(zone_asap(1, ZGO_PLAY), 1);

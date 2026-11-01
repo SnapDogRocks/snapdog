@@ -2400,7 +2400,11 @@ zone = "Z1"
         // Status objects and out-of-range numbers command nothing.
         assert_eq!(object_command(zone_asap(1, ZGO_VOLUME_STATUS)), None);
         assert_eq!(object_command(0), None);
-        assert_eq!(object_command(1506), None);
+        assert_eq!(
+            object_command(global_asap(GGO_KNX_TIME) + 1),
+            None,
+            "a reserved global number"
+        );
         assert_eq!(object_command(u16::MAX), None);
         // Reserved numbers command nothing, whatever sits next to them.
         assert_eq!(
@@ -2413,10 +2417,10 @@ zone = "Z1"
         assert_eq!(
             object_command(zone_asap(MAX_ZONES, ZGO_PRESENCE_TIMER_ACTIVE)),
             None,
-            "zone 10's last object is a status object"
+            "the last zone's last object is a status object"
         );
         assert_eq!(
-            object_command(601),
+            object_command(client_asap(1, CGO_VOLUME)),
             Some(Command::Client(1, "volume")),
             "first client object"
         );
