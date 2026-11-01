@@ -9,10 +9,12 @@
 
 use knx_rs_core::dpt::{DPT_SCALING, DPT_STRING_8859_1, DPT_SWITCH, DPT_VALUE_1_UCOUNT, Dpt};
 
-/// Maximum number of zones the product supports. The single source: the object numbers, the ETS
-/// product database (zone count, zone choice, parameter blocks), the device-state arrays and the
-/// D-Bus policy limit all derive from it. Change it here and let the tests name what else has to
-/// follow (the D-Bus policy file, the golden product XML, the documentation).
+/// Maximum number of zones the product supports.
+///
+/// The single source: the object numbers, the ETS product database (zone count, zone choice,
+/// parameter blocks), the device-state arrays and the D-Bus policy limit all derive from it.
+/// Change it here and let the tests name what else has to follow (the D-Bus policy file, the
+/// golden product XML, the documentation).
 pub const MAX_ZONES: usize = 16;
 
 /// Maximum number of clients supported.
