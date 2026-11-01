@@ -2,7 +2,7 @@
 rfc: KZO-0010
 title: KNX zone objects for wall switches, single-address navigation and a play/pause switch
 status: in-progress      # draft | accepted | in-progress | done | superseded
-version: 0.2.0           # v0.2: implemented on the branch feat/knx-object-groups, not merged
+version: 0.3.1           # v0.3: implemented on the branch feat/knx-object-groups, not merged
 created: 2026-11-01
 updated: 2026-11-01
 target_repo: snapdog
@@ -14,8 +14,9 @@ owners: [metaneutrons]
 # RFC KZO-0010 — KNX zone objects for wall switches
 
 > **For AI agents:** this RFC collects what the product database gains in one version bump. The
-> grouped layout, the four objects and the translations are implemented (section 9). Requirements are `KZO-REQ-*`, decisions `KZO-DEC-*`, tasks `KZO-T*`. Symbol names
-> are the anchor, line numbers are approximate. Nothing here is implemented.
+> grouped layout, the six new zone objects, the grouped global objects, the stale-memory guard and
+> the translations are implemented (section 9). Requirements are `KZO-REQ-*`, decisions `KZO-DEC-*`,
+> tasks `KZO-T*`. Symbol names are the anchor, line numbers are approximate.
 
 ## 1. Outcome and boundaries
 
@@ -122,18 +123,20 @@ Undefined numbers are reserved: they get no object in the knxprod and no descrip
 | | 3 | Playlist Previous | recv | 1.001 | any value |
 | | 4 | **Playlist Step** | recv | 1.007 | new, 1 next, 0 previous |
 | | 5 | **Playlist Name** | send | 16.001 | new, 14 bytes |
-| | 6 to 9 | reserved | | | candidates: track select and its status (4.2) |
+| | 6 to 9 | reserved | | | |
 | **4 Track info** | 0 | Track Title | send | 16.001 | |
 | | 1 | Track Artist | send | 16.001 | |
 | | 2 | Track Album | send | 16.001 | |
 | | 3 | Track Progress | send | 5.001 | |
-| | 4 to 9 | reserved | | | candidates: longer text objects (4.2) |
+| | 4 | **Track Number** | recv | 5.010 | new, counted from 1, 0 is ignored |
+| | 5 | **Track Number Status** | send | 5.010 | new, 0 without a track |
+| | 6 to 9 | reserved | | | candidate: longer text objects (4.2) |
 | **5 Presence** | 0 | Presence | recv | 1.018 | |
 | | 1 | Presence Enable | recv | 1.001 | |
 | | 2 | Presence Timer Active | send | 1.001 | |
 | | 3 to 9 | reserved | | | |
 
-Counts: 33 objects today, 37 defined after this RFC (four new), 23 reserved numbers per zone.
+Counts: 33 objects before this RFC, 39 defined after it (six new), 21 reserved numbers per zone.
 `ZONE_GO_COUNT` stays the number of defined objects, `ZONE_GO_STRIDE` (60) is new and used for the
 numbering.
 
@@ -169,23 +172,52 @@ The 11 objects keep their meaning, DPT, flags and size. `CLIENT_GO_COUNT` stays 
 `CLIENT_GO_STRIDE` (30) is new. The global block follows the clients: `global_asap` starts after
 `MAX_ZONES * ZONE_GO_STRIDE + MAX_CLIENTS * CLIENT_GO_STRIDE`, that is at 1501.
 
+### 4.1b The device-level objects, grouped as well
+
+Two groups of ten, `GLOBAL_GO_STRIDE` 20, slots in `GLOBAL_GO_SLOTS`:
+
+| Group | k | Name | Dir | DPT |
+|---|---|---|---|---|
+| **0 System status** (1501 to 1510) | 0 | Server Online | send | 1.011 |
+| | 1 | System Fault | send | 1.005 |
+| | 2 | KNX Time | recv | 10.001 |
+| | 3 to 9 | reserved | | |
+| **1 All zones** (1511 to 1520) | 0 | All Stop | recv | 1.017 |
+| | 1 | All Mute | bidir | 1.001 |
+| | 2 to 9 | reserved | | |
+
+The global objects were one run of five (1501 to 1505) in the order server online, all stop, all
+mute, system fault, KNX time. `GGO_*` follow the new order of `GLOBAL_GOS`.
+
 The existing `Play`, `Pause`, `Stop`, `Track Next`, `Track Previous`, `Playlist Next` and
 `Playlist Previous` keep reacting to any value. DPT 1.007 (`DPT_Step`) is 0 = decrease,
 1 = increase; the Step objects map increase to next and evaluate the value. A malformed or empty
 payload is ignored (`decode_bool` returns false for an empty payload, so the Step decoder must not
 reuse it unchanged, KZO-T3).
 
-TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `playlist_step`, `playlist_name_status`.
+TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `playlist_step`, `playlist_name_status`,
+`track_number`, `track_number_status`.
 
 ### 4.2 Candidates, to decide together before the bump
 
-- **Track select** (recv 5.010 with a status object, group 3, k 6 and 7): the index of the track,
-  or station, inside the active playlist. `SetPlaylist(index, track)` already carries a track
-  argument; the KNX `Playlist` object always sends 0. This is the only way for a switch to pick a
-  fixed radio station.
-- **Text objects** (group 4). Track title, artist and album are 14 bytes (DPT 16.001). Open:
-  truncate at a word end, ISO-8859-1 for umlauts (the DPT allows them), or split a long value over
-  several objects in the reserved numbers of group 4.
+- **Track select**, decided and implemented as Track Number and Track Number Status (group 4, k 4
+  and 5, 5.010): the number of the track, or station, inside the active playlist, counted from 1
+  because 0 is the value of an unset object. It maps to `SetTrack(n - 1)`. This is the way for a
+  switch to pick a fixed radio station; the status is `playlist_track_index + 1`, 0 without one.
+  It sits with the track information because it describes the playing track.
+- **Longer text objects** (group 4), open. Title, artist, album and playlist name are 14 bytes
+  (DPT 16.001, ISO-8859-1). A long variant is possible with DPT 28.001 (`DPT_UTF-8`, variable
+  length, UTF-8, terminated by a zero octet; KNX Standard 03_07_02 v02.02.01, section 3.27.1).
+  The device stack accepts object sizes up to 252 bytes (descriptor codes 21 to 255).
+  `knx-rs-core` 0.13 already has a DPT 28 codec (`dpt::encode`/`dpt::decode` with `Dpt::new(28, 1)`,
+  `DptValue::Text`), so the status sink needs no raw-bytes path. What is left:
+  the length of the object (the encoded value, including the terminating zero, has to fit it, so a
+  longer text is cut at a UTF-8 character boundary before encoding; `encode_dpt28` does not cut);
+  the `size_str` and DPT string of the knxprod entry; and whether common displays and visualisations
+  (Gira, xknx and others) read DPT 28.001 or objects longer than 14 bytes, which is not verified.
+  Decide the length first (KZO-DEC-4), then it is three objects with the pattern of Track Number.
+  An earlier version of this RFC said that `knx-rs-core` has no DPT 28 codec. That was wrong; the
+  search for it had missed `dpt/convert/string.rs`.
 
 ### 4.3 What the restructuring costs
 
@@ -198,7 +230,7 @@ TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `playlist_step`, `play
 - `descriptor_table` writes a descriptor for every ASAP. Reserved numbers get zero bits, and the test
   `descriptor_table_declares_flags_and_sizes_of_every_object` asserts communication enabled on all
   numbers, so it has to skip the reserved ones.
-- The group object table grows: 10 zones x 60 + 30 clients x 30 + 5 = 1505 descriptors instead of
+- The group object table grows: 10 zones x 60 + 30 clients x 30 + 20 = 1520 descriptors instead of
   665 (2 bytes each, about 3 KB). Most of the growth is reserved numbers in the client block, which
   has 19 spare numbers per client and no candidate objects yet. Whether the device stack and the
   memory reserved for it take that is not verified (KZO-T4).
@@ -218,13 +250,16 @@ TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `playlist_step`, `play
 - **KZO-DEC-2.** DPT of Play/Pause: 1.001 (proposal, same as `Control Status` and `Mute`) or 1.010
   (`DPT_Start`: 1 start, 0 stop). 1.010 would suggest Stop, which this object does not do.
 - **KZO-DEC-3.** Step objects evaluate the value, single-trigger objects keep ignoring it.
+- **KZO-DEC-4.** Longer text objects: DPT (28.001 UTF-8 or a longer 16.xxx variant), length, and who
+  reads them. Open (4.2).
 
 ## 6. Tasks
 
 - **KZO-T1.** Read the polarity of `Control Status` and `Track Playing` and write it down.
-- **KZO-T2.** Restructure `ZONE_GOS` and `CLIENT_GOS` into groups with gaps, add the four objects, constants
-  (`ZGO_PLAY_PAUSE`, `ZGO_TRACK_STEP`, `ZGO_PLAYLIST_STEP`, `ZGO_PLAYLIST_NAME`), `ZONE_ACTIONS`
-  entries and the publisher for the name.
+- **KZO-T2.** Restructure `ZONE_GOS`, `CLIENT_GOS` and `GLOBAL_GOS` into groups with gaps, add the six
+  objects, constants (`ZGO_PLAY_PAUSE`, `ZGO_TRACK_STEP`, `ZGO_PLAYLIST_STEP`, `ZGO_PLAYLIST_NAME`,
+  `ZGO_TRACK_NUMBER`, `ZGO_TRACK_NUMBER_STATUS`), `ZONE_ACTIONS` entries and the publishers for the
+  name and the track number.
 - **KZO-T3.** Step decoder that rejects empty and malformed payloads. Tests for 0, 1, empty.
 - **KZO-T4.** `ZONE_GO_STRIDE` and `CLIENT_GO_STRIDE`: `zone_asap`, `client_asap`, `global_asap`,
   `TOTAL_GO_COUNT`,
@@ -259,20 +294,26 @@ TOML keys under `[zone.knx]`: `play_pause`, `track_step`, `playlist_step`, `play
 
 Decided with the maintainer: the knxprod is not in production use, so the numbers move once.
 
-- **KZO-DEC-1:** six zone groups and three client groups, strides 60 and 30, reserved numbers
-  undefined. The global block follows at 1501 to 1505 and keeps its single run of five numbers.
+- **KZO-DEC-1:** six zone groups, three client groups and two groups of device-level objects,
+  strides 60, 30 and 20, reserved numbers undefined.
 - **KZO-DEC-2:** Play/Pause is 1.001. **KZO-DEC-3:** as proposed.
-- Done: T2 (objects, constants, `ZONE_GO_SLOTS`, `CLIENT_GO_SLOTS`, `locate`), T3 (`decode_switch`
-  rejects an empty payload), T4 (strides, descriptor table with empty descriptors for reserved
-  numbers; the device-mode integration tests run with 1505 table entries), T5 (`KNXPROD_APP_VERSION`
-  12, layout hash now also covers the slots and strides, knxprod and XML regenerated, unsigned like
-  the committed one), T6 (TOML keys, example, macOS settings field list, `docs/knx-bridge.md`,
-  `docs/upgrading.md`).
+- Done: T2 (objects, constants, `ZONE_GO_SLOTS`, `CLIENT_GO_SLOTS`, `GLOBAL_GO_SLOTS`, `locate`), T3
+  (`decode_switch` rejects an empty payload), T4 (strides, descriptor table with empty descriptors
+  for reserved numbers; the device-mode integration tests run with 1520 table entries), T5
+  (`KNXPROD_APP_VERSION` 13, layout hash covers the slots and strides, knxprod and XML regenerated,
+  unsigned like the committed one), T6 (TOML keys, example, macOS settings field list,
+  `docs/knx-bridge.md`, `docs/upgrading.md`).
+- Track Number and Track Number Status (4.2) and the grouping of the global objects (4.1b) are done.
 - Added beyond the RFC: every text of the product database is translated into English, Dutch,
   Spanish and French (`xtask/src/i18n.rs`, injected into the generated XML, the golden file covers
   it). A new text without a translation stops the generation. The version-mismatch message also has
   a German text, its base text is English.
-- Not done: T7 (ETS test with a project that uses the device), the candidates of 4.2 (track select,
-  longer text objects), grouping the five global objects.
-- Open: a device that holds the tables of an older product version keeps them (SnapDog does not
-  compare the stored program version with `KNXPROD_APP_VERSION`), see `docs/upgrading.md`.
+- Stale device memory: the memory file (`knx-memory.bin`, format version 3) carries the product
+  database version of the build that wrote it. A file with another version, or without one (format
+  versions 1 and 2), is not restored; SnapDog logs a warning and keeps the individual address ETS
+  assigned, so ETS reaches the device and can download. The boot-time ETS parameter read ignores such
+  a file too. Not covered: ETS downloading an older product to a device that runs the new build
+  stamps the file with the new version, because the stamp is the build's, not the program version
+  ETS wrote.
+- Not done: T7 (ETS test with a project that uses the device) and the longer text objects
+  (KZO-DEC-4, 4.2).
