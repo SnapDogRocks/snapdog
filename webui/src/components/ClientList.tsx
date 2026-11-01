@@ -130,8 +130,6 @@ export function ClientList({ zone }: { zone: ZoneState }) {
     localStorage.setItem(SHOW_OFFLINE_KEY, String(next));
   };
 
-  if (visibleClients.length === 0 && offlineCount === 0) return null;
-
   return (
     <div className="w-full">
       <div className="flex items-center px-3 py-2">
