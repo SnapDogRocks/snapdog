@@ -791,7 +791,7 @@ opens an auto-merge PR with the updated reference in
 
 ## License
 
-[GPL-3.0-only](LICENSE)
+[GPL-3.0-only](LICENSE). Contributions are accepted under the [Contribution Licence](CONTRIBUTION-LICENSE.md) ([Deutsch](CONTRIBUTION-LICENSE.de.md)); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

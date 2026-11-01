@@ -1,0 +1,42 @@
+name: Contribution licence
+
+# pull_request_target runs the workflow and the script from the base branch, so a pull request
+# cannot change the check that judges it. Nothing from the pull request is checked out or executed.
+# merge_group: the repository merges through a merge queue. A required check that is reported only
+# for pull requests never reports for the queue's temporary commit, so the queue would wait for it
+# until it times out. The declaration was verified before the pull request entered the queue, so the
+# job reports success there without checking anything.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+  merge_group:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+
+jobs:
+  declaration:
+    name: Contribution licence declaration
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Declaration checked before queueing
+        if: github.event_name == 'merge_group'
+        run: echo "Checked on the pull request before it entered the merge queue."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        if: github.event_name == 'pull_request_target'
+      - name: Check the declaration
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_API: repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}
+          MAINTAINERS: metaneutrons
+        run: |
+          set -euo pipefail
+          gh api "$PR_API" > "$RUNNER_TEMP/pr.json"
+          gh api --paginate --slurp "$PR_API/commits" | jq 'add // []' > "$RUNNER_TEMP/commits.json"
+          python3 -I .github/scripts/check-contribution-license.py "$RUNNER_TEMP/pr.json" "$RUNNER_TEMP/commits.json"

@@ -32,6 +32,16 @@ chore/doctor-class-a-bundle
 docs/apt-moves-to-deb-snapdog-cc
 ```
 
+## Contribution licence
+
+Every contribution is licensed under the terms in
+[CONTRIBUTION-LICENSE.md](CONTRIBUTION-LICENSE.md) ([Deutsch](CONTRIBUTION-LICENSE.de.md);
+Apache-2.0 for your contribution, GPL-3.0-only for the project as a whole). You
+accept it by ticking the licence box in the pull request description. The
+`Contribution licence declaration` check fails until the box is ticked. If
+several people author a pull request, each of them adds a `Signed-off-by:` line
+with their own email address to their commits.
+
 ## Local checks before you push
 
 This repository currently uses raw Git hooks via `core.hooksPath`, configured
