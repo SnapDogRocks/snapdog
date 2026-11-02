@@ -53,7 +53,7 @@ Three consequences matter.
 2. A client has no way to notice. It would have to reread the list on a timer.
 3. A search and a management API cannot be added on top of positions.
 
-**In scope.** A stable playlist reference (`uid`) in responses, commands and
+**In scope.** A stable playlist reference (`playlist_id`) in responses, commands and
 paths. A `PlaylistsChanged` event. A cache that does not turn an outage into an
 empty list. Paging for tracks. `GET /media/search`. A cover proxy by cover id.
 Playing an album. Creating, renaming, reordering and deleting Subsonic playlists
@@ -69,15 +69,19 @@ shipped (HAI-0010).
 
 ## 2. Design and decisions
 
-### 2.1 A stable reference: `uid`
+### 2.1 A stable reference: `playlist_id`
 
-Every playlist gets a string `uid`, next to the unchanged index `id`.
+Every playlist gets a string `playlist_id`, next to the unchanged index `id`. The name
+follows `track_id` and `album_id`, which the search results already use. Note that in
+`PlaylistInfo`, `PlaylistDetails` and the play body `id` means the *index*, so the
+documentation says so beside both fields. Paths call the index `{playlist_index}`
+and the new reference `by-id/{playlist_id}`.
 
-The rule: `uid` is the prefix of the provider plus the identifier that provider's
+The rule: `playlist_id` is the prefix of the provider plus the identifier that provider's
 system uses for the playlist, unchanged and unique within that system. SnapDog
 assigns no identifiers of its own.
 
-| Playlist | `uid` |
+| Playlist | `playlist_id` |
 |---|---|
 | a Subsonic playlist | `subsonic:<subsonic id>` |
 | the radio list | `snapdog:radio` |
@@ -91,42 +95,42 @@ index, and leaves room for other providers. The field is new because `id` alread
 means the index in responses and in the play body, and changing its meaning would
 break every client.
 
-`uid` is not a UUID. It is the provider's own id with a prefix, so the server stores
+`playlist_id` is not a UUID. It is the provider's own id with a prefix, so the server stores
 nothing and invents nothing. That rests on one assumption: a Subsonic server keeps a
 playlist's id for as long as the playlist exists. The Subsonic API description does
 not promise it across a server migration or a library re-import, and the behaviour of
 Navidrome and Gonic has not been measured here (open question below). When the
-Subsonic server is replaced, every `uid` changes with it, and a client that stored one
+Subsonic server is replaced, every `playlist_id` changes with it, and a client that stored one
 treats it as an unknown playlist (404), which is the correct outcome.
 
-Where `uid` appears:
+Where `playlist_id` appears:
 
-- `uid` in `PlaylistInfo` and `PlaylistDetails`, in the zone's playlist fields
-  of the state and of `ZoneChanged` (`playlist_uid`, next to `playlist_index`), in
+- `playlist_id` in `PlaylistInfo` and `PlaylistDetails`, in the zone's playlist fields
+  of the state and of `ZoneChanged` (`playlist_id`, next to `playlist_index`), in
   `GET /zones/{z}/playlist/info` (`ZonePlaylistInfo`) and in the MQTT zone state
-  payload (`playlist_uid`, next to `playlist_index`).
-- Commands that carry a playlist. The index and the `uid` get separate endpoints
+  payload (`playlist_id`, next to `playlist_index`).
+- Commands that carry a playlist. The index and the `playlist_id` get separate endpoints
   and are never accepted side by side in one body, so there is no "both or neither"
   case and every body has one type.
   - `PUT /zones/{z}/playlist` keeps its bare number (the index). New:
-    `PUT /zones/{z}/playlist/by-uid` with a bare JSON string as body
-    (`"subsonic:42"`), and `GET /zones/{z}/playlist/by-uid` returning the active
-    `uid` as a string, as `GET /zones/{z}/playlist` returns the index. A string in
-    the body needs no percent-encoding, unlike a `uid` in a path.
+    `PUT /zones/{z}/playlist/by-id` with a bare JSON string as body
+    (`"subsonic:42"`), and `GET /zones/{z}/playlist/by-id` returning the active
+    `playlist_id` as a string, as `GET /zones/{z}/playlist` returns the index. A string in
+    the body needs no percent-encoding, unlike a `playlist_id` in a path.
   - `POST /zones/{z}/play/playlist` keeps `{"id": n, "track": n}`. New:
-    `POST /zones/{z}/play/playlist/by-uid` with `{"uid": "...", "track": n}`.
+    `POST /zones/{z}/play/playlist/by-id` with `{"playlist_id": "...", "track": n}`.
   - MQTT `snapdog/zones/{z}/playlist/set` keeps the index. New:
-    `snapdog/zones/{z}/playlist/uid/set` with the `uid` as text payload.
-  - An unknown `uid` is a 404 in every case.
-- Reading. `GET /media/playlists/by-uid/{uid}` and `.../by-uid/{uid}/tracks`
+    `snapdog/zones/{z}/playlist/id/set` with the `playlist_id` as text payload.
+  - An unknown `playlist_id` is a 404 in every case.
+- Reading. `GET /media/playlists/by-id/{playlist_id}` and `.../by-id/{playlist_id}/tracks`
   (percent-encoded), with the same bodies as the index paths. The existing paths
   stay and keep resolving by index.
 
-Where `uid` is deliberately not added:
+Where `playlist_id` is deliberately not added:
 
 - `POST /zones/{z}/play/playlist/{playlist_index}/track` keeps its index path. The
-  `by-uid` variant of `POST /zones/{z}/play/playlist` covers the same use, so a
-  second path with a `uid` would only duplicate it.
+  `by-id` variant of `POST /zones/{z}/play/playlist` covers the same use, so a
+  second path with a `playlist_id` would only duplicate it.
 - `POST /zones/{z}/play/subsonic/{track_id}` already takes the Subsonic id of the
   track.
 - `next/playlist` and `previous/playlist` carry no playlist, and the player moves
@@ -148,7 +152,7 @@ A new notification `PlaylistsChanged { total: usize }` on the WebSocket
 have changed, and that a client should read `GET /media/playlists` again.
 
 - A background task reads the Subsonic list every `[subsonic].refresh_secs`
-  seconds (default 60, the current cache lifetime) and compares `uid`, name and
+  seconds (default 60, the current cache lifetime) and compares `playlist_id`, name and
   song count with the last good list. A difference sends the event.
 - A write from 2.5 invalidates the cache and sends the event at once.
 - A failed read keeps the last good list and logs a warning. It never replaces the
@@ -162,7 +166,7 @@ within one refresh interval. The documentation states that figure.
 
 ### 2.3 Paging tracks
 
-`GET /media/playlists/{p}/tracks` and the `by-uid` variant accept `limit` and
+`GET /media/playlists/{p}/tracks` and the `by-id` variant accept `limit` and
 `offset`. Without them the response is what it is today. With them the response
 is the same array, cut, and the header `X-Total-Count` carries the number of
 tracks. The array form is kept so that existing parsers keep working.
@@ -178,10 +182,15 @@ tracks. The array form is kept so that existing parsers keep working.
   over the cached playlists and the configured stations.
 - The response is `{ "items": [...], "next_offset": n | null }`. `search3` does not
   report a total, so there is none. `next_offset` is set when a page was full.
-- An item has `kind`, `uid`, `title`, `subtitle` (artist, or album for a track),
+- An item has `kind`, `title`, `subtitle` (artist, or album for a track),
   `duration` (seconds, 0 if unknown) and `cover_art` (a path to 2.4's cover
-  proxy, or null). A track also has `track_id`, an album `album_id`, a playlist
-  or radio `playlist_index`.
+  proxy, or null). The identifier has a field per kind: a track has `track_id`
+  (the raw Subsonic id, as in the existing `play/subsonic/{track_id}`), an album
+  `album_id`, a playlist or radio `playlist_id` and `playlist_index`. There is no
+  generic identifier, because Subsonic numbers playlists, tracks and albums
+  separately and a plain id could mean any of the three. `playlist_id` carries the
+  provider prefix (2.1) because the radio list is not a Subsonic object, the two ids
+  of Subsonic objects stay raw because their endpoints already say `subsonic`.
 - `GET /media/cover/{cover_id}` proxies a Subsonic cover id with the same caching
   headers as the existing cover routes. Search results need it because they have
   no playlist index to build the existing cover path from.
@@ -192,7 +201,7 @@ tracks. The array form is kept so that existing parsers keep working.
 
 An album is not part of the unified playlist list, so playing one needs a queue
 that is not backed by a playlist. How the player represents that (state fields
-`playlist_index` and `playlist_uid` null, `playlist_name` the album) is settled in
+`playlist_index` and `playlist_id` null, `playlist_name` the album) is settled in
 M2 with the player code in front of us, see section 4.
 
 ### 2.5 Managing Subsonic playlists
@@ -203,9 +212,9 @@ Subsonic playlists only, passed through to `createPlaylist`, `updatePlaylist` an
 | Call | Effect |
 |---|---|
 | `POST /media/playlists` | `{ "name", "track_ids": [] }`, answers 201 with the new `PlaylistInfo` |
-| `PATCH /media/playlists/by-uid/{uid}` | `{ "name"?, "add_track_ids"?, "remove_positions"? }`, the three operations of `updatePlaylist` |
-| `PUT /media/playlists/by-uid/{uid}/tracks` | `{ "track_ids": [] }` replaces the content and the order |
-| `DELETE /media/playlists/by-uid/{uid}` | deletes |
+| `PATCH /media/playlists/by-id/{playlist_id}` | `{ "name"?, "add_track_ids"?, "remove_positions"? }`, the three operations of `updatePlaylist` |
+| `PUT /media/playlists/by-id/{playlist_id}/tracks` | `{ "track_ids": [] }` replaces the content and the order |
+| `DELETE /media/playlists/by-id/{playlist_id}` | deletes |
 
 - **Operator switch.** `[subsonic].playlist_write = false` by default. With it off,
   every call above answers 403 `read_only`. Authentication in SnapDog is optional,
@@ -239,15 +248,15 @@ RFC.
   rule for what happens to entries whose playlist vanished. With one provider and
   ids that are already unique, it buys nothing now. If a second provider or a
   migration story arrives, the prefix scheme can be replaced without changing the
-  field, because clients treat `uid` as an opaque string.
+  field, because clients treat `playlist_id` as an opaque string.
 - **Put the id into the existing `id`** as a string. Breaks every client that
   parses it as a number, including the web interface and `pysnapdog` 0.1.0.
-- **One endpoint that accepts the index or the `uid`** (a number or an object, or two
+- **One endpoint that accepts the index or the `playlist_id`** (a number or an object, or two
   keys in one body). Needs a rule for "both" and "neither", an untagged type in the
-  schema and a guess for MQTT. Separate `by-uid` endpoints cost a route each and
+  schema and a guess for MQTT. Separate `by-id` endpoints cost a route each and
   keep every body a single type.
 - **Accept ids and indices in the same path segment.** Subsonic ids can be
-  numeric, so `/media/playlists/12` would be ambiguous. A separate `by-uid` prefix
+  numeric, so `/media/playlists/12` would be ambiguous. A separate `by-id` prefix
   has no such case.
 - **Let clients poll for changes.** What the integration would do anyway, at a
   cost on both sides and with a delay chosen by the client. The event costs one
@@ -263,7 +272,7 @@ RFC.
 Everything is additive inside `/api/v1`. `id` keeps meaning the index, the index
 paths and the existing bodies keep working, and clients that ignore the new
 fields and the new event are unaffected. `GET /system/version` already tells a
-client the server version. A client that finds no `uid` in a playlist talks to an
+client the server version. A client that finds no `playlist_id` in a playlist talks to an
 older server and falls back to the index. `openapi.json` and `docs/api/asyncapi.json`
 are regenerated, and the pinned copies in `pysnapdog` follow after the release.
 
@@ -274,14 +283,14 @@ are regenerated, and the pinned copies in `pysnapdog` follow after the release.
 Execution: to be linked on acceptance
 Dependencies: none
 
-- MED-M1-A1: every playlist in `GET /media/playlists` and `.../{p}` has a `uid`
+- MED-M1-A1: every playlist in `GET /media/playlists` and `.../{p}` has a `playlist_id`
   (`snapdog:radio`, `subsonic:<id>`), and `id` is unchanged. A test with and without
-  configured radios shows the indices shifting while the `uid` values stay.
-- MED-M1-A2: `by-uid` reads work and answer 404 for an unknown `uid`.
-  `PUT /zones/{z}/playlist/by-uid`, `POST /zones/{z}/play/playlist/by-uid` and MQTT
-  `playlist/uid/set` start the same playlist as their index counterparts and answer
-  404 (MQTT: a warning) for an unknown `uid`. `GET /zones/{z}/playlist/by-uid`,
-  `GET /zones/{z}/playlist/info` and the MQTT state payload carry the `uid`. The
+  configured radios shows the indices shifting while the `playlist_id` values stay.
+- MED-M1-A2: `by-id` reads work and answer 404 for an unknown `playlist_id`.
+  `PUT /zones/{z}/playlist/by-id`, `POST /zones/{z}/play/playlist/by-id` and MQTT
+  `playlist/id/set` start the same playlist as their index counterparts and answer
+  404 (MQTT: a warning) for an unknown `playlist_id`. `GET /zones/{z}/playlist/by-id`,
+  `GET /zones/{z}/playlist/info` and the MQTT state payload carry the `playlist_id`. The
   index endpoints behave as before (positive and negative probe each).
 - MED-M1-A3: with the Subsonic server stopped, a running server keeps the last good
   list and logs a warning, also across a refresh task run. The request-path part
@@ -293,7 +302,7 @@ Dependencies: none
 - MED-M1-A5: `limit` and `offset` cut a track list and `X-Total-Count` holds the
   full size. Without them the body is byte-identical to the previous release.
 - MED-M1-A6: the OpenAPI and AsyncAPI files carry all of it, and `ZoneChanged`
-  includes `playlist_uid`.
+  includes `playlist_id`.
 
 ### M2: Search and album playback
 
@@ -306,7 +315,7 @@ Dependencies: M1
 - MED-M2-A2: `GET /media/cover/{cover_id}` serves a result's cover with caching
   headers, and an unknown id is a 404.
 - MED-M2-A3: an album from a search result plays on a zone, and the zone's state
-  names it (`playlist_name`, `playlist_index` and `playlist_uid` null).
+  names it (`playlist_name`, `playlist_index` and `playlist_id` null).
 - MED-M2-A4: the web interface and `pysnapdog` are not broken by the new fields
   (their existing test suites pass against a build of this milestone).
 
@@ -332,13 +341,13 @@ of the repository and is not part of this plan.
 
 ## 4. Migration, risks and verification cost
 
-- **Rollout.** Defaults keep today's behaviour. `uid` and the event are additive and
+- **Rollout.** Defaults keep today's behaviour. `playlist_id` and the event are additive and
   `playlist_write` is off.
-- **Rollback.** Remove the new keys. Clients that depend on `uid` fall back to the
+- **Rollback.** Remove the new keys. Clients that depend on `playlist_id` fall back to the
   index on a server without it.
 - **Risks.** The refresh task adds a Subsonic request per interval. Mitigation: the
   default equals the current cache lifetime and a failed read is logged once per
-  outage. A `uid` built from the Subsonic id changes when a playlist is deleted and
+  outage. A `playlist_id` built from the Subsonic id changes when a playlist is deleted and
   created again with the same name, which is correct. Album playback needs a queue
   that the player does not have today, and M2 may show that it is larger than
   assumed.
@@ -356,7 +365,7 @@ of the repository and is not part of this plan.
   - Whether `playlist_write` should default to true when an API key is
     configured.
   - Whether Subsonic playlist ids stay the same across restarts and library rescans
-    on Navidrome, Gonic and the reference server. `uid` depends on it.
+    on Navidrome, Gonic and the reference server. `playlist_id` depends on it.
 
 ## 5. Decision changes
 
