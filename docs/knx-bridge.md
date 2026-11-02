@@ -50,7 +50,8 @@ addresses of a zone above 16 or a client above 64 are ignored with a warning.
   number. The numbers are laid out in groups of ten so that related objects sit together in
   ETS and every group keeps free numbers for later additions: zone `z` starts at
   `(z-1)*60 + 1` (six groups: transport, volume and mute, play modes, playlist, track info,
-  presence), client `c` at `960 + (c-1)*30 + 1` (three groups: volume and mute, latency and
+  presence; the playlist number is the position in the playlist list and moves when a playlist is
+  added or removed, only REST and MQTT offer the stable `playlist_id`), client `c` at `960 + (c-1)*30 + 1` (three groups: volume and mute, latency and
   zone, connection), and the five device-level objects in two groups (system status 2881 to 2883, all zones
   2891 and 2892). Numbers no object
   names are reserved and have no descriptor (`group_objects::locate` tells what a number is).

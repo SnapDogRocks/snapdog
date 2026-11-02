@@ -48,6 +48,7 @@ pub enum Route {
     ZonePosition,
     ZoneTrack,
     ZonePlaylist,
+    ZonePlaylistById,
     ZonePresence,
     ZonePresenceEnable,
     ZonePresenceTimeout,
@@ -81,6 +82,7 @@ pub const COMMAND_ROUTES: &[(Scope, &str, Route)] = &[
     (Scope::Zone, "track/set", Route::ZoneTrack),
     (Scope::Zone, "track/position/set", Route::ZonePosition),
     (Scope::Zone, "playlist/set", Route::ZonePlaylist),
+    (Scope::Zone, "playlist/by-id/set", Route::ZonePlaylistById),
     (Scope::Zone, "presence/set", Route::ZonePresence),
     (
         Scope::Zone,
@@ -272,6 +274,7 @@ mod tests {
                 "snapdog/zones/+/track/set",
                 "snapdog/zones/+/track/position/set",
                 "snapdog/zones/+/playlist/set",
+                "snapdog/zones/+/playlist/by-id/set",
                 "snapdog/zones/+/presence/set",
                 "snapdog/zones/+/presence/enable/set",
                 "snapdog/zones/+/presence/timeout/set",

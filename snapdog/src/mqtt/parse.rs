@@ -160,6 +160,20 @@ pub fn parse_count(payload: &str) -> Parsed<usize> {
         .map_err(|_| PayloadError("integer is out of range"))
 }
 
+/// A `playlist_id` (`snapdog:radio`, `subsonic:<id>`) as plain text.
+///
+/// # Errors
+///
+/// An empty payload or one with control characters. Whether the id names a playlist is
+/// decided when the command runs.
+pub fn parse_playlist_id(payload: &str) -> Parsed<String> {
+    let id = payload.trim();
+    if id.is_empty() || id.chars().any(char::is_control) {
+        return Err(PayloadError("expected a playlist_id such as subsonic:42"));
+    }
+    Ok(id.to_owned())
+}
+
 /// Seconds as `u16`.
 ///
 /// # Errors

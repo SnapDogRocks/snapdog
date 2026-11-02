@@ -1494,6 +1494,35 @@ impl AppConfig {
             Some(ResolvedPlaylist::Subsonic(sub_idx))
         }
     }
+
+    /// Resolve a `playlist_id` to its unified playlist index.
+    ///
+    /// `subsonic_ids` are the Subsonic playlist ids in the order the server returned them.
+    /// `None` for an id that names no playlist, including `snapdog:radio` without stations.
+    #[must_use]
+    pub fn playlist_index_by_id<S: AsRef<str>>(
+        &self,
+        playlist_id: &str,
+        subsonic_ids: &[S],
+    ) -> Option<usize> {
+        if playlist_id == RADIO_PLAYLIST_ID {
+            return self.has_radio_playlist().then_some(0);
+        }
+        let id = playlist_id.strip_prefix(SUBSONIC_PLAYLIST_PREFIX)?;
+        let offset = subsonic_ids.iter().position(|s| s.as_ref() == id)?;
+        Some(offset + usize::from(self.has_radio_playlist()))
+    }
+}
+
+/// `playlist_id` of the radio list. `SnapDog` itself provides it, from `[[radio]]`.
+pub const RADIO_PLAYLIST_ID: &str = "snapdog:radio";
+/// Prefix of the `playlist_id` of a Subsonic playlist.
+pub const SUBSONIC_PLAYLIST_PREFIX: &str = "subsonic:";
+
+/// The `playlist_id` of the Subsonic playlist with the given Subsonic id.
+#[must_use]
+pub fn subsonic_playlist_id(subsonic_id: &str) -> String {
+    format!("{SUBSONIC_PLAYLIST_PREFIX}{subsonic_id}")
 }
 
 /// Resolved zone configuration with all conventions applied.

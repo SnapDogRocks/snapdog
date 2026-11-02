@@ -281,6 +281,7 @@ pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
                         z.playback = crate::state::PlaybackState::Playing;
                     }
                     z.playlist_index = Some(0);
+                    z.playlist_id = Some(crate::config::RADIO_PLAYLIST_ID.into());
                     z.playlist_track_index = Some(next);
                     z.track = Some(radio_track_info(&radio.name));
                 })
@@ -349,6 +350,7 @@ pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
                         z.playback = crate::state::PlaybackState::Playing;
                     }
                     z.playlist_index = Some(0);
+                    z.playlist_id = Some(crate::config::RADIO_PLAYLIST_ID.into());
                     z.playlist_track_index = Some(prev);
                     z.track = Some(radio_track_info(&radio.name));
                 })

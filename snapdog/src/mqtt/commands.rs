@@ -36,8 +36,8 @@ use tokio::sync::{Notify, mpsc};
 use super::limits::RateLimiter;
 use super::parse::{
     MAX_PAYLOAD_BYTES, PayloadError, Transport, parse_bool, parse_client_volume, parse_count,
-    parse_latency_ms, parse_repeat, parse_seconds, parse_seek_ms, parse_transport,
-    parse_zone_volume,
+    parse_latency_ms, parse_playlist_id, parse_repeat, parse_seconds, parse_seek_ms,
+    parse_transport, parse_zone_volume,
 };
 use super::topics::{ParsedCommand, Route, Scope, TopicError, Topics};
 use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
@@ -492,6 +492,9 @@ fn plan(route: Route, payload: &str) -> Result<Delivery, Rejected> {
             Transport::Previous => ZoneCommand::Previous,
         }),
         Route::ZonePlaylist => Delivery::Zone(ZoneCommand::SetPlaylist(parse_count(payload)?, 0)),
+        Route::ZonePlaylistById => {
+            Delivery::Zone(ZoneCommand::SetPlaylistById(parse_playlist_id(payload)?, 0))
+        }
         Route::ZoneTrack => Delivery::Zone(ZoneCommand::SetTrack(parse_count(payload)?)),
         Route::ZonePosition => Delivery::Zone(ZoneCommand::Seek(parse_seek_ms(payload)?)),
         Route::ZoneShuffle => Delivery::Zone(ZoneCommand::SetShuffle(parse_bool(payload)?)),
@@ -672,6 +675,17 @@ mod tests {
             rx.recv().await,
             Some(ZoneCommand::SetPlaylist(3, 0))
         ));
+        send(&h, "snapdog/zones/1/playlist/by-id/set", "subsonic:42")
+            .await
+            .unwrap();
+        assert!(
+            matches!(rx.recv().await, Some(ZoneCommand::SetPlaylistById(id, 0)) if id == "subsonic:42")
+        );
+        assert!(
+            send(&h, "snapdog/zones/1/playlist/by-id/set", "  ")
+                .await
+                .is_err()
+        );
         send(&h, "snapdog/zones/1/track/set", "7").await.unwrap();
         assert!(matches!(rx.recv().await, Some(ZoneCommand::SetTrack(7))));
     }
@@ -1257,6 +1271,7 @@ mod tests {
             "position/set" | "track/position/set" => "30",
             "track/set" | "zone/set" => "2",
             "playlist/set" => "1",
+            "playlist/by-id/set" => "subsonic:42",
             "presence/timeout/set" => "60",
             "latency/set" => "20",
             other => panic!("no sample payload for {other}: extend valid_payload"),
@@ -1288,7 +1303,7 @@ mod tests {
             let filters: Vec<String> = Topics::new(&mqtt.base_topic).command_filters().collect();
             assert_eq!(
                 filters.len(),
-                16,
+                17,
                 "documented command set, base {effective}"
             );
 

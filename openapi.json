@@ -1491,6 +1491,127 @@
         }
       }
     },
+    "/api/v1/media/playlists/by-id/{playlist_id}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get playlist details by `playlist_id`",
+        "description": "Same body as the index path. This path takes the `playlist_id` (`snapdog:radio`,\n`subsonic:<id>`, percent-encoded); the path without `by-id` takes the unified index.",
+        "operationId": "get_playlist_by_id",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "description": "Stable playlist reference, percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playlist details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/playlists/by-id/{playlist_id}/tracks": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get playlist tracks by `playlist_id`",
+        "description": "Same body as the index path. This path takes the `playlist_id`, the path without `by-id`\ntakes the unified index.",
+        "operationId": "get_playlist_tracks_by_id",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "description": "Stable playlist reference, percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tracks in the playlist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MediaTrackInfo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/media/playlists/{playlist_index}": {
       "get": {
         "tags": [
@@ -3078,6 +3199,59 @@
         }
       }
     },
+    "/api/v1/zones/{zone_index}/play/playlist/by-id": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Play playlist by `playlist_id`",
+        "description": "Switches the zone to the playlist with the given `playlist_id` and starts playing at the\nspecified track index. This path takes the `playlist_id` (`snapdog:radio`, `subsonic:<id>`);\nthe paths without `by-id` take the unified playlist index. An unknown `playlist_id` is a 404.",
+        "operationId": "play_playlist_by_id",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistByIdPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Playlist playback triggered"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Zone or playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/zones/{zone_index}/play/playlist/{playlist_index}/track": {
       "post": {
         "tags": [
@@ -3453,6 +3627,107 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/playlist/by-id": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Get zone playlist reference",
+        "description": "Returns the `playlist_id` of the currently active playlist in the specified zone, or an empty\nstring when no playlist is active. The path without `by-id` returns the index.",
+        "operationId": "get_zone_playlist_by_id",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active playlist_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Set zone playlist by `playlist_id`",
+        "description": "Selects the playlist with the given `playlist_id` (a JSON string such as `\"subsonic:42\"`).\nIf the zone is already playing, playback switches to it, otherwise it is loaded. The path\nwithout `by-id` takes the unified index. An unknown `playlist_id` is a 404.",
+        "operationId": "set_zone_playlist_by_id",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Playlist changed successfully"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Zone or playlist not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -5519,20 +5794,51 @@
         ],
         "description": "Playback control command sent from client to server."
       },
+      "PlaylistByIdPayload": {
+        "type": "object",
+        "description": "Body of `POST /zones/{zone_index}/play/playlist/by-id`.",
+        "required": [
+          "playlist_id"
+        ],
+        "properties": {
+          "playlist_id": {
+            "type": "string",
+            "description": "Stable playlist reference (`snapdog:radio`, `subsonic:<id>`)."
+          },
+          "track": {
+            "type": "integer",
+            "description": "Track index to start at (0-based, default 0).",
+            "minimum": 0
+          }
+        }
+      },
       "PlaylistDetails": {
         "type": "object",
         "required": [
           "id",
+          "index",
+          "playlist_id",
           "name",
           "tracks"
         ],
         "properties": {
           "id": {
             "type": "integer",
+            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
+            "deprecated": true,
+            "minimum": 0
+          },
+          "index": {
+            "type": "integer",
+            "description": "Unified playlist index (0-based). Moves when the list changes, see `playlist_id`.",
             "minimum": 0
           },
           "name": {
             "type": "string"
+          },
+          "playlist_id": {
+            "type": "string",
+            "description": "Stable reference: `snapdog:radio` or `subsonic:<subsonic id>`."
           },
           "tracks": {
             "type": "integer",
@@ -5544,6 +5850,8 @@
         "type": "object",
         "required": [
           "id",
+          "index",
+          "playlist_id",
           "name",
           "song_count",
           "duration"
@@ -5562,10 +5870,21 @@
           },
           "id": {
             "type": "integer",
+            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
+            "deprecated": true,
+            "minimum": 0
+          },
+          "index": {
+            "type": "integer",
+            "description": "Unified playlist index (0-based). Moves when the list changes, see `playlist_id`.",
             "minimum": 0
           },
           "name": {
             "type": "string"
+          },
+          "playlist_id": {
+            "type": "string",
+            "description": "Stable reference: `snapdog:radio` or `subsonic:<subsonic id>`."
           },
           "song_count": {
             "type": "integer",
@@ -5576,12 +5895,22 @@
       },
       "PlaylistPayload": {
         "type": "object",
-        "required": [
-          "id"
-        ],
         "properties": {
           "id": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
+            "deprecated": true,
+            "minimum": 0
+          },
+          "index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unified playlist index (0-based).",
             "minimum": 0
           },
           "track": {
@@ -6141,6 +6470,13 @@
               "null"
             ]
           },
+          "playlist_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable reference of the active playlist (`snapdog:radio`, `subsonic:<id>`)."
+          },
           "total": {
             "type": [
               "integer",
@@ -6241,6 +6577,13 @@
               "string",
               "null"
             ]
+          },
+          "playlist_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable reference of the active playlist (`snapdog:radio`, `subsonic:<id>`)."
           },
           "playlist_index": {
             "type": [

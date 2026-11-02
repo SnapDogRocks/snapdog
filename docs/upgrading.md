@@ -3,6 +3,41 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## Media API: `playlist_id` and `index`, `id` is deprecated (breaks `/api/v1` with SnapDog 1.0)
+
+Nothing breaks with this release. Read it if you wrote a client against the REST API, the WebSocket
+or MQTT.
+
+### What changed
+
+- Every playlist has a stable `playlist_id`: `snapdog:radio` for the radio list, `subsonic:<id>` for a
+  Subsonic playlist. The unified playlist **index** moves whenever a playlist is created or removed in
+  Subsonic, when radios are added to or removed from `snapdog.toml`, and for a short time when Subsonic
+  cannot be reached. Store the `playlist_id`, never the index.
+- `index` is new next to `id` in `PlaylistInfo` and `PlaylistDetails` and in the body of
+  `POST /zones/{zone}/play/playlist`, with the same value. `ZoneChanged` carries `playlist_index`
+  next to `playlist`. The zone track metadata, `GET /zones/{zone}/playlist/info` and the MQTT zone
+  state carry `playlist_id`.
+- New paths take the `playlist_id`: `GET` and `PUT /zones/{zone}/playlist/by-id`,
+  `POST /zones/{zone}/play/playlist/by-id`, `GET /media/playlists/by-id/{playlist_id}` and
+  `.../tracks`, and the MQTT topic `zones/<n>/playlist/by-id/set`. The paths without `by-id` take the
+  index. Until 1.0 the segment can be misread, because `id` still means the index.
+- KNX keeps the one-byte playlist number. A group address cannot carry a string.
+
+### Deprecated, and removed with 1.0
+
+`id` in `PlaylistInfo`, `PlaylistDetails` and the play body, and `playlist` in `ZoneChanged`, are
+deprecated. They are removed with SnapDog 1.0, which **breaks compatibility of `/api/v1`** for
+clients that still read them. `/api/v1` is the path version of the API and not a stability
+promise, and the index paths keep working. The OpenAPI and AsyncAPI documents mark each of them
+`deprecated`, and a check in the release pipeline refuses every 1.x version (also pre-releases)
+while one is left.
+
+### What to do
+
+Switch clients to `index` and `playlist_index` and, to address a playlist, to `playlist_id`.
+A client that finds no `playlist_id` talks to an older server and can fall back to `id`.
+
 ## KNX device mode: seek objects, a new object order in the playlist group (product database version 14)
 
 Applies to everyone who programmed SnapDog's KNX device from ETS with 0.30.0, which shipped product

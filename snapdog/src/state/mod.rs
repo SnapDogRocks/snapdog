@@ -108,6 +108,9 @@ pub struct ZoneState {
     pub track: Option<TrackInfo>,
     /// Active unified playlist index (0 = radio, 1+ = Subsonic playlists).
     pub playlist_index: Option<usize>,
+    /// Stable reference of the active playlist (`snapdog:radio`, `subsonic:<id>`).
+    #[serde(default)]
+    pub playlist_id: Option<String>,
     /// Display name of the active playlist.
     pub playlist_name: Option<String>,
     /// Total number of playlists available.
@@ -297,6 +300,7 @@ impl Store {
                         repeat: snapdog_common::RepeatMode::Off,
                         track: None,
                         playlist_index: None,
+                        playlist_id: None,
                         playlist_name: None,
                         playlist_total: None,
                         playlist_track_index: None,
@@ -390,6 +394,7 @@ impl Store {
                 zone.shuffle = saved_zone.shuffle;
                 zone.repeat = saved_zone.repeat;
                 zone.playlist_index = saved_zone.playlist_index;
+                zone.playlist_id = saved_zone.playlist_id;
                 zone.playlist_name = saved_zone.playlist_name;
                 // Don't restore playback/track — those are transient
             }
@@ -624,6 +629,7 @@ mod tests {
                 repeat: snapdog_common::RepeatMode::Off,
                 track: None,
                 playlist_index: None,
+                playlist_id: None,
                 playlist_name: None,
                 playlist_total: None,
                 playlist_track_index: None,

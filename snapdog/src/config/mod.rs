@@ -2118,6 +2118,63 @@ mod tests {
             unknown_keys("[snapcast]\nbogus = 1\n[[zone]]\nname = \"A\"\nnope = true").unwrap();
         assert_eq!(keys, ["snapcast.bogus", "zone[0].nope"]);
     }
+
+    fn config_with_radios(radios: bool) -> AppConfig {
+        let radio = if radios {
+            "[[radio]]\nname = \"Test\"\nurl = \"http://example.com/stream\"\n"
+        } else {
+            ""
+        };
+        let raw: FileConfig = toml::from_str(&format!("{}\n{radio}", minimal_toml())).unwrap();
+        load_raw(raw).unwrap()
+    }
+
+    /// MED-M1-A1: the indices shift when radios are configured, the `playlist_id` values do not.
+    #[test]
+    fn playlist_ids_stay_while_indices_shift() {
+        let subsonic = ["42", "7"];
+        let with = config_with_radios(true);
+        let without = config_with_radios(false);
+
+        assert_eq!(
+            with.playlist_index_by_id("snapdog:radio", &subsonic),
+            Some(0)
+        );
+        assert_eq!(with.playlist_index_by_id("subsonic:42", &subsonic), Some(1));
+        assert_eq!(with.playlist_index_by_id("subsonic:7", &subsonic), Some(2));
+
+        assert_eq!(
+            without.playlist_index_by_id("snapdog:radio", &subsonic),
+            None
+        );
+        assert_eq!(
+            without.playlist_index_by_id("subsonic:42", &subsonic),
+            Some(0)
+        );
+        assert_eq!(
+            without.playlist_index_by_id("subsonic:7", &subsonic),
+            Some(1)
+        );
+    }
+
+    /// A bare Subsonic id or an index is never taken for a `playlist_id`.
+    #[test]
+    fn playlist_id_needs_its_prefix_and_an_existing_playlist() {
+        let subsonic = ["42"];
+        let c = config_with_radios(true);
+        for bad in [
+            "42",
+            "1",
+            "subsonic:",
+            "subsonic:43",
+            "other:42",
+            "SUBSONIC:42",
+            "",
+        ] {
+            assert_eq!(c.playlist_index_by_id(bad, &subsonic), None, "{bad:?}");
+        }
+        assert_eq!(subsonic_playlist_id("42"), "subsonic:42");
+    }
 }
 
 #[cfg(test)]
