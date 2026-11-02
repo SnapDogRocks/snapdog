@@ -336,8 +336,10 @@ can install. Two checks enforce it:
   more and `openapi.json` or `docs/api/asyncapi.json` contains an entry marked
   `deprecated`. It runs in the required `CI Success`, so the release pull request
   that bumps the version cannot be merged.
-- The release workflow runs the same check on the tag before it builds anything, so
-  a tag pushed by hand is refused as well.
+- The release workflow, which release-please dispatches once per release, runs the
+  same check on the released version before it builds anything. A tag pushed by
+  hand starts nothing there, because the workflow runs by dispatch only, so the
+  check in `CI Success` is the one that cannot be bypassed.
 
 The guard checks the generated description and not a list of field names, so a
 future deprecation in `/api/v1` is covered by the same rule.
@@ -380,8 +382,8 @@ Dependencies: none
 - MED-M1-A7: the release guard of 2.8 fails for the version `1.0.0-rc.1` against the
   current description, and passes for `0.30.0` and for `1.0.0-rc.1` against a
   description without deprecated entries (positive probe and counter-probe, run in
-  the test with the version injected). The release workflow refuses a tag `v1.0.0`
-  in the same situation.
+  the test with the version injected). The release workflow refuses to build version
+  `1.0.0` in the same situation.
 
 ### M2: Search and album playback
 
