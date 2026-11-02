@@ -1460,6 +1460,61 @@
         }
       }
     },
+    "/api/v1/media/cover/{cover_id}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Get a cover image by its Subsonic cover id",
+        "description": "Proxies the cover of a search result, with the caching headers of the other cover routes.\nA search result has no playlist index to build the playlist cover path from.",
+        "operationId": "get_cover",
+        "parameters": [
+          {
+            "name": "cover_id",
+            "in": "path",
+            "description": "Subsonic cover art id, percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cover image",
+            "content": {
+              "image/*": {}
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Cover not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Subsonic is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/media/playlists": {
       "get": {
         "tags": [
@@ -1954,6 +2009,94 @@
           },
           "404": {
             "description": "Track or cover not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/media/search": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Search the music library, the playlists and the radio stations",
+        "description": "Tracks and albums come from the `search3` call of the Subsonic server, so what matches\nfollows the rules of that server (some match word prefixes, some any substring). Playlists\nand radio stations are matched by the server on a case-insensitive substring of the name.\n`limit` and `offset` apply to each kind. `search3` reports no total, so `next_offset` is set\nwhen any kind filled its page.",
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Text to search for, at least two characters.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Comma-separated kinds: `track`, `album`, `playlist`, `radio` (default all four).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Results per kind (default 20, at most 100).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Results to skip per kind (default 0).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "q shorter than two characters, or an unknown kind",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "502": {
+            "description": "Upstream request failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -3363,6 +3506,58 @@
           },
           "404": {
             "description": "Zone or playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zones/{zone_index}/play/subsonic/album/{album_id}": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Play a Subsonic album",
+        "description": "Queues the album's tracks and starts the first. An album is not part of the unified\nplaylist list, so the zone state names it in `playlist_name` and has no `playlist_index`\nand no `playlist_id`. A search result carries the `album_id`.",
+        "operationId": "play_subsonic_album",
+        "parameters": [
+          {
+            "name": "zone_index",
+            "in": "path",
+            "description": "1-based index of the target zone",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "album_id",
+            "in": "path",
+            "description": "Subsonic album ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Album playback started"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Zone not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -6070,6 +6265,104 @@
               "null"
             ],
             "description": "The `bind` entry this address came from when that was an interface name or `loopback`,\nfor example `eth0`. Absent when the address was written as an address or is the default."
+          }
+        }
+      },
+      "SearchItem": {
+        "type": "object",
+        "description": "One search result. The identifier has a field per kind, there is no generic one.",
+        "required": [
+          "kind",
+          "title",
+          "duration"
+        ],
+        "properties": {
+          "album_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Subsonic album id (kind `album`). Plays with `POST /zones/{zone}/play/subsonic/album/{album_id}`."
+          },
+          "cover_art": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Path of a cover image, see `GET /media/cover/{cover_id}`."
+          },
+          "duration": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds, 0 if unknown.",
+            "minimum": 0
+          },
+          "index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Current unified index of the playlist (kinds `playlist` and `radio`).",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string",
+            "description": "`track`, `album`, `playlist` or `radio`."
+          },
+          "playlist_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable reference (kinds `playlist` and `radio`, where `radio` is the list `snapdog:radio`)."
+          },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Artist, or album for a track. Absent for a playlist."
+          },
+          "title": {
+            "type": "string"
+          },
+          "track": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Position of the station in the radio list (kind `radio`), the `track` to play it with.",
+            "minimum": 0
+          },
+          "track_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Subsonic track id (kind `track`). Plays with `POST /zones/{zone}/play/subsonic/{track_id}`."
+          }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "description": "Body of `GET /media/search`.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchItem"
+            }
+          },
+          "next_offset": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Offset of the next page, `null` when no kind filled its page.",
+            "minimum": 0
           }
         }
       },

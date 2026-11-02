@@ -118,6 +118,30 @@ fn refreshed_cache(
     }
 }
 
+/// Prefix of the queue id the player uses for an album. It cannot be a Subsonic playlist id.
+const ALBUM_QUEUE_PREFIX: &str = "\u{1f}album:";
+
+/// The queue id under which the player holds an album, see [`SubsonicClient::get_queue`].
+#[must_use]
+pub fn album_queue_id(album_id: &str) -> String {
+    format!("{ALBUM_QUEUE_PREFIX}{album_id}")
+}
+
+/// Whether `queue_id` names an album queue and not a Subsonic playlist.
+#[must_use]
+pub fn is_album_queue(queue_id: &str) -> bool {
+    queue_id.starts_with(ALBUM_QUEUE_PREFIX)
+}
+
+/// One page of a `search3` kind.
+#[derive(Debug, Clone, Copy)]
+pub struct Page {
+    /// Number of results asked for, `0` for none.
+    pub count: usize,
+    /// Results to skip.
+    pub offset: usize,
+}
+
 /// Subsonic API client.
 pub struct SubsonicClient {
     base_url: String,
@@ -191,6 +215,65 @@ impl SubsonicClient {
         resp.subsonic_response
             .playlist
             .context("Playlist not found")
+    }
+
+    /// Get an album with its tracks, shaped like a playlist so the player can queue it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or the album is not found.
+    pub async fn get_album(&self, id: &str) -> Result<Playlist> {
+        let resp: SubsonicResponse<PlaylistWrapper> = self.get("getAlbum", &[("id", id)]).await?;
+        let album = resp.subsonic_response.album.context("Album not found")?;
+        Ok(Playlist {
+            id: album.id,
+            name: album.name,
+            entry: album.song,
+        })
+    }
+
+    /// Get the tracks the player queues for `queue_id`: a Subsonic playlist id, or an album
+    /// (see [`album_queue_id`]). An album is not part of the unified playlist list, so the
+    /// player holds it under a reserved id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or nothing is found.
+    pub async fn get_queue(&self, queue_id: &str) -> Result<Playlist> {
+        match queue_id.strip_prefix(ALBUM_QUEUE_PREFIX) {
+            Some(album_id) => self.get_album(album_id).await,
+            None => self.get_playlist(queue_id).await,
+        }
+    }
+
+    /// Search tracks and albums with `search3`. A count of 0 asks for none of that kind.
+    ///
+    /// `search3` reports no total, and what it matches depends on the Subsonic server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails.
+    pub async fn search(&self, query: &str, songs: Page, albums: Page) -> Result<SearchResult> {
+        let (sc, so, ac, ao) = (
+            songs.count.to_string(),
+            songs.offset.to_string(),
+            albums.count.to_string(),
+            albums.offset.to_string(),
+        );
+        let resp: SubsonicResponse<PlaylistWrapper> = self
+            .get(
+                "search3",
+                &[
+                    ("query", query),
+                    ("songCount", &sc),
+                    ("songOffset", &so),
+                    ("albumCount", &ac),
+                    ("albumOffset", &ao),
+                    ("artistCount", "0"),
+                ],
+            )
+            .await?;
+        Ok(resp.subsonic_response.search_result3.unwrap_or_default())
     }
 
     /// Get the streaming URL for a track (does not fetch — returns the URL).
@@ -335,6 +418,49 @@ struct SubsonicInner<T> {
     playlists: Option<PlaylistsContainer>,
     #[serde(default)]
     playlist: Option<Playlist>,
+    #[serde(default, rename = "searchResult3")]
+    search_result3: Option<SearchResult>,
+    #[serde(default)]
+    album: Option<AlbumWithSongs>,
+}
+
+/// An album as `getAlbum` returns it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AlbumWithSongs {
+    id: String,
+    name: String,
+    #[serde(default)]
+    song: Vec<Track>,
+}
+
+/// Result of `search3`: matching songs and albums.
+#[derive(Debug, Default, Deserialize)]
+pub struct SearchResult {
+    /// Matching tracks.
+    #[serde(default)]
+    pub song: Vec<Track>,
+    /// Matching albums.
+    #[serde(default)]
+    pub album: Vec<AlbumEntry>,
+}
+
+/// An album in a search result.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumEntry {
+    /// Subsonic album ID.
+    pub id: String,
+    /// Album name (`name`, older servers send `title`).
+    #[serde(alias = "title")]
+    pub name: String,
+    /// Album artist.
+    pub artist: Option<String>,
+    /// Cover art ID.
+    pub cover_art: Option<String>,
+    /// Total duration in seconds.
+    #[serde(default)]
+    pub duration: u64,
 }
 
 #[derive(Deserialize)]

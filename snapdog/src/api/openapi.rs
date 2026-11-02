@@ -70,6 +70,8 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
         crate::api::routes::clients::get_connected,
 
         // Media
+        crate::api::routes::media::search,
+        crate::api::routes::media::get_cover,
         crate::api::routes::media::get_playlists,
         crate::api::routes::media::get_playlist,
         crate::api::routes::media::get_playlist_by_id,
@@ -120,6 +122,7 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
         crate::api::routes::zones::play_track,
         crate::api::routes::zones::play_url,
         crate::api::routes::zones::play_subsonic_playlist,
+        crate::api::routes::zones::play_subsonic_album,
         crate::api::routes::zones::play_playlist_by_id,
         crate::api::routes::zones::play_playlist_track,
         crate::api::routes::zones::play_subsonic_track,
@@ -172,6 +175,8 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
             crate::api::routes::media::PlaylistInfo,
             crate::api::routes::media::PlaylistDetails,
             crate::api::routes::media::MediaTrackInfo,
+            crate::api::routes::media::SearchItem,
+            crate::api::routes::media::SearchResponse,
         )
     ),
     tags(
