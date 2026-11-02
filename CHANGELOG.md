@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.31.0](https://github.com/SnapDogRocks/snapdog/compare/v0.30.0...v0.31.0) (2026-11-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **knx:** seek inside the playing track from the bus ([#407](https://github.com/SnapDogRocks/snapdog/issues/407))
+
+### Features
+
+* **api:** add playlist_id and index, deprecate id ([#417](https://github.com/SnapDogRocks/snapdog/issues/417)) ([fbadad7](https://github.com/SnapDogRocks/snapdog/commit/fbadad7eca20f654874abe3ecf0237c4a03345e1))
+* **api:** announce playlist changes and page track lists ([#418](https://github.com/SnapDogRocks/snapdog/issues/418)) ([3951952](https://github.com/SnapDogRocks/snapdog/commit/3951952f70dbb8c9faa971170f66981f2490a22e))
+* **api:** create, change and delete Subsonic playlists ([#421](https://github.com/SnapDogRocks/snapdog/issues/421)) ([c7c3223](https://github.com/SnapDogRocks/snapdog/commit/c7c3223795ed5f7226b140ccb893915ca5f59661))
+* **api:** search the library, proxy covers and play albums ([#420](https://github.com/SnapDogRocks/snapdog/issues/420)) ([f04fe03](https://github.com/SnapDogRocks/snapdog/commit/f04fe0310b891e139a3f255429e9e70f56ca2d95))
+* **knx:** seek inside the playing track from the bus ([#407](https://github.com/SnapDogRocks/snapdog/issues/407)) ([c6f3e88](https://github.com/SnapDogRocks/snapdog/commit/c6f3e88ae09f5f2897b9952c32a882503465fcb7))
+
+
+### Bug Fixes
+
+* **api:** keep the last playlist list when Subsonic is unavailable ([#406](https://github.com/SnapDogRocks/snapdog/issues/406)) ([49cd9ae](https://github.com/SnapDogRocks/snapdog/commit/49cd9ae6a4365b22c543e8021ff743d2eb3a8ecc))
+* **demo:** align the playlist mock with the media identity contract ([#422](https://github.com/SnapDogRocks/snapdog/issues/422)) ([a8aed62](https://github.com/SnapDogRocks/snapdog/commit/a8aed62efc884287339e305b11534e19c1eb2023))
+* **player:** share the playlist list cache with the REST API ([#416](https://github.com/SnapDogRocks/snapdog/issues/416)) ([344bb2b](https://github.com/SnapDogRocks/snapdog/commit/344bb2b7e23bb996f161725e3e67f1f3ae1c02ac))
+
 ## [0.30.0](https://github.com/SnapDogRocks/snapdog/compare/v0.29.1...v0.30.0) (2026-11-02)
 
 
