@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PlayIcon, MusicNote03Icon, Search01Icon, ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import { useAppStore } from "@/stores/useAppStore";
 import { logApiError } from "@/lib/log-api-error";
 import { formatTime } from "@/lib/format-time";
 import type { PlaylistInfo, TrackInfo } from "@/lib/types";
@@ -23,17 +24,41 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
   const t = useTranslations("playlist");
   const [playlists, setPlaylists] = useState<PlaylistInfo[]>([]);
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Selection is the stable playlist_id, the index moves when the list changes.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  const playlistsVersion = useAppStore((s) => s.playlistsVersion);
   const [tracks, setTracks] = useState<TrackInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
 
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
+  // Initial load, and again on `playlists_changed` and after a reconnect.
   useEffect(() => {
-    api.media.playlists()
-      .then(setPlaylists)
-      .catch(logApiError)
-      .finally(() => { setLoading(false); });
-  }, []);
+    const ctl = new AbortController();
+    void (async () => {
+      try {
+        const list = await api.media.playlists();
+        if (ctl.signal.aborted) return;
+        setPlaylists(list);
+        const current = selectedIdRef.current;
+        if (current !== null) {
+          if (list.some((p) => p.playlist_id === current)) {
+            setTracks(await api.media.tracksById(current));
+          } else {
+            setSelectedId(null);
+            setTracks([]);
+          }
+        }
+      } catch (e) {
+        logApiError(e);
+      } finally {
+        if (!ctl.signal.aborted) setLoading(false);
+      }
+    })();
+    return () => { ctl.abort(); };
+  }, [playlistsVersion]);
 
   const filteredPlaylists = useMemo(() => {
     if (!search) return playlists;
@@ -41,18 +66,20 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
     return playlists.filter((pl) => pl.name.toLowerCase().includes(q));
   }, [playlists, search]);
 
-  const selectPlaylist = async (id: number) => {
-    setSelectedId(id);
+  const selectPlaylist = async (playlistId: string) => {
+    setSelectedId(playlistId);
     try {
-      setTracks(await api.media.tracks(id));
+      setTracks(await api.media.tracksById(playlistId));
     } catch {
       setTracks([]);
     }
   };
 
-  const playTrack = (playlistId: number, trackIndex: number) => {
-    api.zones.playPlaylist(zone.index, playlistId, trackIndex).catch(logApiError);
+  const playTrack = (playlistId: string, trackIndex: number) => {
+    api.zones.playPlaylistById(zone.index, playlistId, trackIndex).catch(logApiError);
   };
+
+  const selectedPlaylist = selectedId === null ? undefined : playlists.find((p) => p.playlist_id === selectedId);
 
   const formatDuration = (sec: number) => formatTime(sec * 1000);
 
@@ -95,9 +122,9 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
             {/* Carousel-like Grid */}
             <div className="grid grid-cols-3 @sm:grid-cols-3 @md:grid-cols-3 @lg:grid-cols-4 @xl:grid-cols-6 gap-3">
               {visiblePlaylists.map((pl) => (
-                <div key={pl.id} className="group relative space-y-1.5">
+                <div key={pl.playlist_id} className="group relative space-y-1.5">
                   <button
-                    onClick={() => { void selectPlaylist(pl.id); }}
+                    onClick={() => { void selectPlaylist(pl.playlist_id); }}
                     className="w-full aspect-square rounded-xl bg-primary/5 flex items-center justify-center overflow-hidden border border-border/50 group-hover:border-primary/40 transition-all shadow-sm relative"
                   >
                     {pl.cover_art ? (
@@ -123,7 +150,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                          className="rounded-full bg-primary text-primary-foreground shadow-lg transform scale-90 group-hover:scale-100 transition-transform hover:bg-primary/90"
                          onClick={(e) => {
                            e.stopPropagation();
-                           playTrack(pl.id, 0);
+                           playTrack(pl.playlist_id, 0);
                          }}
                        >
                          <HugeiconsIcon icon={PlayIcon} size={20} fill="currentColor" />
@@ -182,7 +209,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               </Button>
               <div className="size-12 rounded-lg overflow-hidden bg-primary/10 shadow-sm shrink-0">
                  <img
-                    src={`/api/v1/media/playlists/${selectedId}/cover`}
+                    src={selectedPlaylist?.cover_art ?? '/assets/radio-cover.svg'}
                     alt=""
                     className="size-full object-cover"
                     onError={(e) => {
@@ -195,7 +222,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="font-bold truncate text-sm leading-tight">
-                  {playlists.find(p => p.id === selectedId)?.name}
+                  {selectedPlaylist?.name}
                 </h3>
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
                    {t("tracks", { count: tracks.length })}
@@ -214,7 +241,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
             {/* Track List */}
             <div className="space-y-0.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin" ref={(el) => {
               // Auto-scroll to current track
-              if (el && zone.track?.playlist_index === selectedId) {
+              if (el && zone.track?.playlist_id === selectedId) {
                 const idx = zone.track.playlist_track_index;
                 if (idx != null) {
                   const child = el.children[idx] as HTMLElement | undefined;
@@ -223,7 +250,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               }
             }}>
               {tracks.map((t, i) => {
-                const isCurrent = zone.track?.playlist_index === selectedId && zone.track.playlist_track_index === i;
+                const isCurrent = zone.track?.playlist_id === selectedId && zone.track.playlist_track_index === i;
                 return (
                 <button
                   key={t.id}

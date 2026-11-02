@@ -25,6 +25,7 @@ const DEFAULT_TRACK: TrackMetadata = {
   source: "idle",
   cover_url: null,
   playlist_index: null,
+  playlist_id: null,
   playlist_name: null,
   playlist_total: null,
   playlist_track_index: null,
@@ -62,6 +63,9 @@ interface AppState {
   serverGoingAway: boolean;
   isLoading: boolean;
   needsAuth: boolean;
+  /** Bumped when the playlist list must be reloaded (`playlists_changed`, reconnect). */
+  playlistsVersion: number;
+  bumpPlaylists: () => void;
 
   // Init
   loadAll: () => Promise<void>;
@@ -98,6 +102,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   serverGoingAway: false,
   isLoading: true,
   needsAuth: false,
+  playlistsVersion: 0,
+
+  bumpPlaylists: () => { set((s) => ({ playlistsVersion: s.playlistsVersion + 1 })); },
 
   loadAll: async () => {
     set({ isLoading: true });
@@ -237,6 +244,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isConnected: v, serverGoingAway: goingAway ?? false });
     // On reconnect, re-fetch all state
     if (v && !was) {
+      get().bumpPlaylists();
       void get().loadAll();
     }
   },

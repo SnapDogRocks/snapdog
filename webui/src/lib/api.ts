@@ -3,6 +3,7 @@ import type {
   TrackMetadata,
   ClientInfo,
   PlaylistInfo,
+  PlaylistDetails,
   PlaylistState,
   TrackInfo,
   SystemStatus,
@@ -150,9 +151,12 @@ export const zones = {
   playTrack: (id: number, track: number) => postVoid(`${Z}/${id}/play/track`, track),
   playUrl: (id: number, url: string) => postVoid(`${Z}/${id}/play/url`, url),
   playPlaylist: (id: number, playlistIndex: number, track?: number) =>
-    postVoid(`${Z}/${id}/play/playlist`, { id: playlistIndex, track: track ?? 0 }),
-  playPlaylistTrack: (zoneId: number, playlistId: number, track: number) =>
-    postVoid(`${Z}/${zoneId}/play/playlist/${playlistId}/track`, track),
+    postVoid(`${Z}/${id}/play/playlist`, { index: playlistIndex, track: track ?? 0 }),
+  /** Play by stable `playlist_id`. Prefer this over the index variant for anything the user selected earlier. */
+  playPlaylistById: (id: number, playlistId: string, track?: number) =>
+    postVoid(`${Z}/${id}/play/playlist/by-id`, { playlist_id: playlistId, track: track ?? 0 }),
+  playPlaylistTrack: (zoneId: number, playlistIndex: number, track: number) =>
+    postVoid(`${Z}/${zoneId}/play/playlist/${playlistIndex}/track`, track),
 
   // Playlist navigation
   getPlaylist: (id: number) => get<number>(`${Z}/${id}/playlist`),
@@ -204,9 +208,13 @@ const M = "/api/v1/media";
 
 export const media = {
   playlists: () => get<PlaylistInfo[]>(`${M}/playlists`),
-  playlist: (id: number) => get<{ id: number; name: string; tracks: number }>(`${M}/playlists/${id}`),
-  tracks: (playlistId: number) => get<TrackInfo[]>(`${M}/playlists/${playlistId}/tracks`),
-  track: (playlistId: number, idx: number) => get<TrackInfo>(`${M}/playlists/${playlistId}/tracks/${idx}`),
+  playlist: (index: number) => get<PlaylistDetails>(`${M}/playlists/${index}`),
+  playlistById: (playlistId: string) =>
+    get<PlaylistDetails>(`${M}/playlists/by-id/${encodeURIComponent(playlistId)}`),
+  tracks: (index: number) => get<TrackInfo[]>(`${M}/playlists/${index}/tracks`),
+  tracksById: (playlistId: string) =>
+    get<TrackInfo[]>(`${M}/playlists/by-id/${encodeURIComponent(playlistId)}/tracks`),
+  track: (index: number, idx: number) => get<TrackInfo>(`${M}/playlists/${index}/tracks/${idx}`),
 };
 
 // ── System ────────────────────────────────────────────────────

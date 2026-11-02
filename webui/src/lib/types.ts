@@ -48,7 +48,10 @@ export interface TrackMetadata {
   source: string;
   /** Injected from zone state by the API, not from the track source. */
   cover_url: string | null;
+  /** Unified playlist index. Moves when the list changes, never remember it. */
   playlist_index: number | null;
+  /** Stable playlist reference (`snapdog:radio`, `subsonic:<id>`), use it to compare and remember. */
+  playlist_id: string | null;
   playlist_name: string | null;
   playlist_total: number | null;
   playlist_track_index: number | null;
@@ -61,6 +64,7 @@ export interface TrackMetadata {
 
 export interface PlaylistState {
   index: number | null;
+  playlist_id: string | null;
   name: string | null;
   total: number | null;
   track_index: number | null;
@@ -85,11 +89,21 @@ export interface ClientInfo {
 // ── Media (Subsonic) ──────────────────────────────────────────
 
 export interface PlaylistInfo {
-  id: number;
+  /** Unified playlist index, moves when the list changes. Only for index endpoints. */
+  index: number;
+  /** Stable playlist reference (`snapdog:radio`, `subsonic:<id>`). */
+  playlist_id: string;
   name: string;
   song_count: number;
   duration: number;
   cover_art: string | null;
+}
+
+export interface PlaylistDetails {
+  index: number;
+  playlist_id: string;
+  name: string;
+  tracks: number;
 }
 
 export interface TrackInfo {
@@ -161,7 +175,8 @@ export interface WsZoneChanged {
   content_type: string | null;
   track_index: number | null;
   track_count: number | null;
-  playlist: number | null;
+  playlist_index: number | null;
+  playlist_id: string | null;
   playlist_name: string | null;
   playlist_total: number | null;
   can_playlist_next: boolean;
@@ -221,8 +236,15 @@ export interface WsPlaybackError {
   recoverable: boolean;
 }
 
+/** The playlist list, an index or a name may have changed: reload the list. */
+export interface WsPlaylistsChanged {
+  type: "playlists_changed";
+  total: number;
+}
+
 export type WsNotification =
   | WsZoneChanged
+  | WsPlaylistsChanged
   | WsZoneVolumeChanged
   | WsZoneProgress
   | WsClientStateChanged
