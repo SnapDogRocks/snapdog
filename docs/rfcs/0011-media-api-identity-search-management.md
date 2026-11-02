@@ -271,9 +271,10 @@ Dependencies: none
 - MED-M1-A1: every playlist in `GET /media/playlists` and `.../{p}` has a `uid`
   (`snapdog:radio`, `subsonic:<id>`), and `id` is unchanged. A test with and without
   configured radios shows the indices shifting while the `uid` values stay.
-- MED-M1-A2: `by-uid` reads work and answer 404 for an unknown `uid`. Both play
-  commands accept `uid` or `id`, and a body with both or neither is a 400
-  (positive and negative probe each).
+- MED-M1-A2: `by-uid` reads work and answer 404 for an unknown `uid`. `POST /play/playlist`
+  and `PUT /playlist` accept `uid` or `id`, a body with both or neither on the POST
+  is a 400, and `GET /playlist/info` and the MQTT state payload carry `playlist_uid`
+  (positive and negative probe each). MQTT `playlist/set` accepts an index and a `uid`.
 - MED-M1-A3: with the Subsonic server stopped, a running server keeps the last good
   list and logs a warning, also across a refresh task run. The request-path part
   ships in SnapDogRocks/snapdog#406, so the counter-probe is that reverting it
