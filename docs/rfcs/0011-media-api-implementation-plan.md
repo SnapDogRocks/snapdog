@@ -196,3 +196,47 @@ Creating the epic and the issues needs the RFC and this plan to be public first
 - **The macOS server app and `snapdog-os` use the word "playlist" only for KNX
   names.** They are unaffected and listed so nobody searches again. The Mac
   *client* is not in that group: it is a target of `snapdog-ios` and changes with WP-3e.
+
+## Appendix A: spike results (WP-S2, 2026-11-02)
+
+Method: Navidrome 0.64.2 and Gonic 0.23.0 from their official images in local
+containers, a library of 12 generated MP3 files (2 artists, 3 albums, titles chosen
+so that word prefix, substring and album-name matches differ), the Subsonic API
+1.16.1 with JSON. A first run found no files because the library directory was
+empty inside the container (the bind mount did not reach the container). All its
+numbers were zero and were discarded. The second run copied the files into the
+container and both scans reported 12 tracks.
+
+| Measurement | Navidrome | Gonic |
+|---|---|---|
+| `search3` has a total field | no | no |
+| `songOffset` pages without overlap | yes | yes |
+| `albumOffset` | works (one matching album, second page empty) | same |
+| Query `song` finds | 10 songs: titles with the word, and every track of the album `Song Cycle` | 7 songs: titles only |
+| Query `orning` (middle of a word) | 0 | 2 |
+| Query of one character | 0 | 7 songs and 3 albums |
+| Empty query | whole library (12 songs) | whole library (12 songs) |
+| Order of `getPlaylists` | by name (created Zeta, Alpha, Mid, listed Alpha, Mid, Zeta) | by creation |
+| Id format | 22 characters, opaque | `tr-1`, `al-6`, `pl-` plus base64 |
+| Ids after a container restart | unchanged | unchanged |
+| Ids after a full rescan | unchanged (songs and playlists) | unchanged |
+| Playlist deleted and created again with the same name | new id | new id |
+
+Not measured: the original Subsonic server, a move of the library into a new
+database, libraries larger than 12 tracks (so no timing of paging), and
+authentication with token and salt (plain password parameters were used).
+
+Consequences, already in the RFC: `q` needs two characters and the server enforces
+it, results of track and album search follow the connected server, the playlist
+order is the server's own and changes indices on Navidrome, and `playlist_id` is
+stable across restarts and rescans.
+
+## Appendix B: spike results (WP-S1, 2026-11-02)
+
+`utoipa-gen` 6.0.1 (read from the source, not compiled): a field accepts
+`#[schema(deprecated)]`, which sets `deprecated: true`, and also honours a Rust
+`#[deprecated]` on the field. The schema attribute avoids the compiler warning at
+each read, so WP-1a uses `#[schema(deprecated)]` and proves it with the contract test
+that compares `openapi.json`. The documentation of the macro says the schema
+attribute does not support the Rust attribute, while the code for named fields
+checks both, so the test decides.

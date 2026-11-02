@@ -1,8 +1,8 @@
 ---
 rfc: MED-0011
 title: Stable playlist identity, search and playlist management in the media API
-status: draft            # draft | accepted | in-progress | done | superseded
-version: 0.2.0           # v0.2: index next to id, by-id paths, WebSocket, release guard
+status: accepted         # draft | accepted | in-progress | done | superseded
+version: 0.3.0           # v0.3: accepted, spike results (Navidrome, Gonic)
 created: 2026-11-02
 updated: 2026-11-02
 target_repo: snapdog
@@ -13,8 +13,8 @@ owners: [metaneutrons]
 
 # RFC MED-0011 — Stable playlist identity, search and playlist management in the media API
 
-Epic: not created yet, opened on acceptance
-Decision state: draft, open for the owner's review
+Epic: https://github.com/SnapDogRocks/snapdog/issues/411
+Decision state: accepted by the owner on 2026-11-02
 
 > This document owns requirements and acceptance criteria (`MED-M*-A*`); the
 > epic and milestone issues own execution state and evidence. Do not keep a
@@ -37,6 +37,7 @@ browser or a search that holds up without this.
 | Position of the radio list | Index 0 **only if** at least one radio is configured (`has_radio_playlist`). Without radios the Subsonic playlists start at 0 |
 | Identity | The `id` of a playlist in every response is its unified **index** (`PlaylistInfo.id: usize`, `PlaylistDetails.id`). The play command takes the same index (`PlaylistPayload { id: usize, track: usize }`). The WebSocket event `ZoneChanged` carries it as `playlist`, the zone state and the MQTT payload as `playlist_index` |
 | Track identity | Subsonic tracks carry the Subsonic track id. A radio station gets `radio_{i}`, its position in the configuration |
+| Order of the Subsonic list | Whatever the Subsonic server returns. Measured: Navidrome returns playlists sorted by name, Gonic in creation order. A new playlist therefore moves the indices behind it on Navidrome whenever its name sorts earlier (spike results in the plan, appendix A) |
 | Change detection | None. The Subsonic list is cached for one minute (`PLAYLIST_CACHE_TTL`). When Subsonic cannot be reached, `get_playlists().await.unwrap_or_default()` caches an **empty** list, so for up to a minute every Subsonic playlist is gone and the indices behind it are different |
 | Events | The WebSocket `Notification` enum has zone, client, presence and error events and nothing about media |
 | Paging | `GET /media/playlists/{p}/tracks` returns every track |
@@ -207,6 +208,14 @@ tracks. The array form is kept so that existing parsers keep working.
 - `track` and `album` are answered by Subsonic's `search3`. `playlist` and `radio`
   are answered by the server with a case-insensitive substring match on the name,
   over the cached playlists and the configured stations.
+- What `search3` matches depends on the Subsonic server (measured, plan appendix A).
+  Navidrome matches word prefixes and also the album name for a song, so `orning`
+  finds nothing there. Gonic matches a substring of the title, so `orning` finds
+  `Morning Song`. An empty query returns the whole library on both, and one character
+  returns nothing on Navidrome but many results on Gonic. That is why `q` needs two
+  characters (enforced by the server) and why the documentation says that track and
+  album results follow the rules of the connected Subsonic server. The matching for
+  playlists and radio is done by SnapDog and is the same everywhere.
 - The response is `{ "items": [...], "next_offset": n | null }`. `search3` does not
   report a total, so there is none. `next_offset` is set when a page was full.
 - An item has `kind`, `title`, `subtitle` (artist, or album for a track),
@@ -441,18 +450,24 @@ of the repository and is not part of this plan.
   server, which `tests/integration.rs` already uses for the playlist test. No
   estimate of runner time is given because none has been measured.
 - **Open questions.**
-  - Whether `search3` behaves the same on Navidrome, Gonic and the reference
-    Subsonic server for `songCount`, `albumCount` and paging. It has been read in
-    the API description, not measured.
+  - ~~Whether `search3` behaves the same on Navidrome, Gonic and the reference
+    Subsonic server.~~ Measured on Navidrome 0.64.2 and Gonic 0.23.0: `songOffset` and
+    `albumOffset` page correctly, there is no total, the matching differs (2.4). The
+    reference Subsonic server was not measured.
   - Whether the player can queue an album without a unified playlist index, or
     needs a temporary playlist entry (M2).
   - Whether the default of 60 seconds for `refresh_secs` is right for large
     libraries.
   - Whether `playlist_write` should default to true when an API key is
     configured.
-  - Whether Subsonic playlist ids stay the same across restarts and library rescans
-    on Navidrome, Gonic and the reference server. `playlist_id` depends on it.
-
+  - ~~Whether Subsonic playlist ids stay the same across restarts and library
+    rescans.~~ Measured on Navidrome and Gonic: playlist ids and track ids are the same
+    after a container restart and after a full rescan, and a playlist deleted and
+    created again with the same name gets a new id on both. Not measured: a move of
+    the library into a new database. Gonic's ids are counters (`tr-1`, `al-6`) and its
+    playlist ids are derived from the playlist file (`pl-` plus base64), so a rebuilt
+    database changes them. The assumption of 2.1 holds for restarts and rescans and is
+    documented as unproven across a migration.
 ## 5. Decision changes
 
 None yet. Changes to a decision after acceptance are listed here with the date and
