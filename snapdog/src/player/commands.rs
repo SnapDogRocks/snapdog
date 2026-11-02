@@ -45,6 +45,8 @@ pub enum ZoneCommand {
     SeekRelative(i64),
     /// Seek to a relative position (0.0–1.0 of total duration).
     SeekProgress(f64),
+    /// Seek by one step of the zone's seek interval (`true` = forward, `false` = back).
+    SeekStep(bool),
 
     // ── Zone settings ─────────────────────────────────────────
     /// Set the zone volume (0–100).
@@ -75,6 +77,32 @@ pub enum ZoneCommand {
     // ── DSP ───────────────────────────────────────────────────
     /// Apply a new parametric EQ configuration to the zone.
     SetEq(crate::audio::eq::EqConfig),
+}
+
+impl ZoneCommand {
+    /// A seek of one step of `interval_secs` seconds, forward or back.
+    #[must_use]
+    pub fn seek_by_interval(interval_secs: u8, forward: bool) -> Self {
+        let step_ms = i64::from(interval_secs) * 1000;
+        Self::SeekRelative(if forward { step_ms } else { -step_ms })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ZoneCommand;
+
+    #[test]
+    fn a_seek_step_is_the_interval_in_milliseconds_forward_or_back() {
+        assert!(matches!(
+            ZoneCommand::seek_by_interval(10, true),
+            ZoneCommand::SeekRelative(10_000)
+        ));
+        assert!(matches!(
+            ZoneCommand::seek_by_interval(60, false),
+            ZoneCommand::SeekRelative(-60_000)
+        ));
+    }
 }
 
 /// What the `ZonePlayer` is currently doing.

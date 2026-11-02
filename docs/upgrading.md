@@ -3,6 +3,32 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## KNX device mode: seek objects, a new object order in the playlist group (product database version 14)
+
+Applies to everyone who programmed SnapDog's KNX device from ETS with 0.30.0, which shipped product
+database version 13. Version 14 adds objects and renumbers two, so ETS needs the new product database
+and a new download.
+
+### What changed
+
+- New zone objects for seeking inside the playing track: Track Position (5.001, a position in percent
+  of the track, number 47 of the zone), Track Seek (1.007, 1 jumps forward, 0 back, number 48) and
+  Track Seek Up/Down (1.008 for a rocker, 1 = down jumps forward, 0 = up back, number 49). A seek step
+  jumps by the seek interval of the zone, a new ETS parameter in the settings of each zone (1 to 60
+  seconds, default 10). In client mode and for devices set up in TOML it is `seek_interval_secs` in
+  the `[[zone]]` section, the three objects are the keys `track_position`, `track_seek` and
+  `track_seek_updown` under `[zone.knx]`. Seeking only works for sources that can seek, as in the API.
+- Playlist Step Up/Down is now number 36 of the zone and Playlist Name number 37. 0.30.0 had them the
+  other way round. Group addresses linked to either object have to be linked again.
+- A zone has 44 objects now. The numbers of all other objects, the number of zones and clients and
+  the parameter memory (16 bytes more) are unchanged apart from that.
+
+### What to do
+
+1. Import the new `snapdog.knxprod` and update the SnapDog device in the ETS project.
+2. Link the group addresses of Playlist Step Up/Down and Playlist Name again if you used them.
+3. Download the device. This has not been tried in ETS with a real project yet.
+
 ## KNX device mode: new object numbers and eight new zone objects (product database version 13)
 
 Applies to everyone who programmed SnapDog's KNX device from ETS. The product database is

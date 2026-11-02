@@ -332,9 +332,10 @@ use super::group_objects::{
     ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
     ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
     ZGO_TRACK_NEXT, ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS, ZGO_TRACK_PLAYING,
-    ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
-    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_STEP_UPDOWN, ZGO_TRACK_TITLE, ZGO_VOLUME,
-    ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS, ZONE_GOS,
+    ZGO_TRACK_POSITION, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
+    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_SEEK, ZGO_TRACK_SEEK_UPDOWN,
+    ZGO_TRACK_STEP, ZGO_TRACK_STEP_UPDOWN, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
+    ZGO_VOLUME_STATUS, ZONE_GOS,
 };
 
 /// Fixed-size array of `N` values. A newtype because Rust only derives `Default` for arrays up to
@@ -377,6 +378,8 @@ pub struct EtsParams {
     pub zone_spotify: [bool; MAX_ZONES],
     pub zone_presence_enabled: [bool; MAX_ZONES],
     pub zone_presence_timeout: [u16; MAX_ZONES],
+    /// Per-zone seek interval in seconds (1 to 60; 0 = unprogrammed, the default applies).
+    pub zone_seek_interval: [u8; MAX_ZONES],
     pub client_active: Clients<bool>,
     pub client_default_zone: Clients<u8>,
     pub client_default_volume: Clients<u8>,
@@ -610,6 +613,7 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
         let to_off = mem::ZONE_PRESENCE_TO + i * 2;
         p.zone_presence_timeout[i] = u16::from_be_bytes([data[to_off], data[to_off + 1]]);
         p.zone_presence_source[i] = data[mem::ZONE_PRES_SRC + i];
+        p.zone_seek_interval[i] = data[mem::ZONE_SEEK_INTERVAL + i];
     }
     // Numeric — clients. Like zones, a single count byte replaces the former per-client
     // active flags: clients 1..=NUM_CLIENTS are active (contiguous), the rest are off.
@@ -1675,6 +1679,9 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) ->
             (&knx.play_pause, ZGO_PLAY_PAUSE),
             (&knx.track_step, ZGO_TRACK_STEP),
             (&knx.track_step_updown, ZGO_TRACK_STEP_UPDOWN),
+            (&knx.track_position, ZGO_TRACK_POSITION),
+            (&knx.track_seek, ZGO_TRACK_SEEK),
+            (&knx.track_seek_updown, ZGO_TRACK_SEEK_UPDOWN),
             (&knx.track_title_status, ZGO_TRACK_TITLE),
             (&knx.track_artist_status, ZGO_TRACK_ARTIST),
             (&knx.track_album_status, ZGO_TRACK_ALBUM),

@@ -208,6 +208,8 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
             spotify_name: opt(&ets.zone_spotify_names[i]),
             knx: RawZoneKnxConfig::default(),
             group_volume_mode: None,
+            // 0 is an unprogrammed byte, the zone then keeps the default interval.
+            seek_interval_secs: Some(ets.zone_seek_interval[i]).filter(|&s| s > 0),
             presence: ets.zone_presence_enabled[i].then(|| PresenceConfig {
                 auto_off_delay: ets.zone_presence_timeout[i],
                 // ETS presence source: 0 = none, 1..=MAX_RADIOS = radio index (1-based).
@@ -446,5 +448,25 @@ mod tests {
         ets.zone_spotify_names[0] = String::new();
         let base: FileConfig = toml::from_str("[spotify]\nname = \"Home\"\n").unwrap();
         assert_eq!(spotify_names(&ets, base), ["Home"]);
+    }
+
+    /// ETS stores the seek interval per zone in seconds; an unprogrammed byte (0) leaves the
+    /// default of 10 seconds.
+    #[test]
+    fn ets_zones_carry_their_seek_interval() {
+        let mut ets = EtsParams::default();
+        for (i, secs) in [30_u8, 0, 60].into_iter().enumerate() {
+            ets.zone_active[i] = true;
+            ets.zone_names[i] = format!("Zone {}", i + 1);
+            ets.zone_seek_interval[i] = secs;
+        }
+        let cfg = ets_params_to_file_config(&ets, FileConfig::default());
+        let seconds: Vec<u8> = crate::config::load_raw_no_validate(cfg)
+            .expect("ETS config resolves")
+            .zones
+            .iter()
+            .map(|z| z.seek_interval_secs)
+            .collect();
+        assert_eq!(seconds, [30, 10, 60]);
     }
 }

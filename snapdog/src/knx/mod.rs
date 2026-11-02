@@ -57,9 +57,10 @@ use group_objects::{
     ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS,
     ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP,
     ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS,
-    ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
-    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_STEP, ZGO_TRACK_STEP_UPDOWN,
-    ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
+    ZGO_TRACK_PLAYING, ZGO_TRACK_POSITION, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS,
+    ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_SEEK,
+    ZGO_TRACK_SEEK_UPDOWN, ZGO_TRACK_STEP, ZGO_TRACK_STEP_UPDOWN, ZGO_TRACK_TITLE, ZGO_VOLUME,
+    ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
 };
 use sink::{ObjectKey, StatusSink};
 use transport::{Incoming, KnxListener, KnxPublisher};
@@ -850,6 +851,9 @@ fn zone_ga_map(
             (&knx.play_pause, "play_pause"),
             (&knx.track_step, "track_step"),
             (&knx.track_step_updown, "track_step_updown"),
+            (&knx.track_position, "track_position"),
+            (&knx.track_seek, "track_seek"),
+            (&knx.track_seek_updown, "track_seek_updown"),
             (&knx.presence, "presence"),
             (&knx.presence_enable, "presence_enable"),
         ];
@@ -1081,6 +1085,9 @@ const ZONE_ACTIONS: &[(usize, &str)] = &[
     (ZGO_PLAY_PAUSE, "play_pause"),
     (ZGO_TRACK_STEP, "track_step"),
     (ZGO_TRACK_STEP_UPDOWN, "track_step_updown"),
+    (ZGO_TRACK_POSITION, "track_position"),
+    (ZGO_TRACK_SEEK, "track_seek"),
+    (ZGO_TRACK_SEEK_UPDOWN, "track_seek_updown"),
     (ZGO_PRESENCE, "presence"),
     (ZGO_PRESENCE_ENABLE, "presence_enable"),
 ];
@@ -1286,6 +1293,14 @@ async fn execute<S: BuildHasher + Sync>(
                         ZoneCommand::Previous
                     }
                 }),
+                // A seek step is relative to the zone's seek interval, which only the zone's runner
+                // knows. Percent positions are clamped to 100 by the runner.
+                "track_position" => {
+                    decode_percent(data).map(|v| ZoneCommand::SeekProgress(f64::from(v) / 100.0))
+                }
+                "track_seek" | "track_seek_updown" => {
+                    decode_switch(data).map(ZoneCommand::SeekStep)
+                }
                 "playlist_step" | "playlist_step_updown" => decode_switch(data).map(|next| {
                     if next {
                         ZoneCommand::NextPlaylist
@@ -1740,6 +1755,33 @@ mod tests {
         ));
         assert!(run_object(ZGO_TRACK_STEP_UPDOWN, &[]).await.is_empty());
         assert!(run_object(ZGO_PLAYLIST_STEP_UPDOWN, &[]).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_seek_objects_step_forward_on_one_and_back_on_zero() {
+        for go in [ZGO_TRACK_SEEK, ZGO_TRACK_SEEK_UPDOWN] {
+            assert!(matches!(
+                run_object(go, &encode_bool(true)).await[..],
+                [ZoneCommand::SeekStep(true)]
+            ));
+            assert!(matches!(
+                run_object(go, &encode_bool(false)).await[..],
+                [ZoneCommand::SeekStep(false)]
+            ));
+            assert!(run_object(go, &[]).await.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn the_track_position_seeks_to_a_percent_of_the_duration() {
+        for (percent, fraction) in [(0, 0.0), (50, 0.5), (100, 1.0)] {
+            let got = run_object(ZGO_TRACK_POSITION, &encode_percent(percent)).await;
+            assert!(
+                matches!(got[..], [ZoneCommand::SeekProgress(f)] if (f - fraction).abs() < 1e-9),
+                "{percent} % gave {got:?}"
+            );
+        }
+        assert!(run_object(ZGO_TRACK_POSITION, &[]).await.is_empty());
     }
 
     #[tokio::test]
@@ -2450,6 +2492,16 @@ zone = "Z1"
             None,
             "the playlist name is a status object"
         );
+        for (go, action) in [
+            (ZGO_TRACK_POSITION, "track_position"),
+            (ZGO_TRACK_SEEK, "track_seek"),
+            (ZGO_TRACK_SEEK_UPDOWN, "track_seek_updown"),
+        ] {
+            assert_eq!(
+                object_command(zone_asap(2, go)),
+                Some(Command::Zone(2, action))
+            );
+        }
     }
 
     // ── Reads through the publisher ─────────────────────────────────

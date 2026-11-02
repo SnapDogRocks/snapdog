@@ -936,6 +936,11 @@ async fn run(
                             let _ = self_tx.send(ZoneCommand::Seek(pos_ms)).await;
                         }
                     }
+                    ZoneCommand::SeekStep(forward) => {
+                        let _ = self_tx
+                            .send(ZoneCommand::seek_by_interval(zone_config.seek_interval_secs, forward))
+                            .await;
+                    }
                     ZoneCommand::SeekRelative(offset_ms) => {
                         let (pos, dur) = store.read().await.zones.get(&zone_index)
                             .and_then(|z| z.track.as_ref().map(|t| (t.position_ms, t.duration_ms)))
