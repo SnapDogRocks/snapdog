@@ -56,6 +56,21 @@ zone = "1st Floor"
     config::load_raw(raw).expect("test config resolves")
 }
 
+/// A default test app whose Subsonic server is `url`, with the given refresh interval.
+pub fn app_with_subsonic(url: &str, refresh_secs: u64) -> TestApp {
+    let mut cfg = test_config();
+    cfg.subsonic = Some(snapdog::config::SubsonicConfig {
+        url: url.to_owned(),
+        username: "u".into(),
+        password: "p".to_owned().into(),
+        format: snapdog::config::SubsonicFormat::default(),
+        tls_skip_verify: false,
+        cache: snapdog::config::SubsonicCacheConfig::default(),
+        refresh_secs,
+    });
+    build_test_app(cfg)
+}
+
 /// In-process snapdog under test, with captured command channels.
 pub struct TestApp {
     /// Shared application state (what handlers see).

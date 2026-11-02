@@ -115,6 +115,10 @@ pub fn router(state: SharedState) -> Router {
             "/{zone_index}/play/subsonic/{track_id}",
             post(play_subsonic_track),
         )
+        .route(
+            "/{zone_index}/play/subsonic/album/{album_id}",
+            post(play_subsonic_album),
+        )
         .route("/{zone_index}/name", get(get_name))
         .route("/{zone_index}/icon", get(get_icon))
         .route("/{zone_index}/playback", get(get_playback))
@@ -1367,6 +1371,36 @@ async fn play_subsonic_track(
     Path((idx, track_id)): Path<(usize, String)>,
 ) -> impl IntoResponse {
     send_cmd(&state, idx, ZoneCommand::PlaySubsonicTrack(track_id)).await
+}
+
+/// Play a Subsonic album
+///
+/// Queues the album's tracks and starts the first. An album is not part of the unified
+/// playlist list, so the zone state names it in `playlist_name` and has no `playlist_index`
+/// and no `playlist_id`. A search result carries the `album_id`.
+#[utoipa::path(
+    post,
+    path = "/api/v1/zones/{zone_index}/play/subsonic/album/{album_id}",
+    params(
+        ("zone_index" = usize, Path, description = "1-based index of the target zone"),
+        ("album_id" = String, Path, description = "Subsonic album ID")
+    ),
+    responses(
+        (status = 200, description = "Album playback started"),
+        (status = 404, description = "Zone not found", body = ErrorBody)
+    ),
+    tag = "zones"
+)]
+async fn play_subsonic_album(
+    State(state): State<SharedState>,
+    Path((idx, album_id)): Path<(usize, String)>,
+) -> impl IntoResponse {
+    send_cmd(
+        &state,
+        idx,
+        ZoneCommand::PlaySubsonicPlaylist(crate::subsonic::album_queue_id(&album_id), 0),
+    )
+    .await
 }
 
 // ── Zone info ─────────────────────────────────────────────────

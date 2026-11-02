@@ -3,6 +3,22 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## Media API: search, cover proxy and album playback
+
+Nothing has to be done. New endpoints, nothing changed.
+
+- `GET /media/search?q=&kind=&limit=&offset=` searches tracks and albums (Subsonic `search3`),
+  playlists and radio stations (by the server, case-insensitive substring of the name). `q` needs two
+  characters, `kind` is a comma-separated list of `track`, `album`, `playlist`, `radio` (default all),
+  `limit` (default 20, at most 100) and `offset` apply to each kind. There is no total, `next_offset`
+  is set when any kind filled its page. What tracks and albums match follows the connected Subsonic
+  server (Navidrome matches word prefixes, Gonic any substring of the title).
+- `GET /media/cover/{cover_id}` serves the cover of a result with the caching headers of the other
+  cover routes.
+- `POST /zones/{zone}/play/subsonic/album/{album_id}` plays an album. The zone state names it in
+  `playlist_name` and has no `playlist_index` and no `playlist_id`, because an album is not part of
+  the playlist list.
+
 ## Media API: `playlist_id` and `index`, `id` is deprecated (breaks `/api/v1` with SnapDog 1.0)
 
 Nothing breaks with this release. Read it if you wrote a client against the REST API, the WebSocket

@@ -23,20 +23,6 @@ fn playlists(entries: &[(&str, &str, u32)]) -> serde_json::Value {
         "playlists": {"playlist": list}}})
 }
 
-fn app_with_subsonic(url: &str, refresh_secs: u64) -> common::TestApp {
-    let mut cfg = common::test_config();
-    cfg.subsonic = Some(snapdog::config::SubsonicConfig {
-        url: url.to_owned(),
-        username: "u".into(),
-        password: "p".to_owned().into(),
-        format: snapdog::config::SubsonicFormat::default(),
-        tls_skip_verify: false,
-        cache: snapdog::config::SubsonicCacheConfig::default(),
-        refresh_secs,
-    });
-    common::build_test_app(cfg)
-}
-
 /// Wait for a notification of the given type, or `None` after `within`.
 async fn next_of_type(
     rx: &mut tokio::sync::broadcast::Receiver<std::sync::Arc<str>>,
@@ -76,7 +62,7 @@ async fn a_changed_list_sends_playlists_changed_and_an_unchanged_one_does_not() 
         .mount(&server)
         .await;
 
-    let mut app = app_with_subsonic(&server.uri(), 1);
+    let mut app = common::app_with_subsonic(&server.uri(), 1);
     let task = tokio::spawn(snapdog::api::run_playlist_refresh(app.state.clone()));
 
     // Reads 1 and 2 return the same list: no event within the first interval and a half.
@@ -119,7 +105,7 @@ async fn an_outage_keeps_the_last_good_list_across_a_refresh_run() {
         .mount(&server)
         .await;
 
-    let mut app = app_with_subsonic(&server.uri(), 1);
+    let mut app = common::app_with_subsonic(&server.uri(), 1);
     let task = tokio::spawn(snapdog::api::run_playlist_refresh(app.state.clone()));
 
     // Let at least two refresh runs pass: the first reads the list, the later ones fail.
@@ -145,7 +131,7 @@ async fn an_outage_keeps_the_last_good_list_across_a_refresh_run() {
 #[tokio::test]
 async fn refresh_secs_zero_turns_the_background_read_off() {
     let server = MockServer::start().await;
-    let app = app_with_subsonic(&server.uri(), 0);
+    let app = common::app_with_subsonic(&server.uri(), 0);
     snapdog::api::run_playlist_refresh(app.state.clone()).await;
     assert!(server.received_requests().await.unwrap().is_empty());
 }

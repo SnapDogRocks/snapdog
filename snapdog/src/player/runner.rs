@@ -541,7 +541,8 @@ async fn run(
                                 .position(|p| p.id == playlist_id)
                                 .map(|sub_idx| if config.has_radio_playlist() { sub_idx + 1 } else { sub_idx });
                             let playlist_total = config.unified_playlist_count(playlist_entries.len());
-                            if let Ok(playlist) = sub.get_playlist(&playlist_id).await {
+                            let is_album = crate::subsonic::is_album_queue(&playlist_id);
+                            if let Ok(playlist) = sub.get_queue(&playlist_id).await {
                                 let track_count = playlist.entry.len();
                                 let track_idx = track_idx.min(track_count.saturating_sub(1));
                                 if let Some(track) = playlist.entry.get(track_idx) {
@@ -551,7 +552,7 @@ async fn run(
                                         z.playback = PlaybackState::Playing;
                                         z.source = SourceType::SubsonicPlaylist;
                                         z.playlist_index = playlist_index;
-                                        z.playlist_id = Some(crate::config::subsonic_playlist_id(&playlist.id));
+                                        z.playlist_id = (!is_album).then(|| crate::config::subsonic_playlist_id(&playlist.id));
                                         z.playlist_name = Some(playlist.name.clone());
                                         z.playlist_total = Some(playlist_total);
                                         z.playlist_track_index = Some(track_idx);
@@ -627,7 +628,7 @@ async fn run(
                                 let pid = playlist_id.clone();
                                 reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
                                 if let Some(sub) = &subsonic
-                                    && let Ok(playlist) = sub.get_playlist(&pid).await
+                                    && let Ok(playlist) = sub.get_queue(&pid).await
                                         && let Some(track) = playlist.entry.get(track_idx) {
                                             start_subsonic_track_decode(sub, track, &mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                                             source = ActiveSource::SubsonicPlaylist { playlist_id: pid, track_index: track_idx, track_count };
@@ -649,7 +650,7 @@ async fn run(
                             if let Some(sub) = &subsonic {
                                 let track_id = match &source {
                                     ActiveSource::SubsonicPlaylist { playlist_id, track_index, .. } => {
-                                        sub.get_playlist(playlist_id).await.ok()
+                                        sub.get_queue(playlist_id).await.ok()
                                             .and_then(|p| p.entry.get(*track_index).map(|t| t.id.clone()))
                                     }
                                     ActiveSource::SubsonicTrack { track_id } => Some(track_id.clone()),
@@ -882,7 +883,7 @@ async fn run(
                             let track_id = match &source {
                                 ActiveSource::SubsonicTrack { track_id } => Some(track_id.clone()),
                                 ActiveSource::SubsonicPlaylist { playlist_id, track_index, .. } => {
-                                    sub.get_playlist(playlist_id).await.ok()
+                                    sub.get_queue(playlist_id).await.ok()
                                         .and_then(|p| p.entry.get(*track_index).map(|t| t.id.clone()))
                                 }
                                 _ => None,

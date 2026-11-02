@@ -87,6 +87,8 @@ pub struct MediaTrackInfo {
 
 pub fn router(state: SharedState) -> Router {
     Router::new()
+        .route("/search", get(search))
+        .route("/cover/{cover_id}", get(get_cover))
         .route("/playlists", get(get_playlists))
         .route("/playlists/by-id/{playlist_id}", get(get_playlist_by_id))
         .route(
@@ -250,6 +252,285 @@ async fn resolve_subsonic_id(state: &SharedState, index: usize) -> Result<String
             .ok_or(ApiError::NotFound("resource")),
         _ => Err(ApiError::NotFound("resource")),
     }
+}
+
+/// Query of `GET /media/search`.
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct SearchQuery {
+    /// Text to search for, at least two characters.
+    q: String,
+    /// Comma-separated kinds: `track`, `album`, `playlist`, `radio` (default all four).
+    kind: Option<String>,
+    /// Results per kind (default 20, at most 100).
+    limit: Option<usize>,
+    /// Results to skip per kind (default 0).
+    offset: Option<usize>,
+}
+
+/// One search result. The identifier has a field per kind, there is no generic one.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SearchItem {
+    /// `track`, `album`, `playlist` or `radio`.
+    kind: &'static str,
+    title: String,
+    /// Artist, or album for a track. Absent for a playlist.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subtitle: Option<String>,
+    /// Seconds, 0 if unknown.
+    duration: u64,
+    /// Path of a cover image, see `GET /media/cover/{cover_id}`.
+    cover_art: Option<String>,
+    /// Subsonic track id (kind `track`). Plays with `POST /zones/{zone}/play/subsonic/{track_id}`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    track_id: Option<String>,
+    /// Subsonic album id (kind `album`). Plays with `POST /zones/{zone}/play/subsonic/album/{album_id}`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    album_id: Option<String>,
+    /// Stable reference (kinds `playlist` and `radio`, where `radio` is the list `snapdog:radio`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    playlist_id: Option<String>,
+    /// Current unified index of the playlist (kinds `playlist` and `radio`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
+    /// Position of the station in the radio list (kind `radio`), the `track` to play it with.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    track: Option<usize>,
+}
+
+impl SearchItem {
+    const fn new(kind: &'static str, title: String) -> Self {
+        Self {
+            kind,
+            title,
+            subtitle: None,
+            duration: 0,
+            cover_art: None,
+            track_id: None,
+            album_id: None,
+            playlist_id: None,
+            index: None,
+            track: None,
+        }
+    }
+}
+
+/// Body of `GET /media/search`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SearchResponse {
+    items: Vec<SearchItem>,
+    /// Offset of the next page, `null` when no kind filled its page.
+    next_offset: Option<usize>,
+}
+
+const SEARCH_KINDS: [&str; 4] = ["track", "album", "playlist", "radio"];
+const SEARCH_DEFAULT_LIMIT: usize = 20;
+const SEARCH_MAX_LIMIT: usize = 100;
+
+/// Path of the cover proxy for a Subsonic cover id, percent-encoded.
+fn cover_path(cover_id: &str) -> String {
+    use std::fmt::Write as _;
+    let mut path = String::from("/api/v1/media/cover/");
+    for byte in cover_id.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            path.push(char::from(byte));
+        } else {
+            let _ = write!(path, "%{byte:02X}");
+        }
+    }
+    path
+}
+
+/// Search the music library, the playlists and the radio stations
+///
+/// Tracks and albums come from the `search3` call of the Subsonic server, so what matches
+/// follows the rules of that server (some match word prefixes, some any substring). Playlists
+/// and radio stations are matched by the server on a case-insensitive substring of the name.
+/// `limit` and `offset` apply to each kind. `search3` reports no total, so `next_offset` is set
+/// when any kind filled its page.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/search",
+    params(SearchQuery),
+    responses(
+        (status = 200, description = "Search results", body = SearchResponse),
+        (status = 400, description = "q shorter than two characters, or an unknown kind", body = ErrorBody),
+        (status = 502, description = "Upstream request failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
+async fn search(
+    State(state): State<SharedState>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<SearchResponse>, ApiError> {
+    let q = query.q.trim();
+    if q.chars().count() < 2 {
+        return Err(ApiError::BadRequest(
+            "q needs at least two characters".into(),
+        ));
+    }
+    let kinds: Vec<&str> = match query.kind.as_deref() {
+        None => SEARCH_KINDS.to_vec(),
+        Some(list) => {
+            let mut kinds = Vec::new();
+            for kind in list.split(',').map(str::trim) {
+                let Some(known) = SEARCH_KINDS.iter().find(|k| **k == kind) else {
+                    return Err(ApiError::BadRequest(format!("unknown kind `{kind}`")));
+                };
+                kinds.push(*known);
+            }
+            kinds
+        }
+    };
+    let want = |kind: &str| kinds.contains(&kind);
+    let limit = query
+        .limit
+        .unwrap_or(SEARCH_DEFAULT_LIMIT)
+        .clamp(1, SEARCH_MAX_LIMIT);
+    let offset = query.offset.unwrap_or(0);
+    let needle = q.to_lowercase();
+
+    let mut items = Vec::new();
+    let mut page_full = false;
+    let mut take = |found: Vec<SearchItem>| {
+        page_full |= found.len() >= limit;
+        items.extend(found);
+    };
+    if want("radio") {
+        take(radio_items(&state, &needle, limit, offset));
+    }
+    if want("playlist") {
+        take(playlist_items(&state, &needle, limit, offset).await);
+    }
+    if (want("track") || want("album")) && state.config.subsonic.is_some() {
+        let ask = |wanted: bool| crate::subsonic::Page {
+            count: if wanted { limit } else { 0 },
+            offset,
+        };
+        let result = subsonic(&state)?
+            .search(q, ask(want("track")), ask(want("album")))
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Subsonic search failed");
+                ApiError::BadGateway("upstream request failed".into())
+            })?;
+        if want("album") {
+            take(result.album.into_iter().map(album_item).collect());
+        }
+        if want("track") {
+            take(result.song.into_iter().map(track_item).collect());
+        }
+    }
+    Ok(Json(SearchResponse {
+        items,
+        next_offset: page_full.then_some(offset + limit),
+    }))
+}
+
+fn radio_items(state: &SharedState, needle: &str, limit: usize, offset: usize) -> Vec<SearchItem> {
+    state
+        .config
+        .radios
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.name.to_lowercase().contains(needle))
+        .skip(offset)
+        .take(limit)
+        .map(|(i, r)| {
+            let mut item = SearchItem::new("radio", r.name.clone());
+            item.cover_art = Some(format!("{MEDIA_PATH}/0/tracks/{i}/cover"));
+            item.playlist_id = Some(RADIO_PLAYLIST_ID.into());
+            item.index = Some(0);
+            item.track = Some(i);
+            item
+        })
+        .collect()
+}
+
+async fn playlist_items(
+    state: &SharedState,
+    needle: &str,
+    limit: usize,
+    offset: usize,
+) -> Vec<SearchItem> {
+    let base = usize::from(state.config.has_radio_playlist());
+    cached_playlists(state)
+        .await
+        .into_iter()
+        .enumerate()
+        .filter(|(_, p)| p.name.to_lowercase().contains(needle))
+        .skip(offset)
+        .take(limit)
+        .map(|(sub_idx, p)| {
+            let index = base + sub_idx;
+            let mut item = SearchItem::new("playlist", p.name);
+            item.duration = p.duration;
+            item.cover_art = p
+                .cover_art
+                .as_ref()
+                .map(|_| format!("{MEDIA_PATH}/{index}/cover"));
+            item.playlist_id = Some(subsonic_playlist_id(&p.id));
+            item.index = Some(index);
+            item
+        })
+        .collect()
+}
+
+fn album_item(a: crate::subsonic::AlbumEntry) -> SearchItem {
+    let mut item = SearchItem::new("album", a.name);
+    item.subtitle = a.artist;
+    item.duration = a.duration;
+    item.cover_art = a.cover_art.as_deref().map(cover_path);
+    item.album_id = Some(a.id);
+    item
+}
+
+fn track_item(t: crate::subsonic::Track) -> SearchItem {
+    let mut item = SearchItem::new("track", t.title);
+    item.subtitle = t.album.or(t.artist);
+    item.duration = t.duration;
+    item.cover_art = t.cover_art.as_deref().map(cover_path);
+    item.track_id = Some(t.id);
+    item
+}
+
+/// Get a cover image by its Subsonic cover id
+///
+/// Proxies the cover of a search result, with the caching headers of the other cover routes.
+/// A search result has no playlist index to build the playlist cover path from.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/cover/{cover_id}",
+    params(
+        ("cover_id" = String, Path, description = "Subsonic cover art id, percent-encoded")
+    ),
+    responses(
+        (status = 200, description = "Cover image", content_type = "image/*"),
+        (status = 404, description = "Cover not found", body = ErrorBody),
+        (status = 503, description = "Subsonic is not configured", body = ErrorBody)
+    ),
+    tag = "media"
+)]
+async fn get_cover(
+    State(state): State<SharedState>,
+    Path(cover_id): Path<String>,
+) -> Result<([(axum::http::header::HeaderName, String); 2], Vec<u8>), ApiError> {
+    let sub = subsonic(&state)?;
+    let bytes = sub
+        .get_cover_art(&cover_id)
+        .await
+        .map_err(|_| ApiError::NotFound("resource"))?;
+    let mime = crate::state::cover::detect_mime(&bytes);
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, mime.to_string()),
+            (
+                axum::http::header::CACHE_CONTROL,
+                CACHE_CONTROL_1DAY.to_string(),
+            ),
+        ],
+        bytes,
+    ))
 }
 
 /// Resolve a `playlist_id` to its current unified index (404 for an unknown id).
@@ -680,5 +961,19 @@ async fn get_track_cover_art(
                 bytes,
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cover_path_percent_encodes_everything_but_unreserved_characters() {
+        assert_eq!(cover_path("al-1_x.y~z"), "/api/v1/media/cover/al-1_x.y~z");
+        assert_eq!(
+            cover_path("a/b c?é"),
+            "/api/v1/media/cover/a%2Fb%20c%3F%C3%A9"
+        );
     }
 }
