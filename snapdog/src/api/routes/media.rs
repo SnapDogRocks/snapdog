@@ -112,8 +112,9 @@ fn refreshed_cache(
         Err(e) => {
             tracing::warn!("Subsonic playlists unavailable, keeping the last list: {e:#}");
             // Back-dated so that the entry expires after PLAYLIST_RETRY, not after the full TTL.
-            let stamp = now
-                .checked_sub(PLAYLIST_CACHE_TTL - PLAYLIST_RETRY)
+            let stamp = PLAYLIST_CACHE_TTL
+                .checked_sub(PLAYLIST_RETRY)
+                .and_then(|back| now.checked_sub(back))
                 .unwrap_or(now);
             (
                 stamp,
@@ -594,6 +595,6 @@ mod tests {
         let now = Instant::now();
         let (stamp, _) = refreshed_cache(None, Err(anyhow::anyhow!("down")), now);
         let age = now.duration_since(stamp);
-        assert_eq!(age, PLAYLIST_CACHE_TTL - PLAYLIST_RETRY);
+        assert_eq!(age, PLAYLIST_CACHE_TTL.checked_sub(PLAYLIST_RETRY).unwrap());
     }
 }
