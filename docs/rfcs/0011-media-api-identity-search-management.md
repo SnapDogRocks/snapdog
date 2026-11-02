@@ -80,10 +80,11 @@ assigns no identifiers of its own.
 | Playlist | `uid` |
 |---|---|
 | a Subsonic playlist | `subsonic:<subsonic id>` |
-| the radio list | `radio` |
+| the radio list | `snapdog:radio` |
 
-The radio list is the one exception to "identifier of the external system": it is
-configuration, there is no external system, and there is only one such list.
+The radio list lives in `snapdog.toml`, so SnapDog itself is its provider and the
+prefix is `snapdog`. There is only one such list, and its identifier is its fixed
+name.
 
 The prefix keeps a Subsonic id that happens to be numeric from being taken for an
 index, and leaves room for other providers. The field is new because `id` already
@@ -186,7 +187,7 @@ Subsonic playlists only, passed through to `createPlaylist`, `updatePlaylist` an
   music library's playlists by default. The Subsonic user's own rights apply on
   top, and a refusal from Subsonic surfaces as 502 with its message.
 - Every successful write clears the cache and sends `PlaylistsChanged`.
-- Writes to `radio` answer 403 `read_only` whatever the switch says.
+- Writes to `snapdog:radio` answer 403 `read_only` whatever the switch says.
 - A write to a playlist that a zone is playing changes what that zone plays next,
   not the current track. The documentation says so.
 
@@ -244,7 +245,7 @@ Execution: to be linked on acceptance
 Dependencies: none
 
 - MED-M1-A1: every playlist in `GET /media/playlists` and `.../{p}` has a `uid`
-  (`radio`, `subsonic:<id>`), and `id` is unchanged. A test with and without
+  (`snapdog:radio`, `subsonic:<id>`), and `id` is unchanged. A test with and without
   configured radios shows the indices shifting while the `uid` values stay.
 - MED-M1-A2: `by-uid` reads work and answer 404 for an unknown `uid`. Both play
   commands accept `uid` or `id`, and a body with both or neither is a 400
@@ -284,7 +285,7 @@ Dependencies: M1
 - MED-M3-A1: with `playlist_write = false` every write answers 403 `read_only`.
   With it true, create, rename, add, remove, reorder and delete work against a real
   Subsonic server, each followed by `playlists_changed`.
-- MED-M3-A2: a write to `radio` answers 403 with the switch on.
+- MED-M3-A2: a write to `snapdog:radio` answers 403 with the switch on.
 - MED-M3-A3: a refusal by Subsonic (a user without rights) answers 502 and carries
   its message.
 - MED-M3-A4: the configuration reference and the example configuration describe
