@@ -54,6 +54,7 @@ fn the_document_describes_every_notification() {
             details: None,
             recoverable: true,
         },
+        Notification::PlaylistsChanged { total: 2 },
         Notification::ZoneProgress {
             zone: 1,
             position_ms: 1,
@@ -82,19 +83,19 @@ fn the_document_describes_every_notification() {
             );
         }
     }
-    // All seven variants of Notification, each listed on the channel and the operation.
-    assert_eq!(messages.len(), 7);
+    // All eight variants of Notification, each listed on the channel and the operation.
+    assert_eq!(messages.len(), 8);
     assert_eq!(
         doc["channels"]["notifications"]["messages"]
             .as_object()
             .map(serde_json::Map::len),
-        Some(7)
+        Some(8)
     );
     assert_eq!(
         doc["operations"]["receiveNotifications"]["messages"]
             .as_array()
             .map(Vec::len),
-        Some(7)
+        Some(8)
     );
 }
 

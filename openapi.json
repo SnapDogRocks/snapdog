@@ -1567,11 +1567,40 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of tracks. Without `limit` and `offset` every track is returned and no\n`X-Total-Count` header is sent.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of tracks to skip (default 0).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "List of tracks in the playlist",
+            "headers": {
+              "X-Total-Count": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": "Full number of tracks, only when `limit` or `offset` is given"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1724,7 +1753,7 @@
           "media"
         ],
         "summary": "Get playlist tracks",
-        "description": "Returns a list of all tracks in the specified playlist.",
+        "description": "Returns the tracks of the specified playlist. With `limit` and/or `offset` the same array is\ncut and the header `X-Total-Count` carries the full number of tracks. Without them the\nresponse is the whole list and has no such header.",
         "operationId": "get_playlist_tracks",
         "parameters": [
           {
@@ -1736,11 +1765,40 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of tracks. Without `limit` and `offset` every track is returned and no\n`X-Total-Count` header is sent.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of tracks to skip (default 0).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "List of tracks in the playlist",
+            "headers": {
+              "X-Total-Count": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": "Full number of tracks, only when `limit` or `offset` is given"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {

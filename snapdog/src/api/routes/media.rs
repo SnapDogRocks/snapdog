@@ -3,11 +3,11 @@
 
 //! Media endpoints: /api/v1/media
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::api::CACHE_CONTROL_1DAY;
 use crate::api::SharedState;
@@ -47,6 +47,31 @@ pub struct PlaylistDetails {
     playlist_id: String,
     name: String,
     tracks: usize,
+}
+
+/// Optional paging of a track list.
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct Paging {
+    /// Maximum number of tracks. Without `limit` and `offset` every track is returned and no
+    /// `X-Total-Count` header is sent.
+    limit: Option<usize>,
+    /// Number of tracks to skip (default 0).
+    offset: Option<usize>,
+}
+
+/// The whole list, or with paging the same array cut, plus `X-Total-Count` (the full size).
+fn paged(tracks: Vec<MediaTrackInfo>, paging: &Paging) -> axum::response::Response {
+    if paging.limit.is_none() && paging.offset.is_none() {
+        return Json(tracks).into_response();
+    }
+    let total = tracks.len();
+    let offset = paging.offset.unwrap_or(0).min(total);
+    let end = paging
+        .limit
+        .map_or(total, |l| offset.saturating_add(l).min(total));
+    let page: Vec<MediaTrackInfo> = tracks.into_iter().take(end).skip(offset).collect();
+    ([("X-Total-Count", total.to_string())], Json(page)).into_response()
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -99,10 +124,59 @@ fn subsonic(state: &SharedState) -> Result<SubsonicClient, ApiError> {
 /// A failed fetch keeps the last good list instead of replacing it with an empty one, see
 /// [`crate::subsonic::PlaylistCache`].
 pub(super) async fn cached_playlists(state: &SharedState) -> Vec<PlaylistEntry> {
-    state
+    let entries = state
         .playlist_cache
         .get(subsonic(state).ok().as_ref())
-        .await
+        .await;
+    announce_changes(state, &entries);
+    entries
+}
+
+/// Read the list from Subsonic now and store it, whatever the age of the cache.
+async fn fetch_playlists(state: &SharedState) -> Vec<PlaylistEntry> {
+    let entries = state
+        .playlist_cache
+        .fetch(subsonic(state).ok().as_ref())
+        .await;
+    announce_changes(state, &entries);
+    entries
+}
+
+/// The request path and the refresh task share this, so the API and the event agree.
+fn announce_changes(state: &SharedState, entries: &[PlaylistEntry]) {
+    if state.playlist_cache.announce(entries) {
+        notify_playlists_changed(state, entries.len());
+    }
+}
+
+fn notify_playlists_changed(state: &SharedState, subsonic_count: usize) {
+    crate::api::ws::broadcast_notification(
+        &state.notifications,
+        &crate::api::ws::Notification::PlaylistsChanged {
+            total: state.config.unified_playlist_count(subsonic_count),
+        },
+    );
+}
+
+/// Read the playlist list every `[subsonic].refresh_secs` and send `playlists_changed` when it
+/// differs from the last announced list. Runs until the task is aborted.
+pub async fn run_playlist_refresh(state: SharedState) {
+    let Some(secs) = state
+        .config
+        .subsonic
+        .as_ref()
+        .map(|c| c.refresh_secs)
+        .filter(|s| *s > 0)
+    else {
+        return;
+    };
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(secs));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // The first tick fires at once and fills the cache, which needs no event.
+    loop {
+        interval.tick().await;
+        fetch_playlists(&state).await;
+    }
 }
 
 const MEDIA_PATH: &str = "/api/v1/media/playlists";
@@ -224,10 +298,12 @@ async fn get_playlist_by_id(
     get,
     path = "/api/v1/media/playlists/by-id/{playlist_id}/tracks",
     params(
-        ("playlist_id" = String, Path, description = "Stable playlist reference, percent-encoded")
+        ("playlist_id" = String, Path, description = "Stable playlist reference, percent-encoded"),
+        Paging
     ),
     responses(
-        (status = 200, description = "List of tracks in the playlist", body = Vec<MediaTrackInfo>),
+        (status = 200, description = "List of tracks in the playlist", body = Vec<MediaTrackInfo>,
+            headers(("X-Total-Count" = usize, description = "Full number of tracks, only when `limit` or `offset` is given"))),
         (status = 404, description = "Playlist not found", body = ErrorBody),
         (status = 502, description = "Upstream request failed", body = ErrorBody)
     ),
@@ -236,9 +312,10 @@ async fn get_playlist_by_id(
 async fn get_playlist_tracks_by_id(
     State(state): State<SharedState>,
     Path(playlist_id): Path<String>,
-) -> Result<Json<Vec<MediaTrackInfo>>, ApiError> {
+    Query(paging): Query<Paging>,
+) -> Result<axum::response::Response, ApiError> {
     let index = playlist_index_by_id(&state, &playlist_id).await?;
-    get_playlist_tracks(State(state), Path(index)).await
+    get_playlist_tracks(State(state), Path(index), Query(paging)).await
 }
 
 /// Get playlist details
@@ -350,21 +427,34 @@ async fn get_playlist_cover(
 
 /// Get playlist tracks
 ///
-/// Returns a list of all tracks in the specified playlist.
+/// Returns the tracks of the specified playlist. With `limit` and/or `offset` the same array is
+/// cut and the header `X-Total-Count` carries the full number of tracks. Without them the
+/// response is the whole list and has no such header.
 #[utoipa::path(
     get,
     path = "/api/v1/media/playlists/{playlist_index}/tracks",
     params(
-        ("playlist_index" = usize, Path, description = "0-based unified playlist index")
+        ("playlist_index" = usize, Path, description = "0-based unified playlist index"),
+        Paging
     ),
     responses(
-        (status = 200, description = "List of tracks in the playlist", body = Vec<MediaTrackInfo>),
+        (status = 200, description = "List of tracks in the playlist", body = Vec<MediaTrackInfo>,
+            headers(("X-Total-Count" = usize, description = "Full number of tracks, only when `limit` or `offset` is given"))),
         (status = 404, description = "Playlist not found", body = ErrorBody),
         (status = 502, description = "Upstream request failed", body = ErrorBody)
     ),
     tag = "media"
 )]
 async fn get_playlist_tracks(
+    State(state): State<SharedState>,
+    Path(index): Path<usize>,
+    Query(paging): Query<Paging>,
+) -> Result<axum::response::Response, ApiError> {
+    let Json(tracks) = tracks_json(State(state), Path(index)).await?;
+    Ok(paged(tracks, &paging))
+}
+
+async fn tracks_json(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
 ) -> Result<Json<Vec<MediaTrackInfo>>, ApiError> {

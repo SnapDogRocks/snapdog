@@ -34,6 +34,8 @@ const PLAYLIST_RETRY: std::time::Duration = std::time::Duration::from_secs(10);
 #[derive(Default)]
 pub struct PlaylistCache {
     inner: tokio::sync::RwLock<Option<(std::time::Instant, Vec<PlaylistEntry>)>>,
+    /// The list clients were last told about, see [`PlaylistCache::announce`].
+    announced: std::sync::Mutex<Option<Vec<PlaylistEntry>>>,
 }
 
 impl PlaylistCache {
@@ -51,6 +53,11 @@ impl PlaylistCache {
         {
             return entries.clone();
         }
+        self.fetch(client).await
+    }
+
+    /// The playlists, read from `client` now, whatever the age of the cached list.
+    pub async fn fetch(&self, client: Option<&SubsonicClient>) -> Vec<PlaylistEntry> {
         let fetched = match client {
             Some(client) => client.get_playlists().await.map(Some),
             None => Ok(None),
@@ -60,6 +67,32 @@ impl PlaylistCache {
         *cache = Some((stamp, entries.clone()));
         entries
     }
+
+    /// Whether `entries` differ from the list clients were last told about, and remember them
+    /// as that list. The first list only sets the baseline and needs no announcement. The
+    /// comparison is against what was announced, not against the previous fetch, so a list that
+    /// a zone player refreshed first is still announced once.
+    pub fn announce(&self, entries: &[PlaylistEntry]) -> bool {
+        let mut announced = self
+            .announced
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let changed = announced
+            .as_deref()
+            .is_some_and(|before| playlists_differ(before, entries));
+        if changed || announced.is_none() {
+            *announced = Some(entries.to_vec());
+        }
+        changed
+    }
+}
+
+/// Whether two lists differ in what a client shows: ids and their order, names, song counts.
+fn playlists_differ(a: &[PlaylistEntry], b: &[PlaylistEntry]) -> bool {
+    a.len() != b.len()
+        || a.iter()
+            .zip(b)
+            .any(|(x, y)| x.id != y.id || x.name != y.name || x.song_count != y.song_count)
 }
 
 /// Next cache content after a fetch. `Ok(None)` means Subsonic is not configured.
@@ -387,6 +420,24 @@ mod playlist_cache_tests {
             duration: 0,
             cover_art: None,
         }
+    }
+
+    #[test]
+    fn the_first_list_only_sets_the_baseline() {
+        let cache = PlaylistCache::new();
+        assert!(!cache.announce(&[entry("a")]));
+        assert!(!cache.announce(&[entry("a")]));
+    }
+
+    #[test]
+    fn a_change_is_announced_once() {
+        let cache = PlaylistCache::new();
+        cache.announce(&[entry("a")]);
+        assert!(cache.announce(&[entry("a"), entry("b")]));
+        assert!(!cache.announce(&[entry("a"), entry("b")]));
+        let mut renamed = entry("a");
+        renamed.name = "other".into();
+        assert!(cache.announce(&[renamed, entry("b")]));
     }
 
     #[test]

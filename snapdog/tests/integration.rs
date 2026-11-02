@@ -34,6 +34,7 @@ fn subsonic_config() -> Option<config::SubsonicConfig> {
         format: config::SubsonicFormat::Flac,
         tls_skip_verify: false,
         cache: config::SubsonicCacheConfig::default(),
+        refresh_secs: 60,
     })
 }
 

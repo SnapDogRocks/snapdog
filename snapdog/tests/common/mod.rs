@@ -150,6 +150,29 @@ impl TestApp {
         (status, json)
     }
 
+    /// `GET` that also returns the `X-Total-Count` header, if any.
+    pub async fn get_with_total(
+        &self,
+        uri: &str,
+    ) -> (StatusCode, serde_json::Value, Option<String>) {
+        let router = api::build_router(&self.state);
+        let req = Request::builder()
+            .uri(uri)
+            .body(Body::empty())
+            .expect("build request");
+        let resp = router.oneshot(req).await.expect("router responds");
+        let status = resp.status();
+        let total = resp
+            .headers()
+            .get("x-total-count")
+            .map(|v| v.to_str().expect("ascii header").to_owned());
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("collect body");
+        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+        (status, json, total)
+    }
+
     /// Convenience: `GET` with no body.
     pub async fn get(&self, uri: &str) -> (StatusCode, serde_json::Value) {
         self.request("GET", uri, None).await
@@ -465,4 +488,26 @@ pub async fn drain_receiver_events(
     timeout: std::time::Duration,
 ) -> Vec<snapdog::receiver::ReceiverEvent> {
     snapdog_testkit::capture::drain(rx, max, timeout).await
+}
+
+/// A two-zone app with one configured radio station and no Subsonic server.
+pub fn app_with_radio() -> TestApp {
+    let toml = r#"
+[[zone]]
+name = "Ground Floor"
+
+[[zone]]
+name = "1st Floor"
+
+[[client]]
+name = "Living Room"
+mac = "02:42:ac:11:00:10"
+zone = "Ground Floor"
+
+[[radio]]
+name = "Test"
+url = "http://example.com/stream"
+"#;
+    let raw: snapdog::config::FileConfig = toml::from_str(toml).expect("parses");
+    build_test_app(snapdog::config::load_raw(raw).expect("resolves"))
 }

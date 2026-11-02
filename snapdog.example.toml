@@ -203,6 +203,10 @@ password = "admin"
 # format = "raw"
 # Skip TLS certificate verification (for self-signed certs)
 # tls_skip_verify = false
+# Seconds between reads of the playlist list. A change sends the WebSocket event
+# `playlists_changed`. Subsonic cannot push, so a change made in another client shows up
+# within this interval. Each read is one request to the Subsonic server. 0 turns it off.
+# refresh_secs = 60
 
 # Track cache — always active for instant seek and replay. A leading ~ is expanded.
 # [subsonic.cache]

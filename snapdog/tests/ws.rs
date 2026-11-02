@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Fabian Schmieder
 
-//! WebSocket notification contract (IT-T20): all 7 `Notification` variants
+//! WebSocket notification contract (IT-T20): all 8 `Notification` variants
 //! serde-round-trip with the correct `type` tag, a compile-time exhaustiveness
 //! guard catches silently-added/renamed variants, and a broadcast reaches a
 //! subscriber tap.
@@ -21,6 +21,7 @@ const fn tag(n: &Notification) -> &'static str {
         Notification::ClientStateChanged { .. } => "client_state_changed",
         Notification::ZoneEqChanged { .. } => "zone_eq_changed",
         Notification::ZonePresenceChanged { .. } => "zone_presence_changed",
+        Notification::PlaylistsChanged { .. } => "playlists_changed",
         Notification::PlaybackError { .. } => "playback_error",
     }
 }
@@ -72,6 +73,10 @@ fn lightweight_variants_round_trip_with_snake_case_tag() {
             timer_active: false,
         },
         "zone_presence_changed",
+    );
+    assert_tag(
+        &Notification::PlaylistsChanged { total: 3 },
+        "playlists_changed",
     );
     assert_tag(
         &Notification::PlaybackError {
