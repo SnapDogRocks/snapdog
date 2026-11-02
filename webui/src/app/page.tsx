@@ -150,6 +150,7 @@ export default function Home() {
     updateZonePresence,
     updateClient,
     setZoneError,
+    bumpPlaylists,
   } = useAppStore();
 
   const [activeDot, setActiveDot] = useState(0);
@@ -205,6 +206,9 @@ export default function Home() {
             track: trackFromZoneChanged(n),
           });
           break;
+        case "playlists_changed":
+          bumpPlaylists();
+          break;
         case "zone_volume_changed":
           updateZoneVolume(n.zone, n.volume, n.muted);
           break;
@@ -235,7 +239,7 @@ export default function Home() {
           break;
       }
     },
-    [updateZone, updateZoneVolume, updateZoneProgress, updateZonePresence, updateClient, setZoneError],
+    [updateZone, updateZoneVolume, updateZoneProgress, updateZonePresence, updateClient, setZoneError, bumpPlaylists],
   );
 
   const { isConnected: wsConnected, serverGoingAway, retryIn } = useWebSocket(handleNotification);

@@ -236,8 +236,15 @@ export interface WsPlaybackError {
   recoverable: boolean;
 }
 
+/** The playlist list, an index or a name may have changed: reload the list. */
+export interface WsPlaylistsChanged {
+  type: "playlists_changed";
+  total: number;
+}
+
 export type WsNotification =
   | WsZoneChanged
+  | WsPlaylistsChanged
   | WsZoneVolumeChanged
   | WsZoneProgress
   | WsClientStateChanged

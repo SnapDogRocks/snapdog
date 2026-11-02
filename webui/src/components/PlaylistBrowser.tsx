@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PlayIcon, MusicNote03Icon, Search01Icon, ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import { useAppStore } from "@/stores/useAppStore";
 import { logApiError } from "@/lib/log-api-error";
 import { formatTime } from "@/lib/format-time";
 import type { PlaylistInfo, TrackInfo } from "@/lib/types";
@@ -25,16 +26,39 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
   const [search, setSearch] = useState("");
   // Selection is the stable playlist_id, the index moves when the list changes.
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  const playlistsVersion = useAppStore((s) => s.playlistsVersion);
   const [tracks, setTracks] = useState<TrackInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
 
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
+  // Initial load, and again on `playlists_changed` and after a reconnect.
   useEffect(() => {
-    api.media.playlists()
-      .then(setPlaylists)
-      .catch(logApiError)
-      .finally(() => { setLoading(false); });
-  }, []);
+    const ctl = new AbortController();
+    void (async () => {
+      try {
+        const list = await api.media.playlists();
+        if (ctl.signal.aborted) return;
+        setPlaylists(list);
+        const current = selectedIdRef.current;
+        if (current !== null) {
+          if (list.some((p) => p.playlist_id === current)) {
+            setTracks(await api.media.tracksById(current));
+          } else {
+            setSelectedId(null);
+            setTracks([]);
+          }
+        }
+      } catch (e) {
+        logApiError(e);
+      } finally {
+        if (!ctl.signal.aborted) setLoading(false);
+      }
+    })();
+    return () => { ctl.abort(); };
+  }, [playlistsVersion]);
 
   const filteredPlaylists = useMemo(() => {
     if (!search) return playlists;
