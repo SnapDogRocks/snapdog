@@ -101,15 +101,39 @@ treats it as an unknown playlist (404), which is the correct outcome.
 
 Where `uid` appears:
 
-- `uid` in `PlaylistInfo` and `PlaylistDetails`, and in the zone's playlist
-  fields of the state and of `ZoneChanged` (`playlist_uid`, next to
-  `playlist_index`).
-- Commands. `POST /zones/{z}/play/playlist` and `PUT /zones/{z}/playlist` accept
-  `{"uid": "...", "track": n}` as well as `{"id": n, "track": n}`. Sending both,
-  or neither, is a 400 with the existing error body. An unknown `uid` is a 404.
+- `uid` in `PlaylistInfo` and `PlaylistDetails`, in the zone's playlist fields
+  of the state and of `ZoneChanged` (`playlist_uid`, next to `playlist_index`), in
+  `GET /zones/{z}/playlist/info` (`ZonePlaylistInfo`) and in the MQTT zone state
+  payload (`playlist_uid`, next to `playlist_index`).
+- Commands that carry a playlist.
+  - `POST /zones/{z}/play/playlist` takes `{"id": n, "track": n}` today and
+    additionally `{"uid": "...", "track": n}`. Sending both or neither is a 400
+    with the existing error body. An unknown `uid` is a 404.
+  - `PUT /zones/{z}/playlist` takes a bare number today (the body is the index, no
+    track). It keeps accepting the number and additionally accepts
+    `{"uid": "..."}`. A JSON number and a JSON object cannot be confused, so no
+    client breaks.
+  - MQTT `snapdog/zones/{z}/playlist/set` takes the index as text today. It keeps
+    that and additionally accepts a `uid` (a payload that is not a number is read
+    as a `uid`).
 - Reading. `GET /media/playlists/by-uid/{uid}` and `.../by-uid/{uid}/tracks`
   (percent-encoded), with the same bodies as the index paths. The existing paths
   stay and keep resolving by index.
+
+Where `uid` is deliberately not added:
+
+- `POST /zones/{z}/play/playlist/{playlist_index}/track` keeps its index path. The
+  body variant of `POST /zones/{z}/play/playlist` covers the same use with a `uid`,
+  so a second `by-uid` path would only duplicate it.
+- `POST /zones/{z}/play/subsonic/{track_id}` already takes the Subsonic id of the
+  track.
+- `next/playlist` and `previous/playlist` carry no playlist, and the player moves
+  through the list it has.
+- KNX keeps the 1-byte playlist number (`Playlist`, `Playlist Status`). A group
+  address cannot carry a string. The number still shifts when the list changes, and
+  the documentation for KNX says so. A client that needs a stable reference uses
+  REST or MQTT.
+- MPRIS over D-Bus has no playlist index.
 
 A radio station has no stable identity beyond its position in `snapdog.toml`, in
 the same way as a zone. This RFC does not change that and the documentation says
