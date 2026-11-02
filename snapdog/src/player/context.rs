@@ -164,6 +164,8 @@ pub async fn update_and_notify(
             track_index: zone.playlist_track_index,
             track_count: zone.playlist_track_count,
             playlist: zone.playlist_index,
+            playlist_index: zone.playlist_index,
+            playlist_id: zone.playlist_id.clone(),
             playlist_name: zone.playlist_name.clone(),
             playlist_total: zone.playlist_total,
             can_playlist_next: zone

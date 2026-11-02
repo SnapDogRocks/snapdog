@@ -18,6 +18,7 @@ pub struct ErrorBody {
 }
 
 /// API error with JSON body.
+#[derive(Debug)]
 pub enum ApiError {
     /// Resource not found (404).
     NotFound(&'static str),

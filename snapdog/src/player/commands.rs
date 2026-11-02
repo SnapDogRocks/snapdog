@@ -37,6 +37,10 @@ pub enum ZoneCommand {
     PreviousPlaylist,
     /// Switch to a specific playlist by index, starting at the given track.
     SetPlaylist(usize, usize),
+    /// Start a playlist by `playlist_id`, beginning at the given track. Unknown ids are ignored.
+    PlayPlaylistById(String, usize),
+    /// Switch to a playlist by `playlist_id`, starting at the given track. Unknown ids are ignored.
+    SetPlaylistById(String, usize),
 
     // ── Seek ──────────────────────────────────────────────────
     /// Seek to an absolute position in milliseconds.

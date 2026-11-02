@@ -388,6 +388,8 @@ mod mpris {
                 track_index: None,
                 track_count: None,
                 playlist: None,
+                playlist_index: None,
+                playlist_id: None,
                 playlist_name: None,
                 playlist_total: None,
                 can_playlist_next: false,

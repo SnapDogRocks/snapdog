@@ -87,6 +87,7 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
         "presence_enabled": zone.presence_enabled,
         "auto_off_delay": zone.auto_off_delay,
         "playlist_index": zone.playlist_index,
+        "playlist_id": zone.playlist_id,
     });
 
     if let Some(track) = &zone.track {
@@ -175,6 +176,7 @@ mod tests {
         assert_eq!(p["presence_enabled"], true);
         assert_eq!(p["auto_off_delay"], 0);
         assert!(p["playlist_index"].is_null());
+        assert!(p["playlist_id"].is_null());
         assert!(p.get("media_title").is_none(), "no track fields when idle");
         assert!(p.get("media_image_url").is_none(), "no cover when none");
     }

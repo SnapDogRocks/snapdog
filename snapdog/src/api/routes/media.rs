@@ -12,7 +12,7 @@ use serde::Serialize;
 use crate::api::CACHE_CONTROL_1DAY;
 use crate::api::SharedState;
 use crate::api::error::{ApiError, ErrorBody};
-use crate::config::ResolvedPlaylist;
+use crate::config::{RADIO_PLAYLIST_ID, ResolvedPlaylist, subsonic_playlist_id};
 use crate::subsonic::{PlaylistEntry, SubsonicClient};
 
 const PLAYLIST_CACHE_TTL: std::time::Duration = std::time::Duration::from_mins(1);
@@ -21,7 +21,16 @@ const PLAYLIST_RETRY: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct PlaylistInfo {
+    /// Unified playlist index.
+    ///
+    /// Deprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
+    #[schema(deprecated)]
+    #[allow(clippy::doc_markdown)]
     id: usize,
+    /// Unified playlist index (0-based). Moves when the list changes, see `playlist_id`.
+    index: usize,
+    /// Stable reference: `snapdog:radio` or `subsonic:<subsonic id>`.
+    playlist_id: String,
     name: String,
     song_count: u32,
     duration: u64,
@@ -30,7 +39,16 @@ pub struct PlaylistInfo {
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct PlaylistDetails {
+    /// Unified playlist index.
+    ///
+    /// Deprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
+    #[schema(deprecated)]
+    #[allow(clippy::doc_markdown)]
     id: usize,
+    /// Unified playlist index (0-based). Moves when the list changes, see `playlist_id`.
+    index: usize,
+    /// Stable reference: `snapdog:radio` or `subsonic:<subsonic id>`.
+    playlist_id: String,
     name: String,
     tracks: usize,
 }
@@ -49,6 +67,11 @@ pub struct MediaTrackInfo {
 pub fn router(state: SharedState) -> Router {
     Router::new()
         .route("/playlists", get(get_playlists))
+        .route("/playlists/by-id/{playlist_id}", get(get_playlist_by_id))
+        .route(
+            "/playlists/by-id/{playlist_id}/tracks",
+            get(get_playlist_tracks_by_id),
+        )
         .route("/playlists/{playlist_index}", get(get_playlist))
         .route("/playlists/{playlist_index}/cover", get(get_playlist_cover))
         .route(
@@ -80,7 +103,7 @@ fn subsonic(state: &SharedState) -> Result<SubsonicClient, ApiError> {
 /// A failed fetch keeps the last good list instead of replacing it with an empty one, so a
 /// Subsonic outage does not make every playlist and the indexes behind them vanish. The next
 /// attempt follows after [`PLAYLIST_RETRY`].
-async fn cached_playlists(state: &SharedState) -> Vec<PlaylistEntry> {
+pub(super) async fn cached_playlists(state: &SharedState) -> Vec<PlaylistEntry> {
     // Check cache
     {
         let cache = state.playlist_cache.read().await;
@@ -145,6 +168,8 @@ async fn get_playlists(State(state): State<SharedState>) -> impl IntoResponse {
     if !state.config.radios.is_empty() {
         result.push(PlaylistInfo {
             id: idx,
+            index: idx,
+            playlist_id: RADIO_PLAYLIST_ID.into(),
             name: "Radio".into(),
             song_count: state.config.radios.len() as u32,
             duration: 0,
@@ -161,6 +186,8 @@ async fn get_playlists(State(state): State<SharedState>) -> impl IntoResponse {
             .map(|_| format!("{MEDIA_PATH}/{idx}/cover"));
         result.push(PlaylistInfo {
             id: idx,
+            index: idx,
+            playlist_id: subsonic_playlist_id(&p.id),
             name: p.name,
             song_count: p.song_count,
             duration: p.duration,
@@ -193,6 +220,69 @@ async fn resolve_subsonic_id(state: &SharedState, index: usize) -> Result<String
     }
 }
 
+/// Resolve a `playlist_id` to its current unified index (404 for an unknown id).
+pub(super) async fn playlist_index_by_id(
+    state: &SharedState,
+    playlist_id: &str,
+) -> Result<usize, ApiError> {
+    let playlists = cached_playlists(state).await;
+    let ids: Vec<&str> = playlists.iter().map(|p| p.id.as_str()).collect();
+    state
+        .config
+        .playlist_index_by_id(playlist_id, &ids)
+        .ok_or(ApiError::NotFound("resource"))
+}
+
+/// Get playlist details by `playlist_id`
+///
+/// Same body as the index path. This path takes the `playlist_id` (`snapdog:radio`,
+/// `subsonic:<id>`, percent-encoded); the path without `by-id` takes the unified index.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/playlists/by-id/{playlist_id}",
+    params(
+        ("playlist_id" = String, Path, description = "Stable playlist reference, percent-encoded")
+    ),
+    responses(
+        (status = 200, description = "Playlist details", body = PlaylistDetails),
+        (status = 404, description = "Playlist not found", body = ErrorBody),
+        (status = 502, description = "Upstream request failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
+async fn get_playlist_by_id(
+    State(state): State<SharedState>,
+    Path(playlist_id): Path<String>,
+) -> Result<Json<PlaylistDetails>, ApiError> {
+    let index = playlist_index_by_id(&state, &playlist_id).await?;
+    get_playlist(State(state), Path(index)).await
+}
+
+/// Get playlist tracks by `playlist_id`
+///
+/// Same body as the index path. This path takes the `playlist_id`, the path without `by-id`
+/// takes the unified index.
+#[utoipa::path(
+    get,
+    path = "/api/v1/media/playlists/by-id/{playlist_id}/tracks",
+    params(
+        ("playlist_id" = String, Path, description = "Stable playlist reference, percent-encoded")
+    ),
+    responses(
+        (status = 200, description = "List of tracks in the playlist", body = Vec<MediaTrackInfo>),
+        (status = 404, description = "Playlist not found", body = ErrorBody),
+        (status = 502, description = "Upstream request failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
+async fn get_playlist_tracks_by_id(
+    State(state): State<SharedState>,
+    Path(playlist_id): Path<String>,
+) -> Result<Json<Vec<MediaTrackInfo>>, ApiError> {
+    let index = playlist_index_by_id(&state, &playlist_id).await?;
+    get_playlist_tracks(State(state), Path(index)).await
+}
+
 /// Get playlist details
 ///
 /// Returns details (name, track count) of a unified playlist by its index.
@@ -212,10 +302,12 @@ async fn resolve_subsonic_id(state: &SharedState, index: usize) -> Result<String
 async fn get_playlist(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
-) -> impl IntoResponse {
+) -> Result<Json<PlaylistDetails>, ApiError> {
     match resolve_playlist(&state, index).await? {
         ResolvedPlaylist::Radio => Ok(Json(PlaylistDetails {
             id: index,
+            index,
+            playlist_id: RADIO_PLAYLIST_ID.into(),
             name: "Radio".into(),
             tracks: state.config.radios.len(),
         })),
@@ -225,6 +317,8 @@ async fn get_playlist(
             match sub.get_playlist(&id).await {
                 Ok(playlist) => Ok(Json(PlaylistDetails {
                     id: index,
+                    index,
+                    playlist_id: subsonic_playlist_id(&playlist.id),
                     name: playlist.name,
                     tracks: playlist.entry.len(),
                 })),
@@ -315,7 +409,7 @@ async fn get_playlist_cover(
 async fn get_playlist_tracks(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
-) -> impl IntoResponse {
+) -> Result<Json<Vec<MediaTrackInfo>>, ApiError> {
     match resolve_playlist(&state, index).await? {
         ResolvedPlaylist::Radio => Ok(Json(
             state

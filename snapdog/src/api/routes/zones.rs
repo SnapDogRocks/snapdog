@@ -74,6 +74,10 @@ pub fn router(state: SharedState) -> Router {
             "/{zone_index}/playlist",
             get(get_playlist).put(set_playlist),
         )
+        .route(
+            "/{zone_index}/playlist/by-id",
+            get(get_zone_playlist_by_id).put(set_zone_playlist_by_id),
+        )
         .route("/{zone_index}/next/playlist", post(next_playlist))
         .route("/{zone_index}/previous/playlist", post(previous_playlist))
         .route("/{zone_index}/shuffle", get(get_shuffle).put(set_shuffle))
@@ -99,6 +103,10 @@ pub fn router(state: SharedState) -> Router {
         .route("/{zone_index}/play/track", post(play_track))
         .route("/{zone_index}/play/url", post(play_url))
         .route("/{zone_index}/play/playlist", post(play_subsonic_playlist))
+        .route(
+            "/{zone_index}/play/playlist/by-id",
+            post(play_playlist_by_id),
+        )
         .route(
             "/{zone_index}/play/playlist/{playlist_index}/track",
             post(play_playlist_track),
@@ -138,6 +146,14 @@ async fn read_zone(state: &SharedState, idx: usize) -> Option<state::ZoneState> 
 
 const fn zone_not_found() -> ApiError {
     ApiError::NotFound("zone")
+}
+
+fn zone_exists(state: &SharedState, idx: usize) -> Result<(), ApiError> {
+    state
+        .zone_commands
+        .contains_key(&idx)
+        .then_some(())
+        .ok_or_else(zone_not_found)
 }
 
 async fn send_cmd(state: &SharedState, idx: usize, cmd: ZoneCommand) -> Result<(), ApiError> {
@@ -514,6 +530,60 @@ async fn get_playlist(
         .ok_or(zone_not_found())
 }
 
+/// Get zone playlist reference
+///
+/// Returns the `playlist_id` of the currently active playlist in the specified zone, or an empty
+/// string when no playlist is active. The path without `by-id` returns the index.
+#[utoipa::path(
+    get,
+    path = "/api/v1/zones/{zone_index}/playlist/by-id",
+    params(
+        ("zone_index" = usize, Path, description = "1-based index of the target zone")
+    ),
+    responses(
+        (status = 200, description = "Active playlist_id", body = String),
+        (status = 404, description = "Zone not found", body = ErrorBody)
+    ),
+    tag = "zones"
+)]
+async fn get_zone_playlist_by_id(
+    State(state): State<SharedState>,
+    Path(idx): Path<usize>,
+) -> impl IntoResponse {
+    read_zone(&state, idx)
+        .await
+        .map(|z| Json(z.playlist_id.unwrap_or_default()))
+        .ok_or(zone_not_found())
+}
+
+/// Set zone playlist by `playlist_id`
+///
+/// Selects the playlist with the given `playlist_id` (a JSON string such as `"subsonic:42"`).
+/// If the zone is already playing, playback switches to it, otherwise it is loaded. The path
+/// without `by-id` takes the unified index. An unknown `playlist_id` is a 404.
+#[utoipa::path(
+    put,
+    path = "/api/v1/zones/{zone_index}/playlist/by-id",
+    params(
+        ("zone_index" = usize, Path, description = "1-based index of the target zone")
+    ),
+    request_body = String,
+    responses(
+        (status = 200, description = "Playlist changed successfully"),
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+    ),
+    tag = "zones"
+)]
+async fn set_zone_playlist_by_id(
+    State(state): State<SharedState>,
+    Path(idx): Path<usize>,
+    Json(v): Json<String>,
+) -> impl IntoResponse {
+    zone_exists(&state, idx)?;
+    super::media::playlist_index_by_id(&state, &v).await?;
+    send_cmd(&state, idx, ZoneCommand::SetPlaylistById(v, 0)).await
+}
+
 /// Set zone playlist
 ///
 /// Selects the specified unified playlist index. If the zone is already playing, playback switches
@@ -797,6 +867,7 @@ async fn get_track_metadata(
         source: zone.source.to_string(),
         cover_url: zone.cover_url.clone(),
         playlist_index: zone.playlist_index,
+        playlist_id: zone.playlist_id.clone(),
         playlist_name: zone.playlist_name.clone(),
         playlist_total: zone.playlist_total,
         playlist_track_index: zone.playlist_track_index,
@@ -1155,7 +1226,37 @@ async fn play_url(
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct PlaylistPayload {
-    id: usize,
+    /// Unified playlist index.
+    ///
+    /// Deprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
+    #[schema(deprecated)]
+    #[allow(clippy::doc_markdown)]
+    id: Option<usize>,
+    /// Unified playlist index (0-based).
+    index: Option<usize>,
+    #[serde(default)]
+    track: usize,
+}
+
+impl PlaylistPayload {
+    /// The playlist index from `index` or the deprecated `id`. Both must agree if both are set.
+    fn index(&self) -> Result<usize, ApiError> {
+        match (self.index, self.id) {
+            (Some(i), Some(d)) if i != d => Err(ApiError::BadRequest(
+                "`index` and `id` differ, send `index` only".into(),
+            )),
+            (Some(i), _) | (None, Some(i)) => Ok(i),
+            (None, None) => Err(ApiError::BadRequest("`index` is required".into())),
+        }
+    }
+}
+
+/// Body of `POST /zones/{zone_index}/play/playlist/by-id`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct PlaylistByIdPayload {
+    /// Stable playlist reference (`snapdog:radio`, `subsonic:<id>`).
+    playlist_id: String,
+    /// Track index to start at (0-based, default 0).
     #[serde(default)]
     track: usize,
 }
@@ -1181,7 +1282,41 @@ async fn play_subsonic_playlist(
     Path(idx): Path<usize>,
     Json(v): Json<PlaylistPayload>,
 ) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::PlayPlaylist(v.id, v.track)).await
+    let index = v.index()?;
+    send_cmd(&state, idx, ZoneCommand::PlayPlaylist(index, v.track)).await
+}
+
+/// Play playlist by `playlist_id`
+///
+/// Switches the zone to the playlist with the given `playlist_id` and starts playing at the
+/// specified track index. This path takes the `playlist_id` (`snapdog:radio`, `subsonic:<id>`);
+/// the paths without `by-id` take the unified playlist index. An unknown `playlist_id` is a 404.
+#[utoipa::path(
+    post,
+    path = "/api/v1/zones/{zone_index}/play/playlist/by-id",
+    params(
+        ("zone_index" = usize, Path, description = "1-based index of the target zone")
+    ),
+    request_body = PlaylistByIdPayload,
+    responses(
+        (status = 200, description = "Playlist playback triggered"),
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+    ),
+    tag = "zones"
+)]
+async fn play_playlist_by_id(
+    State(state): State<SharedState>,
+    Path(idx): Path<usize>,
+    Json(v): Json<PlaylistByIdPayload>,
+) -> impl IntoResponse {
+    zone_exists(&state, idx)?;
+    super::media::playlist_index_by_id(&state, &v.playlist_id).await?;
+    send_cmd(
+        &state,
+        idx,
+        ZoneCommand::PlayPlaylistById(v.playlist_id, v.track),
+    )
+    .await
 }
 
 /// Play track in a playlist
@@ -1333,6 +1468,8 @@ async fn get_playlist_name(
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct ZonePlaylistInfo {
     index: Option<usize>,
+    /// Stable reference of the active playlist (`snapdog:radio`, `subsonic:<id>`).
+    playlist_id: Option<String>,
     name: Option<String>,
     total: Option<usize>,
     track_index: Option<usize>,
@@ -1361,6 +1498,7 @@ async fn get_playlist_info(
     let zone = read_zone(&state, idx).await.ok_or(zone_not_found())?;
     Ok::<_, ApiError>(Json(ZonePlaylistInfo {
         index: zone.playlist_index,
+        playlist_id: zone.playlist_id.clone(),
         name: zone.playlist_name.clone(),
         total: zone.playlist_total,
         track_index: zone.playlist_track_index,
@@ -1623,6 +1761,8 @@ pub struct ZoneTrackMetadata {
     source: String,
     cover_url: Option<String>,
     playlist_index: Option<usize>,
+    /// Stable reference of the active playlist (`snapdog:radio`, `subsonic:<id>`).
+    playlist_id: Option<String>,
     playlist_name: Option<String>,
     playlist_total: Option<usize>,
     playlist_track_index: Option<usize>,
@@ -1676,14 +1816,31 @@ mod tests {
     #[test]
     fn playlist_payload_defaults_to_first_track() {
         let req: PlaylistPayload = serde_json::from_str(r#"{"id":2}"#).unwrap();
-        assert_eq!(req.id, 2);
+        assert_eq!(req.index().unwrap(), 2);
         assert_eq!(req.track, 0);
     }
 
     #[test]
     fn playlist_payload_accepts_start_track() {
         let req: PlaylistPayload = serde_json::from_str(r#"{"id":2,"track":7}"#).unwrap();
-        assert_eq!(req.id, 2);
+        assert_eq!(req.index().unwrap(), 2);
         assert_eq!(req.track, 7);
+    }
+
+    /// MED-M1-A2a: `index`, the deprecated `id`, both equal work, both different and neither fail.
+    #[test]
+    fn playlist_payload_index_and_deprecated_id() {
+        let parse = |s: &str| serde_json::from_str::<PlaylistPayload>(s).unwrap().index();
+        assert_eq!(parse(r#"{"index":3}"#).unwrap(), 3);
+        assert_eq!(parse(r#"{"id":3}"#).unwrap(), 3);
+        assert_eq!(parse(r#"{"id":3,"index":3}"#).unwrap(), 3);
+        assert!(matches!(
+            parse(r#"{"id":3,"index":4}"#),
+            Err(ApiError::BadRequest(_))
+        ));
+        assert!(matches!(
+            parse(r#"{"track":1}"#),
+            Err(ApiError::BadRequest(_))
+        ));
     }
 }

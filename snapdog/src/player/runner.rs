@@ -551,6 +551,7 @@ async fn run(
                                         z.playback = PlaybackState::Playing;
                                         z.source = SourceType::SubsonicPlaylist;
                                         z.playlist_index = playlist_index;
+                                        z.playlist_id = Some(crate::config::subsonic_playlist_id(&playlist.id));
                                         z.playlist_name = Some(playlist.name.clone());
                                         z.playlist_total = Some(playlist_total);
                                         z.playlist_track_index = Some(track_idx);
@@ -613,6 +614,7 @@ async fn run(
                                         z.playback = PlaybackState::Playing;
                                         z.source = SourceType::Radio;
                                         z.playlist_index = Some(0);
+                                        z.playlist_id = Some(crate::config::RADIO_PLAYLIST_ID.into());
                                         z.playlist_name = Some("Radio".into());
                                         z.playlist_track_count = Some(config.radios.len());
                                         z.playlist_track_index = Some(track_idx);
@@ -715,6 +717,7 @@ async fn run(
                                     z.playback = PlaybackState::Playing;
                                     z.source = SourceType::Radio;
                                     z.playlist_index = Some(0);
+                                        z.playlist_id = Some(crate::config::RADIO_PLAYLIST_ID.into());
                                     z.playlist_name = Some("Radio".into());
                                     z.playlist_track_index = Some(radio_idx);
                                     z.playlist_track_count = Some(config.radios.len());
@@ -751,7 +754,7 @@ async fn run(
                             handle_previous(&mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                         }
                     }
-                    ZoneCommand::NextPlaylist | ZoneCommand::PreviousPlaylist | ZoneCommand::SetPlaylist(..) | ZoneCommand::PlayPlaylist(..) => {
+                    ZoneCommand::NextPlaylist | ZoneCommand::PreviousPlaylist | ZoneCommand::SetPlaylist(..) | ZoneCommand::PlayPlaylist(..) | ZoneCommand::SetPlaylistById(..) | ZoneCommand::PlayPlaylistById(..) => {
                         if !may_start_local_playback(&source, config.audio.source_conflict) {
                             tracing::info!(zone = zone_index, "Playback blocked: receiver has priority");
                             continue;
@@ -778,11 +781,19 @@ async fn run(
                             _ => 0,
                         };
 
-                        let force_play = matches!(&cmd, ZoneCommand::PlayPlaylist(..));
+                        let force_play = matches!(&cmd, ZoneCommand::PlayPlaylist(..) | ZoneCommand::PlayPlaylistById(..));
                         let (target_unified, start_track) = match cmd {
                             ZoneCommand::NextPlaylist => ((current_unified + 1) % total_count, 0),
                             ZoneCommand::PreviousPlaylist => (if current_unified == 0 { total_count - 1 } else { current_unified - 1 }, 0),
                             ZoneCommand::SetPlaylist(i, t) | ZoneCommand::PlayPlaylist(i, t) => (i.min(total_count - 1), t),
+                            ZoneCommand::SetPlaylistById(ref id, t) | ZoneCommand::PlayPlaylistById(ref id, t) => {
+                                let ids: Vec<&str> = subsonic_playlists.iter().map(|p| p.id.as_str()).collect();
+                                let Some(i) = config.playlist_index_by_id(id, &ids) else {
+                                    tracing::warn!(zone = zone_index, playlist_id = %id, "Unknown playlist_id");
+                                    continue;
+                                };
+                                (i, t)
+                            }
                             _ => continue,
                         };
 
@@ -802,6 +813,7 @@ async fn run(
                                         z.playback = if should_start { PlaybackState::Playing } else { PlaybackState::Stopped };
                                         z.source = SourceType::Radio;
                                         z.playlist_index = Some(target_unified);
+                                        z.playlist_id = Some(crate::config::RADIO_PLAYLIST_ID.into());
                                         z.playlist_name = Some("Radio".into());
                                         z.playlist_total = Some(total_count);
                                         z.playlist_track_index = Some(radio_idx);
@@ -844,6 +856,7 @@ async fn run(
                                                     z.playback = if should_start && track.is_some() { PlaybackState::Playing } else { PlaybackState::Stopped };
                                                     z.source = SourceType::SubsonicPlaylist;
                                                     z.playlist_index = Some(target_unified);
+                                                    z.playlist_id = Some(crate::config::subsonic_playlist_id(&playlist.id));
                                                     z.playlist_name = Some(playlist.name.clone());
                                                     z.playlist_total = Some(total_count);
                                                     z.playlist_track_index = Some(track_idx);

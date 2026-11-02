@@ -20,7 +20,8 @@ gets the next free number after those in the file.
 | `zones/<n>/control/set` | command | `play`, `pause`, `stop`, `next`, `previous` |
 | `zones/<n>/repeat/set` | command | `off`, `one`/`track`, `all`/`playlist` |
 | `zones/<n>/position/set`, `track/position/set` | command | seconds, `0` to one week, fractions allowed |
-| `zones/<n>/track/set`, `playlist/set` | command | a non-negative integer |
+| `zones/<n>/track/set`, `playlist/set` | command | a non-negative integer (`playlist/set` takes the playlist index, which moves when the list changes) |
+| `zones/<n>/playlist/by-id/set` | command | a `playlist_id` as plain text, `snapdog:radio` or `subsonic:<subsonic id>`. An unknown id is logged and ignored |
 | `zones/<n>/presence/timeout/set` | command | seconds, `0..65535` |
 | `clients/<n>/volume/set` | command | integer `0..100` |
 | `clients/<n>/mute/set` | command | boolean, as above |
@@ -351,3 +352,12 @@ availability). Reconnects use a jittered backoff of 1 to 60 seconds instead of a
 `MqttBridge::start` takes the configuration and what the bridge needs from the server
 (`MqttRuntime`) and runs its own tasks; `publish`, `publish_zone_state` and
 `publish_client_state` are synchronous and queue the message.
+
+## Playlist identity: `playlist_id`
+
+The zone state carries `playlist_id` next to `playlist_index` (`null` while no playlist is active).
+`playlist_index` is a position in the list of radio stations followed by the Subsonic playlists and
+moves when a playlist is added or removed. `playlist_id` is the provider's own identifier with a
+prefix: `snapdog:radio` for the radio list and `subsonic:<id>` for a Subsonic playlist. Use
+`playlist/by-id/set` to select a playlist in a way that survives such changes. The topic takes the
+`playlist_id`, `playlist/set` keeps taking the index. Nothing was removed or changed.
