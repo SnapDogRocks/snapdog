@@ -45,7 +45,8 @@ const COVERS = {
 // ── Mock Playlists & Tracks (Including Radio Playlist 0) ──────
 const PLAYLISTS = [
   {
-    id: 0,
+    index: 0,
+    playlist_id: 'snapdog:radio',
     name: 'Radio',
     cover_art: '/assets/radio-cover.png',
     tracks: [
@@ -62,7 +63,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 1,
+    index: 1,
+    playlist_id: 'subsonic:demo-1',
     name: 'Lofi Chill Study',
     cover_art: COVERS.lofi,
     tracks: [
@@ -74,7 +76,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 2,
+    index: 2,
+    playlist_id: 'subsonic:demo-2',
     name: 'Synthwave Retro Drive',
     cover_art: COVERS.synth,
     tracks: [
@@ -86,7 +89,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 3,
+    index: 3,
+    playlist_id: 'subsonic:demo-3',
     name: 'Smooth Coffeehouse Jazz',
     cover_art: COVERS.jazz,
     tracks: [
@@ -98,7 +102,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 4,
+    index: 4,
+    playlist_id: 'subsonic:demo-4',
     name: 'Deep Focus Ambient',
     cover_art: COVERS.focus,
     tracks: [
@@ -110,7 +115,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 5,
+    index: 5,
+    playlist_id: 'subsonic:demo-5',
     name: 'Acoustic Campfire',
     cover_art: COVERS.acoustic,
     tracks: [
@@ -122,7 +128,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 6,
+    index: 6,
+    playlist_id: 'subsonic:demo-6',
     name: 'Cyberpunk Underground',
     cover_art: COVERS.cyber,
     tracks: [
@@ -134,7 +141,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 7,
+    index: 7,
+    playlist_id: 'subsonic:demo-7',
     name: 'Classical Solitude',
     cover_art: COVERS.classical,
     tracks: [
@@ -146,7 +154,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 8,
+    index: 8,
+    playlist_id: 'subsonic:demo-8',
     name: 'Summer Beach Vibes',
     cover_art: COVERS.summer,
     tracks: [
@@ -158,7 +167,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 9,
+    index: 9,
+    playlist_id: 'subsonic:demo-9',
     name: 'Heavy Metal Workout',
     cover_art: COVERS.metal,
     tracks: [
@@ -170,7 +180,8 @@ const PLAYLISTS = [
     ]
   },
   {
-    id: 10,
+    index: 10,
+    playlist_id: 'subsonic:demo-10',
     name: 'Midnight Melancholy',
     cover_art: COVERS.midnight,
     tracks: [
@@ -185,11 +196,13 @@ const PLAYLISTS = [
 
 // Helper to calculate total song counts and durations for playlist responses
 const plInfoList = PLAYLISTS.map((pl) => ({
-  id: pl.id,
+  index: pl.index,
+  playlist_id: pl.playlist_id,
+  id: pl.index, // deprecated alias of `index`, kept for old clients
   name: pl.name,
   song_count: pl.tracks.length,
   duration: pl.tracks.reduce((acc, t) => acc + t.duration, 0),
-  cover_art: pl.id === 0 ? '/assets/radio-cover.png' : pl.cover_art,
+  cover_art: pl.index === 0 ? '/assets/radio-cover.png' : pl.cover_art,
 }));
 
 // ── Mock System State ─────────────────────────────────────────
@@ -394,7 +407,7 @@ const zones = Object.assign(Object.create(null), {
     presence_timer_active: false,
     eq: mockEqConfig(true),
     track_index: null,
-    playlist_id: null,
+    playlist_index: null,
     position_ms: 32000,
     airplay_meta: {
       title: 'AirPlay Audio Stream',
@@ -420,7 +433,7 @@ const zones = Object.assign(Object.create(null), {
     presence_timer_active: false,
     eq: mockEqConfig(false),
     track_index: 0, // SomaFM Groove Salad
-    playlist_id: 0, // Radio playlist
+    playlist_index: 0, // Radio playlist
     position_ms: 45000,
   },
   3: {
@@ -438,7 +451,7 @@ const zones = Object.assign(Object.create(null), {
     presence_timer_active: false,
     eq: mockEqConfig(false),
     track_index: 0,
-    playlist_id: 1, // Lofi Chill
+    playlist_index: 1, // Lofi Chill
     position_ms: 12000,
   }
 });
@@ -577,6 +590,7 @@ function getTrackMetadata(zoneId) {
       source: 'AirPlay',
       cover_url: zone.airplay_meta.cover_url,
       playlist_index: null,
+      playlist_id: null,
       playlist_name: null,
       playlist_total: null,
       playlist_track_index: null,
@@ -590,7 +604,7 @@ function getTrackMetadata(zoneId) {
 
   // Radio stations source
   if (zone.source === 'radio' && zone.track_index !== null) {
-    const pl = PLAYLISTS.find(p => p.id === 0);
+    const pl = PLAYLISTS.find(p => p.index === 0);
     if (pl) {
       const track = pl.tracks[zone.track_index];
       if (track) {
@@ -612,6 +626,7 @@ function getTrackMetadata(zoneId) {
           source: 'Radio',
           cover_url: `/api/v1/media/playlists/0/tracks/${zone.track_index}/cover`,
           playlist_index: 0,
+          playlist_id: 'snapdog:radio',
           playlist_name: 'Radio',
           playlist_total: pl.tracks.length,
           playlist_track_index: zone.track_index,
@@ -626,8 +641,8 @@ function getTrackMetadata(zoneId) {
   }
 
   // Subsonic playlists (1+)
-  if (zone.playlist_id !== null && zone.track_index !== null) {
-    const pl = PLAYLISTS.find(p => p.id === zone.playlist_id);
+  if (zone.playlist_index !== null && zone.track_index !== null) {
+    const pl = PLAYLISTS.find(p => p.index === zone.playlist_index);
     if (pl) {
       const track = pl.tracks[zone.track_index];
       if (track) {
@@ -648,7 +663,8 @@ function getTrackMetadata(zoneId) {
           sample_rate: 48000,
           source: 'Subsonic',
           cover_url: pl.cover_art,
-          playlist_index: pl.id,
+          playlist_index: pl.index,
+          playlist_id: pl.playlist_id,
           playlist_name: pl.name,
           playlist_total: pl.tracks.length,
           playlist_track_index: zone.track_index,
@@ -692,7 +708,9 @@ function buildWsZoneChanged(zoneId) {
     content_type: meta ? meta.content_type : null,
     track_index: meta ? meta.playlist_track_index : null,
     track_count: meta ? meta.playlist_track_count : null,
-    playlist: meta ? meta.playlist_index : null,
+    playlist_index: meta ? meta.playlist_index : null,
+    playlist_id: meta ? meta.playlist_id : null,
+    playlist: meta ? meta.playlist_index : null, // deprecated alias of `playlist_index`
     playlist_name: meta ? meta.playlist_name : null,
     playlist_total: meta ? meta.playlist_total : null,
     can_playlist_next: meta ? meta.can_playlist_next : false,
@@ -738,7 +756,7 @@ setInterval(() => {
         if (zone.position_ms >= meta.duration_ms) {
           // Track ended - advance to next or repeat
           zone.position_ms = 0;
-          const pl = PLAYLISTS.find(p => p.id === zone.playlist_id);
+          const pl = PLAYLISTS.find(p => p.index === zone.playlist_index);
           if (pl) {
             if (zone.repeat === 'track') {
               // Stay on current track
@@ -828,27 +846,46 @@ app.get('/api/v1/knx/knxprod', (req, res) => {
 
 // Media / Playlists
 app.get('/api/v1/media/playlists', (req, res) => res.json(plInfoList));
-app.get('/api/v1/media/playlists/:id', (req, res) => {
-  const pl = plInfoList.find(p => p.id === parseInt(req.params.id));
-  if (!pl) return res.status(404).json({ error: 'Playlist not found' });
-  res.json(pl);
-});
-app.get('/api/v1/media/playlists/:id/tracks', (req, res) => {
-  const pl = PLAYLISTS.find(p => p.id === parseInt(req.params.id));
-  if (!pl) return res.status(404).json({ error: 'Playlist not found' });
-  const tracksInfo = pl.tracks.map((t, idx) => ({
+function findPlaylistByIndex(raw) {
+  if (!/^\d+$/.test(String(raw))) return undefined;
+  return PLAYLISTS.find(p => p.index === parseInt(raw, 10));
+}
+function findPlaylistById(raw) {
+  return typeof raw === 'string' ? PLAYLISTS.find(p => p.playlist_id === raw) : undefined;
+}
+function playlistTracksInfo(pl) {
+  return pl.tracks.map((t, idx) => ({
     id: t.id,
     title: t.title,
     artist: t.artist,
     album: t.album,
     duration: t.duration,
     track: idx + 1,
-    cover_art: pl.id === 0 ? `/api/v1/media/playlists/0/tracks/${idx}/cover` : pl.cover_art,
+    cover_art: pl.index === 0 ? `/api/v1/media/playlists/0/tracks/${idx}/cover` : pl.cover_art,
   }));
-  res.json(tracksInfo);
+}
+app.get('/api/v1/media/playlists/by-id/:playlistId', (req, res) => {
+  const pl = findPlaylistById(req.params.playlistId);
+  if (!pl) return res.status(404).json({ error: 'Playlist not found' });
+  res.json(plInfoList[pl.index]);
+});
+app.get('/api/v1/media/playlists/by-id/:playlistId/tracks', (req, res) => {
+  const pl = findPlaylistById(req.params.playlistId);
+  if (!pl) return res.status(404).json({ error: 'Playlist not found' });
+  res.json(playlistTracksInfo(pl));
+});
+app.get('/api/v1/media/playlists/:id', (req, res) => {
+  const pl = findPlaylistByIndex(req.params.id);
+  if (!pl) return res.status(404).json({ error: 'Playlist not found' });
+  res.json(plInfoList[pl.index]);
+});
+app.get('/api/v1/media/playlists/:id/tracks', (req, res) => {
+  const pl = findPlaylistByIndex(req.params.id);
+  if (!pl) return res.status(404).json({ error: 'Playlist not found' });
+  res.json(playlistTracksInfo(pl));
 });
 app.get('/api/v1/media/playlists/:id/tracks/:idx', (req, res) => {
-  const pl = PLAYLISTS.find(p => p.id === parseInt(req.params.id));
+  const pl = PLAYLISTS.find(p => p.index === parseInt(req.params.id));
   if (!pl) return res.status(404).json({ error: 'Playlist not found' });
   const idx = parseInt(req.params.idx);
   const track = pl.tracks[idx];
@@ -860,7 +897,7 @@ app.get('/api/v1/media/playlists/:id/tracks/:idx', (req, res) => {
     album: track.album,
     duration: track.duration,
     track: idx + 1,
-    cover_art: pl.id === 0 ? `/api/v1/media/playlists/0/tracks/${idx}/cover` : pl.cover_art,
+    cover_art: pl.index === 0 ? `/api/v1/media/playlists/0/tracks/${idx}/cover` : pl.cover_art,
   });
 });
 
@@ -870,7 +907,7 @@ app.get('/api/v1/media/playlists/:id/cover', (req, res) => {
   if (plId === 0) {
     res.redirect('/assets/radio-cover.png');
   } else {
-    const pl = PLAYLISTS.find(p => p.id === plId);
+    const pl = PLAYLISTS.find(p => p.index === plId);
     if (pl && pl.cover_art) {
       res.redirect(pl.cover_art);
     } else {
@@ -899,7 +936,7 @@ app.get('/api/v1/media/playlists/:id/tracks/:idx/cover', (req, res) => {
     const cover = radioCovers[trackIdx] || COVERS.lofi;
     res.redirect(cover);
   } else {
-    const pl = PLAYLISTS.find(p => p.id === plId);
+    const pl = PLAYLISTS.find(p => p.index === plId);
     if (pl && pl.tracks[trackIdx]) {
       res.redirect(pl.cover_art);
     } else {
@@ -1068,7 +1105,7 @@ app.post('/api/v1/zones/:id/play', (req, res) => {
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   if (z.source === 'idle') {
     z.source = 'subsonic_playlist';
-    z.playlist_id = 1;
+    z.playlist_index = 1;
     z.track_index = 0;
   }
   z.playback = 'playing';
@@ -1097,8 +1134,8 @@ app.post('/api/v1/zones/:id/next', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
-  if (z.playlist_id !== null && z.track_index !== null) {
-    const pl = PLAYLISTS.find(p => p.id === z.playlist_id);
+  if (z.playlist_index !== null && z.track_index !== null) {
+    const pl = PLAYLISTS.find(p => p.index === z.playlist_index);
     if (pl && z.track_index < pl.tracks.length - 1) {
       z.track_index++;
       z.position_ms = 0;
@@ -1112,7 +1149,7 @@ app.post('/api/v1/zones/:id/previous', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
-  if (z.playlist_id !== null && z.track_index !== null) {
+  if (z.playlist_index !== null && z.track_index !== null) {
     if (z.track_index > 0) {
       z.track_index--;
       z.position_ms = 0;
@@ -1222,13 +1259,13 @@ app.post('/api/v1/zones/:id/play/track', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   const trackIdx = parseInt(req.body);
-  if (z.playlist_id !== null) {
-    const pl = PLAYLISTS.find(p => p.id === z.playlist_id);
+  if (z.playlist_index !== null) {
+    const pl = PLAYLISTS.find(p => p.index === z.playlist_index);
     if (pl && pl.tracks[trackIdx]) {
       z.track_index = trackIdx;
       z.position_ms = 0;
       z.playback = 'playing';
-      z.source = z.playlist_id === 0 ? 'radio' : 'subsonic_playlist';
+      z.source = z.playlist_index === 0 ? 'radio' : 'subsonic_playlist';
     }
   }
   res.sendStatus(204);
@@ -1248,7 +1285,7 @@ app.post('/api/v1/zones/:id/play/url', (req, res) => {
     z.playback = 'stopped';
     z.source = 'idle';
     z.track_index = null;
-    z.playlist_id = null;
+    z.playlist_index = null;
     z.airplay_meta = null;
     z.position_ms = 0;
 
@@ -1265,7 +1302,7 @@ app.post('/api/v1/zones/:id/play/url', (req, res) => {
   }
 
   z.source = 'url';
-  z.playlist_id = null;
+  z.playlist_index = null;
   z.track_index = null;
   z.position_ms = 0;
   z.playback = 'playing';
@@ -1286,16 +1323,37 @@ app.post('/api/v1/zones/:id/play/playlist', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
-  const plId = parseInt(req.body.id);
-  const trackIdx = parseInt(req.body.track) || 0;
-  const pl = PLAYLISTS.find(p => p.id === plId);
-  if (pl) {
-    z.source = plId === 0 ? 'radio' : 'subsonic_playlist';
-    z.playlist_id = plId;
-    z.track_index = trackIdx;
-    z.position_ms = 0;
-    z.playback = 'playing';
+  // `index` is the contract field, `id` the deprecated alias. Both with
+  // different values is a 400, like on the real server.
+  const body = req.body || {};
+  const hasIndex = body.index !== undefined && body.index !== null;
+  const hasId = body.id !== undefined && body.id !== null;
+  if (hasIndex && hasId && Number(body.index) !== Number(body.id)) {
+    return res.status(400).json({ error: 'index and id differ' });
   }
+  const plIdx = Number(hasIndex ? body.index : body.id);
+  const trackIdx = parseInt(body.track) || 0;
+  const pl = Number.isInteger(plIdx) ? PLAYLISTS.find(p => p.index === plIdx) : undefined;
+  if (pl) startPlaylist(z, pl, trackIdx);
+  res.sendStatus(204);
+  broadcast(buildWsZoneChanged(z.index));
+});
+
+function startPlaylist(z, pl, trackIdx) {
+  z.source = pl.index === 0 ? 'radio' : 'subsonic_playlist';
+  z.playlist_index = pl.index;
+  z.track_index = trackIdx;
+  z.position_ms = 0;
+  z.playback = 'playing';
+}
+
+app.post('/api/v1/zones/:id/play/playlist/by-id', (req, res) => {
+  const z = zones[req.params.id];
+  if (!z) return res.status(404).json({ error: 'Zone not found' });
+  const body = req.body || {};
+  const pl = findPlaylistById(body.playlist_id);
+  if (!pl) return res.status(404).json({ error: 'Playlist not found' });
+  startPlaylist(z, pl, parseInt(body.track) || 0);
   res.sendStatus(204);
   broadcast(buildWsZoneChanged(z.index));
 });
@@ -1304,16 +1362,8 @@ app.post('/api/v1/zones/:zoneId/play/playlist/:playlistId/track', (req, res) => 
   const z = zones[req.params.zoneId];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
-  const plId = parseInt(req.params.playlistId);
-  const trackIdx = parseInt(req.body);
-  const pl = PLAYLISTS.find(p => p.id === plId);
-  if (pl) {
-    z.source = plId === 0 ? 'radio' : 'subsonic_playlist';
-    z.playlist_id = plId;
-    z.track_index = trackIdx;
-    z.position_ms = 0;
-    z.playback = 'playing';
-  }
+  const pl = findPlaylistByIndex(req.params.playlistId);
+  if (pl) startPlaylist(z, pl, parseInt(req.body));
   res.sendStatus(204);
   broadcast(buildWsZoneChanged(z.index));
 });
@@ -1322,7 +1372,27 @@ app.post('/api/v1/zones/:zoneId/play/playlist/:playlistId/track', (req, res) => 
 app.get('/api/v1/zones/:id/playlist', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
-  res.json(z.playlist_id);
+  res.json(z.playlist_index);
+});
+
+app.get('/api/v1/zones/:id/playlist/by-id', (req, res) => {
+  const z = zones[req.params.id];
+  if (!z) return res.status(404).json({ error: 'Zone not found' });
+  const pl = z.playlist_index === null ? undefined : PLAYLISTS.find(p => p.index === z.playlist_index);
+  res.json(pl ? pl.playlist_id : '');
+});
+
+app.put('/api/v1/zones/:id/playlist/by-id', (req, res) => {
+  const z = zones[req.params.id];
+  if (!z) return res.status(404).json({ error: 'Zone not found' });
+  const pl = findPlaylistById(req.body);
+  if (!pl) return res.status(404).json({ error: 'Playlist not found' });
+  z.playlist_index = pl.index;
+  z.track_index = 0;
+  z.position_ms = 0;
+  z.source = pl.index === 0 ? 'radio' : 'subsonic_playlist';
+  res.sendStatus(204);
+  broadcast(buildWsZoneChanged(z.index));
 });
 
 app.put('/api/v1/zones/:id/playlist', (req, res) => {
@@ -1330,9 +1400,9 @@ app.put('/api/v1/zones/:id/playlist', (req, res) => {
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
   const plId = parseInt(req.body);
-  const pl = PLAYLISTS.find(p => p.id === plId);
+  const pl = PLAYLISTS.find(p => p.index === plId);
   if (pl) {
-    z.playlist_id = plId;
+    z.playlist_index = plId;
     z.track_index = 0;
     z.position_ms = 0;
     z.source = plId === 0 ? 'radio' : 'subsonic_playlist';
@@ -1345,9 +1415,9 @@ app.post('/api/v1/zones/:id/next/playlist', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
-  if (z.playlist_id !== null) {
-    const nextId = (z.playlist_id + 1) % PLAYLISTS.length;
-    z.playlist_id = nextId;
+  if (z.playlist_index !== null) {
+    const nextId = (z.playlist_index + 1) % PLAYLISTS.length;
+    z.playlist_index = nextId;
     z.track_index = 0;
     z.position_ms = 0;
     z.source = nextId === 0 ? 'radio' : 'subsonic_playlist';
@@ -1360,9 +1430,9 @@ app.post('/api/v1/zones/:id/previous/playlist', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
-  if (z.playlist_id !== null) {
-    const prevId = z.playlist_id === 0 ? PLAYLISTS.length - 1 : z.playlist_id - 1;
-    z.playlist_id = prevId;
+  if (z.playlist_index !== null) {
+    const prevId = z.playlist_index === 0 ? PLAYLISTS.length - 1 : z.playlist_index - 1;
+    z.playlist_index = prevId;
     z.track_index = 0;
     z.position_ms = 0;
     z.source = prevId === 0 ? 'radio' : 'subsonic_playlist';
@@ -1374,12 +1444,13 @@ app.post('/api/v1/zones/:id/previous/playlist', (req, res) => {
 app.get('/api/v1/zones/:id/playlist/info', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
-  if (z.playlist_id === null) {
-    return res.json({ index: null, name: null, total: null, track_index: null, track_count: null });
+  if (z.playlist_index === null) {
+    return res.json({ index: null, playlist_id: null, name: null, total: null, track_index: null, track_count: null });
   }
-  const pl = PLAYLISTS.find(p => p.id === z.playlist_id);
+  const pl = PLAYLISTS.find(p => p.index === z.playlist_index);
   res.json({
-    index: z.playlist_id,
+    index: z.playlist_index,
+    playlist_id: pl ? pl.playlist_id : null,
     name: pl ? pl.name : null,
     total: pl ? pl.tracks.length : null,
     track_index: z.track_index,
