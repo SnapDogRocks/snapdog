@@ -89,11 +89,16 @@ pub fn router(state: SharedState) -> Router {
     Router::new()
         .route("/search", get(search))
         .route("/cover/{cover_id}", get(get_cover))
-        .route("/playlists", get(get_playlists))
-        .route("/playlists/by-id/{playlist_id}", get(get_playlist_by_id))
+        .route("/playlists", get(get_playlists).post(create_playlist))
+        .route(
+            "/playlists/by-id/{playlist_id}",
+            get(get_playlist_by_id)
+                .patch(update_playlist)
+                .delete(delete_playlist),
+        )
         .route(
             "/playlists/by-id/{playlist_id}/tracks",
-            get(get_playlist_tracks_by_id),
+            get(get_playlist_tracks_by_id).put(replace_playlist_tracks),
         )
         .route("/playlists/{playlist_index}", get(get_playlist))
         .route("/playlists/{playlist_index}/cover", get(get_playlist_cover))
@@ -136,11 +141,20 @@ pub(super) async fn cached_playlists(state: &SharedState) -> Vec<PlaylistEntry> 
 
 /// Read the list from Subsonic now and store it, whatever the age of the cache.
 async fn fetch_playlists(state: &SharedState) -> Vec<PlaylistEntry> {
+    fetch_playlists_notifying(state, false).await
+}
+
+/// [`fetch_playlists`], with `always` the event goes out even when the list looks the same.
+async fn fetch_playlists_notifying(state: &SharedState, always: bool) -> Vec<PlaylistEntry> {
     let entries = state
         .playlist_cache
         .fetch(subsonic(state).ok().as_ref())
         .await;
-    announce_changes(state, &entries);
+    // Announcing also moves the baseline, so it runs whether or not the event is forced.
+    let changed = state.playlist_cache.announce(&entries);
+    if always || changed {
+        notify_playlists_changed(state, entries.len());
+    }
     entries
 }
 
@@ -195,6 +209,11 @@ const MEDIA_PATH: &str = "/api/v1/media/playlists";
     tag = "media"
 )]
 async fn get_playlists(State(state): State<SharedState>) -> impl IntoResponse {
+    Ok::<_, ApiError>(Json(all_playlists(&state).await))
+}
+
+/// Every playlist with its current index: the radio list first, then the Subsonic playlists.
+async fn all_playlists(state: &SharedState) -> Vec<PlaylistInfo> {
     let mut result: Vec<PlaylistInfo> = Vec::new();
     let mut idx: usize = 0;
 
@@ -213,7 +232,7 @@ async fn get_playlists(State(state): State<SharedState>) -> impl IntoResponse {
     }
 
     // Playlist 1+: Subsonic playlists
-    for p in cached_playlists(&state).await {
+    for p in cached_playlists(state).await {
         let cover_art = p
             .cover_art
             .as_ref()
@@ -230,7 +249,7 @@ async fn get_playlists(State(state): State<SharedState>) -> impl IntoResponse {
         idx += 1;
     }
 
-    Ok::<_, ApiError>(Json(result))
+    result
 }
 
 /// Resolve a unified playlist index using the shared config logic.
@@ -531,6 +550,245 @@ async fn get_cover(
         ],
         bytes,
     ))
+}
+
+/// Body of `POST /media/playlists`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct CreatePlaylist {
+    /// Name of the new playlist.
+    name: String,
+    /// Subsonic track ids to start with, in order.
+    #[serde(default)]
+    track_ids: Vec<String>,
+}
+
+/// Body of `PATCH /media/playlists/by-id/{playlist_id}`: the three operations of `updatePlaylist`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct PatchPlaylist {
+    /// New name.
+    name: Option<String>,
+    /// Subsonic track ids appended to the end.
+    #[serde(default)]
+    add_track_ids: Vec<String>,
+    /// Positions (0-based, in the playlist as it is now) of tracks to remove.
+    #[serde(default)]
+    remove_positions: Vec<usize>,
+}
+
+/// Body of `PUT /media/playlists/by-id/{playlist_id}/tracks`.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct ReplaceTracks {
+    /// The complete new content, in order.
+    track_ids: Vec<String>,
+}
+
+/// The Subsonic client for a write, or the reason it is not allowed. The radio list is
+/// configuration and never writable, whatever the switch says.
+fn writable(state: &SharedState, playlist_id: Option<&str>) -> Result<SubsonicClient, ApiError> {
+    if playlist_id == Some(RADIO_PLAYLIST_ID) {
+        return Err(ApiError::ReadOnly(
+            "the radio list is configured in snapdog.toml and cannot be changed through the API"
+                .into(),
+        ));
+    }
+    let config = state
+        .config
+        .subsonic
+        .as_ref()
+        .ok_or(ApiError::ServiceUnavailable("subsonic"))?;
+    if !config.playlist_write {
+        return Err(ApiError::ReadOnly(
+            "writing playlists is off, set [subsonic].playlist_write = true".into(),
+        ));
+    }
+    Ok(SubsonicClient::new(config))
+}
+
+/// The Subsonic id inside a `playlist_id` (404 for anything that is not a Subsonic playlist).
+fn subsonic_id_of(playlist_id: &str) -> Result<&str, ApiError> {
+    playlist_id
+        .strip_prefix(crate::config::SUBSONIC_PLAYLIST_PREFIX)
+        .filter(|id| !id.is_empty())
+        .ok_or(ApiError::NotFound("resource"))
+}
+
+/// A refusal by the Subsonic server surfaces as 502 with its message, "not found" as 404.
+fn write_error(error: &anyhow::Error) -> ApiError {
+    match error.downcast_ref::<crate::subsonic::SubsonicFailure>() {
+        Some(failure) if failure.is_not_found() => ApiError::NotFound("resource"),
+        Some(failure) => ApiError::BadGateway(failure.message.clone()),
+        None => {
+            tracing::error!(error = %error, "Subsonic write failed");
+            ApiError::BadGateway("upstream request failed".into())
+        }
+    }
+}
+
+/// After a successful write: read the list again and announce the change at once.
+async fn after_write(state: &SharedState) {
+    fetch_playlists_notifying(state, true).await;
+}
+
+fn require_name(name: &str) -> Result<&str, ApiError> {
+    let name = name.trim();
+    if name.is_empty() {
+        Err(ApiError::BadRequest("name must not be empty".into()))
+    } else {
+        Ok(name)
+    }
+}
+
+/// Create a Subsonic playlist
+///
+/// Needs `[subsonic].playlist_write = true`, otherwise 403 `read_only`. Answers 201 with the new
+/// playlist. Creating a playlist can move the indices behind it, so address it by `playlist_id`.
+#[utoipa::path(
+    post,
+    path = "/api/v1/media/playlists",
+    request_body = CreatePlaylist,
+    responses(
+        (status = 201, description = "Playlist created", body = PlaylistInfo),
+        (status = 400, description = "Empty name", body = ErrorBody),
+        (status = 403, description = "Writing playlists is off", body = ErrorBody),
+        (status = 502, description = "Subsonic refused or failed", body = ErrorBody),
+        (status = 503, description = "Subsonic is not configured", body = ErrorBody)
+    ),
+    tag = "media"
+)]
+async fn create_playlist(
+    State(state): State<SharedState>,
+    Json(body): Json<CreatePlaylist>,
+) -> Result<(axum::http::StatusCode, Json<PlaylistInfo>), ApiError> {
+    let sub = writable(&state, None)?;
+    let name = require_name(&body.name)?;
+    let created = sub
+        .create_playlist(name, &body.track_ids)
+        .await
+        .map_err(|e| write_error(&e))?;
+    after_write(&state).await;
+    // Subsonic 1.14 and later answer with the playlist. An older server does not: take the newest
+    // playlist of that name.
+    let id = match created {
+        Some(playlist) => playlist.id,
+        None => cached_playlists(&state)
+            .await
+            .into_iter()
+            .rfind(|p| p.name == name)
+            .map(|p| p.id)
+            .ok_or_else(|| ApiError::BadGateway("the created playlist was not found".into()))?,
+    };
+    let playlist_id = subsonic_playlist_id(&id);
+    let info = all_playlists(&state)
+        .await
+        .into_iter()
+        .find(|p| p.playlist_id == playlist_id)
+        .ok_or_else(|| ApiError::BadGateway("the created playlist was not found".into()))?;
+    Ok((axum::http::StatusCode::CREATED, Json(info)))
+}
+
+/// Change a Subsonic playlist
+///
+/// Rename, append tracks and remove tracks by position, the three operations of `updatePlaylist`,
+/// in one call. Needs `[subsonic].playlist_write = true`. `snapdog:radio` answers 403. A zone that
+/// plays the playlist keeps its current track and uses the new content from the next track on.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/media/playlists/by-id/{playlist_id}",
+    params(
+        ("playlist_id" = String, Path, description = "Stable playlist reference, percent-encoded")
+    ),
+    request_body = PatchPlaylist,
+    responses(
+        (status = 200, description = "Playlist changed", body = PlaylistDetails),
+        (status = 400, description = "Nothing to change, or an empty name", body = ErrorBody),
+        (status = 403, description = "Writing playlists is off, or the radio list", body = ErrorBody),
+        (status = 404, description = "Playlist not found", body = ErrorBody),
+        (status = 502, description = "Subsonic refused or failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
+async fn update_playlist(
+    State(state): State<SharedState>,
+    Path(playlist_id): Path<String>,
+    Json(body): Json<PatchPlaylist>,
+) -> Result<Json<PlaylistDetails>, ApiError> {
+    let sub = writable(&state, Some(&playlist_id))?;
+    let id = subsonic_id_of(&playlist_id)?;
+    let name = body.name.as_deref().map(require_name).transpose()?;
+    if name.is_none() && body.add_track_ids.is_empty() && body.remove_positions.is_empty() {
+        return Err(ApiError::BadRequest(
+            "give name, add_track_ids or remove_positions".into(),
+        ));
+    }
+    sub.update_playlist(id, name, &body.add_track_ids, &body.remove_positions)
+        .await
+        .map_err(|e| write_error(&e))?;
+    after_write(&state).await;
+    let index = playlist_index_by_id(&state, &playlist_id).await?;
+    get_playlist(State(state), Path(index)).await
+}
+
+/// Replace the tracks of a Subsonic playlist
+///
+/// Sets the complete content and the order. Needs `[subsonic].playlist_write = true`.
+/// `snapdog:radio` answers 403.
+#[utoipa::path(
+    put,
+    path = "/api/v1/media/playlists/by-id/{playlist_id}/tracks",
+    params(
+        ("playlist_id" = String, Path, description = "Stable playlist reference, percent-encoded")
+    ),
+    request_body = ReplaceTracks,
+    responses(
+        (status = 200, description = "Playlist replaced", body = PlaylistDetails),
+        (status = 403, description = "Writing playlists is off, or the radio list", body = ErrorBody),
+        (status = 404, description = "Playlist not found", body = ErrorBody),
+        (status = 502, description = "Subsonic refused or failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
+async fn replace_playlist_tracks(
+    State(state): State<SharedState>,
+    Path(playlist_id): Path<String>,
+    Json(body): Json<ReplaceTracks>,
+) -> Result<Json<PlaylistDetails>, ApiError> {
+    let sub = writable(&state, Some(&playlist_id))?;
+    let id = subsonic_id_of(&playlist_id)?;
+    sub.replace_playlist_tracks(id, &body.track_ids)
+        .await
+        .map_err(|e| write_error(&e))?;
+    after_write(&state).await;
+    let index = playlist_index_by_id(&state, &playlist_id).await?;
+    get_playlist(State(state), Path(index)).await
+}
+
+/// Delete a Subsonic playlist
+///
+/// Needs `[subsonic].playlist_write = true`. `snapdog:radio` answers 403. Playlists behind the
+/// deleted one move up by one index.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/media/playlists/by-id/{playlist_id}",
+    params(
+        ("playlist_id" = String, Path, description = "Stable playlist reference, percent-encoded")
+    ),
+    responses(
+        (status = 204, description = "Playlist deleted"),
+        (status = 403, description = "Writing playlists is off, or the radio list", body = ErrorBody),
+        (status = 404, description = "Playlist not found", body = ErrorBody),
+        (status = 502, description = "Subsonic refused or failed", body = ErrorBody)
+    ),
+    tag = "media"
+)]
+async fn delete_playlist(
+    State(state): State<SharedState>,
+    Path(playlist_id): Path<String>,
+) -> Result<axum::http::StatusCode, ApiError> {
+    let sub = writable(&state, Some(&playlist_id))?;
+    let id = subsonic_id_of(&playlist_id)?;
+    sub.delete_playlist(id).await.map_err(|e| write_error(&e))?;
+    after_write(&state).await;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 /// Resolve a `playlist_id` to its current unified index (404 for an unknown id).

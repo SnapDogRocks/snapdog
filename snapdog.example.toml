@@ -207,6 +207,12 @@ password = "admin"
 # `playlists_changed`. Subsonic cannot push, so a change made in another client shows up
 # within this interval. Each read is one request to the Subsonic server. 0 turns it off.
 # refresh_secs = 60
+# Let the REST API create, rename, reorder and delete Subsonic playlists
+# (POST/PATCH/PUT/DELETE under /api/v1/media/playlists). Off by default: authentication is
+# optional in SnapDog, so with this on anyone who can reach the API can change the playlists
+# of your music library, within the rights of the Subsonic user above. The radio list in this
+# file is never writable through the API.
+# playlist_write = false
 
 # Track cache — always active for instant seek and replay. A leading ~ is expanded.
 # [subsonic.cache]

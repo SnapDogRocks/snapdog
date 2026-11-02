@@ -276,6 +276,79 @@ impl SubsonicClient {
         Ok(resp.subsonic_response.search_result3.unwrap_or_default())
     }
 
+    /// A call that changes something. Subsonic answers `200` with `status: failed` for a refusal,
+    /// which is returned as a [`SubsonicFailure`].
+    async fn write(&self, method: &str, params: &[(&str, &str)]) -> Result<Option<Playlist>> {
+        let resp: SubsonicResponse<PlaylistWrapper> = self.get(method, params).await?;
+        let inner = resp.subsonic_response;
+        if inner.status == "ok" {
+            return Ok(inner.playlist);
+        }
+        let (code, message) = inner
+            .error
+            .map_or_else(|| (0, format!("{method} failed")), |e| (e.code, e.message));
+        Err(SubsonicFailure { code, message }.into())
+    }
+
+    /// Create a playlist. Returns it when the server answers with it (Subsonic 1.14 and later).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server refuses it.
+    pub async fn create_playlist(
+        &self,
+        name: &str,
+        track_ids: &[String],
+    ) -> Result<Option<Playlist>> {
+        let mut params = vec![("name", name)];
+        params.extend(track_ids.iter().map(|id| ("songId", id.as_str())));
+        self.write("createPlaylist", &params).await
+    }
+
+    /// Replace the content and the order of a playlist (`createPlaylist` with a `playlistId`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server refuses it.
+    pub async fn replace_playlist_tracks(&self, id: &str, track_ids: &[String]) -> Result<()> {
+        let mut params = vec![("playlistId", id)];
+        params.extend(track_ids.iter().map(|t| ("songId", t.as_str())));
+        self.write("createPlaylist", &params).await.map(|_| ())
+    }
+
+    /// Rename a playlist, add tracks to its end and remove tracks by their position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server refuses it.
+    pub async fn update_playlist(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        add: &[String],
+        remove_positions: &[usize],
+    ) -> Result<()> {
+        let positions: Vec<String> = remove_positions.iter().map(ToString::to_string).collect();
+        let mut params = vec![("playlistId", id)];
+        if let Some(name) = name {
+            params.push(("name", name));
+        }
+        params.extend(add.iter().map(|t| ("songIdToAdd", t.as_str())));
+        params.extend(positions.iter().map(|p| ("songIndexToRemove", p.as_str())));
+        self.write("updatePlaylist", &params).await.map(|_| ())
+    }
+
+    /// Delete a playlist.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server refuses it.
+    pub async fn delete_playlist(&self, id: &str) -> Result<()> {
+        self.write("deletePlaylist", &[("id", id)])
+            .await
+            .map(|_| ())
+    }
+
     /// Get the streaming URL for a track (does not fetch — returns the URL).
     #[must_use]
     pub fn stream_url(&self, track_id: &str) -> String {
@@ -465,7 +538,34 @@ pub struct AlbumEntry {
 
 #[derive(Deserialize)]
 struct SubsonicError {
+    #[serde(default)]
+    code: i64,
     message: String,
+}
+
+/// A request the Subsonic server answered with `status: failed`.
+#[derive(Debug)]
+pub struct SubsonicFailure {
+    /// Subsonic error code, `70` is "data not found", `50` "not authorized".
+    pub code: i64,
+    /// The server's message.
+    pub message: String,
+}
+
+impl std::fmt::Display for SubsonicFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for SubsonicFailure {}
+
+impl SubsonicFailure {
+    /// Whether the server says the thing asked for does not exist.
+    #[must_use]
+    pub const fn is_not_found(&self) -> bool {
+        self.code == 70
+    }
 }
 
 #[derive(Deserialize)]

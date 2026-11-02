@@ -30,6 +30,8 @@ pub enum ApiError {
     Unprocessable(String),
     /// Required service not configured (503).
     ServiceUnavailable(&'static str),
+    /// The operation is switched off or never allowed (403, `read_only`).
+    ReadOnly(String),
     /// Upstream service error (502).
     BadGateway(String),
     /// Unexpected internal error (500).
@@ -52,6 +54,7 @@ impl IntoResponse for ApiError {
                 "service_unavailable",
                 format!("{what} not configured"),
             ),
+            Self::ReadOnly(msg) => (StatusCode::FORBIDDEN, "read_only", msg),
             Self::BadGateway(msg) => (StatusCode::BAD_GATEWAY, "bad_gateway", msg),
             Self::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error", msg),
         };

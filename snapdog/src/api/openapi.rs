@@ -71,6 +71,10 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
 
         // Media
         crate::api::routes::media::search,
+        crate::api::routes::media::create_playlist,
+        crate::api::routes::media::update_playlist,
+        crate::api::routes::media::replace_playlist_tracks,
+        crate::api::routes::media::delete_playlist,
         crate::api::routes::media::get_cover,
         crate::api::routes::media::get_playlists,
         crate::api::routes::media::get_playlist,
@@ -176,6 +180,9 @@ use crate::api::routes::system::{self, SystemStatus, VersionInfo};
             crate::api::routes::media::PlaylistDetails,
             crate::api::routes::media::MediaTrackInfo,
             crate::api::routes::media::SearchItem,
+            crate::api::routes::media::CreatePlaylist,
+            crate::api::routes::media::PatchPlaylist,
+            crate::api::routes::media::ReplaceTracks,
             crate::api::routes::media::SearchResponse,
         )
     ),

@@ -58,6 +58,11 @@ zone = "1st Floor"
 
 /// A default test app whose Subsonic server is `url`, with the given refresh interval.
 pub fn app_with_subsonic(url: &str, refresh_secs: u64) -> TestApp {
+    app_with_subsonic_writing(url, refresh_secs, false)
+}
+
+/// [`app_with_subsonic`] with `[subsonic].playlist_write` set as given.
+pub fn app_with_subsonic_writing(url: &str, refresh_secs: u64, playlist_write: bool) -> TestApp {
     let mut cfg = test_config();
     cfg.subsonic = Some(snapdog::config::SubsonicConfig {
         url: url.to_owned(),
@@ -67,6 +72,7 @@ pub fn app_with_subsonic(url: &str, refresh_secs: u64) -> TestApp {
         tls_skip_verify: false,
         cache: snapdog::config::SubsonicCacheConfig::default(),
         refresh_secs,
+        playlist_write,
     });
     build_test_app(cfg)
 }

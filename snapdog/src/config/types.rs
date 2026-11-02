@@ -976,6 +976,11 @@ pub struct SubsonicConfig {
     /// interval. `0` turns the background read off, the list is then only read on demand.
     #[serde(default = "default_playlist_refresh_secs")]
     pub refresh_secs: u64,
+    /// Allow the API to create, change and delete Subsonic playlists. Off by default, because
+    /// authentication in `SnapDog` is optional and nobody on the network should be able to delete
+    /// the playlists of a music library. The rights of the Subsonic user apply on top.
+    #[serde(default)]
+    pub playlist_write: bool,
 }
 
 const fn default_playlist_refresh_secs() -> u64 {
