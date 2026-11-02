@@ -66,9 +66,8 @@ pub struct AppState {
     pub eq_store: std::sync::Arc<std::sync::Mutex<crate::audio::eq::EqStore>>,
     /// KNX device control (programming mode). `None` in client mode.
     pub knx_device_control: Option<crate::knx::DeviceControlHandle>,
-    /// Cached Subsonic playlist list with expiry timestamp.
-    pub playlist_cache:
-        tokio::sync::RwLock<Option<(std::time::Instant, Vec<crate::subsonic::PlaylistEntry>)>>,
+    /// Subsonic playlist list, shared with the zone players.
+    pub playlist_cache: Arc<crate::subsonic::PlaylistCache>,
     /// Spinorama speaker profile database.
     pub speaker_db: crate::spinorama::SpeakerDb,
 }
@@ -184,6 +183,7 @@ pub async fn serve<S: BuildHasher>(
         notifications,
         eq_store,
         knx_device_control,
+        Arc::new(crate::subsonic::PlaylistCache::new()),
         shutdown,
     )
     .await
@@ -207,6 +207,7 @@ pub async fn serve_on<S: BuildHasher>(
     notifications: ws::NotifySender,
     eq_store: std::sync::Arc<std::sync::Mutex<crate::audio::eq::EqStore>>,
     knx_device_control: Option<crate::knx::DeviceControlHandle>,
+    playlist_cache: Arc<crate::subsonic::PlaylistCache>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
     let state = Arc::new(AppState {
@@ -218,7 +219,7 @@ pub async fn serve_on<S: BuildHasher>(
         notifications,
         eq_store,
         knx_device_control,
-        playlist_cache: tokio::sync::RwLock::new(None),
+        playlist_cache,
         speaker_db: crate::spinorama::SpeakerDb::new(),
     });
 

@@ -99,7 +99,7 @@ pub fn build_test_app(config: AppConfig) -> TestApp {
         notifications: notify_tx,
         eq_store,
         knx_device_control: None,
-        playlist_cache: tokio::sync::RwLock::new(None),
+        playlist_cache: Arc::new(snapdog::subsonic::PlaylistCache::new()),
         speaker_db: snapdog::spinorama::SpeakerDb::new(),
     });
 
@@ -268,6 +268,7 @@ pub async fn spawn_zone_harness(config: AppConfig) -> ZoneHarness {
         snap_tx,
         backend: Arc::new(MockBackend),
         eq_store,
+        playlist_cache: Arc::new(snapdog::subsonic::PlaylistCache::new()),
         client_mac_map: HashMap::new(),
         group_ids: Vec::new(),
         group_clients: HashMap::new(),
@@ -401,6 +402,7 @@ pub async fn spawn_zone_harness_capturing(config: AppConfig) -> CapturingHarness
         snap_tx,
         backend: Arc::new(backend.clone()),
         eq_store,
+        playlist_cache: Arc::new(snapdog::subsonic::PlaylistCache::new()),
         client_mac_map: HashMap::new(),
         group_ids: Vec::new(),
         group_clients: HashMap::new(),
