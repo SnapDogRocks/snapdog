@@ -105,17 +105,19 @@ Where `uid` appears:
   of the state and of `ZoneChanged` (`playlist_uid`, next to `playlist_index`), in
   `GET /zones/{z}/playlist/info` (`ZonePlaylistInfo`) and in the MQTT zone state
   payload (`playlist_uid`, next to `playlist_index`).
-- Commands that carry a playlist.
-  - `POST /zones/{z}/play/playlist` takes `{"id": n, "track": n}` today and
-    additionally `{"uid": "...", "track": n}`. Sending both or neither is a 400
-    with the existing error body. An unknown `uid` is a 404.
-  - `PUT /zones/{z}/playlist` takes a bare number today (the body is the index, no
-    track). It keeps accepting the number and additionally accepts
-    `{"uid": "..."}`. A JSON number and a JSON object cannot be confused, so no
-    client breaks.
-  - MQTT `snapdog/zones/{z}/playlist/set` takes the index as text today. It keeps
-    that and additionally accepts a `uid` (a payload that is not a number is read
-    as a `uid`).
+- Commands that carry a playlist. The index and the `uid` get separate endpoints
+  and are never accepted side by side in one body, so there is no "both or neither"
+  case and every body has one type.
+  - `PUT /zones/{z}/playlist` keeps its bare number (the index). New:
+    `PUT /zones/{z}/playlist/by-uid` with a bare JSON string as body
+    (`"subsonic:42"`), and `GET /zones/{z}/playlist/by-uid` returning the active
+    `uid` as a string, as `GET /zones/{z}/playlist` returns the index. A string in
+    the body needs no percent-encoding, unlike a `uid` in a path.
+  - `POST /zones/{z}/play/playlist` keeps `{"id": n, "track": n}`. New:
+    `POST /zones/{z}/play/playlist/by-uid` with `{"uid": "...", "track": n}`.
+  - MQTT `snapdog/zones/{z}/playlist/set` keeps the index. New:
+    `snapdog/zones/{z}/playlist/uid/set` with the `uid` as text payload.
+  - An unknown `uid` is a 404 in every case.
 - Reading. `GET /media/playlists/by-uid/{uid}` and `.../by-uid/{uid}/tracks`
   (percent-encoded), with the same bodies as the index paths. The existing paths
   stay and keep resolving by index.
@@ -123,8 +125,8 @@ Where `uid` appears:
 Where `uid` is deliberately not added:
 
 - `POST /zones/{z}/play/playlist/{playlist_index}/track` keeps its index path. The
-  body variant of `POST /zones/{z}/play/playlist` covers the same use with a `uid`,
-  so a second `by-uid` path would only duplicate it.
+  `by-uid` variant of `POST /zones/{z}/play/playlist` covers the same use, so a
+  second path with a `uid` would only duplicate it.
 - `POST /zones/{z}/play/subsonic/{track_id}` already takes the Subsonic id of the
   track.
 - `next/playlist` and `previous/playlist` carry no playlist, and the player moves
@@ -240,6 +242,10 @@ RFC.
   field, because clients treat `uid` as an opaque string.
 - **Put the id into the existing `id`** as a string. Breaks every client that
   parses it as a number, including the web interface and `pysnapdog` 0.1.0.
+- **One endpoint that accepts the index or the `uid`** (a number or an object, or two
+  keys in one body). Needs a rule for "both" and "neither", an untagged type in the
+  schema and a guess for MQTT. Separate `by-uid` endpoints cost a route each and
+  keep every body a single type.
 - **Accept ids and indices in the same path segment.** Subsonic ids can be
   numeric, so `/media/playlists/12` would be ambiguous. A separate `by-uid` prefix
   has no such case.
@@ -271,10 +277,12 @@ Dependencies: none
 - MED-M1-A1: every playlist in `GET /media/playlists` and `.../{p}` has a `uid`
   (`snapdog:radio`, `subsonic:<id>`), and `id` is unchanged. A test with and without
   configured radios shows the indices shifting while the `uid` values stay.
-- MED-M1-A2: `by-uid` reads work and answer 404 for an unknown `uid`. `POST /play/playlist`
-  and `PUT /playlist` accept `uid` or `id`, a body with both or neither on the POST
-  is a 400, and `GET /playlist/info` and the MQTT state payload carry `playlist_uid`
-  (positive and negative probe each). MQTT `playlist/set` accepts an index and a `uid`.
+- MED-M1-A2: `by-uid` reads work and answer 404 for an unknown `uid`.
+  `PUT /zones/{z}/playlist/by-uid`, `POST /zones/{z}/play/playlist/by-uid` and MQTT
+  `playlist/uid/set` start the same playlist as their index counterparts and answer
+  404 (MQTT: a warning) for an unknown `uid`. `GET /zones/{z}/playlist/by-uid`,
+  `GET /zones/{z}/playlist/info` and the MQTT state payload carry the `uid`. The
+  index endpoints behave as before (positive and negative probe each).
 - MED-M1-A3: with the Subsonic server stopped, a running server keeps the last good
   list and logs a warning, also across a refresh task run. The request-path part
   ships in SnapDogRocks/snapdog#406, so the counter-probe is that reverting it
