@@ -83,6 +83,14 @@ index, and leaves room for other providers. The field is new because `id` alread
 means the index in responses and in the play body, and changing its meaning would
 break every client.
 
+`uid` is not a UUID. It is the provider's own id with a prefix, so the server stores
+nothing and invents nothing. That rests on one assumption: a Subsonic server keeps a
+playlist's id for as long as the playlist exists. The Subsonic API description does
+not promise it across a server migration or a library re-import, and the behaviour of
+Navidrome and Gonic has not been measured here (open question below). When the
+Subsonic server is replaced, every `uid` changes with it, and a client that stored one
+treats it as an unknown playlist (404), which is the correct outcome.
+
 Where `uid` appears:
 
 - `uid` in `PlaylistInfo` and `PlaylistDetails`, and in the zone's playlist
@@ -111,7 +119,8 @@ have changed, and that a client should read `GET /media/playlists` again.
 - A write from 2.5 invalidates the cache and sends the event at once.
 - A failed read keeps the last good list and logs a warning. It never replaces the
   list with an empty one. The first failed read after start leaves the Subsonic
-  part empty, as today.
+  part empty, as today. The request path already behaves this way after
+  SnapDogRocks/snapdog#406; the refresh task has to keep it that way.
 - Reads from requests use the same list, so the API and the event agree.
 
 Subsonic has no push channel, so a change made in another Subsonic client shows up
@@ -189,6 +198,14 @@ RFC.
 - **Make the index stable** (sort Subsonic playlists, always reserve slot 0 for
   radio). Sorting by name still moves playlists when one is added, and a fixed
   slot 0 changes the meaning of every index in existing installations.
+- **A server-generated UUID per playlist.** Opaque, and independent of the
+  provider's id scheme, which would let the server survive a replaced Subsonic
+  server by remapping. It needs a persistent table from Subsonic id to UUID (state
+  that today lives nowhere), a second identity to keep in step with the first, and a
+  rule for what happens to entries whose playlist vanished. With one provider and
+  ids that are already unique, it buys nothing now. If a second provider or a
+  migration story arrives, the prefix scheme can be replaced without changing the
+  field, because clients treat `uid` as an opaque string.
 - **Put the id into the existing `id`** as a string. Breaks every client that
   parses it as a number, including the web interface and `pysnapdog` 0.1.0.
 - **Accept ids and indices in the same path segment.** Subsonic ids can be
@@ -226,8 +243,9 @@ Dependencies: none
   commands accept `uid` or `id`, and a body with both or neither is a 400
   (positive and negative probe each).
 - MED-M1-A3: with the Subsonic server stopped, a running server keeps the last good
-  list and logs a warning. Counter-probe: the current code returns an empty list
-  in the same test.
+  list and logs a warning, also across a refresh task run. The request-path part
+  ships in SnapDogRocks/snapdog#406, so the counter-probe is that reverting it
+  makes the test fail.
 - MED-M1-A4: a playlist created or removed in Subsonic produces `playlists_changed`
   on a connected WebSocket within `refresh_secs` plus one second. An unchanged list
   produces none.
@@ -296,6 +314,8 @@ of the repository and is not part of this plan.
     libraries.
   - Whether `playlist_write` should default to true when an API key is
     configured.
+  - Whether Subsonic playlist ids stay the same across restarts and library rescans
+    on Navidrome, Gonic and the reference server. `uid` depends on it.
 
 ## 5. Decision changes
 
