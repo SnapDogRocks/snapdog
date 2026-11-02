@@ -54,3 +54,53 @@ fn the_test_files_the_step_names_exist() {
         );
     }
 }
+
+const RELEASE_WORKFLOW: &str = include_str!("../../.github/workflows/release.yml");
+
+fn repository_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the crate sits in the workspace")
+        .to_path_buf()
+}
+
+/// MED-0011 section 2.8: no 1.x version (pre-releases included) may exist while the API
+/// description has a deprecated entry. The check itself is `.github/scripts/release_guard.py`,
+/// which the release workflow also runs, and its probes (a 1.0.0-rc.1 against a description
+/// with and without deprecated entries, 0.30.0, the document version `info.version` that must
+/// be ignored) are in `test_release_guard.py`. This test runs it on the product version of
+/// this checkout, so the release pull request that bumps the version cannot pass `CI Success`
+/// while a deprecated entry is left.
+#[test]
+fn no_one_x_version_while_the_api_has_deprecated_entries() {
+    let output = std::process::Command::new("python3")
+        .arg(repository_root().join(".github/scripts/release_guard.py"))
+        .output()
+        .expect("python3 runs the release guard");
+    assert!(
+        output.status.success(),
+        "release guard: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The guard only protects a release if the workflow still runs it before anything is built.
+#[test]
+fn the_release_workflow_runs_the_release_guard() {
+    let step = RELEASE_WORKFLOW
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .position(|l| l.contains("release_guard.py") && l.contains("--version"));
+    let first_build = RELEASE_WORKFLOW
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .position(|l| l.starts_with("  webui:"));
+    assert!(
+        step.is_some(),
+        "release.yml no longer runs release_guard.py --version"
+    );
+    assert!(
+        step < first_build,
+        "release_guard.py must run in the first job, before anything is built"
+    );
+}
