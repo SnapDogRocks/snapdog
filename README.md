@@ -29,7 +29,7 @@ SnapDog turns a Linux box (or a Mac) into a synchronized multi-room audio system
 | 🎵 **AirPlay 1 + 2** | Per-zone receivers, stream from iPhone/Mac |
 | 🎧 **Spotify Connect** | Per-zone receivers via librespot |
 | 📻 **Internet Radio** | Station list with live ICY metadata (artist/title parsing, dynamic cover art) |
-| 📚 **Subsonic/Navidrome** | Personal music library with playlist navigation and seek |
+| 📚 **Subsonic/Navidrome** | Personal music library with playlist navigation, seek, search, and playlist editing through the API |
 | 💾 **Track Cache** | Disk-backed LRU cache for Subsonic tracks — instant seek, replay, and look-ahead prefetch |
 | ⚡ **Source Conflict** | Configurable priority: `last_wins` or `receiver_wins` (AirPlay/Spotify vs local) |
 | 🎨 **Cover Art** | Content-addressed caching, ICY StreamUrl fallback, unified per-zone endpoint |
@@ -342,6 +342,8 @@ url = "https://music.example.com"
 username = "user"
 password = "pass"
 # format = "raw"                      # raw | flac | mp3 | opus
+# refresh_secs = 60                   # Read the playlist list this often, a change sends `playlists_changed` (0 = off)
+# playlist_write = false              # Let the REST API create, rename, reorder and delete Subsonic playlists
 # [subsonic.cache]
 # path = "~/.cache/snapdog/tracks"    # Cache directory
 # max_size_mb = 2048                  # LRU eviction
@@ -408,6 +410,17 @@ alternative is named.
   "API documentation (OpenAPI)" below for what that costs). The OpenAPI document is served on its own at
   `GET /api/v1/openapi.json`, and that route needs the key when `api_keys` is set.
 
+- **Media API: playlists have a stable `playlist_id`, and `id` is deprecated.** Nothing breaks with this release. A client
+  that reads or sends the playlist `id`, or `playlist` in the WebSocket event `zone_changed`, has to move to `index`,
+  `playlist_index` and `playlist_id` before SnapDog 1.0 removes them, which breaks compatibility of `/api/v1` for clients
+  that still use them. The server now also sends `playlists_changed`, reads the Subsonic playlist list every
+  `[subsonic].refresh_secs` seconds, and can create and edit Subsonic playlists through the API when
+  `[subsonic].playlist_write = true`, which is off by default because authentication is optional.
+  [docs/upgrading.md](docs/upgrading.md) has the details.
+- **KNX device mode: product database version 14.** Zones get three seek objects, and Playlist Step Up/Down and Playlist
+  Name swap their object numbers (36 and 37). If you programmed the device from ETS with 0.30.0, import the new
+  `snapdog.knxprod`, link those two objects again and download the device. [docs/upgrading.md](docs/upgrading.md) has the
+  details, and this has not been tried in ETS with a real project yet.
 - **KNX device mode.** A malformed `[knx].url`, a malformed global group address (`all_stop`, `knx_time` and the
   others) or an IPv6 `[knx].bind` now stops the start when the configuration loads, with the key named; before, the
   mistake surfaced later or never. `knx-memory.bin` is format version 2: **an older SnapDog cannot read it**, starts the
