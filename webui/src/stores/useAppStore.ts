@@ -25,6 +25,7 @@ const DEFAULT_TRACK: TrackMetadata = {
   source: "idle",
   cover_url: null,
   playlist_index: null,
+  playlist_id: null,
   playlist_name: null,
   playlist_total: null,
   playlist_track_index: null,

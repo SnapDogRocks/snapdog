@@ -7,6 +7,7 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useClientDrop } from "@/hooks/useClientDrop";
 import type { WsNotification } from "@/lib/types";
+import { trackFromZoneChanged } from "@/lib/ws-zone";
 import { ApiKeyPrompt } from "@/components/ApiKeyPrompt";
 import { api } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";
@@ -201,31 +202,7 @@ export default function Home() {
             source: n.source,
             shuffle: n.shuffle,
             repeat: n.repeat,
-            track: {
-              title: n.title,
-              artist: n.artist,
-              album: n.album,
-              album_artist: n.album_artist,
-              genre: n.genre,
-              year: n.year,
-              track_number: n.track_number,
-              disc_number: n.disc_number,
-              duration_ms: n.duration_ms,
-              position_ms: n.position_ms,
-              seekable: n.seekable,
-              cover_url: n.cover_url,
-              bitrate_kbps: n.bitrate_kbps,
-              content_type: n.content_type,
-              playlist_index: n.playlist,
-              playlist_name: n.playlist_name,
-              playlist_total: n.playlist_total,
-              playlist_track_index: n.track_index,
-              playlist_track_count: n.track_count,
-              can_playlist_next: n.can_playlist_next,
-              can_playlist_prev: n.can_playlist_prev,
-              can_next: n.can_next,
-              can_prev: n.can_prev,
-            },
+            track: trackFromZoneChanged(n),
           });
           break;
         case "zone_volume_changed":
