@@ -62,13 +62,13 @@ crate, excluding docs and translations):
 |---|---|
 | `snapdog` `webui` | `src/lib/api.ts` (sends `{ id: playlistIndex }`, reads `PlaylistInfo`), `components/PlaylistBrowser.tsx` (`pl.id` as key, selection, play, cover path), `lib/types.ts`, `stores/useAppStore.ts`, `components/ZoneDetail.tsx` |
 | `snapdog` `demo-backend` | `server.js`: a mock of the API. Its zone state already has a field `playlist_id` that holds a **number** (the index, lines 397, 423, 441, 629) and a track list with `id`. It must be aligned or the mock contradicts the new contract |
-| `snapdog-ios` | `SnapDogKit` `APIClient.swift` (`["id": playlistId, ...]`), `Models.swift`, `WsNotification.swift` (`playlist`), `AppState.swift`, `DemoCatalog.swift`, `PlaylistBrowserView.swift`, tests |
+| `snapdog-ios` | The shared packages `SnapDogKit` (`APIClient.swift` with `["id": playlistId, ...]`, `Models.swift`, `WsNotification.swift` with `playlist`, `AppState.swift`, `DemoCatalog.swift`) and `SnapDogUI` (`PlaylistBrowserView.swift` and the navigation views), tests. All Apple targets build on these packages: iOS, iPadOS, **macOS** (`SnapDogMac`, macOS 26; the packages declare macOS 14), watchOS and visionOS. `SnapDogMac` and `SnapDogVision` hold no playlist code of their own. The **watch app** does: `SnapDogWatchApp.swift` (`WatchPlaylistView` lists `PlaylistInfo`, passes `playlist.id` on as the index to `WatchTrackListView`, which calls `playPlaylist` and `listTracks(playlistId:)`) |
 | `snapdog-client-android` | `data/api/KtorSnapDogApi.kt` (`mapOf("id" to playlistId, ...)`), `SnapDogApi.kt`, `domain/model/WsNotification.kt` (`playlist`), `SnapDogViewModel.kt`, `LibraryPanel.kt`, demo API and its test |
 | `pysnapdog` | `client.py` (`{"id": playlist}`), `models.py`, `events.py` (`playlist`), pinned `spec/*.json`, tests |
 | `snapdog-homeassistant` | `coordinator.py` (maps `event.playlist` to `playlist_index`), `media_player.py`, tests. Depends on `pysnapdog` |
 | `snapdog-web` | API pages (`api-rest`, `api-websocket`, `api-reference`), `assets/openapi.json` |
 | `snapdog` docs | `docs/mqtt.md`, `docs/knx-bridge.md`, `docs/upgrading.md`, `docs/api/asyncapi.json`, `openapi.json` |
-| Not affected | `snapdog-os` (its `playlist` fields are KNX group-object names of the server configuration), the macOS server app (the same names, in `ConfigView.swift`), `snapdog-client` (D-Bus), `snapcast-rs`, `shairplay-rust` |
+| Not affected | `snapdog-os` (its `playlist` fields are KNX group-object names of the server configuration), the macOS **server** app in `snapdog/macos-helper` (it never calls the REST API; its only hit is the same KNX name list in `ConfigView.swift`), `snapdog-client` (D-Bus), `snapcast-rs`, `shairplay-rust` |
 
 The Android client is missing from the project overview in the workspace
 `CLAUDE.md`. It is a consumer and is in the plan.
@@ -123,7 +123,7 @@ dependencies. Rows in the same group can run in parallel.
 | WP | Repository | Work | Size |
 |---|---|---|---|
 | WP-3d | `snapdog` `webui` | `api.ts` sends `index`, `PlaylistBrowser.tsx` keys and selects by `playlist_id`, types and store use `playlist_index` and `playlist_id`, handle `playlists_changed` by reloading the list | M |
-| WP-3e | `snapdog-ios` (+ Watch target) | `APIClient` sends `index`; `Models` and `WsNotification` read `index`, `playlist_index`, `playlist_id`; browser keyed by `playlist_id`; demo catalogue and tests; new app version. Store release is a separate decision | M |
+| WP-3e | `snapdog-ios` (all Apple targets) | In the shared packages: `APIClient` sends `index`; `Models` and `WsNotification` read `index`, `playlist_index`, `playlist_id`; browser keyed by `playlist_id`; demo catalogue and tests. In the watch app: `WatchPlaylistView` and `WatchTrackListView` take `playlist_id` or `index` instead of `playlist.id`. Build and test every target (iOS, macOS, watchOS, visionOS), because they share the packages. New app version, the store release is a separate decision | M, with a wider qualification than the code change |
 | WP-3f | `snapdog-client-android` | Same as iOS in `KtorSnapDogApi`, `WsNotification`, `SnapDogViewModel`, `LibraryPanel`, demo API and test | M |
 | WP-3g | `snapdog-homeassistant` | Move the coordinator to `event.playlist_index`; depends on WP-3a (`pysnapdog==0.2.0`). First media browser: `BROWSE_MEDIA`, `play_media` and `select_source` by `playlist_id`, `app_name` only for the AirPlay and Spotify override | L |
 
@@ -153,7 +153,7 @@ rest on reading code:
 | `pysnapdog` | Tests build play bodies with `index` and models without `id`; a repository check that no source file reads the deprecated names |
 | `snapdog-homeassistant` | The same through `pysnapdog` 0.2.0, plus the coordinator test with an event that has `playlist_index` and no `playlist` |
 | `webui` | `grep` check in CI for `{ id:` in playlist calls, or a typed client that has no `id` field |
-| `snapdog-ios`, Android | A unit test that encodes the play body and asserts no `id` key; decode tests against a payload without `playlist` |
+| `snapdog-ios` (packages and watch app), Android | A unit test that encodes the play body and asserts no `id` key; decode tests against a payload without `playlist`; the watch app has no use of `playlist.id` left. One test in `SnapDogKit` covers iOS, macOS and visionOS, which share it |
 | Server docs | `openapi.json` marks the entries; the guard in WP-1c |
 
 ## 5. Tracking: where issues are worth it
@@ -194,4 +194,5 @@ Creating the epic and the issues needs the RFC and this plan to be public first
   `snapdog-homeassistant`). Their pull requests merge by hand or through the merge
   queue now enabled there.
 - **The macOS server app and `snapdog-os` use the word "playlist" only for KNX
-  names.** They are unaffected and listed so nobody searches again.
+  names.** They are unaffected and listed so nobody searches again. The Mac
+  *client* is not in that group: it is a target of `snapdog-ios` and changes with WP-3e.
