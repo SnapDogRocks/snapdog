@@ -46,6 +46,9 @@ jobs:
           TAG=${GITHUB_REF#refs/tags/}
           VERSION=${TAG#v}
           REVISION=$(git rev-parse HEAD)
+          # No 1.x version (pre-releases included) while the API description has a
+          # deprecated entry, MED-0011 section 2.8. Nothing is built before this passes.
+          python3 .github/scripts/release_guard.py --version "$VERSION"
           CREATED=$(git show -s --format=%cI HEAD)
           release=$(python3 .github/scripts/release_state.py resolve "$GITHUB_REPOSITORY" "$TAG")
           PRERELEASE=$(jq -r .prerelease <<<"$release")
