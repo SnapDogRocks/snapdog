@@ -10,6 +10,9 @@
         "playback_error": {
           "$ref": "#/components/messages/playback_error"
         },
+        "playlists_changed": {
+          "$ref": "#/components/messages/playlists_changed"
+        },
         "zone_changed": {
           "$ref": "#/components/messages/zone_changed"
         },
@@ -125,6 +128,32 @@
           "type": "object"
         },
         "title": "Playback error occurred."
+      },
+      "playlists_changed": {
+        "contentType": "application/json",
+        "name": "playlists_changed",
+        "payload": {
+          "description": "The list of playlists, an index or a name may have changed. Read `GET /media/playlists`\nagain.",
+          "properties": {
+            "total": {
+              "description": "Number of playlists now (radio list included).",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "playlists_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "total",
+            "type"
+          ],
+          "type": "object"
+        },
+        "title": "The list of playlists, an index or a name may have changed. Read `GET /media/playlists`\nagain."
       },
       "zone_changed": {
         "contentType": "application/json",
@@ -642,6 +671,9 @@
         },
         {
           "$ref": "#/channels/notifications/messages/zone_presence_changed"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/playlists_changed"
         },
         {
           "$ref": "#/channels/notifications/messages/playback_error"

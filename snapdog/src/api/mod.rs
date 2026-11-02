@@ -11,6 +11,7 @@ pub mod error;
 mod health;
 pub mod openapi;
 mod routes;
+pub use routes::media::run_playlist_refresh;
 mod webui;
 pub mod ws;
 
@@ -189,6 +190,15 @@ pub async fn serve<S: BuildHasher>(
     .await
 }
 
+/// Aborts its task when dropped, so a background task ends with the server.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Start the HTTP server on every listener, all of them serving the same application.
 ///
 /// # Errors
@@ -224,6 +234,11 @@ pub async fn serve_on<S: BuildHasher>(
     });
 
     let app = build_router(&state);
+
+    // Reads the Subsonic playlist list on an interval and announces changes. Stops with the server.
+    let _refresh = AbortOnDrop(tokio::spawn(routes::media::run_playlist_refresh(
+        state.clone(),
+    )));
 
     let tls_enabled = state.config.http.tls_cert.is_some();
     let scheme = if tls_enabled { "https" } else { "http" };

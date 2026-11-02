@@ -23,6 +23,14 @@ or MQTT.
   `.../tracks`, and the MQTT topic `zones/<n>/playlist/by-id/set`. The paths without `by-id` take the
   index. Until 1.0 the segment can be misread, because `id` still means the index.
 - KNX keeps the one-byte playlist number. A group address cannot carry a string.
+- The WebSocket sends `playlists_changed` (with the new `total`) when the list, an index or a name
+  changed, and a client should then read `GET /media/playlists` again. SnapDog reads the Subsonic
+  list every `[subsonic].refresh_secs` seconds (default 60, `0` turns it off), so a change made in
+  another Subsonic client shows up within that interval. A failed read keeps the last good list and
+  logs a warning.
+- `GET /media/playlists/{playlist_index}/tracks` (and the `by-id` variant) accepts `limit` and `offset`.
+  With either, the same array is cut and the header `X-Total-Count` has the full number of tracks.
+  Without them the response is as before.
 
 ### Deprecated, and removed with 1.0
 

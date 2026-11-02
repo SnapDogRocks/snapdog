@@ -189,6 +189,7 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
             format: SubsonicFormat::default(),
             tls_skip_verify: false,
             cache: SubsonicCacheConfig::default(),
+            refresh_secs: 60,
         });
     }
 

@@ -971,6 +971,15 @@ pub struct SubsonicConfig {
     /// Track cache configuration.
     #[serde(default)]
     pub cache: SubsonicCacheConfig,
+    /// Seconds between reads of the playlist list. A change sends `playlists_changed` on the
+    /// WebSocket. Subsonic has no push channel, so a change made elsewhere shows up within this
+    /// interval. `0` turns the background read off, the list is then only read on demand.
+    #[serde(default = "default_playlist_refresh_secs")]
+    pub refresh_secs: u64,
+}
+
+const fn default_playlist_refresh_secs() -> u64 {
+    60
 }
 
 /// Subsonic track cache configuration.

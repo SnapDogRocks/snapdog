@@ -175,6 +175,12 @@ pub enum Notification {
         /// Whether the auto-off timer is running.
         timer_active: bool,
     },
+    /// The list of playlists, an index or a name may have changed. Read `GET /media/playlists`
+    /// again.
+    PlaylistsChanged {
+        /// Number of playlists now (radio list included).
+        total: usize,
+    },
     /// Playback error occurred.
     PlaybackError {
         /// Zone index (1-based).

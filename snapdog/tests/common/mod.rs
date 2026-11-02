@@ -150,6 +150,29 @@ impl TestApp {
         (status, json)
     }
 
+    /// `GET` that also returns the `X-Total-Count` header, if any.
+    pub async fn get_with_total(
+        &self,
+        uri: &str,
+    ) -> (StatusCode, serde_json::Value, Option<String>) {
+        let router = api::build_router(&self.state);
+        let req = Request::builder()
+            .uri(uri)
+            .body(Body::empty())
+            .expect("build request");
+        let resp = router.oneshot(req).await.expect("router responds");
+        let status = resp.status();
+        let total = resp
+            .headers()
+            .get("x-total-count")
+            .map(|v| v.to_str().expect("ascii header").to_owned());
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("collect body");
+        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+        (status, json, total)
+    }
+
     /// Convenience: `GET` with no body.
     pub async fn get(&self, uri: &str) -> (StatusCode, serde_json::Value) {
         self.request("GET", uri, None).await
