@@ -3,6 +3,24 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## Media API: creating and changing Subsonic playlists (off by default)
+
+Nothing changes until you switch it on with `[subsonic].playlist_write = true`.
+
+- `POST /media/playlists`, `PATCH` and `DELETE /media/playlists/by-id/{playlist_id}` and
+  `PUT /media/playlists/by-id/{playlist_id}/tracks` create, rename, add and remove tracks, replace
+  the content and delete Subsonic playlists. With the switch off every one of them answers 403
+  `read_only`. Authentication in SnapDog is optional, so with the switch on anyone who can reach the
+  API can change the playlists of your music library, within the rights of the Subsonic user in
+  `[subsonic]`. Turn it on together with `[http].api_keys` if the API is reachable beyond your own
+  network.
+- The radio list (`snapdog:radio`) is configuration and answers 403 whatever the switch says.
+- A refusal by Subsonic (a user without rights) answers 502 with its message, a playlist that does
+  not exist 404. Every successful write sends `playlists_changed`. Creating or deleting a playlist
+  moves the indices behind it, so use the `playlist_id` the answer carries.
+- A write to a playlist that a zone is playing changes what the zone plays from the next track on, not
+  the current track.
+
 ## Media API: search, cover proxy and album playback
 
 Nothing has to be done. New endpoints, nothing changed.

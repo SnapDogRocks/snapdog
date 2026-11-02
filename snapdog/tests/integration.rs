@@ -35,6 +35,7 @@ fn subsonic_config() -> Option<config::SubsonicConfig> {
         tls_skip_verify: false,
         cache: config::SubsonicCacheConfig::default(),
         refresh_secs: 60,
+        playlist_write: false,
     })
 }
 

@@ -1544,6 +1544,82 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Create a Subsonic playlist",
+        "description": "Needs `[subsonic].playlist_write = true`, otherwise 403 `read_only`. Answers 201 with the new\nplaylist. Creating a playlist can move the indices behind it, so address it by `playlist_id`.",
+        "operationId": "create_playlist",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlaylist"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Playlist created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Writing playlists is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Subsonic refused or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Subsonic is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/media/playlists/by-id/{playlist_id}": {
@@ -1594,6 +1670,153 @@
           },
           "502": {
             "description": "Upstream request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Delete a Subsonic playlist",
+        "description": "Needs `[subsonic].playlist_write = true`. `snapdog:radio` answers 403. Playlists behind the\ndeleted one move up by one index.",
+        "operationId": "delete_playlist",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "description": "Stable playlist reference, percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Playlist deleted"
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Writing playlists is off, or the radio list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Subsonic refused or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Change a Subsonic playlist",
+        "description": "Rename, append tracks and remove tracks by position, the three operations of `updatePlaylist`,\nin one call. Needs `[subsonic].playlist_write = true`. `snapdog:radio` answers 403. A zone that\nplays the playlist keeps its current track and uses the new content from the next track on.",
+        "operationId": "update_playlist",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "description": "Stable playlist reference, percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchPlaylist"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Playlist changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Nothing to change, or an empty name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Writing playlists is off, or the radio list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Subsonic refused or failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -1685,6 +1908,83 @@
           },
           "502": {
             "description": "Upstream request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "media"
+        ],
+        "summary": "Replace the tracks of a Subsonic playlist",
+        "description": "Sets the complete content and the order. Needs `[subsonic].playlist_write = true`.\n`snapdog:radio` answers 403.",
+        "operationId": "replace_playlist_tracks",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "description": "Stable playlist reference, percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceTracks"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Playlist replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "403": {
+            "description": "Writing playlists is off, or the radio list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Subsonic refused or failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -5691,6 +5991,26 @@
           }
         }
       },
+      "CreatePlaylist": {
+        "type": "object",
+        "description": "Body of `POST /media/playlists`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the new playlist."
+          },
+          "track_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Subsonic track ids to start with, in order."
+          }
+        }
+      },
       "EqBand": {
         "type": "object",
         "description": "Single EQ band configuration.",
@@ -5837,6 +6157,34 @@
           "track": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "PatchPlaylist": {
+        "type": "object",
+        "description": "Body of `PATCH /media/playlists/by-id/{playlist_id}`: the three operations of `updatePlaylist`.",
+        "properties": {
+          "add_track_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Subsonic track ids appended to the end."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New name."
+          },
+          "remove_positions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Positions (0-based, in the playlist as it is now) of tracks to remove."
           }
         }
       },
@@ -6215,6 +6563,22 @@
           "track",
           "playlist"
         ]
+      },
+      "ReplaceTracks": {
+        "type": "object",
+        "description": "Body of `PUT /media/playlists/by-id/{playlist_id}/tracks`.",
+        "required": [
+          "track_ids"
+        ],
+        "properties": {
+          "track_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The complete new content, in order."
+          }
+        }
       },
       "Row": {
         "type": "object",
