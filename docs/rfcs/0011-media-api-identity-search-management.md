@@ -74,8 +74,11 @@ shipped (HAI-0010).
 Every playlist gets a string `playlist_id`, next to the unchanged index `id`. The name
 follows `track_id` and `album_id`, which the search results already use. Note that in
 `PlaylistInfo`, `PlaylistDetails` and the play body `id` means the *index*, so the
-documentation says so beside both fields. Paths call the index `{playlist_index}`
-and the new reference `by-id/{playlist_id}`.
+documentation says so beside both fields. `id` stays, because renaming it would break the
+web interface, the iOS app and `pysnapdog` 0.1.0 inside `/api/v1`. Since `id` means
+the index, no new path says `by-id`: the media paths use `by-playlist-id/{playlist_id}`,
+the zone resources are the siblings `playlist-id` of `playlist`, and MQTT uses
+`playlist-id/set` next to `playlist/set`. Paths call the index `{playlist_index}`.
 
 The rule: `playlist_id` is the prefix of the provider plus the identifier that provider's
 system uses for the playlist, unchanged and unique within that system. SnapDog
@@ -113,23 +116,23 @@ Where `playlist_id` appears:
   and are never accepted side by side in one body, so there is no "both or neither"
   case and every body has one type.
   - `PUT /zones/{z}/playlist` keeps its bare number (the index). New:
-    `PUT /zones/{z}/playlist/by-id` with a bare JSON string as body
-    (`"subsonic:42"`), and `GET /zones/{z}/playlist/by-id` returning the active
+    `PUT /zones/{z}/playlist-id` with a bare JSON string as body
+    (`"subsonic:42"`), and `GET /zones/{z}/playlist-id` returning the active
     `playlist_id` as a string, as `GET /zones/{z}/playlist` returns the index. A string in
     the body needs no percent-encoding, unlike a `playlist_id` in a path.
   - `POST /zones/{z}/play/playlist` keeps `{"id": n, "track": n}`. New:
-    `POST /zones/{z}/play/playlist/by-id` with `{"playlist_id": "...", "track": n}`.
+    `POST /zones/{z}/play/playlist-id` with `{"playlist_id": "...", "track": n}`.
   - MQTT `snapdog/zones/{z}/playlist/set` keeps the index. New:
-    `snapdog/zones/{z}/playlist/id/set` with the `playlist_id` as text payload.
+    `snapdog/zones/{z}/playlist-id/set` with the `playlist_id` as text payload.
   - An unknown `playlist_id` is a 404 in every case.
-- Reading. `GET /media/playlists/by-id/{playlist_id}` and `.../by-id/{playlist_id}/tracks`
+- Reading. `GET /media/playlists/by-playlist-id/{playlist_id}` and `.../by-playlist-id/{playlist_id}/tracks`
   (percent-encoded), with the same bodies as the index paths. The existing paths
   stay and keep resolving by index.
 
 Where `playlist_id` is deliberately not added:
 
 - `POST /zones/{z}/play/playlist/{playlist_index}/track` keeps its index path. The
-  `by-id` variant of `POST /zones/{z}/play/playlist` covers the same use, so a
+  `POST /zones/{z}/play/playlist-id` covers the same use, so a
   second path with a `playlist_id` would only duplicate it.
 - `POST /zones/{z}/play/subsonic/{track_id}` already takes the Subsonic id of the
   track.
@@ -166,7 +169,7 @@ within one refresh interval. The documentation states that figure.
 
 ### 2.3 Paging tracks
 
-`GET /media/playlists/{p}/tracks` and the `by-id` variant accept `limit` and
+`GET /media/playlists/{p}/tracks` and the `by-playlist-id` variant accept `limit` and
 `offset`. Without them the response is what it is today. With them the response
 is the same array, cut, and the header `X-Total-Count` carries the number of
 tracks. The array form is kept so that existing parsers keep working.
@@ -212,9 +215,9 @@ Subsonic playlists only, passed through to `createPlaylist`, `updatePlaylist` an
 | Call | Effect |
 |---|---|
 | `POST /media/playlists` | `{ "name", "track_ids": [] }`, answers 201 with the new `PlaylistInfo` |
-| `PATCH /media/playlists/by-id/{playlist_id}` | `{ "name"?, "add_track_ids"?, "remove_positions"? }`, the three operations of `updatePlaylist` |
-| `PUT /media/playlists/by-id/{playlist_id}/tracks` | `{ "track_ids": [] }` replaces the content and the order |
-| `DELETE /media/playlists/by-id/{playlist_id}` | deletes |
+| `PATCH /media/playlists/by-playlist-id/{playlist_id}` | `{ "name"?, "add_track_ids"?, "remove_positions"? }`, the three operations of `updatePlaylist` |
+| `PUT /media/playlists/by-playlist-id/{playlist_id}/tracks` | `{ "track_ids": [] }` replaces the content and the order |
+| `DELETE /media/playlists/by-playlist-id/{playlist_id}` | deletes |
 
 - **Operator switch.** `[subsonic].playlist_write = false` by default. With it off,
   every call above answers 403 `read_only`. Authentication in SnapDog is optional,
@@ -251,12 +254,17 @@ RFC.
   field, because clients treat `playlist_id` as an opaque string.
 - **Put the id into the existing `id`** as a string. Breaks every client that
   parses it as a number, including the web interface and `pysnapdog` 0.1.0.
+- **Rename `id` to `index`.** Clearer, and a break for the web interface
+  (`api.ts`, `PlaylistBrowser.tsx`), the iOS app (a published app cannot be updated
+  together with the server) and `pysnapdog` 0.1.0, which the Home Assistant
+  integration depends on. An additive `index` next to `id` would avoid the break and
+  was left out on purpose: the documentation states that `id` is the index.
 - **One endpoint that accepts the index or the `playlist_id`** (a number or an object, or two
   keys in one body). Needs a rule for "both" and "neither", an untagged type in the
-  schema and a guess for MQTT. Separate `by-id` endpoints cost a route each and
+  schema and a guess for MQTT. Separate `by-playlist-id` endpoints cost a route each and
   keep every body a single type.
 - **Accept ids and indices in the same path segment.** Subsonic ids can be
-  numeric, so `/media/playlists/12` would be ambiguous. A separate `by-id` prefix
+  numeric, so `/media/playlists/12` would be ambiguous. A separate `by-playlist-id` prefix
   has no such case.
 - **Let clients poll for changes.** What the integration would do anyway, at a
   cost on both sides and with a delay chosen by the client. The event costs one
@@ -286,10 +294,10 @@ Dependencies: none
 - MED-M1-A1: every playlist in `GET /media/playlists` and `.../{p}` has a `playlist_id`
   (`snapdog:radio`, `subsonic:<id>`), and `id` is unchanged. A test with and without
   configured radios shows the indices shifting while the `playlist_id` values stay.
-- MED-M1-A2: `by-id` reads work and answer 404 for an unknown `playlist_id`.
-  `PUT /zones/{z}/playlist/by-id`, `POST /zones/{z}/play/playlist/by-id` and MQTT
-  `playlist/id/set` start the same playlist as their index counterparts and answer
-  404 (MQTT: a warning) for an unknown `playlist_id`. `GET /zones/{z}/playlist/by-id`,
+- MED-M1-A2: `by-playlist-id` reads work and answer 404 for an unknown `playlist_id`.
+  `PUT /zones/{z}/playlist-id`, `POST /zones/{z}/play/playlist-id` and MQTT
+  `playlist-id/set` start the same playlist as their index counterparts and answer
+  404 (MQTT: a warning) for an unknown `playlist_id`. `GET /zones/{z}/playlist-id`,
   `GET /zones/{z}/playlist/info` and the MQTT state payload carry the `playlist_id`. The
   index endpoints behave as before (positive and negative probe each).
 - MED-M1-A3: with the Subsonic server stopped, a running server keeps the last good
