@@ -502,6 +502,13 @@ fn validate_knx_addresses(raw: &FileConfig) -> Result<()> {
     }
     for zone in &raw.zone {
         validate_zone_knx(&zone.knx).with_context(|| format!("Zone '{}' KNX error", zone.name))?;
+        if let Some(secs) = zone.seek_interval_secs {
+            anyhow::ensure!(
+                types::SEEK_INTERVAL_SECS.contains(&secs),
+                "Zone '{}': seek_interval_secs must be 1 to 60, not {secs}",
+                zone.name
+            );
+        }
     }
     for client in &raw.client {
         validate_client_knx(&client.knx)
@@ -918,6 +925,9 @@ fn validate_zone_knx(knx: &RawZoneKnxConfig) -> Result<()> {
         &knx.play_pause,
         &knx.track_step,
         &knx.track_step_updown,
+        &knx.track_position,
+        &knx.track_seek,
+        &knx.track_seek_updown,
         &knx.shuffle,
         &knx.shuffle_status,
         &knx.shuffle_toggle,
@@ -1316,6 +1326,40 @@ mod tests {
         )
         .unwrap();
         assert!(load_raw(raw).is_ok());
+    }
+
+    fn seek_interval_config(secs: &str) -> Result<AppConfig> {
+        let raw: FileConfig = toml::from_str(&format!(
+            r#"
+            [[zone]]
+            name = "A"
+            {secs}
+
+            [[client]]
+            name = "X"
+            mac = "00:00:00:00:00:00"
+            zone = "A"
+        "#
+        ))
+        .unwrap();
+        load_raw(raw)
+    }
+
+    #[test]
+    fn the_seek_interval_defaults_to_ten_seconds_and_takes_one_to_sixty() {
+        assert_eq!(
+            seek_interval_config("").unwrap().zones[0].seek_interval_secs,
+            10
+        );
+        for secs in [1, 30, 60] {
+            let config = seek_interval_config(&format!("seek_interval_secs = {secs}")).unwrap();
+            assert_eq!(config.zones[0].seek_interval_secs, secs);
+        }
+        for secs in [0, 61] {
+            let err = seek_interval_config(&format!("seek_interval_secs = {secs}"))
+                .expect_err("out of range");
+            assert!(format!("{err:#}").contains("seek_interval_secs"), "{err:#}");
+        }
     }
 
     #[test]

@@ -379,6 +379,9 @@ icon = "🏠"
 # Name shown in the Spotify app. Default: [spotify].name (a prefix when there are several
 # zones, see above), without it the zone name:
 # spotify_name = "Ground Floor (Spotify)"
+# How far one KNX seek step (Track Seek objects) jumps, in seconds, 1 to 60. Default: 10.
+# In device mode ETS sets it per zone.
+# seek_interval_secs = 10
 
 # Optional: presence-triggered playback
 # [zone.presence]
@@ -389,7 +392,7 @@ icon = "🏠"
 # to = "09:00"
 # source = "radio:0"                # radio:<index>, playlist:<id>, or "none"
 
-# Optional: KNX group addresses (33 group objects per zone).
+# Optional: KNX group addresses (44 group objects per zone).
 # [zone.knx]
 # volume = "1/1/1"                  # DPT 5.001 — set volume (0–100%)
 # volume_status = "1/1/2"           # DPT 5.001 — volume feedback
@@ -429,6 +432,9 @@ icon = "🏠"
 # play_pause = "1/1/3"             # DPT 1.001 — 1 = play, 0 = pause
 # track_step = "1/1/8"             # DPT 1.007 — track step (1 = next, 0 = previous)
 # track_step_updown = "1/1/17"     # DPT 1.008 — track step for an up/down rocker (1 = down = next, 0 = up = previous)
+# track_position = "1/1/18"        # DPT 5.001 — seek to a position, percent of the track
+# track_seek = "1/1/19"            # DPT 1.007 — seek step (1 = forward, 0 = back by seek_interval_secs)
+# track_seek_updown = "1/1/24"     # DPT 1.008 — seek step for an up/down rocker (1 = down = forward, 0 = up = back)
 # presence = "1/1/50"              # DPT 1.018 — set presence
 # presence_enable = "1/1/51"       # DPT 1.001 — enable/disable auto-off
 # presence_enable_status = "1/1/52" # DPT 1.001 — auto-off enabled feedback

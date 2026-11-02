@@ -19,11 +19,11 @@ use snapdog::knx::group_objects::{
     ZGO_PLAYLIST_STEP_UPDOWN, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE,
     ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS,
     ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT,
-    ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS, ZGO_TRACK_PLAYING, ZGO_TRACK_PREVIOUS,
-    ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE,
-    ZGO_TRACK_STEP, ZGO_TRACK_STEP_UPDOWN, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
-    ZGO_VOLUME_STATUS, ZONE_GO_SLOTS, ZONE_GO_STRIDE, ZONE_GOS, client_asap, global_asap, mem,
-    zone_asap,
+    ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS, ZGO_TRACK_PLAYING, ZGO_TRACK_POSITION,
+    ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS,
+    ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_SEEK, ZGO_TRACK_SEEK_UPDOWN, ZGO_TRACK_STEP,
+    ZGO_TRACK_STEP_UPDOWN, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
+    ZONE_GO_SLOTS, ZONE_GO_STRIDE, ZONE_GOS, client_asap, global_asap, mem, zone_asap,
 };
 
 const AID: &str = "M-00FA_A-FF01-01-0000";
@@ -272,8 +272,8 @@ const ZONE_GROUPS: &[CoGroup] = &[
             ZGO_PLAYLIST_NEXT,
             ZGO_PLAYLIST_PREVIOUS,
             ZGO_PLAYLIST_STEP,
-            ZGO_PLAYLIST_NAME,
             ZGO_PLAYLIST_STEP_UPDOWN,
+            ZGO_PLAYLIST_NAME,
         ],
     },
     CoGroup {
@@ -286,6 +286,9 @@ const ZONE_GROUPS: &[CoGroup] = &[
             ZGO_TRACK_PROGRESS,
             ZGO_TRACK_NUMBER,
             ZGO_TRACK_NUMBER_STATUS,
+            ZGO_TRACK_POSITION,
+            ZGO_TRACK_SEEK,
+            ZGO_TRACK_SEEK_UPDOWN,
         ],
     },
     CoGroup {
@@ -435,6 +438,7 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     // Numeric
     pt_num(x, "Percent", 8, "unsignedInt", 0, 100);
     pt_num(x, "UInt8", 8, "unsignedInt", 0, 255);
+    pt_num(x, "SeekSecs", 8, "unsignedInt", 1, 60);
     pt_num(x, "UInt16", 16, "unsignedInt", 0, 65535);
     // Enums
     pt_enum(
@@ -742,6 +746,22 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "Presence source (0=none, 1..20=radio)",
             "0",
             mem::ZONE_PRES_SRC + i,
+            8,
+            &mut spans,
+        );
+    }
+    for z in 1..=MAX_ZONES {
+        let p = format!("Z{z:02}");
+        let i = z - 1;
+        param_mem(
+            x,
+            &p,
+            "009",
+            "SeekInt",
+            "SeekSecs",
+            "Seek interval (s)",
+            "10",
+            mem::ZONE_SEEK_INTERVAL + i,
             8,
             &mut spans,
         );
@@ -1258,7 +1278,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
 /// Committed fingerprint of the exact ETS memory layout. Update this **together with**
 /// `KNXPROD_APP_VERSION` (`group_objects.rs`) whenever the layout changes — the assertion
 /// below prints the new value.
-const EXPECTED_LAYOUT_HASH: u64 = 0xaa67_d41e_a432_9ccb;
+const EXPECTED_LAYOUT_HASH: u64 = 0x1e8d_9ec8_8204_ee54;
 
 /// Guard: fail `.knxprod` generation when the ETS product definition drifts from the
 /// committed fingerprint. ETS decides download scope by `ApplicationVersion`; a change
@@ -1636,7 +1656,7 @@ fn build_dynamic(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::
     // General: the "number of zones"/"number of clients" dropdowns drive which blocks show.
     blocks.push(build_general_block(app));
     // Zones — a zone block is shown when the chosen count is >= this zone's index. Config
-    // knobs: DefVol, MaxVol, AirPlay, Spotify, PresEn, PresTO (sample rate / bit depth are
+    // knobs: DefVol, MaxVol, AirPlay, Spotify, SeekInt, PresEn, PresTO (sample rate / bit depth are
     // global, shown in the General block).
     for z in 1..=MAX_ZONES {
         blocks.push(build_channel_block(
@@ -1649,7 +1669,7 @@ fn build_dynamic(app: &knx_rs_prod::author::AppProgram) -> knx_rs_prod::author::
             ZONE_GROUPS,
             &format!("Z{z:02}"),
             &[
-                "002", "003", "004", "005", "006", "007", "008", "010", "011",
+                "002", "003", "004", "005", "009", "006", "007", "008", "010", "011",
             ],
         ));
     }

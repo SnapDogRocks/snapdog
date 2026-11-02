@@ -77,6 +77,9 @@ pub fn resolve_zone(
         spotify_name,
         knx: resolve_zone_knx(n, raw.knx),
         group_volume_mode: raw.group_volume_mode.unwrap_or(snapcast.group_volume_mode),
+        seek_interval_secs: raw
+            .seek_interval_secs
+            .unwrap_or(super::types::DEFAULT_SEEK_INTERVAL_SECS),
         presence: raw.presence,
     }
 }
@@ -147,6 +150,9 @@ fn resolve_zone_knx(_n: usize, raw: RawZoneKnxConfig) -> ZoneKnxAddresses {
         play_pause: raw.play_pause,
         track_step: raw.track_step,
         track_step_updown: raw.track_step_updown,
+        track_position: raw.track_position,
+        track_seek: raw.track_seek,
+        track_seek_updown: raw.track_seek_updown,
         shuffle: raw.shuffle,
         shuffle_status: raw.shuffle_status,
         shuffle_toggle: raw.shuffle_toggle,

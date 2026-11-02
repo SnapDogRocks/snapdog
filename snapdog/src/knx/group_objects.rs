@@ -63,7 +63,7 @@ pub const HARDWARE_TYPE: [u8; 6] = [0x00, 0x00, 0xFF, 0x01, 0x01, 0x00];
 /// **Bump [`KNXPROD_APP_VERSION`] whenever the KNX memory layout changes** — ETS decides
 /// its download scope by this version, so an unchanged version after a layout change
 /// would leave a device mis-parameterized (see the xtask layout-lock guard).
-pub const KNXPROD_APP_VERSION: u32 = 13;
+pub const KNXPROD_APP_VERSION: u32 = 14;
 /// ETS `ApplicationNumber` (== hardware order number `0xFF01`).
 pub const KNXPROD_APP_NUMBER: u16 = 0xFF01;
 /// Hardware revision (the version byte of [`HARDWARE_TYPE`]).
@@ -221,7 +221,7 @@ const fn go_bidir(
     }
 }
 
-/// Zone group object definitions (41 per zone).
+/// Zone group object definitions (44 per zone).
 ///
 /// Listed in object-number order: the position here is the object's *index* (`ZGO_*`), its number
 /// inside the zone comes from [`ZONE_GO_SLOTS`]. Six groups of ten numbers: transport (0), volume and
@@ -262,8 +262,8 @@ pub const ZONE_GOS: &[GoDefinition] = &[
     go_recv("Playlist Next", DPT_TRIGGER, "DPST-1-17", "1 Bit"),
     go_recv("Playlist Previous", DPT_TRIGGER, "DPST-1-17", "1 Bit"),
     go_recv("Playlist Step", DPT_STEP, "DPST-1-7", "1 Bit"),
-    go_send("Playlist Name", DPT_STRING_8859_1, "DPST-16-1", "14 Bytes"),
     go_recv("Playlist Step Up/Down", DPT_UPDOWN, "DPST-1-8", "1 Bit"),
+    go_send("Playlist Name", DPT_STRING_8859_1, "DPST-16-1", "14 Bytes"),
     // ── Group 4: Track info (numbers 41 to 50 of the zone) ──
     go_send("Track Title", DPT_STRING_8859_1, "DPST-16-1", "14 Bytes"),
     go_send("Track Artist", DPT_STRING_8859_1, "DPST-16-1", "14 Bytes"),
@@ -277,6 +277,11 @@ pub const ZONE_GOS: &[GoDefinition] = &[
         "DPST-5-10",
         "1 Byte",
     ),
+    // Seeking inside the track: to a position in percent of the duration, or a step of the zone's
+    // seek interval (an ETS parameter, 10 s unless set) forward or back.
+    go_recv("Track Position", DPT_SCALING, "DPST-5-1", "1 Byte"),
+    go_recv("Track Seek", DPT_STEP, "DPST-1-7", "1 Bit"),
+    go_recv("Track Seek Up/Down", DPT_UPDOWN, "DPST-1-8", "1 Bit"),
     // ── Group 5: Presence (numbers 51 to 60 of the zone) ──
     // Retriggerable presence trigger: each telegram (re)arms the auto-off timer and starts
     // playback of the zone's configured presence source. Timeout & source are ETS
@@ -422,9 +427,9 @@ pub const ZGO_PLAYLIST_PREVIOUS: usize = 28;
 /// Zone GO index.
 pub const ZGO_PLAYLIST_STEP: usize = 29;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_NAME: usize = 30;
+pub const ZGO_PLAYLIST_STEP_UPDOWN: usize = 30;
 /// Zone GO index.
-pub const ZGO_PLAYLIST_STEP_UPDOWN: usize = 31;
+pub const ZGO_PLAYLIST_NAME: usize = 31;
 /// Zone GO index.
 pub const ZGO_TRACK_TITLE: usize = 32;
 /// Zone GO index.
@@ -438,11 +443,17 @@ pub const ZGO_TRACK_NUMBER: usize = 36;
 /// Zone GO index.
 pub const ZGO_TRACK_NUMBER_STATUS: usize = 37;
 /// Zone GO index.
-pub const ZGO_PRESENCE: usize = 38;
+pub const ZGO_TRACK_POSITION: usize = 38;
 /// Zone GO index.
-pub const ZGO_PRESENCE_ENABLE: usize = 39;
+pub const ZGO_TRACK_SEEK: usize = 39;
 /// Zone GO index.
-pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 40;
+pub const ZGO_TRACK_SEEK_UPDOWN: usize = 40;
+/// Zone GO index.
+pub const ZGO_PRESENCE: usize = 41;
+/// Zone GO index.
+pub const ZGO_PRESENCE_ENABLE: usize = 42;
+/// Zone GO index.
+pub const ZGO_PRESENCE_TIMER_ACTIVE: usize = 43;
 
 // ── Named GO indices (client) ─────────────────────────────────
 
@@ -517,6 +528,9 @@ pub const ZONE_GO_SLOTS: [usize; ZONE_GO_COUNT] = [
     slot(4, 3),
     slot(4, 4),
     slot(4, 5),
+    slot(4, 6),
+    slot(4, 7),
+    slot(4, 8),
     slot(5, 0),
     slot(5, 1),
     slot(5, 2),
@@ -634,11 +648,13 @@ pub mod mem {
     pub const ZONE_PRESENCE_TO: usize = ZONE_PRESENCE_EN + MAX_ZONES;
     /// Zone presence default source (10 × 1 byte; 0 = none, 1..=`MAX_RADIOS` = radio index).
     pub const ZONE_PRES_SRC: usize = ZONE_PRESENCE_TO + MAX_ZONES * 2;
+    /// Zone seek interval in seconds (`MAX_ZONES` × 1 byte; 1 to 60, 0 = unprogrammed, read as 10).
+    pub const ZONE_SEEK_INTERVAL: usize = ZONE_PRES_SRC + MAX_ZONES;
     // Sample rate and bit depth are the global Snapcast output format, not per-zone —
     // see GLOBAL_SRATE / GLOBAL_BITD below.
     /// Clients `1..=NUM_CLIENTS` are active; higher clients are hidden in ETS and inactive
     /// at runtime. Mirrors [`NUM_ZONES`] — replaces the former 10 per-client active flags.
-    pub const NUM_CLIENTS: usize = ZONE_PRES_SRC + MAX_ZONES;
+    pub const NUM_CLIENTS: usize = ZONE_SEEK_INTERVAL + MAX_ZONES;
     /// Client default zone (10 × 1 byte).
     pub const CLIENT_DEF_ZONE: usize = NUM_CLIENTS + 1;
     /// Client default volume (10 × 1 byte).
@@ -826,8 +842,8 @@ mod tests {
 
     #[test]
     fn zone_go_count() {
-        assert_eq!(ZONE_GOS.len(), 41);
-        assert_eq!(ZONE_GO_SLOTS.len(), 41);
+        assert_eq!(ZONE_GOS.len(), 44);
+        assert_eq!(ZONE_GO_SLOTS.len(), 44);
     }
 
     #[test]
@@ -855,6 +871,15 @@ mod tests {
         assert_eq!(zone_asap(1, ZGO_MUTE_TOGGLE), 16);
         // Group 3 (playlist) starts at 31, group 4 (track info) at 41, group 5 (presence) at 51.
         assert_eq!(zone_asap(1, ZGO_PLAYLIST), 31);
+        // Playlist Step Up/Down follows Playlist Step and takes number 36, Playlist Name is 37.
+        assert_eq!(zone_asap(1, ZGO_PLAYLIST_STEP), 35);
+        assert_eq!(zone_asap(1, ZGO_PLAYLIST_STEP_UPDOWN), 36);
+        assert_eq!(zone_asap(1, ZGO_PLAYLIST_NAME), 37);
+        // Seeking sits behind the track number objects (45 and 46).
+        assert_eq!(zone_asap(1, ZGO_TRACK_NUMBER_STATUS), 46);
+        assert_eq!(zone_asap(1, ZGO_TRACK_POSITION), 47);
+        assert_eq!(zone_asap(1, ZGO_TRACK_SEEK), 48);
+        assert_eq!(zone_asap(1, ZGO_TRACK_SEEK_UPDOWN), 49);
         assert_eq!(zone_asap(1, ZGO_TRACK_TITLE), 41);
         assert_eq!(zone_asap(1, ZGO_PRESENCE), 51);
         assert_eq!(zone_asap(1, ZGO_PRESENCE_TIMER_ACTIVE), 53);
@@ -1040,6 +1065,9 @@ mod tests {
             (ZGO_PLAYLIST_NAME, "Playlist Name"),
             (ZGO_PLAYLIST_STEP_UPDOWN, "Playlist Step Up/Down"),
             (ZGO_TRACK_PROGRESS, "Track Progress"),
+            (ZGO_TRACK_POSITION, "Track Position"),
+            (ZGO_TRACK_SEEK, "Track Seek"),
+            (ZGO_TRACK_SEEK_UPDOWN, "Track Seek Up/Down"),
             (ZGO_PRESENCE_TIMER_ACTIVE, "Presence Timer Active"),
         ] {
             assert_eq!(ZONE_GOS[go].name, name);
@@ -1054,8 +1082,16 @@ mod tests {
         assert_eq!(step.dpt_str, "DPST-1-7");
         assert!(step.flags.write && !step.flags.read);
         assert_eq!(ZONE_GOS[ZGO_PLAYLIST_STEP].dpt_str, "DPST-1-7");
+        assert_eq!(ZONE_GOS[ZGO_TRACK_SEEK].dpt_str, "DPST-1-7");
+        let position = &ZONE_GOS[ZGO_TRACK_POSITION];
+        assert_eq!(position.dpt_str, "DPST-5-1");
+        assert!(position.flags.write && !position.flags.read);
         // The rocker variants: DPT 1.008, same bit meaning as the Step objects.
-        for go in [ZGO_TRACK_STEP_UPDOWN, ZGO_PLAYLIST_STEP_UPDOWN] {
+        for go in [
+            ZGO_TRACK_STEP_UPDOWN,
+            ZGO_PLAYLIST_STEP_UPDOWN,
+            ZGO_TRACK_SEEK_UPDOWN,
+        ] {
             let updown = &ZONE_GOS[go];
             assert_eq!(updown.dpt_str, "DPST-1-8");
             assert!(updown.flags.write && !updown.flags.read);

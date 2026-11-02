@@ -423,6 +423,12 @@ pub struct PresenceConfig {
     pub schedule: Vec<PresenceScheduleEntry>,
 }
 
+/// Default seek interval in seconds: how far one KNX seek step jumps.
+pub const DEFAULT_SEEK_INTERVAL_SECS: u8 = 10;
+
+/// Range of the seek interval in seconds.
+pub const SEEK_INTERVAL_SECS: std::ops::RangeInclusive<u8> = 1..=60;
+
 /// Default auto-off delay in seconds (15 minutes).
 pub const DEFAULT_AUTO_OFF_DELAY: u16 = 900;
 
@@ -1130,6 +1136,8 @@ pub struct RawZoneConfig {
     pub knx: RawZoneKnxConfig,
     /// Override group volume mode for this zone.
     pub group_volume_mode: Option<GroupVolumeMode>,
+    /// How far one KNX seek step jumps, in seconds (1 to 60, default 10).
+    pub seek_interval_secs: Option<u8>,
     /// Presence-triggered playback configuration.
     pub presence: Option<PresenceConfig>,
 }
@@ -1203,6 +1211,12 @@ pub struct RawZoneKnxConfig {
     pub track_step: Option<String>,
     /// Track step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
     pub track_step_updown: Option<String>,
+    /// Seek to a position of the track (DPT 5.001, percent of the duration).
+    pub track_position: Option<String>,
+    /// Seek step (DPT 1.007, 1 = forward, 0 = back by the zone's seek interval).
+    pub track_seek: Option<String>,
+    /// Seek step for an up/down rocker (DPT 1.008, 1 = down = forward, 0 = up = back).
+    pub track_seek_updown: Option<String>,
     /// Shuffle command.
     pub shuffle: Option<String>,
     /// Shuffle status feedback.
@@ -1505,6 +1519,8 @@ pub struct ZoneConfig {
     pub knx: ZoneKnxAddresses,
     /// Group volume mode (resolved from zone override or global default).
     pub group_volume_mode: GroupVolumeMode,
+    /// How far one KNX seek step jumps, in seconds.
+    pub seek_interval_secs: u8,
     /// Presence-triggered playback configuration.
     pub presence: Option<PresenceConfig>,
 }
@@ -1578,6 +1594,12 @@ pub struct ZoneKnxAddresses {
     pub track_step: Option<String>,
     /// Track step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
     pub track_step_updown: Option<String>,
+    /// Seek to a position of the track (DPT 5.001, percent of the duration).
+    pub track_position: Option<String>,
+    /// Seek step (DPT 1.007, 1 = forward, 0 = back by the zone's seek interval).
+    pub track_seek: Option<String>,
+    /// Seek step for an up/down rocker (DPT 1.008, 1 = down = forward, 0 = up = back).
+    pub track_seek_updown: Option<String>,
     /// Shuffle command.
     pub shuffle: Option<String>,
     /// Shuffle status feedback.

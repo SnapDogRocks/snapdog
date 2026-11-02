@@ -122,8 +122,8 @@ Undefined numbers are reserved: they get no object in the knxprod and no descrip
 | | 2 | Playlist Next | recv | 1.017 | any value (was 1.001) |
 | | 3 | Playlist Previous | recv | 1.017 | any value (was 1.001) |
 | | 4 | **Playlist Step** | recv | 1.007 | new, 1 next, 0 previous |
-| | 5 | **Playlist Name** | send | 16.001 | new, 14 bytes |
-| | 6 | **Playlist Step Up/Down** | recv | 1.008 | new, 1 down is next, 0 up is previous (rocker) |
+| | 5 | **Playlist Step Up/Down** | recv | 1.008 | new, 1 down is next, 0 up is previous (rocker) |
+| | 6 | **Playlist Name** | send | 16.001 | new, 14 bytes |
 | | 7 to 9 | reserved | | | |
 | **4 Track info** | 0 | Track Title | send | 16.001 | |
 | | 1 | Track Artist | send | 16.001 | |
@@ -131,7 +131,10 @@ Undefined numbers are reserved: they get no object in the knxprod and no descrip
 | | 3 | Track Progress | send | 5.001 | |
 | | 4 | **Track Number** | recv | 5.010 | new, counted from 1, 0 is ignored |
 | | 5 | **Track Number Status** | send | 5.010 | new, 0 without a track |
-| | 6 to 9 | reserved | | | candidate: longer text objects (4.2) |
+| | 6 | **Track Position** | recv | 5.001 | new, seek to a percent of the track |
+| | 7 | **Track Seek** | recv | 1.007 | new, 1 forward, 0 back by the seek interval |
+| | 8 | **Track Seek Up/Down** | recv | 1.008 | new, 1 down is forward, 0 up is back (rocker) |
+| | 9 | reserved | | | candidate: longer text objects (4.2) |
 | **5 Presence** | 0 | Presence | recv | 1.018 | |
 | | 1 | Presence Enable | recv | 1.001 | |
 | | 2 | Presence Timer Active | send | 1.001 | |
@@ -322,6 +325,13 @@ Decided with the maintainer: the knxprod is not in production use, so the number
   `ZGO_PLAYLIST_STEP_UPDOWN`, keys `track_step_updown` and `playlist_step_updown`), the four next and
   previous objects are 1.017, a zone has 41 objects. The version stays 13: it has not been released yet, so
   one version number per release is enough. The numbers of the other objects did not move.
+- KZO-DEC-6 is done: Track Position (5.001), Track Seek (1.007) and Track Seek Up/Down (1.008) take
+  the numbers 47 to 49 (`ZGO_TRACK_POSITION`, `ZGO_TRACK_SEEK`, `ZGO_TRACK_SEEK_UPDOWN`, keys
+  `track_position`, `track_seek`, `track_seek_updown`). A seek step is `ZoneCommand::SeekStep`; the
+  zone's runner turns it into a relative seek by `seek_interval_secs` (1 to 60, default 10, an ETS
+  parameter per zone, `mem::ZONE_SEEK_INTERVAL`). A position is `SeekProgress`. Playlist Step Up/Down
+  moved to number 36 and Playlist Name to 37, the order the group is read in. 0.30.0 shipped version
+  13 with the old order, so this is product database version 14; a zone has 44 objects.
 - Added beyond the RFC: every text of the product database is translated. English is the base
   language, the translations (German, Dutch, Spanish, French, Italian, Polish, Portuguese) are one
   file per language in `xtask/i18n/` keyed by the English text and injected into the generated XML by

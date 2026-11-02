@@ -117,6 +117,7 @@ final class ConfigModel {
         "playlist", "playlist_status", "playlist_next", "playlist_previous", "playlist_step",
         "playlist_step_updown", "playlist_name_status", "play_pause", "track_step",
         "track_step_updown", "track_number", "track_number_status",
+        "track_position", "track_seek", "track_seek_updown",
         "shuffle", "shuffle_status", "shuffle_toggle", "repeat", "repeat_status", "repeat_toggle",
         "presence", "presence_enable", "presence_enable_status", "presence_timeout",
         "presence_timeout_status", "presence_timer_status", "presence_source_override",

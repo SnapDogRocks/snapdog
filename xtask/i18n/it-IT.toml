@@ -128,6 +128,11 @@
 
 # A number and a noun ("5 zones"). Key: the English singular. one, few, many, other follow CLDR;
 # a language without `few` and `many` uses `other`.
+"Track Position" = "Posizione del brano"
+"Track Seek" = "Brano: salto"
+"Track Seek Up/Down" = "Brano: salto su/giù"
+"Seek interval (s)" = "Intervallo di salto (s)"
+
 [counted]
 "zone" = { one = "zona", other = "zone" }
 "client" = { one = "client", other = "client" }
