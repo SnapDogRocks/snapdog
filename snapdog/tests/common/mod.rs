@@ -489,3 +489,25 @@ pub async fn drain_receiver_events(
 ) -> Vec<snapdog::receiver::ReceiverEvent> {
     snapdog_testkit::capture::drain(rx, max, timeout).await
 }
+
+/// A two-zone app with one configured radio station and no Subsonic server.
+pub fn app_with_radio() -> TestApp {
+    let toml = r#"
+[[zone]]
+name = "Ground Floor"
+
+[[zone]]
+name = "1st Floor"
+
+[[client]]
+name = "Living Room"
+mac = "02:42:ac:11:00:10"
+zone = "Ground Floor"
+
+[[radio]]
+name = "Test"
+url = "http://example.com/stream"
+"#;
+    let raw: snapdog::config::FileConfig = toml::from_str(toml).expect("parses");
+    build_test_app(snapdog::config::load_raw(raw).expect("resolves"))
+}
