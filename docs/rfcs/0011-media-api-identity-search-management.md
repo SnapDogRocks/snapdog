@@ -73,10 +73,17 @@ shipped (HAI-0010).
 
 Every playlist gets a string `uid`, next to the unchanged index `id`.
 
+The rule: `uid` is the prefix of the provider plus the identifier that provider's
+system uses for the playlist, unchanged and unique within that system. SnapDog
+assigns no identifiers of its own.
+
 | Playlist | `uid` |
 |---|---|
-| the radio list | `radio` |
 | a Subsonic playlist | `subsonic:<subsonic id>` |
+| the radio list | `radio` |
+
+The radio list is the one exception to "identifier of the external system": it is
+configuration, there is no external system, and there is only one such list.
 
 The prefix keeps a Subsonic id that happens to be numeric from being taken for an
 index, and leaves room for other providers. The field is new because `id` already
