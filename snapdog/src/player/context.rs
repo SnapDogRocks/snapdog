@@ -38,6 +38,8 @@ pub struct ZonePlayerContext {
     pub backend: Arc<dyn SnapcastBackend>,
     /// Shared parametric EQ configuration store.
     pub eq_store: Arc<std::sync::Mutex<crate::audio::eq::EqStore>>,
+    /// Subsonic playlist list, shared with the REST API so that both see the same list.
+    pub playlist_cache: Arc<crate::subsonic::PlaylistCache>,
     /// Pre-extracted: Snapcast client MAC (lowercase) → Snapcast client ID.
     pub client_mac_map: HashMap<String, String>,
     /// Pre-extracted: all Snapcast group IDs.

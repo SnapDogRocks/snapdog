@@ -48,6 +48,7 @@ async fn one_server_answers_on_every_bound_address() {
         notify_tx,
         eq_store,
         None,
+        std::sync::Arc::new(snapdog::subsonic::PlaylistCache::new()),
         async move {
             let _ = sd_rx.await;
         },

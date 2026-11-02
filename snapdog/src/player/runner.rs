@@ -535,7 +535,7 @@ async fn run(
                         }
                         fade_transition(&mut current_decode, &mut decode_rx, &mut position_offset_ms, &mut zone_fade, config.audio.source_switch_fade_ms, config.audio.sample_rate, &mut zone_eq, ctx.backend.as_ref(), zone_index, config.audio.channels, &mut resampler).await;
                         if let Some(sub) = &subsonic {
-                            let playlist_entries = sub.get_playlists().await.unwrap_or_default();
+                            let playlist_entries = ctx.playlist_cache.get(Some(sub)).await;
                             let playlist_index = playlist_entries
                                 .iter()
                                 .position(|p| p.id == playlist_id)
@@ -761,11 +761,7 @@ async fn run(
                         }
 
                         // Unified playlist model: index 0 = radio (from config), index 1+ = Subsonic playlists
-                        let subsonic_playlists = if let Some(sub) = &subsonic {
-                            sub.get_playlists().await.unwrap_or_default()
-                        } else {
-                            vec![]
-                        };
+                        let subsonic_playlists = ctx.playlist_cache.get(subsonic.as_ref()).await;
                         let total_count = config.unified_playlist_count(subsonic_playlists.len());
                         if total_count == 0 {
                             tracing::warn!(zone = zone_index, "No playlists available");

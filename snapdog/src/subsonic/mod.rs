@@ -20,6 +20,71 @@ const API_VERSION: &str = "1.16.1";
 const CLIENT_NAME: &str = "snapdog";
 const MAX_COVER_ART_BYTES: u64 = 10 * 1024 * 1024;
 
+/// How long a read of the playlist list is used.
+const PLAYLIST_CACHE_TTL: std::time::Duration = std::time::Duration::from_mins(1);
+/// Wait before asking a failing Subsonic server again.
+const PLAYLIST_RETRY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The Subsonic playlist list, shared by the REST API and the zone players so that both see the
+/// same list and the same indexes.
+///
+/// A failed fetch keeps the last good list instead of replacing it with an empty one, so a
+/// Subsonic outage does not make every playlist and the indexes behind them vanish. The next
+/// attempt follows after [`PLAYLIST_RETRY`].
+#[derive(Default)]
+pub struct PlaylistCache {
+    inner: tokio::sync::RwLock<Option<(std::time::Instant, Vec<PlaylistEntry>)>>,
+}
+
+impl PlaylistCache {
+    /// An empty cache.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The playlists, read from `client` when the cached list is older than a minute. Without a
+    /// client (Subsonic not configured) the list is empty.
+    pub async fn get(&self, client: Option<&SubsonicClient>) -> Vec<PlaylistEntry> {
+        if let Some((stamp, entries)) = &*self.inner.read().await
+            && stamp.elapsed() < PLAYLIST_CACHE_TTL
+        {
+            return entries.clone();
+        }
+        let fetched = match client {
+            Some(client) => client.get_playlists().await.map(Some),
+            None => Ok(None),
+        };
+        let mut cache = self.inner.write().await;
+        let (stamp, entries) = refreshed_cache(cache.take(), fetched, std::time::Instant::now());
+        *cache = Some((stamp, entries.clone()));
+        entries
+    }
+}
+
+/// Next cache content after a fetch. `Ok(None)` means Subsonic is not configured.
+fn refreshed_cache(
+    previous: Option<(std::time::Instant, Vec<PlaylistEntry>)>,
+    fetched: Result<Option<Vec<PlaylistEntry>>>,
+    now: std::time::Instant,
+) -> (std::time::Instant, Vec<PlaylistEntry>) {
+    match fetched {
+        Ok(entries) => (now, entries.unwrap_or_default()),
+        Err(e) => {
+            tracing::warn!("Subsonic playlists unavailable, keeping the last list: {e:#}");
+            // Back-dated so that the entry expires after PLAYLIST_RETRY, not after the full TTL.
+            let stamp = PLAYLIST_CACHE_TTL
+                .checked_sub(PLAYLIST_RETRY)
+                .and_then(|back| now.checked_sub(back))
+                .unwrap_or(now);
+            (
+                stamp,
+                previous.map(|(_, entries)| entries).unwrap_or_default(),
+            )
+        }
+    }
+}
+
 /// Subsonic API client.
 pub struct SubsonicClient {
     base_url: String,
@@ -307,4 +372,62 @@ pub struct Track {
     pub cover_art: Option<String>,
     /// Track number within the album.
     pub track: Option<u32>,
+}
+
+#[cfg(test)]
+mod playlist_cache_tests {
+    use super::*;
+    use std::time::Instant;
+
+    fn entry(id: &str) -> PlaylistEntry {
+        PlaylistEntry {
+            id: id.into(),
+            name: id.into(),
+            song_count: 0,
+            duration: 0,
+            cover_art: None,
+        }
+    }
+
+    #[test]
+    fn successful_fetch_replaces_the_list() {
+        let now = Instant::now();
+        let previous = Some((now, vec![entry("old")]));
+        let (stamp, entries) = refreshed_cache(previous, Ok(Some(vec![entry("new")])), now);
+        assert_eq!(stamp, now);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "new");
+    }
+
+    #[test]
+    fn unconfigured_subsonic_yields_an_empty_list() {
+        let now = Instant::now();
+        let (_, entries) = refreshed_cache(Some((now, vec![entry("old")])), Ok(None), now);
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn failed_fetch_keeps_the_last_good_list() {
+        let now = Instant::now();
+        let previous = Some((now, vec![entry("a"), entry("b")]));
+        let (_, entries) = refreshed_cache(previous, Err(anyhow::anyhow!("down")), now);
+        assert_eq!(
+            entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+    }
+
+    #[test]
+    fn failed_first_fetch_yields_an_empty_list() {
+        let (_, entries) = refreshed_cache(None, Err(anyhow::anyhow!("down")), Instant::now());
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn failed_fetch_expires_after_the_retry_delay() {
+        let now = Instant::now();
+        let (stamp, _) = refreshed_cache(None, Err(anyhow::anyhow!("down")), now);
+        let age = now.duration_since(stamp);
+        assert_eq!(age, PLAYLIST_CACHE_TTL.checked_sub(PLAYLIST_RETRY).unwrap());
+    }
 }

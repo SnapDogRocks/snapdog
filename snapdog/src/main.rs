@@ -20,7 +20,7 @@ use clap::Parser;
 use snapdog::dbus;
 #[cfg(feature = "snapcast-process")]
 use snapdog::process;
-use snapdog::{api, audio, config, knx, logging, mqtt, net, player, snapcast, state};
+use snapdog::{api, audio, config, knx, logging, mqtt, net, player, snapcast, state, subsonic};
 
 /// Multi-zone audio controller with `AirPlay`, Snapcast, MQTT, and KNX integration.
 #[derive(Parser)]
@@ -473,6 +473,7 @@ pub async fn run_app() -> Result<()> {
         tokio::sync::mpsc::channel::<player::SnapcastCmd>(SNAPCAST_CMD_CHANNEL_SIZE);
 
     // ── Zone players ──────────────────────────────────────────
+    let playlist_cache = std::sync::Arc::new(subsonic::PlaylistCache::new());
     let zone_commands = player::spawn_zone_players(player::ZonePlayerContext {
         config: config.clone(),
         store: store.clone(),
@@ -481,6 +482,7 @@ pub async fn run_app() -> Result<()> {
         snap_tx: snap_cmd_tx.clone(),
         backend: backend.clone(),
         eq_store: eq_store.clone(),
+        playlist_cache: playlist_cache.clone(),
         #[cfg(feature = "snapcast-process")]
         client_mac_map: snapcast::build_client_mac_map(&status),
         #[cfg(not(feature = "snapcast-process"))]
@@ -557,6 +559,7 @@ pub async fn run_app() -> Result<()> {
             api_notify,
             eq_store.clone(),
             knx_device_control,
+            playlist_cache,
             // Production never triggers cooperative shutdown (the process exits via
             // the main loop's signal handler); a never-resolving future preserves
             // the prior serve-until-exit behavior. The seam exists for tests (IT-T84).
