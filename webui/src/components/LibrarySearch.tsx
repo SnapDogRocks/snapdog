@@ -30,8 +30,7 @@ function Cover({ src }: { src: string | null | undefined }) {
       loading="lazy"
       className="size-full object-cover"
       onError={(e) => {
-        const img = e.target as HTMLImageElement;
-        if (!img.src.includes("radio-cover.svg")) img.src = "/assets/radio-cover.svg";
+        if (!e.currentTarget.src.includes("radio-cover.svg")) e.currentTarget.src = "/assets/radio-cover.svg";
       }}
     />
   );
