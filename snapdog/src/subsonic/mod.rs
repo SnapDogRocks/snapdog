@@ -388,6 +388,16 @@ impl SubsonicClient {
     pub async fn get_cover_art(&self, cover_id: &str) -> Result<Vec<u8>> {
         let url = self.cover_art_fetch_url(cover_id);
         let resp = self.http.get(&url).send().await?.error_for_status()?;
+        // Some servers answer an unknown id with 200 and an XML or JSON error body.
+        let is_error_body = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|t| t.contains("xml") || t.contains("json") || t.starts_with("text/"));
+        anyhow::ensure!(
+            !is_error_body,
+            "Subsonic returned an error for the cover art"
+        );
         read_response_bytes_limited(resp, MAX_COVER_ART_BYTES, "Subsonic cover art").await
     }
 
