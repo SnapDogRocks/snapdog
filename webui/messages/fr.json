@@ -80,7 +80,12 @@
     "playAll": "Tout lire",
     "showMore": "Afficher plus",
     "showLess": "Afficher moins",
-    "tracks": "{count, plural, one {# titre} other {# titres}}"
+    "tracks": "{count, plural, one {# titre} other {# titres}}",
+    "searchAlbums": "Albums",
+    "searchTracks": "Titres",
+    "searching": "Recherche…",
+    "libraryEmpty": "Rien trouvé dans la bibliothèque musicale",
+    "playAlbum": "Lire l’album"
   },
   "auth": {
     "title": "Authentification requise",

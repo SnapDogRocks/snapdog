@@ -13,6 +13,7 @@ import type { PlaylistInfo, TrackInfo } from "@/lib/types";
 import type { ZoneState } from "@/stores/useAppStore";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { LibrarySearch } from "@/components/LibrarySearch";
 
 interface PlaylistBrowserProps {
   zone: ZoneState;
@@ -187,6 +188,8 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                 {t("showLess")}
               </Button>
             )}
+
+            <LibrarySearch zone={zone} query={search} />
 
             {filteredPlaylists.length === 0 && (
               <div className="py-12 text-center text-muted-foreground/50 text-sm">

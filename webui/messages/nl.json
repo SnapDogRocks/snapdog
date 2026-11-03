@@ -80,7 +80,12 @@
     "playAll": "Alles afspelen",
     "showMore": "Meer tonen",
     "showLess": "Minder tonen",
-    "tracks": "{count, plural, one {# nummer} other {# nummers}}"
+    "tracks": "{count, plural, one {# nummer} other {# nummers}}",
+    "searchAlbums": "Albums",
+    "searchTracks": "Nummers",
+    "searching": "Zoeken…",
+    "libraryEmpty": "Niets gevonden in de muziekbibliotheek",
+    "playAlbum": "Album afspelen"
   },
   "auth": {
     "title": "Authenticatie vereist",
