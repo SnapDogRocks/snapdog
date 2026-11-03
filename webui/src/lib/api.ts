@@ -6,6 +6,8 @@ import type {
   PlaylistDetails,
   PlaylistState,
   TrackInfo,
+  SearchKind,
+  SearchResponse,
   SystemStatus,
   VersionInfo,
   UpdateStatus,
@@ -155,6 +157,12 @@ export const zones = {
   /** Play by stable `playlist_id`. Prefer this over the index variant for anything the user selected earlier. */
   playPlaylistById: (id: number, playlistId: string, track?: number) =>
     postVoid(`${Z}/${id}/play/playlist/by-id`, { playlist_id: playlistId, track: track ?? 0 }),
+  /** Play a Subsonic track by its `track_id` from a search result. */
+  playSubsonicTrack: (id: number, trackId: string) =>
+    postVoid(`${Z}/${id}/play/subsonic/${encodeURIComponent(trackId)}`),
+  /** Queue the tracks of a Subsonic album and play it. An album is no playlist and has no `playlist_id`. */
+  playSubsonicAlbum: (id: number, albumId: string) =>
+    postVoid(`${Z}/${id}/play/subsonic/album/${encodeURIComponent(albumId)}`),
   playPlaylistTrack: (zoneId: number, playlistIndex: number, track: number) =>
     postVoid(`${Z}/${zoneId}/play/playlist/${playlistIndex}/track`, track),
 
@@ -215,6 +223,14 @@ export const media = {
   tracksById: (playlistId: string) =>
     get<TrackInfo[]>(`${M}/playlists/by-id/${encodeURIComponent(playlistId)}/tracks`),
   track: (index: number, idx: number) => get<TrackInfo>(`${M}/playlists/${index}/tracks/${idx}`),
+  /** Search the media server. `limit` and `offset` apply to each kind. Needs at least two characters. */
+  search: (q: string, opts: { kinds?: SearchKind[]; limit?: number; offset?: number } = {}) => {
+    const params = new URLSearchParams({ q });
+    if (opts.kinds) params.set("kind", opts.kinds.join(","));
+    if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+    if (opts.offset !== undefined) params.set("offset", String(opts.offset));
+    return get<SearchResponse>(`${M}/search?${params.toString()}`);
+  },
 };
 
 // ── System ────────────────────────────────────────────────────

@@ -80,7 +80,12 @@
     "playAll": "Alle abspielen",
     "showMore": "Mehr anzeigen",
     "showLess": "Weniger anzeigen",
-    "tracks": "{count, plural, one {# Titel} other {# Titel}}"
+    "tracks": "{count, plural, one {# Titel} other {# Titel}}",
+    "searchAlbums": "Alben",
+    "searchTracks": "Titel",
+    "searching": "Suche läuft…",
+    "libraryEmpty": "Nichts in der Musikbibliothek gefunden",
+    "playAlbum": "Album abspielen"
   },
   "auth": {
     "title": "Authentifizierung erforderlich",

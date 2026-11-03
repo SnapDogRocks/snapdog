@@ -80,7 +80,12 @@
     "playAll": "Riproduci tutto",
     "showMore": "Mostra altro",
     "showLess": "Mostra meno",
-    "tracks": "{count, plural, one {# brano} other {# brani}}"
+    "tracks": "{count, plural, one {# brano} other {# brani}}",
+    "searchAlbums": "Album",
+    "searchTracks": "Brani",
+    "searching": "Ricerca in corso…",
+    "libraryEmpty": "Nulla trovato nella libreria musicale",
+    "playAlbum": "Riproduci album"
   },
   "auth": {
     "title": "Autenticazione richiesta",

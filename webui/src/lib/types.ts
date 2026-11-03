@@ -99,6 +99,30 @@ export interface PlaylistInfo {
   cover_art: string | null;
 }
 
+/** What `GET /media/search` looks for and what a result is. */
+export type SearchKind = "track" | "album" | "playlist" | "radio";
+
+/** One search result. The identifier has a field per kind, the others are absent or null. */
+export interface SearchItem {
+  kind: SearchKind;
+  title: string;
+  /** Artist, or album for a track. */
+  subtitle?: string | null;
+  duration: number;
+  cover_art?: string | null;
+  track_id?: string | null;
+  album_id?: string | null;
+  playlist_id?: string | null;
+  index?: number | null;
+  track?: number | null;
+}
+
+export interface SearchResponse {
+  items: SearchItem[];
+  /** Offset of the next page, `null` when no kind filled its page. */
+  next_offset?: number | null;
+}
+
 export interface PlaylistDetails {
   index: number;
   playlist_id: string;

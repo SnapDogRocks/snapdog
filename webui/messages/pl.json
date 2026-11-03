@@ -80,7 +80,12 @@
     "playAll": "Odtwórz wszystko",
     "showMore": "Pokaż więcej",
     "showLess": "Pokaż mniej",
-    "tracks": "{count, plural, one {# utwór} few {# utwory} many {# utworów} other {# utworu}}"
+    "tracks": "{count, plural, one {# utwór} few {# utwory} many {# utworów} other {# utworu}}",
+    "searchAlbums": "Albumy",
+    "searchTracks": "Utwory",
+    "searching": "Szukanie…",
+    "libraryEmpty": "Nic nie znaleziono w bibliotece muzycznej",
+    "playAlbum": "Odtwórz album"
   },
   "auth": {
     "title": "Wymagane uwierzytelnienie",

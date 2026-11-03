@@ -80,7 +80,12 @@
     "playAll": "Play All",
     "showMore": "Show More",
     "showLess": "Show Less",
-    "tracks": "{count, plural, one {# track} other {# tracks}}"
+    "tracks": "{count, plural, one {# track} other {# tracks}}",
+    "searchAlbums": "Albums",
+    "searchTracks": "Tracks",
+    "searching": "Searching…",
+    "libraryEmpty": "Nothing found in the music library",
+    "playAlbum": "Play album"
   },
   "auth": {
     "title": "Authentication Required",
