@@ -215,11 +215,27 @@ async fn cover_proxy_serves_with_caching_headers() {
         .respond_with(ResponseTemplate::new(404))
         .mount(&server)
         .await;
+    // Some servers answer an unknown id with 200 and an XML error, not with a 404.
+    Mock::given(method("GET"))
+        .and(path("/rest/getCoverArt"))
+        .and(query_param("id", "gone"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/xml")
+                .set_body_string(
+                    r#"<subsonic-response status="failed"><error code="70" message="not found"/></subsonic-response>"#,
+                ),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
     let app = common::app_with_subsonic(&server.uri(), 0);
 
     let (s, _, _) = app.get_with_total("/api/v1/media/cover/al-1").await;
     assert_eq!(s, StatusCode::OK);
     let (s, _) = app.get("/api/v1/media/cover/nope").await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, _) = app.get("/api/v1/media/cover/gone").await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 
     // Without Subsonic the proxy has nothing to ask.
