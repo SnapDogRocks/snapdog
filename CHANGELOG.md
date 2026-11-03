@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.0](https://github.com/SnapDogRocks/snapdog/compare/v0.31.0...v0.32.0) (2026-11-03)
+
+
+### Features
+
+* **webui:** search the media server from the playlist browser ([#427](https://github.com/SnapDogRocks/snapdog/issues/427)) ([75f0a93](https://github.com/SnapDogRocks/snapdog/commit/75f0a93c220d17b76fa1a0a6fcafc04f5b239b43))
+
+
+### Bug Fixes
+
+* **media:** treat a Subsonic error body as a missing cover ([#426](https://github.com/SnapDogRocks/snapdog/issues/426)) ([88772a6](https://github.com/SnapDogRocks/snapdog/commit/88772a6bef52a36514cb40b18aad0753373715e9))
+
 ## [0.31.0](https://github.com/SnapDogRocks/snapdog/compare/v0.30.0...v0.31.0) (2026-11-02)
 
 
