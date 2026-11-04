@@ -143,6 +143,15 @@ never called them, so that upgrade is a manifest change alone.
 - Linux, Windows and the tier-2 service tests were not run locally; CI covers
   them.
 
+## Targeted update (2026-11-03)
+
+shairplay moves from 0.10.0 to 0.12.0 and nothing else. 0.11.0 rewrites the FairPlay key
+exchange behind a `fairplay` feature that is on by default, and `docs/fairplay-provenance.md` in
+that repository states what is and is not certain about its origin. 0.12.0 adds
+`RaopServerBuilder::mdns_scope`, which SnapDog uses to limit the AirPlay announcement to the
+interfaces of `[airplay].bind` (RFC LBD-0009, 2.4). The lockfile changes only the shairplay entry
+and its new direct dependency on `if-addrs` 0.15, which was already in the graph.
+
 ## Explicit upstream holds
 
 | Crate | Held version | Reason and removal condition |

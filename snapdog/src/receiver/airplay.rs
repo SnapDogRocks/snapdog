@@ -14,7 +14,7 @@ use anyhow::Result;
 use shairplay::RaopServer;
 
 #[cfg(feature = "ap2")]
-use shairplay::{BindConfig, PairingStore};
+use shairplay::{BindConfig, MdnsScope, MdnsScopeApplied, PairingStore};
 
 use super::{AudioFormat, AudioSender, ReceiverEvent, ReceiverEventTx, ReceiverProvider};
 
@@ -33,6 +33,41 @@ pub(crate) const fn effective_mode(configured: AirplayMode) -> AirplayMode {
         configured
     } else {
         AirplayMode::Airplay1
+    }
+}
+
+/// The mDNS scope that follows the listener addresses of `[airplay].bind`.
+///
+/// With addresses set, the announcement leaves only on the interfaces that carry them,
+/// like the `_snapdog._tcp` announcement does. It stays unlimited when no address is set
+/// or one of them is a wildcard: the receiver then listens everywhere and must be found
+/// everywhere. `shairplay` refuses to start when an address belongs to no interface, so a
+/// wrong address is an error and never a silent fallback.
+#[cfg(feature = "ap2")]
+#[must_use]
+pub(crate) fn mdns_scope(bind: Option<&[std::net::IpAddr]>) -> MdnsScope {
+    match bind {
+        Some(addrs) if !addrs.is_empty() && addrs.iter().all(|a| !a.is_unspecified()) => {
+            MdnsScope::Addrs(addrs.to_vec())
+        }
+        _ => MdnsScope::All,
+    }
+}
+
+/// Log what `shairplay` did with the requested scope, so an operator can see it.
+#[cfg(feature = "ap2")]
+fn log_mdns_scope(zone: &str, applied: Option<&MdnsScopeApplied>) {
+    match applied {
+        Some(MdnsScopeApplied::Interfaces(names)) => {
+            tracing::info!(zone, interfaces = ?names, "AirPlay announcement limited to interfaces");
+        }
+        Some(MdnsScopeApplied::Unsupported) => {
+            tracing::warn!(
+                zone,
+                "AirPlay announcement cannot be limited on this platform, announcing on every interface"
+            );
+        }
+        _ => {}
     }
 }
 
@@ -114,11 +149,18 @@ impl ReceiverProvider for AirPlayReceiver {
 
         #[cfg(feature = "ap2")]
         {
+            builder = builder.mdns_scope(mdns_scope(self.config.bind.as_deref()));
+        }
+
+        #[cfg(feature = "ap2")]
+        {
             builder = builder.pairing_store(pairing_store(&self.state_dir));
         }
 
         let mut server = builder.build(handler)?;
         server.start().await?;
+        #[cfg(feature = "ap2")]
+        log_mdns_scope(&self.airplay_name, server.mdns_scope_applied());
 
         let port = server.service_info().port;
         tracing::info!(
@@ -471,6 +513,39 @@ mod tests {
     use super::*;
     use shairplay::AudioHandler;
     use tokio::sync::mpsc;
+
+    // ── mDNS scope follows `[airplay].bind` ───────────────────────────
+
+    #[cfg(feature = "ap2")]
+    fn ips(list: &[&str]) -> Vec<std::net::IpAddr> {
+        list.iter().map(|s| s.parse().unwrap()).collect()
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn without_bind_the_announcement_stays_unlimited() {
+        assert_eq!(mdns_scope(None), MdnsScope::All);
+        assert_eq!(mdns_scope(Some(&[])), MdnsScope::All);
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn with_addresses_the_announcement_follows_them() {
+        let addrs = ips(&["192.168.1.10", "fd00::10"]);
+        assert_eq!(mdns_scope(Some(&addrs)), MdnsScope::Addrs(addrs.clone()));
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn a_wildcard_address_keeps_the_announcement_unlimited() {
+        assert_eq!(mdns_scope(Some(&ips(&["0.0.0.0"]))), MdnsScope::All);
+        assert_eq!(mdns_scope(Some(&ips(&["::"]))), MdnsScope::All);
+        // One wildcard among named addresses: the receiver listens everywhere.
+        assert_eq!(
+            mdns_scope(Some(&ips(&["192.168.1.10", "0.0.0.0"]))),
+            MdnsScope::All
+        );
+    }
 
     // ── AP2 pairing store shared by all zones ─────────────────────────
 
