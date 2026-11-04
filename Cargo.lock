@@ -249,9 +249,9 @@ dependencies = [
 
 [[package]]
 name = "astro-dnssd"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "039c0e3995a05de7279ca3f798a143c3b5fb1aeda2ce66872337c09e88771c2c"
+checksum = "a0019b8ce0fbbf443e9293a4226dc7987eedc6d39cad9d3aa1cee25b7d1ef961"
 dependencies = [
  "libc",
  "log",
@@ -5078,9 +5078,9 @@ dependencies = [
 
 [[package]]
 name = "shairplay"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf71c0005539f98bdb8ef29b35c9e8504a2e76f7352a28cfa1529c82bba1fed9"
+checksum = "074c91db1c315a030271917555afa5546380abee70e2b36b382b7cc70da9971b"
 dependencies = [
  "aes 0.9.3",
  "astro-dnssd",

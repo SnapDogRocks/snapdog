@@ -48,7 +48,7 @@ rust-embed = "8"
 mac_address = "1"
 crc32fast = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
-shairplay = "0.12.0"
+shairplay = "0.13.0"
 mdns-sd = "0.21"
 if-addrs = { workspace = true }
 gethostname = "1"
