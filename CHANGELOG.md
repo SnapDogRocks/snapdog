@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.0](https://github.com/SnapDogRocks/snapdog/compare/v0.32.0...v0.33.0) (2026-11-04)
+
+
+### Features
+
+* **airplay:** limit the mDNS announcement on macOS with shairplay 0.13 ([#432](https://github.com/SnapDogRocks/snapdog/issues/432)) ([fcbea17](https://github.com/SnapDogRocks/snapdog/commit/fcbea1719ffeeb9f152bc9a65a74b7ba406c88fd))
+* **airplay:** limit the mDNS announcement to the interfaces of bind ([#429](https://github.com/SnapDogRocks/snapdog/issues/429)) ([c43a99c](https://github.com/SnapDogRocks/snapdog/commit/c43a99c5e0e0e313f5c33431dd334666271c496b))
+
 ## [0.32.0](https://github.com/SnapDogRocks/snapdog/compare/v0.31.0...v0.32.0) (2026-11-03)
 
 
