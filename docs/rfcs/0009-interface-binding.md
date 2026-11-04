@@ -104,7 +104,7 @@ services listen, so it stays unlimited if one of them has no `bind`, a wildcard 
 host name that is not an address (`localhost` counts as `127.0.0.1`). `IfKind::Addr` selects the
 interface that carries the address, not the single address.
 
-The AirPlay announcement follows the list too, from `shairplay` 0.12 on (metaneutrons/shairplay-rust#78).
+The AirPlay announcement follows the list too, from `shairplay` 0.12 on, on macOS from 0.13 (metaneutrons/shairplay-rust#78).
 SnapDog passes the addresses of `[airplay].bind` as `MdnsScope::Addrs` and `shairplay` limits its
 announcement to the interfaces that carry them. It stays unlimited without `bind` and with a
 wildcard address in the list. `shairplay` refuses to start when an address belongs to no
@@ -113,9 +113,12 @@ SnapDog, the address selects the interface, not the single address. Only builds 
 `[airplay].bind`, and so the scope.
 
 On Linux and other platforms `shairplay` uses `mdns-sd` and the limit holds. On macOS it uses
-Bonjour through `astro-dnssd`, which registers on every interface until it can take an interface
-index (AstroHQ/astro-dnssd#27). There `shairplay` reports the scope as unsupported, SnapDog logs
-that, and the matrix shows `none`.
+Bonjour through `astro-dnssd` and registers once per interface index (`astro-dnssd` 0.3.8,
+`shairplay` 0.13). With the scope set to one interface, a capture on `udp port 5353` showed the
+service on that interface and no packet at all on three others, whereas without a scope it showed
+the service on all four. This was measured for the announcement only, not for replies to queries
+of other devices. On Windows the native API honors the interface only in part. `shairplay` can
+still report the scope as unsupported, SnapDog then logs it, but no platform does at present.
 
 This closes the gap that a service listens on `eth0` but announces on `nebula1`. It does not reach
 Spotify Connect: `libmdns` announces on the default-route interface only, `avahi` and `dns-sd` on
@@ -194,8 +197,8 @@ Dependencies: M1
 
 - LBD-M2-A1: with `bind` set, the mDNS daemon of SnapDog announces only on the resolved
   interfaces, measured with a second host or `dns-sd`/`avahi-browse`; without `bind` nothing
-  changes. The AirPlay announcement follows from `shairplay` 0.12 (see 2.4), on Linux; on macOS it
-  stays unlimited until metaneutrons/shairplay-rust#78 is closed.
+  changes. The AirPlay announcement follows from `shairplay` 0.12 (see 2.4) on Linux and from 0.13
+  on macOS.
 
 ### M3: Visibility and documentation
 
@@ -213,8 +216,8 @@ Execution: https://github.com/SnapDogRocks/snapdog/issues/381
 - LBD-M4-A1: AirPlay 2 is `partial` in the matrix (clock sockets 319 and 320 stay on `[::]`),
   with the firewall hint; the support level is checked against the `shairplay` version that is
   in use at the time.
-  The AirPlay mDNS announcement is listed as `partial` on Linux (the address selects the
-  interface) and `none` on macOS until metaneutrons/shairplay-rust#78 is closed.
+  The AirPlay mDNS announcement is listed as `partial` on Linux and macOS (the address selects the
+  interface) and on Windows (the native API honors the interface only in part).
 
 ## 4. Decisions, risks and open questions
 
