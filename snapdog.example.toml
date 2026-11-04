@@ -170,7 +170,8 @@ default_zone = "Ground Floor"
 # password = "1234"
 # Optional: listen on specific IP addresses or interface names. Default: [network].bind,
 # else all. Only effective in builds with AirPlay 2 support (feature ap2). The AirPlay
-# announcement itself still goes out on every interface.
+# announcement follows it on Linux and macOS and goes out on the interfaces that carry
+# the addresses (the address selects the interface, not the single address).
 # bind = ["192.168.1.10"]
 
 # ── Spotify Connect ────────────────────────────────────────────────────────
