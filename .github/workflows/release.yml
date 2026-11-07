@@ -976,6 +976,11 @@ jobs:
             fi
           done
           brew tap-new --no-git "$tap"
+          # Homebrew refuses to load anything from a tap it was not told to
+          # trust. This tap is created here, empty, moments before and holds
+          # only the smoke test formulas, so trusting it as a whole does not
+          # extend to any other tap.
+          brew trust --tap "$tap"
           trap 'brew untap "$tap"' EXIT
           tap_dir=$(brew --repository "$tap")
           for pkg in snapdog snapdog-client; do
