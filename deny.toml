@@ -26,6 +26,12 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant is unmaintained (merged into zbus 6); pulled in only by librespot-discovery's with-avahi through zbus 5; remove once librespot-discovery moves to zbus 6" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names is unmaintained (merged into zbus 6); pulled in only by librespot-discovery's with-avahi through zbus 5; remove once librespot-discovery moves to zbus 6" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive is unmaintained (merged into zbus 6); pulled in only by librespot-discovery's with-avahi through zbus 5; remove once librespot-discovery moves to zbus 6" },
+
+    # astral-tokio-tar: Astral ended its maintenance on 2026-11-03, reported as unmaintained and
+    # not as vulnerable, with no patched version. Pulled by: testcontainers 0.28 (the newest
+    # release), a dev-dependency of `snapdog` for the integration tests, so it is not in the
+    # released binary or in the Docker image.
+    { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained since 2026-11-03; pulled in only by the testcontainers dev-dependency of the integration tests; remove once testcontainers drops it" },
 ]
 
 [licenses]
