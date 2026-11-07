@@ -1,10 +1,10 @@
 ---
 rfc: HAI-0010
 title: The SnapDog Home Assistant integration, built and checkable – scope, API prerequisites, acceptance matrix
-status: draft            # draft | accepted | in-progress | done | superseded
-version: 0.1.0
+status: accepted         # draft | accepted | in-progress | done | superseded
+version: 0.2.0           # v0.2: accepted 2026-11-07; the status of WP-0 to WP-2 and a status line for the rest
 created: 2026-11-01
-updated: 2026-11-01
+updated: 2026-11-07
 target_repo: snapdog     # RFC and API additions here; integration and library in two new repositories (HAI-DEC-3, confirmed 2026-11-01)
 target_branch: main
 related: [HAI-0007]
@@ -377,14 +377,23 @@ opened as a pull request without the maintainer's yes for that action.
 
 | WP | Content | Where | Depends on |
 |---|---|---|---|
-| WP-0 | This RFC accepted; HAI-0007 status line and §14 updated to point here | `snapdog` branch `docs/rfc-ha-integration` | – |
-| WP-1 | S-1 and the OpenAPI corrections (bearer scheme and 401, index minimum 1, 422 on client EQ and speaker), S-7 with golden tests (`S:` rows). **Done locally** on `feat/ha-api-prereqs` (two commits, not pushed). The AsyncAPI document is checked by the repository's own tests only, not yet by an external validator | `snapdog`, own branch, no config or net files | WP-0 |
-| WP-2 | Library: client, models from `openapi.json`, socket and listener, fake-server tests built from the pinned specs, `check_coverage.py`. **Done locally** (commit `72cf902`, 312 tests, 100 % coverage, not pushed, no remote yet) | `pysnapdog` | S-7 for the WebSocket part; starts on REST |
+| WP-0 | This RFC accepted; HAI-0007 status line and §14 updated to point here. **Done** (2026-11-07) | `snapdog` branch `docs/rfc-ha-integration` | – |
+| WP-1 | S-1 and the OpenAPI corrections (bearer scheme and 401, index minimum 1, 422 on client EQ and speaker), S-7 with golden tests (`S:` rows). **Done**, merged as #391. The AsyncAPI document is checked by the repository's own tests only, not yet by an external validator | `snapdog`, own branch, no config or net files | WP-0 |
+| WP-2 | Library: client, models from `openapi.json`, socket and listener, fake-server tests built from the pinned specs, `check_coverage.py`. **Done**, released to PyPI as `pysnapdog` 0.1.0 to 0.3.0 (0.3.0 adds search, covers and playlist management of MED-0011) | `pysnapdog` | S-7 for the WebSocket part; starts on REST |
 | WP-3 | Integration alpha: config flow, zeroconf, reauth, coordinator, zone `media_player` (transport, volume, mute, shuffle, repeat, position) | `snapdog-homeassistant` | WP-2 |
 | WP-4 | Sources, `play_media`, browse, covers, sound mode, TTS target | same | S-1 |
 | WP-5 | Client entities, presence, EQ, speaker, server, update, KNX, services, `event` | same | WP-3 |
 | WP-6 | Diagnostics, repairs, translations, dynamic and stale devices, docs, hassfest and HACS actions, matrix scripts | same | WP-5 |
 | WP-7 | End-to-end job against the real `snapdog` demo backend; Live pass | CI and a HA | WP-6 |
+
+**Status on 2026-11-07, read from the repositories and not from this plan.** WP-3 is released as
+`snapdog-homeassistant` 0.1.0 (config flow, zeroconf, coordinator, zone `media_player`). Of WP-4
+the media browser, `play_media`, source selection, search and covers are merged, and the 0.2.0
+release is open; sound mode and the TTS target are not. WP-5 (client entities, presence, EQ,
+speaker, server, update, KNX, `event`) has not started; of the services, only the playlist
+actions of MED-0011 exist. WP-6 has hassfest, HACS and translations in CI, but not
+`check_translations.py`, `check_matrix.py` or snapshot tests. WP-7 has not started, and nothing
+has been run against a real HA instance or a real SnapDog server with the integration.
 
 Rough effort for one developer who knows the code: WP-1 2 to 3 days, WP-2 4 to 6, WP-3 5 to 7,
 WP-4 3 to 4, WP-5 5 to 7, WP-6 4 to 6, WP-7 2 (about 25 to 35 working days). These are estimates, not

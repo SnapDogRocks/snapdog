@@ -4,10 +4,10 @@ title: A Home Assistant integration for SnapDog – what MQTT can carry, and a r
 status: in-progress      # draft | accepted | in-progress | done | superseded
 version: 0.2.0           # v0.2: stage 1 (MQTT device discovery) implemented; stages 2 to 4 are not
 created: 2026-10-25
-updated: 2026-10-26
+updated: 2026-11-07
 target_repo: snapdog     # stage 3 lives in a new repository (see HAI-DEC-3)
 target_branch: main
-related: [CID-0005]
+related: [CID-0005, HAI-0010]
 owners: [metaneutrons]
 ---
 
@@ -15,7 +15,9 @@ owners: [metaneutrons]
 
 > **For AI agents:** this is a **scoping** RFC, not accepted as a whole. **Stage 1 (MQTT
 > device discovery) is implemented** (§4.3, on the branch `fix/mqtt-commands-and-security`,
-> opt-in, off by default); **stages 2 to 4 are not.** Stage 0 (the MQTT repair) is done and
+> opt-in, off by default); **stages 2 and 3 are built under
+> [HAI-0010](0010-home-assistant-integration-build.md)** (the API prerequisites are merged, the
+> integration is released as `snapdog-homeassistant` 0.1.0), **stage 4 is not.** Stage 0 (the MQTT repair) is done and
 > described in §2. Requirements
 > are `HAI-REQ-*`, decisions `HAI-DEC-*`, tasks `HAI-T*`. SnapDog line numbers are
 > approximate, symbol names are the anchor. Statements about Home Assistant come from the
@@ -481,6 +483,9 @@ Risks:
 ## 14. Requirements, decisions, tasks
 
 ### Requirements
+
+The build plan, the acceptance matrix and the decisions from `HAI-DEC-8` on are in
+[HAI-0010](0010-home-assistant-integration-build.md).
 
 - **HAI-REQ-1** A zone must be controllable and observable from HA without hand-written YAML.
 - **HAI-REQ-2** SnapDog must never publish a discovery message that HA cannot use.
