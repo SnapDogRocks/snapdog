@@ -440,19 +440,11 @@ pub fn table(config: &AppConfig) -> Vec<Row> {
 /// [`table`] with the bound listeners given, so a test does not depend on the process registry.
 pub(crate) fn table_from(config: &AppConfig, bound: &[Listener]) -> Vec<Row> {
     let mut rows = Vec::new();
-    let mut seen_bound = Vec::new();
-    for listener in planned(config) {
-        let actual = bound
-            .iter()
-            .find(|b| b.service == listener.service && b.protocol == listener.protocol);
-        if actual.is_some() {
-            if seen_bound.contains(&listener.service) {
-                continue;
-            }
-            seen_bound.push(listener.service.clone());
-        }
-        let shown = actual.unwrap_or(&listener);
-        let (bind_support, note) = support_of(&listener);
+    let planned = planned(config);
+    let assigned = assign_bound(&planned, bound);
+    for (listener, actual) in planned.iter().zip(assigned) {
+        let shown = actual.map_or(listener, |index| &bound[index]);
+        let (bind_support, note) = support_of(listener);
         rows.push(Row {
             service: shown.service.clone(),
             protocol: shown.protocol,
@@ -466,6 +458,37 @@ pub(crate) fn table_from(config: &AppConfig, bound: &[Listener]) -> Vec<Row> {
     }
     put_bound_http_rows(config, bound, &mut rows);
     rows
+}
+
+/// Which bound listener each planned one became, by its index in `bound`.
+///
+/// Each bound listener answers one planned listener: a service with several addresses (`[http].bind`
+/// with a list) has one of each, and every one of them has to stay in the table. Bound listeners on
+/// the planned address are assigned first, for all planned listeners. Only then does a planned
+/// listener that is still without one take the first free bound listener of its service, which is
+/// what a fallback such as `::` becoming `0.0.0.0` looks like. A planned listener that finds none is
+/// not bound (yet) and the table shows it as planned.
+fn assign_bound(planned: &[Listener], bound: &[Listener]) -> Vec<Option<usize>> {
+    let mut taken = vec![false; bound.len()];
+    let mut assigned = vec![None; planned.len()];
+    for same_address_only in [true, false] {
+        for (slot, listener) in assigned.iter_mut().zip(planned) {
+            if slot.is_some() {
+                continue;
+            }
+            let found = (0..bound.len()).find(|&index| {
+                !taken[index]
+                    && bound[index].service == listener.service
+                    && bound[index].protocol == listener.protocol
+                    && (!same_address_only || bound[index].addr.ip() == listener.addr.ip())
+            });
+            if let Some(index) = found {
+                taken[index] = true;
+                *slot = Some(index);
+            }
+        }
+    }
+    assigned
 }
 
 /// A name in `[http].bind` is resolved when the server binds, so the HTTP rows are the bound ones.
@@ -772,6 +795,68 @@ mod tests {
         assert_eq!(spotify_zone_port(7002, 3).unwrap(), 7004);
         assert!(spotify_zone_port(u16::MAX, 2).is_err());
         assert!(spotify_zone_port(7002, 70_000).is_err());
+    }
+
+    fn http_rows(rows: &[Row]) -> Vec<(String, u16)> {
+        rows.iter()
+            .filter(|r| r.service == "HTTP API")
+            .map(|r| (r.address.clone(), r.port))
+            .collect()
+    }
+
+    #[test]
+    fn every_bound_http_socket_has_its_own_row() {
+        let config = config("[http]\nbind = [\"127.0.0.1\", \"127.0.0.2\"]\nport = 0\n");
+        let bound = [
+            tcp("HTTP API", "127.0.0.1:41001"),
+            tcp("HTTP API", "127.0.0.2:41002"),
+        ];
+        assert_eq!(
+            http_rows(&table_from(&config, &bound)),
+            [
+                ("127.0.0.1".to_owned(), 41001),
+                ("127.0.0.2".to_owned(), 41002)
+            ]
+        );
+    }
+
+    #[test]
+    fn the_same_address_twice_keeps_both_ports() {
+        let config = config("[http]\nbind = [\"127.0.0.1\", \"127.0.0.1\"]\nport = 0\n");
+        let bound = [
+            tcp("HTTP API", "127.0.0.1:41001"),
+            tcp("HTTP API", "127.0.0.1:41002"),
+        ];
+        assert_eq!(
+            http_rows(&table_from(&config, &bound)),
+            [
+                ("127.0.0.1".to_owned(), 41001),
+                ("127.0.0.1".to_owned(), 41002)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_fallback_address_is_shown_in_place_of_the_planned_one() {
+        let config = config("[http]\nbind = \"::\"\nport = 5555\n");
+        let bound = [tcp("HTTP API", "0.0.0.0:5555")];
+        assert_eq!(
+            http_rows(&table_from(&config, &bound)),
+            [("0.0.0.0".to_owned(), 5555)]
+        );
+    }
+
+    #[test]
+    fn a_listener_that_is_not_bound_is_shown_as_planned() {
+        let config = config("[http]\nbind = [\"127.0.0.1\", \"127.0.0.2\"]\nport = 5555\n");
+        let bound = [tcp("HTTP API", "127.0.0.2:5555")];
+        assert_eq!(
+            http_rows(&table_from(&config, &bound)),
+            [
+                ("127.0.0.1".to_owned(), 5555),
+                ("127.0.0.2".to_owned(), 5555)
+            ]
+        );
     }
 
     #[test]
