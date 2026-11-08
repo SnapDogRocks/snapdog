@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.1](https://github.com/SnapDogRocks/snapdog/compare/v0.33.0...v0.33.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **net:** keep every bound HTTP socket in the listener table ([#445](https://github.com/SnapDogRocks/snapdog/issues/445)) ([49e6690](https://github.com/SnapDogRocks/snapdog/commit/49e6690b056c3eeeefe6581ea8c7cefe5361a5fa))
+
 ## [0.33.0](https://github.com/SnapDogRocks/snapdog/compare/v0.32.0...v0.33.0) (2026-11-04)
 
 
