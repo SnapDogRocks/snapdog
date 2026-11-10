@@ -30,7 +30,7 @@ function Cover({ src }: { src: string | null | undefined }) {
       loading="lazy"
       className="size-full object-cover"
       onError={(e) => {
-        if (!e.currentTarget.src.includes("radio-cover.svg")) e.currentTarget.src = "/assets/radio-cover.svg";
+        if (!e.currentTarget.src.includes("radio-cover.png")) e.currentTarget.src = "/assets/radio-cover.png";
       }}
     />
   );
