@@ -501,16 +501,13 @@ icon = "🛏️"
 # Supports direct streams, M3U/PLS playlists, and HLS (master + media).
 # ICY metadata (artist/title) is parsed automatically.
 
-[[radio]]
-name = "Deutschlandfunk"
-url = "https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac"
-# Optional: station logo (used as cover art fallback)
-# cover = "https://www.deutschlandfunk.de/logo.png"
+# Optional per station: `cover`, the URL of a logo (PNG, JPEG, SVG or ICO). Without it SnapDog
+# looks for a favicon on the host of the stream URL. Stream hosts such as st01.sslstream.dlf.de
+# usually have none, so a station without `cover` often ends up without a picture.
 
 [[radio]]
 name = "Deutschlandfunk"
 url = "https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac"
-# Optional: station logo (used as cover art fallback); falls back to fav icon; falls back to placeholder
 cover = "https://www.deutschlandfunk.de/static/img/deutschlandfunk/icons/favicon-196x196.png"
 
 [[radio]]
