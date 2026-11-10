@@ -136,8 +136,8 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                         className="size-full object-cover transition-transform duration-500 group-hover:scale-110"
                         onError={(e) => {
                           const img = e.target as HTMLImageElement;
-                          if (!img.src.includes('radio-cover.svg')) {
-                            img.src = '/assets/radio-cover.svg';
+                          if (!img.src.includes('radio-cover.png')) {
+                            img.src = '/assets/radio-cover.png';
                           }
                         }}
                       />
@@ -212,13 +212,13 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               </Button>
               <div className="size-12 rounded-lg overflow-hidden bg-primary/10 shadow-sm shrink-0">
                  <img
-                    src={selectedPlaylist?.cover_art ?? '/assets/radio-cover.svg'}
+                    src={selectedPlaylist?.cover_art ?? '/assets/radio-cover.png'}
                     alt=""
                     className="size-full object-cover"
                     onError={(e) => {
                       const img = e.target as HTMLImageElement;
-                      if (!img.src.includes('radio-cover.svg')) {
-                        img.src = '/assets/radio-cover.svg';
+                      if (!img.src.includes('radio-cover.png')) {
+                        img.src = '/assets/radio-cover.png';
                       }
                     }}
                   />
@@ -262,14 +262,14 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                 >
                   <div className="size-9 rounded-lg bg-primary/5 flex items-center justify-center shrink-0 overflow-hidden relative border border-border/50">
                     <img
-                      src={t.cover_art ?? '/assets/radio-cover.svg'}
+                      src={t.cover_art ?? '/assets/radio-cover.png'}
                       alt=""
                       loading="lazy"
                       className="size-full object-cover"
                       onError={(e) => {
                         const img = e.target as HTMLImageElement;
-                        if (!img.src.includes('radio-cover.svg')) {
-                          img.src = '/assets/radio-cover.svg';
+                        if (!img.src.includes('radio-cover.png')) {
+                          img.src = '/assets/radio-cover.png';
                         }
                       }}
                     />
