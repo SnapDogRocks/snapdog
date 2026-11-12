@@ -234,6 +234,7 @@ export interface WsClientStateChanged {
   connected: boolean;
   zone: number;
   is_snapdog: boolean;
+  latency_ms: number;
 }
 
 export interface WsZonePresenceChanged {

@@ -826,6 +826,7 @@ const fn client_notification(idx: usize, client: &state::ClientState) -> api::ws
         connected: client.connected,
         zone: client.zone_index,
         is_snapdog: client.is_snapdog,
+        latency_ms: client.latency_ms,
     }
 }
 
@@ -1169,6 +1170,21 @@ mod tests {
             1,
             "the cap is sent back"
         );
+    }
+
+    /// A latency change is announced with `client_state_changed`, so the event has to carry
+    /// the new value: a consumer cannot tell it from any other change otherwise.
+    #[tokio::test]
+    async fn the_client_event_carries_the_latency() {
+        let (_config, store) = reporting_setup("relative", 50, 50, 100).await;
+        let mut state = client(&store).await;
+        state.latency_ms = -150;
+        match client_notification(1, &state) {
+            api::ws::Notification::ClientStateChanged { latency_ms, .. } => {
+                assert_eq!(latency_ms, -150);
+            }
+            other => panic!("expected a client event, got {other:?}"),
+        }
     }
 
     #[tokio::test]

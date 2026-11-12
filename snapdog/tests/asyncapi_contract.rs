@@ -41,6 +41,7 @@ fn the_document_describes_every_notification() {
             connected: true,
             zone: 1,
             is_snapdog: true,
+            latency_ms: 20,
         },
         Notification::ZonePresenceChanged {
             zone: 1,

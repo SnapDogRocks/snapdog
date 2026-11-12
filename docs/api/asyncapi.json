@@ -52,6 +52,11 @@
               "description": "Whether this is a `SnapDog` client (supports EQ).",
               "type": "boolean"
             },
+            "latency_ms": {
+              "description": "Manual latency correction in milliseconds, as `GET /clients/{n}/latency` reports it.\nAbsent in the events of servers before this field, which read as 0.",
+              "format": "int32",
+              "type": "integer"
+            },
             "muted": {
               "description": "Whether the client is muted.",
               "type": "boolean"

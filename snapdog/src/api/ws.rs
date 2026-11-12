@@ -155,6 +155,10 @@ pub enum Notification {
         zone: usize,
         /// Whether this is a `SnapDog` client (supports EQ).
         is_snapdog: bool,
+        /// Manual latency correction in milliseconds, as `GET /clients/{n}/latency` reports it.
+        /// Absent in the events of servers before this field, which read as 0.
+        #[serde(default)]
+        latency_ms: i32,
     },
     /// Zone equalizer configuration changed.
     ZoneEqChanged {

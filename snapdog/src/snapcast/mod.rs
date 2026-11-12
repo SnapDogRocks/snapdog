@@ -489,6 +489,7 @@ mod process_impl {
                     connected: c.connected,
                     zone: c.zone_index,
                     is_snapdog: c.is_snapdog,
+                    latency_ms: c.latency_ms,
                 })
                 .collect::<Vec<_>>();
             drop(s);
@@ -565,6 +566,7 @@ mod process_impl {
                         connected: client.connected,
                         zone: zone_index,
                         is_snapdog: client.is_snapdog,
+                        latency_ms: client.latency_ms,
                     };
                     let name = client.name.clone();
                     drop(s);
@@ -589,6 +591,7 @@ mod process_impl {
                         connected: client.connected,
                         zone: client.zone_index,
                         is_snapdog: client.is_snapdog,
+                        latency_ms: client.latency_ms,
                     };
                     let name = client.name.clone();
                     drop(s);
@@ -617,6 +620,7 @@ mod process_impl {
                         connected: client.connected,
                         zone: client.zone_index,
                         is_snapdog: client.is_snapdog,
+                        latency_ms: client.latency_ms,
                     };
                     let name = client.name.clone();
                     drop(s);
@@ -643,6 +647,7 @@ mod process_impl {
                         connected: client.connected,
                         zone: client.zone_index,
                         is_snapdog: client.is_snapdog,
+                        latency_ms: client.latency_ms,
                     };
                     let name = client.name.clone();
                     drop(s);
@@ -668,6 +673,7 @@ mod process_impl {
                         connected: client.connected,
                         zone: client.zone_index,
                         is_snapdog: client.is_snapdog,
+                        latency_ms: client.latency_ms,
                     };
                     drop(s);
                     tracing::info!(client = %new_name, "Name changed");

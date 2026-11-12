@@ -62,6 +62,7 @@ fn lightweight_variants_round_trip_with_snake_case_tag() {
             connected: true,
             zone: 1,
             is_snapdog: false,
+            latency_ms: 0,
         },
         "client_state_changed",
     );
