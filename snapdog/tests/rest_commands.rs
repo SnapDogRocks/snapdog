@@ -337,3 +337,46 @@ async fn a_renamed_client_has_its_new_name_in_the_list_and_the_details() {
     let (_, name) = app.get("/api/v1/clients/1/name").await;
     assert_eq!(name, "Kitchen");
 }
+
+// ── Client EQ and speaker correction announce themselves ──────
+
+/// Nothing else tells a consumer that the equalizer or the speaker correction of a client
+/// changed, because the web interface and Home Assistant read them once and then listen.
+#[tokio::test]
+async fn changing_the_eq_or_the_speaker_of_a_client_sends_an_event() {
+    let mut app = common::test_app();
+    let mut store = app.store.write().await;
+    let client = store.clients.get_mut(&1).expect("client 1");
+    client.is_snapdog = true;
+    client.snapcast_id = Some("snap-1".into());
+    drop(store);
+
+    let (s, _) = app
+        .request(
+            "PUT",
+            "/api/v1/clients/1/eq",
+            Some(json!({"enabled": false, "bands": bands(2)})),
+        )
+        .await;
+    assert!(s.is_success());
+    let event: serde_json::Value =
+        serde_json::from_str(&app.notify_rx.recv().await.expect("an event")).unwrap();
+    assert_eq!(event["type"], "client_eq_changed");
+    assert_eq!(event["client"], 1);
+    assert_eq!(event["enabled"], false);
+    assert_eq!(event["bands"].as_array().map(Vec::len), Some(2));
+
+    let (s, _) = app
+        .request(
+            "PUT",
+            "/api/v1/clients/1/speaker",
+            Some(json!({"custom": {"enabled": true, "bands": bands(1)}})),
+        )
+        .await;
+    assert!(s.is_success());
+    let event: serde_json::Value =
+        serde_json::from_str(&app.notify_rx.recv().await.expect("an event")).unwrap();
+    assert_eq!(event["type"], "client_speaker_changed");
+    assert_eq!(event["client"], 1);
+    assert_eq!(event["bands"].as_array().map(Vec::len), Some(1));
+}

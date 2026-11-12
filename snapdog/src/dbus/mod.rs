@@ -384,6 +384,7 @@ mod mpris {
                 seekable: true,
                 cover_url: Some("/api/v1/zones/1/cover".to_owned()),
                 bitrate_kbps: None,
+                sample_rate: None,
                 content_type: None,
                 track_index: None,
                 track_count: None,

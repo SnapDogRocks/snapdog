@@ -818,7 +818,7 @@ fn reported_volume(
     }
 }
 
-const fn client_notification(idx: usize, client: &state::ClientState) -> api::ws::Notification {
+fn client_notification(idx: usize, client: &state::ClientState) -> api::ws::Notification {
     api::ws::Notification::ClientStateChanged {
         client: idx,
         volume: client.base_volume,
@@ -826,6 +826,8 @@ const fn client_notification(idx: usize, client: &state::ClientState) -> api::ws
         connected: client.connected,
         zone: client.zone_index,
         is_snapdog: client.is_snapdog,
+        latency_ms: client.latency_ms,
+        name: client.name.clone(),
     }
 }
 
@@ -1169,6 +1171,25 @@ mod tests {
             1,
             "the cap is sent back"
         );
+    }
+
+    /// A latency change or a rename is announced with `client_state_changed`, so the event has
+    /// to carry the new value: a consumer cannot tell it from any other change otherwise.
+    #[tokio::test]
+    async fn the_client_event_carries_the_latency_and_the_name() {
+        let (_config, store) = reporting_setup("relative", 50, 50, 100).await;
+        let mut state = client(&store).await;
+        state.latency_ms = -150;
+        state.name = "Pantry".into();
+        match client_notification(1, &state) {
+            api::ws::Notification::ClientStateChanged {
+                latency_ms, name, ..
+            } => {
+                assert_eq!(latency_ms, -150);
+                assert_eq!(name, "Pantry");
+            }
+            other => panic!("expected a client event, got {other:?}"),
+        }
     }
 
     #[tokio::test]

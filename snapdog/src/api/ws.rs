@@ -81,6 +81,8 @@ pub enum Notification {
         // Stream info
         /// Audio bitrate in kbps.
         bitrate_kbps: Option<u32>,
+        /// Sample rate of the track in Hz.
+        sample_rate: Option<u32>,
         /// MIME content type.
         content_type: Option<String>,
         // Playlist position
@@ -155,6 +157,30 @@ pub enum Notification {
         zone: usize,
         /// Whether this is a `SnapDog` client (supports EQ).
         is_snapdog: bool,
+        /// Manual latency correction in milliseconds, as `GET /clients/{n}/latency` reports it.
+        /// Absent in the events of servers before this field, which read as 0.
+        #[serde(default)]
+        latency_ms: i32,
+        /// Display name of the client, as `GET /clients/{n}/name` reports it. Absent in the
+        /// events of servers before this field, which read as an empty string.
+        #[serde(default)]
+        name: String,
+    },
+    /// Client equalizer configuration changed.
+    ClientEqChanged {
+        /// Client index (1-based).
+        client: usize,
+        /// Updated EQ configuration (flattened into the JSON object).
+        #[serde(flatten)]
+        config: crate::audio::eq::EqConfig,
+    },
+    /// Speaker correction of a client changed.
+    ClientSpeakerChanged {
+        /// Client index (1-based).
+        client: usize,
+        /// Updated speaker correction (flattened into the JSON object).
+        #[serde(flatten)]
+        config: crate::audio::eq::EqConfig,
     },
     /// Zone equalizer configuration changed.
     ZoneEqChanged {

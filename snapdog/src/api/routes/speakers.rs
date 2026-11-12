@@ -195,6 +195,15 @@ async fn send_speaker_eq(
     idx: usize,
     config: &EqConfig,
 ) -> Result<(), ApiError> {
+    // The store is already written, so the event tells what is stored even when the client
+    // is not connected and cannot be sent to.
+    crate::api::ws::broadcast_notification(
+        &state.notifications,
+        &crate::api::ws::Notification::ClientSpeakerChanged {
+            client: idx,
+            config: config.clone(),
+        },
+    );
     let client_id = state
         .store
         .read()

@@ -196,6 +196,7 @@ export interface WsZoneChanged {
   seekable: boolean;
   cover_url: string | null;
   bitrate_kbps: number | null;
+  sample_rate?: number | null;
   content_type: string | null;
   track_index: number | null;
   track_count: number | null;
@@ -234,6 +235,8 @@ export interface WsClientStateChanged {
   connected: boolean;
   zone: number;
   is_snapdog: boolean;
+  latency_ms: number;
+  name: string;
 }
 
 export interface WsZonePresenceChanged {
