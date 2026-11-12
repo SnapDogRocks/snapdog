@@ -2,9 +2,9 @@
 rfc: HAI-0010
 title: The SnapDog Home Assistant integration, built and checkable – scope, API prerequisites, acceptance matrix
 status: accepted         # draft | accepted | in-progress | done | superseded
-version: 0.2.0           # v0.2: accepted 2026-11-07; the status of WP-0 to WP-2 and a status line for the rest
+version: 0.3.0           # v0.3: a client is identified by its MAC (HAI-DEC-12); v0.2: accepted 2026-11-07; the status of WP-0 to WP-2 and a status line for the rest
 created: 2026-11-01
-updated: 2026-11-07
+updated: 2026-11-12
 target_repo: snapdog     # RFC and API additions here; integration and library in two new repositories (HAI-DEC-3, confirmed 2026-11-01)
 target_branch: main
 related: [HAI-0007]
@@ -99,13 +99,27 @@ Decisions (HAI-DEC-1 to 7 of HAI-0007 stay, with the outcomes below):
   client set changes.
 - **HAI-DEC-11.** The integration declares `iot_class: local_push`, minimum HA version 2026.10,
   Python as HA requires (3.14 for 2026.10).
-- **HAI-DEC-12.** Entity identity is the server id plus the index (`unique_id` =
-  `<server_id>_zone_<n>_<key>`). The order of `[[zone]]` and `[[client]]` in the configuration
-  is the identity, as it already is for API paths, MQTT topics and KNX addresses. `snapdog.toml`
-  defines the ids and they stay as they are until that file is edited: new blocks go at the
-  end, while inserting, deleting or reordering a block shifts the ones behind it. The integration's documentation states this contract. This is a decision about
-  the integration only. HAI-0007's HAI-DEC-6 concerns the MQTT entities and is untouched: stage
-  1 shipped with indices and no `id`, and the MQTT bridge is not changed by this RFC.
+- **HAI-DEC-12.** Entity identity differs for zones and clients (changed 2026-11-12; v0.2
+  named the index for both).
+  - **Zone:** the server id plus the index (`unique_id` = `<server_id>_zone_<n>_<key>`). The
+    order of `[[zone]]` in the configuration is the identity, as it already is for API paths,
+    MQTT topics and KNX addresses. `snapdog.toml` defines the ids and they stay as they are
+    until that file is edited: new blocks go at the end, while inserting, deleting or
+    reordering a block shifts the ones behind it. The server has no stable id for a zone, and
+    adding one (S-5) is not planned. The integration remembers the name at each position and
+    raises a repair issue when a zone with a unique name shows up at another position. It
+    changes nothing by itself. The documentation states this contract.
+  - **Client:** the server id plus the **MAC address** (`unique_id` =
+    `<server_id>_client_<mac>_<key>`, device connection `mac`). Every `[[client]]` block has a
+    `mac`, it belongs to the device and does not move with the block, so reordering, inserting
+    or deleting blocks leaves history, areas and automations with the speaker. The API path
+    still takes the index, which the integration looks up again from the MAC for every command.
+    Changing the MAC of a block makes it a new device, and a client whose block is removed
+    loses its device.
+
+  This is a decision about the integration only. HAI-0007's HAI-DEC-6 concerns the MQTT
+  entities and is untouched: stage 1 shipped with indices and no `id`, and the MQTT bridge is
+  not changed by this RFC.
 
 ## 4. Architecture
 
@@ -138,7 +152,7 @@ openapi.json, asyncapi.json      coverage manifest                platforms, ser
 - **Discovery.** `manifest.json` `zeroconf: ["_snapdog._tcp.local."]`; the entry's `unique_id`
   is `server_id`; a changed address updates the entry. TXT `auth=true` leads to the API key
   step, `tls=true` to a verify switch.
-- **Identity.** HAI-DEC-12: `unique_id` from `server_id` and the index, no migration layer.
+- **Identity.** HAI-DEC-12: `unique_id` from `server_id` and the index for a zone, from `server_id` and the MAC for a client, no migration layer.
 
 ## 5. API additions to SnapDog
 
@@ -148,6 +162,7 @@ of HAI-0007 answered: additive means 1). None touches `snapdog/src/config`, `sna
 | # | Addition | Needed for | Order |
 |---|---|---|---|
 | S-1 | `GET /api/v1/eq/presets` (names, and the band set of each) | `select_sound_mode`, client EQ preset select | first |
+| S-8 | The events say what changed, so that a consumer that reads once over REST can follow: `client_state_changed` gets `latency_ms` and `name`, `zone_changed` gets `sample_rate`, and `client_eq_changed` and `client_speaker_changed` are new (flattened `EqConfig`, like `zone_eq_changed`). Additive; a missing field reads as a default | client latency, name, EQ and speaker without reading again | with the client entities |
 | S-7 | An AsyncAPI document for `/ws` (`docs/api/asyncapi.json`, message schemas derived from `Notification`, a test keeps it in step so it cannot drift) and a golden-file test in SnapDog. AsyncAPI is the standard description of event interfaces, the counterpart of OpenAPI (version to be checked before building) | HAI-REQ-6, shared fixtures for the library | first |
 
 **Dropped from HAI-0007 §5 and from earlier drafts, numbers kept so the discussion stays
@@ -395,6 +410,16 @@ actions of MED-0011 exist. WP-6 has hassfest, HACS and translations in CI, but n
 `check_translations.py`, `check_matrix.py` or snapshot tests. WP-7 has not started, and nothing
 has been run against a real HA instance or a real SnapDog server with the integration.
 
+**Status on 2026-11-12.** The client entities of WP-5 are merged (`snapdog-homeassistant`
+#26): a device per client, identified by its MAC, with volume, mute, latency, zone, connected
+and, for a SnapDog client, equalizer switch, preset and speaker correction, plus the actions
+`move_client`, `rename_client`, `apply_speaker_profile`, `set_client_eq` and
+`set_client_eq_band`. The warning for moved zones (HAI-DEC-12) is merged
+(`snapdog-homeassistant` #24). S-8 is `snapdog` #456, `pysnapdog` 0.4.0 reads it, and the
+integration follows the new events (`snapdog-homeassistant` #27, merged). Presence, the zone EQ, server, update and KNX entities and the
+`event` for playback errors are not built. Still nothing has been run against a real HA instance
+or a real SnapDog server with the integration.
+
 Rough effort for one developer who knows the code: WP-1 2 to 3 days, WP-2 4 to 6, WP-3 5 to 7,
 WP-4 3 to 4, WP-5 5 to 7, WP-6 4 to 6, WP-7 2 (about 25 to 35 working days). These are estimates, not
 measurements.
@@ -436,7 +461,7 @@ The maintainer's instance is 2026.10.4 without `mqtt` and `hacs`.
 
 Risks as in HAI-0007 §13, plus:
 
-1. **Reordering the configuration.** The index is the identity (HAI-DEC-12). If a user reorders `[[zone]]`, HA attaches history and areas to the wrong zone without an error. The documentation says so; if reports come in, the question can be reopened.
+1. **Reordering the configuration.** The index is the identity of a zone (HAI-DEC-12). If a user reorders `[[zone]]`, HA attaches history and areas to the wrong zone without an error. The integration notices it (names at positions, a repair issue) and the documentation says so; if reports come in, the question can be reopened. A client is identified by its MAC and is not affected.
 2. **Two rows are exclusions, not features.** Zone linking (M-X04) and the knxprod download (M-S05) are deliberate gaps. "Complete" means: every operation is mapped or excluded with a reason, not that every SnapDog capability has an HA counterpart.
 3. **The matrix counts operations, not behaviour.** A row that passes with a mock can still be
    wrong against the real server. The `E:` tests and the Live column exist for that; they are
