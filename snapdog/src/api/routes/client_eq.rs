@@ -50,6 +50,15 @@ async fn snap_id(state: &SharedState, idx: usize) -> Result<String, ApiError> {
 }
 
 async fn send_eq(state: &SharedState, idx: usize, config: &EqConfig) -> Result<(), ApiError> {
+    // The store is already written, so the event tells what is stored even when the client
+    // is not connected and cannot be sent to.
+    crate::api::ws::broadcast_notification(
+        &state.notifications,
+        &crate::api::ws::Notification::ClientEqChanged {
+            client: idx,
+            config: config.clone(),
+        },
+    );
     let client_id = snap_id(state, idx).await?;
     let payload = serde_json::to_vec(config).map_err(|e| ApiError::Internal(e.to_string()))?;
     let _ = state

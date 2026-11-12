@@ -85,19 +85,19 @@ fn the_document_describes_every_notification() {
             );
         }
     }
-    // All eight variants of Notification, each listed on the channel and the operation.
-    assert_eq!(messages.len(), 8);
+    // All ten variants of Notification, each listed on the channel and the operation.
+    assert_eq!(messages.len(), 10);
     assert_eq!(
         doc["channels"]["notifications"]["messages"]
             .as_object()
             .map(serde_json::Map::len),
-        Some(8)
+        Some(10)
     );
     assert_eq!(
         doc["operations"]["receiveNotifications"]["messages"]
             .as_array()
             .map(Vec::len),
-        Some(8)
+        Some(10)
     );
 }
 

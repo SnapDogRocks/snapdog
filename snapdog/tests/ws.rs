@@ -20,6 +20,8 @@ const fn tag(n: &Notification) -> &'static str {
         Notification::ZoneProgress { .. } => "zone_progress",
         Notification::ClientStateChanged { .. } => "client_state_changed",
         Notification::ZoneEqChanged { .. } => "zone_eq_changed",
+        Notification::ClientEqChanged { .. } => "client_eq_changed",
+        Notification::ClientSpeakerChanged { .. } => "client_speaker_changed",
         Notification::ZonePresenceChanged { .. } => "zone_presence_changed",
         Notification::PlaylistsChanged { .. } => "playlists_changed",
         Notification::PlaybackError { .. } => "playback_error",
@@ -156,4 +158,45 @@ async fn broadcast_reaches_subscriber_tap() {
     assert_eq!(v["zone"], 2);
     assert_eq!(v["volume"], 33);
     assert_eq!(v["muted"], true);
+}
+
+fn peaking_config() -> snapdog::audio::eq::EqConfig {
+    snapdog::audio::eq::EqConfig {
+        enabled: true,
+        bands: vec![snapdog::audio::eq::EqBand {
+            freq: 1_000.0,
+            gain: 2.5,
+            q: 0.7,
+            filter_type: snapdog::audio::eq::FilterType::Peaking,
+        }],
+        preset: Some("flat".into()),
+    }
+}
+
+#[test]
+fn client_eq_and_speaker_events_flatten_the_config_next_to_the_client() {
+    for (n, tag) in [
+        (
+            Notification::ClientEqChanged {
+                client: 2,
+                config: peaking_config(),
+            },
+            "client_eq_changed",
+        ),
+        (
+            Notification::ClientSpeakerChanged {
+                client: 2,
+                config: peaking_config(),
+            },
+            "client_speaker_changed",
+        ),
+    ] {
+        assert_tag(&n, tag);
+        let v = serde_json::to_value(&n).expect("serialize");
+        assert_eq!(v["client"], 2);
+        assert!(v.get("config").is_none(), "config must be flattened: {v}");
+        assert_eq!(v["enabled"], true);
+        assert_eq!(v["preset"], "flat");
+        assert_eq!(v["bands"][0]["type"], "peaking");
+    }
 }

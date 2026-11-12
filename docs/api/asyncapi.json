@@ -4,6 +4,12 @@
     "notifications": {
       "address": "/ws",
       "messages": {
+        "client_eq_changed": {
+          "$ref": "#/components/messages/client_eq_changed"
+        },
+        "client_speaker_changed": {
+          "$ref": "#/components/messages/client_speaker_changed"
+        },
         "client_state_changed": {
           "$ref": "#/components/messages/client_state_changed"
         },
@@ -33,6 +39,90 @@
   },
   "components": {
     "messages": {
+      "client_eq_changed": {
+        "contentType": "application/json",
+        "name": "client_eq_changed",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EqConfig",
+              "description": "Updated EQ configuration (flattened into the JSON object)."
+            },
+            {
+              "properties": {
+                "client": {
+                  "description": "Client index (1-based).",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "client"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Client equalizer configuration changed.",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "client_eq_changed"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ],
+          "description": "Client equalizer configuration changed."
+        },
+        "title": "Client equalizer configuration changed."
+      },
+      "client_speaker_changed": {
+        "contentType": "application/json",
+        "name": "client_speaker_changed",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EqConfig",
+              "description": "Updated speaker correction (flattened into the JSON object)."
+            },
+            {
+              "properties": {
+                "client": {
+                  "description": "Client index (1-based).",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "client"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Speaker correction of a client changed.",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "client_speaker_changed"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ],
+          "description": "Speaker correction of a client changed."
+        },
+        "title": "Speaker correction of a client changed."
+      },
       "client_state_changed": {
         "contentType": "application/json",
         "name": "client_state_changed",
@@ -683,6 +773,12 @@
         },
         {
           "$ref": "#/channels/notifications/messages/client_state_changed"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/client_eq_changed"
+        },
+        {
+          "$ref": "#/channels/notifications/messages/client_speaker_changed"
         },
         {
           "$ref": "#/channels/notifications/messages/zone_eq_changed"

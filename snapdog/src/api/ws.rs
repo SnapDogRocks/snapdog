@@ -166,6 +166,22 @@ pub enum Notification {
         #[serde(default)]
         name: String,
     },
+    /// Client equalizer configuration changed.
+    ClientEqChanged {
+        /// Client index (1-based).
+        client: usize,
+        /// Updated EQ configuration (flattened into the JSON object).
+        #[serde(flatten)]
+        config: crate::audio::eq::EqConfig,
+    },
+    /// Speaker correction of a client changed.
+    ClientSpeakerChanged {
+        /// Client index (1-based).
+        client: usize,
+        /// Updated speaker correction (flattened into the JSON object).
+        #[serde(flatten)]
+        config: crate::audio::eq::EqConfig,
+    },
     /// Zone equalizer configuration changed.
     ZoneEqChanged {
         /// Zone index (1-based).
