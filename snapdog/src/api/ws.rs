@@ -81,6 +81,8 @@ pub enum Notification {
         // Stream info
         /// Audio bitrate in kbps.
         bitrate_kbps: Option<u32>,
+        /// Sample rate of the track in Hz.
+        sample_rate: Option<u32>,
         /// MIME content type.
         content_type: Option<String>,
         // Playlist position
@@ -159,6 +161,10 @@ pub enum Notification {
         /// Absent in the events of servers before this field, which read as 0.
         #[serde(default)]
         latency_ms: i32,
+        /// Display name of the client, as `GET /clients/{n}/name` reports it. Absent in the
+        /// events of servers before this field, which read as an empty string.
+        #[serde(default)]
+        name: String,
     },
     /// Zone equalizer configuration changed.
     ZoneEqChanged {

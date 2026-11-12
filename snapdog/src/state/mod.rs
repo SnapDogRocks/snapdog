@@ -466,6 +466,7 @@ pub async fn update_client_and_notify(
         let zone = client.zone_index;
         let is_snapdog = client.is_snapdog;
         let latency_ms = client.latency_ms;
+        let name = client.name.clone();
         s.dirty = true;
         drop(s);
         crate::api::ws::Notification::ClientStateChanged {
@@ -476,6 +477,7 @@ pub async fn update_client_and_notify(
             zone,
             is_snapdog,
             latency_ms,
+            name,
         }
     };
     crate::api::ws::broadcast_notification(notify, &notification);

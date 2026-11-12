@@ -61,6 +61,10 @@
               "description": "Whether the client is muted.",
               "type": "boolean"
             },
+            "name": {
+              "description": "Display name of the client, as `GET /clients/{n}/name` reports it. Absent in the\nevents of servers before this field, which read as an empty string.",
+              "type": "string"
+            },
             "type": {
               "enum": [
                 "client_state_changed"
@@ -296,6 +300,15 @@
             "repeat": {
               "$ref": "#/components/schemas/RepeatMode",
               "description": "Repeat mode."
+            },
+            "sample_rate": {
+              "description": "Sample rate of the track in Hz.",
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "seekable": {
               "description": "Whether the track supports seeking.",

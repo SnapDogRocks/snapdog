@@ -63,6 +63,7 @@ fn lightweight_variants_round_trip_with_snake_case_tag() {
             zone: 1,
             is_snapdog: false,
             latency_ms: 0,
+            name: "Kitchen".into(),
         },
         "client_state_changed",
     );

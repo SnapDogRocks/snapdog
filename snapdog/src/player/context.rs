@@ -162,6 +162,7 @@ pub async fn update_and_notify(
             seekable: track.is_some_and(|t| t.seekable),
             cover_url: zone.cover_url.clone(),
             bitrate_kbps: track.and_then(|t| t.bitrate_kbps),
+            sample_rate: track.and_then(|t| t.sample_rate),
             content_type: track.and_then(|t| t.content_type.clone()),
             track_index: zone.playlist_track_index,
             track_count: zone.playlist_track_count,
@@ -279,4 +280,41 @@ pub async fn setup_zone_group(zone_index: usize, ctx: &ZonePlayerContext) -> Opt
         "Zone group assigned"
     );
     Some(gid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The sample rate is part of the track metadata REST reports, so a consumer that only
+    /// listens to `zone_changed` has to get it there too, or it keeps the one of the last track.
+    #[tokio::test]
+    async fn the_zone_event_carries_the_sample_rate_of_the_track() {
+        let raw: crate::config::FileConfig = toml::from_str(
+            r#"
+            [[zone]]
+            name = "Ground Floor"
+            [[client]]
+            name = "Living Room"
+            mac = "00:00:00:00:00:00"
+            zone = "Ground Floor"
+        "#,
+        )
+        .unwrap();
+        let config = crate::config::load_raw(raw).unwrap();
+        let store = state::init(&config, None).unwrap();
+        let (notify, mut rx) = tokio::sync::broadcast::channel(4);
+
+        update_and_notify(&store, 1, &notify, |zone| {
+            let mut track = crate::player::helpers::radio_track_info("Station");
+            track.sample_rate = Some(44_100);
+            zone.track = Some(track);
+        })
+        .await;
+
+        let json = rx.recv().await.unwrap();
+        let event: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(event["type"], "zone_changed");
+        assert_eq!(event["sample_rate"], 44_100);
+    }
 }

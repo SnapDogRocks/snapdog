@@ -42,6 +42,7 @@ fn the_document_describes_every_notification() {
             zone: 1,
             is_snapdog: true,
             latency_ms: 20,
+            name: "Kitchen".into(),
         },
         Notification::ZonePresenceChanged {
             zone: 1,
