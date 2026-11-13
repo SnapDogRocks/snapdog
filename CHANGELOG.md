@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.1](https://github.com/SnapDogRocks/snapdog/compare/v0.34.0...v0.34.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **docker:** bump the runtime base image to the bookworm-slim with apt 2.6.2 ([#459](https://github.com/SnapDogRocks/snapdog/issues/459)) ([5705db2](https://github.com/SnapDogRocks/snapdog/commit/5705db2e91dd4c29c37679acaccedda027da081d))
+
 ## [0.34.0](https://github.com/SnapDogRocks/snapdog/compare/v0.33.1...v0.34.0) (2026-11-12)
 
 
