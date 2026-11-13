@@ -45,10 +45,10 @@
     "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^10.14.0",
-    "eslint-config-next": "^16.4.5",
+    "eslint-config-next": "^16.4.6",
     "tailwindcss": "^4.3.5",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.72.1",
+    "typescript-eslint": "^8.72.2",
     "vitest": "^5.1.0"
   }
 }
