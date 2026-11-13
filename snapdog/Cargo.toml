@@ -14,7 +14,7 @@ path = "src/main.rs"
 [dependencies]
 tokio = { workspace = true }
 axum = { workspace = true }
-axum-server = { version = "0.8", features = ["tls-rustls"] }
+axum-server = { version = "0.9", features = ["tls-rustls"] }
 tower-http = { workspace = true }
 utoipa = { workspace = true }
 serde = { workspace = true }
