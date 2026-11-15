@@ -619,13 +619,6 @@
 }
 
 @media (max-width: 1100px) {
-    .current-player {
-        grid-template-columns: 144px minmax(0, 1fr);
-        gap: 16px;
-    }
-    .current-track h2 {
-        font-size: 23px;
-    }
     .current-controls-row {
         gap: 8px 14px;
     }
@@ -899,5 +892,96 @@
     }
     .current-transport {
         justify-content: flex-start;
+    }
+}
+
+/*
+ * Wide cards: artwork, text and controls grow with the width of the card (not of the window), so
+ * that the controls do not stay small in a large card. The sizes are custom properties because
+ * the buttons and icons come from shared components that set their own fixed sizes.
+ */
+@container player-layout (min-width: 721px) {
+    .current-player {
+        --art: clamp(160px, 19cqw, 260px);
+        --tc-btn: clamp(40px, 4.4cqw, 60px);
+        --tc-play: clamp(48px, 5.8cqw, 78px);
+        --tc-icon: clamp(20px, 2.3cqw, 30px);
+        --tc-play-icon: clamp(24px, 3cqw, 40px);
+        --vol-icon: clamp(18px, 2cqw, 26px);
+        --vol-btn: clamp(32px, 3.6cqw, 46px);
+        --vol-track: clamp(12px, 1.2cqw, 18px);
+        --vol-thumb: clamp(16px, 2cqw, 26px);
+        grid-template-columns: var(--art) minmax(0, 1fr);
+        gap: clamp(20px, 2.6cqw, 36px);
+        padding: clamp(16px, 2cqw, 28px);
+    }
+    .current-player-content {
+        gap: clamp(8px, 1.2cqw, 16px);
+    }
+    .current-track h2 {
+        font-size: clamp(24px, 3cqw, 40px);
+    }
+    .current-track p {
+        font-size: clamp(13px, 1.45cqw, 18px);
+    }
+    .current-track .current-album {
+        font-size: clamp(12px, 1.3cqw, 16px);
+    }
+    .current-source {
+        font-size: clamp(9px, 1cqw, 12px);
+    }
+    .current-controls-row {
+        gap: clamp(12px, 1.6cqw, 24px) clamp(24px, 3cqw, 48px);
+    }
+    .current-transport {
+        gap: clamp(8px, 1cqw, 14px);
+    }
+    .current-transport > div:first-child > div button {
+        width: var(--tc-btn);
+        height: var(--tc-btn);
+    }
+    .current-transport > div:first-child > div button svg {
+        width: var(--tc-icon);
+        height: var(--tc-icon);
+    }
+    .current-transport > div:first-child > div:nth-child(2) button {
+        width: var(--tc-play);
+        height: var(--tc-play);
+    }
+    .current-transport > div:first-child > div:nth-child(2) button svg {
+        width: var(--tc-play-icon);
+        height: var(--tc-play-icon);
+    }
+    .current-volume {
+        flex: 1 1 220px;
+        max-width: clamp(300px, 36cqw, 520px);
+        gap: clamp(8px, 1cqw, 14px);
+    }
+    .current-volume > div {
+        gap: clamp(8px, 1cqw, 14px);
+    }
+    .current-volume > div > button {
+        width: var(--vol-btn);
+        height: var(--vol-btn);
+    }
+    .current-volume > div > button svg {
+        width: var(--vol-icon);
+        height: var(--vol-icon);
+    }
+    .current-volume [data-slot="slider-track"] {
+        height: var(--vol-track);
+    }
+    .current-volume [data-slot="slider-thumb"] {
+        width: var(--vol-thumb);
+        height: var(--vol-thumb);
+    }
+    .current-volume > div > span {
+        width: 3ch;
+        font-size: clamp(12px, 1.4cqw, 18px);
+    }
+    .current-text-button {
+        font-size: clamp(12px, 1.4cqw, 17px) !important;
+        min-height: var(--vol-btn);
+        padding: 4px clamp(5px, 0.8cqw, 12px);
     }
 }
