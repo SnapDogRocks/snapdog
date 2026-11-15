@@ -4,6 +4,15 @@ on:
   # release-please creates the tag plus a draft and dispatches this workflow exactly
   # once. Never add a tag or release event here: either would duplicate the build.
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Publication scope
+        required: true
+        default: full
+        type: choice
+        options:
+          - full
+          - server-image
 
 concurrency:
   group: release-${{ github.ref }}
@@ -68,7 +77,7 @@ jobs:
     # job's own `if:`), so there is nothing here to check either — this job
     # only verifies capability, never publishes, and runs macOS-first because
     # the Apple checks need a real keychain.
-    if: needs.meta.outputs.prerelease == 'false'
+    if: needs.meta.outputs.prerelease == 'false' && inputs.scope == 'full'
     runs-on: macos-latest
     environment: release
     steps:
@@ -366,19 +375,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            container: rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04-arm
-            container: rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-pc-windows-msvc
-            os: windows-2025
+        include: ${{ fromJSON(inputs.scope == 'server-image' && '[{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-latest","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"},{"target":"aarch64-unknown-linux-gnu","os":"ubuntu-24.04-arm","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"}]' || '[{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-latest","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"},{"target":"aarch64-unknown-linux-gnu","os":"ubuntu-24.04-arm","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"},{"target":"x86_64-apple-darwin","os":"macos-latest","container":""},{"target":"aarch64-apple-darwin","os":"macos-latest","container":""},{"target":"x86_64-pc-windows-msvc","os":"windows-2025","container":""}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
       # The bookworm container ships the rust-toolchain.toml version; only the
@@ -496,6 +493,7 @@ jobs:
   macos-app:
     name: macOS App (.dmg)
     needs: [meta, build]
+    if: inputs.scope == 'full'
     runs-on: macos-latest
     # Holds the Apple signing and notarisation values and the Sparkle key, which lives in the protected environment.
     environment: release
@@ -724,6 +722,7 @@ jobs:
   build-deb:
     name: Debian ${{ matrix.pkg }} (${{ matrix.arch }})
     needs: [meta, build]
+    if: inputs.scope == 'full'
     runs-on: ubuntu-latest
     # id-token: for cosign's keyless OIDC signing; attestations: for
     # actions/attest-build-provenance. Both default to none under this
@@ -819,6 +818,7 @@ jobs:
     name: Verify release assets and .deb installs
     runs-on: ubuntu-latest
     needs: [meta, build, build-deb, knxprod, macos-app]
+    if: inputs.scope == 'full'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Only collect the current release outputs. In particular, the signed APT
@@ -952,6 +952,7 @@ jobs:
   smoke-homebrew:
     name: Smoke-test Homebrew packages
     needs: [meta, build]
+    if: inputs.scope == 'full'
     runs-on: macos-latest
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
@@ -1006,6 +1007,7 @@ jobs:
   smoke-aur:
     name: Smoke-test AUR packages
     needs: [meta, build]
+    if: inputs.scope == 'full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
@@ -1062,6 +1064,7 @@ jobs:
     name: Upload verified assets to draft
     runs-on: ubuntu-latest
     needs: [meta, verify-release-assets, smoke-homebrew, smoke-aur, smoke-apt]
+    if: inputs.scope == 'full'
     permissions:
       contents: write
     steps:
@@ -1109,7 +1112,8 @@ jobs:
     # default when a `needs` entry is skipped, so this has to say explicitly
     # that their skip is fine and only their *failure* should block this stage.
     if: >-
-      !cancelled()
+      inputs.scope == 'full'
+      && !cancelled()
       && needs.meta.result == 'success'
       && needs.upload-release-artifacts.result == 'success'
       && (needs.docker.result == 'success' || needs.docker.result == 'skipped')
@@ -1600,7 +1604,7 @@ jobs:
     # everything here already depends on publish-release, so their outcome is
     # covered transitively.
     needs: [meta, update-homebrew, publish-aur, update-appcast]
-    if: needs.meta.outputs.prerelease == 'false'
+    if: needs.meta.outputs.prerelease == 'false' && inputs.scope == 'full'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1643,7 +1647,7 @@ jobs:
     # release must not disagree. docker builds and pushes the exact version
     # earlier; this moves the floating tag once the release is really live.
     needs: [meta, promote]
-    if: needs.meta.outputs.prerelease == 'false'
+    if: needs.meta.outputs.prerelease == 'false' && inputs.scope == 'full'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1706,6 +1710,7 @@ jobs:
   smoke-apt:
     name: Smoke-test the Debian packages
     needs: [meta, build-deb]
+    if: inputs.scope == 'full'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
@@ -1936,13 +1941,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: snapdog
-            file: Dockerfile
-            repo: ghcr.io/snapdogrocks/snapdog
-          - image: snapdog-client
-            file: Dockerfile.client
-            repo: ghcr.io/snapdogrocks/snapdog-client
+        include: ${{ fromJSON(inputs.scope == 'server-image' && '[{"image":"snapdog","file":"Dockerfile","repo":"ghcr.io/snapdogrocks/snapdog"}]' || '[{"image":"snapdog","file":"Dockerfile","repo":"ghcr.io/snapdogrocks/snapdog"},{"image":"snapdog-client","file":"Dockerfile.client","repo":"ghcr.io/snapdogrocks/snapdog-client"}]') }}
     permissions:
       contents: read
       packages: write
@@ -2041,12 +2040,61 @@ jobs:
           fi
           cosign sign --yes "${REPO}@${DIGEST}"
 
+  promote-server-image:
+    name: Move server image floating tags
+    needs: [meta, docker]
+    if: >-
+      needs.meta.outputs.prerelease == 'false'
+      && inputs.scope == 'server-image'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Point floating tags at the verified server image
+        env:
+          REPO: ghcr.io/snapdogrocks/snapdog
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          case "$version" in
+            *-*) echo "::error::IMG003 refusing to move floating tags for prerelease ${TAG}"; exit 1 ;;
+          esac
+          major="${version%%.*}"
+          rest="${version#*.}"
+          minor="${major}.${rest%%.*}"
+          digest=$(docker buildx imagetools inspect "${REPO}:${TAG}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')
+          test -n "$digest" || { echo "::error::IMG001 cannot resolve ${REPO}:${TAG}"; exit 1; }
+
+          docker buildx imagetools create \
+            --tag "${REPO}:latest" \
+            --tag "${REPO}:${minor}" \
+            --tag "${REPO}:${major}" \
+            "${REPO}@${digest}"
+
+          for floating in latest "$minor" "$major"; do
+            actual=$(docker buildx imagetools inspect "${REPO}:${floating}" \
+              --format '{{json .Manifest.Digest}}' | tr -d '"')
+            if [[ "$actual" != "$digest" ]]; then
+              echo "::error::IMG002 ${REPO}:${floating} is ${actual}, expected ${digest}"
+              exit 1
+            fi
+            echo "${REPO}:${floating} -> ${digest}"
+          done
+
   updater-image:
     name: Docker snapdog-updater
     needs: [meta]
     # A prerelease/test tag never pushes a real image. `publish-release` tolerates
     # this job being skipped (see its own `if:`).
-    if: needs.meta.outputs.prerelease == 'false'
+    if: needs.meta.outputs.prerelease == 'false' && inputs.scope == 'full'
     runs-on: ubuntu-latest
     permissions:
       contents: read

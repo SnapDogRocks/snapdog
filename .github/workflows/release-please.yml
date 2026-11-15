@@ -77,9 +77,13 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TAG: ${{ steps.rp.outputs.tag_name }}
+          # Operational switch for deliberately staged releases. An absent
+          # variable preserves the complete release as the safe default.
+          RELEASE_SCOPE: ${{ vars.RELEASE_SCOPE || 'full' }}
         run: |
           set -euo pipefail
           test -n "$TAG"
           # release-please creates the tag and a draft release. release.yml has no
           # tag/release trigger: this is the single automatic dispatch point.
-          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" \
+            -f scope="$RELEASE_SCOPE"
