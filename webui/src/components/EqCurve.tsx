@@ -4,7 +4,13 @@ import { useRef, useState } from "react";
 import type { EqBand } from "@/lib/api";
 
 export const FILTER_TYPES: readonly EqBand["type"][] = ["low_shelf", "high_shelf", "peaking", "low_pass", "high_pass"] as const;
-export const MAX_EQ_BANDS = 10;
+const SERVER_MAX_EQ_BANDS = 10;
+/** The server allows ten bands. A build can lower the limit (the demo does), never raise it. */
+const configuredMaxBands = Number.parseInt(process.env.NEXT_PUBLIC_MAX_EQ_BANDS ?? "", 10);
+export const MAX_EQ_BANDS =
+  Number.isInteger(configuredMaxBands) && configuredMaxBands >= 1
+    ? Math.min(configuredMaxBands, SERVER_MAX_EQ_BANDS)
+    : SERVER_MAX_EQ_BANDS;
 export const FREQ_MIN_HZ = 20;
 export const FREQ_MAX_HZ = 20000;
 export const GAIN_MIN_DB = -12;

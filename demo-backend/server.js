@@ -365,6 +365,18 @@ const SPEAKER_PROFILES = {
   ]
 };
 
+// The demo's equalizer has at most five bands (the web UI of the demo is built with the same
+// limit). Longer band lists, such as the ten-band speaker profiles, are thinned out evenly so
+// the low and the high shelf stay.
+const MAX_EQ_BANDS = 5;
+const fitBands = (bands) => {
+  if (bands.length <= MAX_EQ_BANDS) return bands;
+  return Array.from({ length: MAX_EQ_BANDS }, (_, i) =>
+    bands[Math.round((i * (bands.length - 1)) / (MAX_EQ_BANDS - 1))]);
+};
+const tooManyBands = (body) => Array.isArray(body && body.bands) && body.bands.length > MAX_EQ_BANDS;
+const BANDS_ERROR = { error: `The demo equalizer has at most ${MAX_EQ_BANDS} bands` };
+
 const mockEqConfig = (enabled = false, preset = null, bands = null) => {
   let activeBands = bands ? JSON.parse(JSON.stringify(bands)) : JSON.parse(JSON.stringify(defaultEqBands));
   
@@ -381,7 +393,7 @@ const mockEqConfig = (enabled = false, preset = null, bands = null) => {
   
   return {
     enabled,
-    bands: activeBands,
+    bands: fitBands(activeBands),
     preset,
   };
 };
@@ -1468,6 +1480,7 @@ app.get('/api/v1/zones/:id/eq', (req, res) => {
 app.put('/api/v1/zones/:id/eq', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
+  if (tooManyBands(req.body)) return res.status(400).json(BANDS_ERROR);
   z.eq.enabled = !!req.body.enabled;
   if (req.body.bands) z.eq.bands = req.body.bands;
   z.eq.preset = req.body.preset || null;
@@ -1651,6 +1664,7 @@ app.get('/api/v1/clients/:id/eq', (req, res) => {
 app.put('/api/v1/clients/:id/eq', (req, res) => {
   const c = clients[req.params.id];
   if (!c) return res.status(404).json({ error: 'Client not found' });
+  if (tooManyBands(req.body)) return res.status(400).json(BANDS_ERROR);
   c.eq.enabled = !!req.body.enabled;
   if (req.body.bands) c.eq.bands = req.body.bands;
   c.eq.preset = req.body.preset || null;
