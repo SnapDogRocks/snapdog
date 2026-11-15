@@ -132,6 +132,25 @@ async fn transitions_are_isolated_per_zone() {
     assert_eq!(z2, 90);
 }
 
+/// A change of the auto-off delay is announced with the presence event, whatever set it (API,
+/// MQTT or KNX all send `SetAutoOffDelay`), so a client does not have to read it again.
+#[tokio::test(start_paused = true)]
+async fn a_new_auto_off_delay_is_announced() {
+    let mut h = spawn_zone_harness(test_config()).await;
+    let zone = 1usize;
+
+    h.senders[&zone]
+        .send(ZoneCommand::SetAutoOffDelay(120))
+        .await
+        .unwrap();
+    h.await_notification(|v| {
+        v["type"] == "zone_presence_changed" && v["zone"] == zone && v["auto_off_delay"] == 120
+    })
+    .await;
+
+    assert_eq!(h.store.read().await.zones[&zone].auto_off_delay, 120);
+}
+
 /// IT-T82 — presence auto-off timer fires under a paused clock and stops the zone.
 ///
 /// The auto-off timer is retriggerable: each `SetPresence(true)` (re)arms it, and the

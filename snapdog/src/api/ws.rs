@@ -200,6 +200,11 @@ pub enum Notification {
         enabled: bool,
         /// Whether the auto-off timer is running.
         timer_active: bool,
+        /// Auto-off delay in seconds, as `GET /zones/{n}/presence/timeout` reports it. It is sent
+        /// when the delay changes too (API, MQTT, KNX). Absent in the events of servers before
+        /// this field.
+        #[serde(default)]
+        auto_off_delay: Option<u16>,
     },
     /// The list of playlists, an index or a name may have changed. Read `GET /media/playlists`
     /// again.

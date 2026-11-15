@@ -75,6 +75,7 @@ fn lightweight_variants_round_trip_with_snake_case_tag() {
             presence: true,
             enabled: true,
             timer_active: false,
+            auto_off_delay: Some(900),
         },
         "zone_presence_changed",
     );
