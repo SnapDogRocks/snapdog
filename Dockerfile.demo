@@ -22,6 +22,8 @@ RUN pnpm install --prod --frozen-lockfile
 
 # Copy static Web UI build from Stage 1
 COPY --from=frontend-builder /app/webui/out ./public
+# The demo shows the current Web UI only, so the legacy entry is not shipped.
+RUN rm -rf ./public/legacy ./public/legacy.html ./public/legacy.txt
 
 # Copy mock server code
 COPY demo-backend/ ./
