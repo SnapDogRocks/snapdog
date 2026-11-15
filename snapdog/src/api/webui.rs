@@ -23,6 +23,7 @@ fn mime_for(path: &str) -> &'static str {
         "css" => "text/css; charset=utf-8",
         "js" => "application/javascript; charset=utf-8",
         "json" => "application/json; charset=utf-8",
+        "webmanifest" => "application/manifest+json; charset=utf-8",
         "png" => "image/png",
         "svg" => "image/svg+xml",
         "ico" => "image/x-icon",
@@ -124,6 +125,7 @@ mod tests {
     use super::{
         HTML_CACHE_CONTROL, IMMUTABLE_CACHE_CONTROL, WebAssets, asset_path_for_request,
         cache_control_for_path, fallback, has_hex_hash, html_entry, is_asset_path, is_reserved,
+        mime_for,
     };
     use crate::config::WebUi;
     use axum::body::{Body, to_bytes};
@@ -131,6 +133,15 @@ mod tests {
 
     fn request(uri: &str) -> Request<Body> {
         Request::builder().uri(uri).body(Body::empty()).unwrap()
+    }
+
+    #[test]
+    fn web_manifest_has_its_own_mime_type() {
+        assert_eq!(
+            mime_for("manifest.webmanifest"),
+            "application/manifest+json; charset=utf-8"
+        );
+        assert_eq!(mime_for("favicon.ico"), "image/x-icon");
     }
 
     #[test]
