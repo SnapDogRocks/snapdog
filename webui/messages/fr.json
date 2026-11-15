@@ -167,7 +167,6 @@
     "stale": "Les valeurs affichées ne sont peut-être plus à jour.",
     "nowPlaying": "En cours de lecture",
     "live": "Flux en direct",
-    "zoneVolume": "Volume de la zone",
     "volumeFor": "Volume de {name}",
     "speakers": "Enceintes",
     "clearSelection": "Effacer la sélection",

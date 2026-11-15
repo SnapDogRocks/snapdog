@@ -22,18 +22,20 @@ export function Player({ zone }: { zone: ZoneState }) {
                 <NowPlaying zone={zone} />
             </div>
             <div className="current-player-content">
-                <div className="current-eyebrow">
-                    <span
-                        className={`current-dot ${zone.playback === "playing" ? "is-playing" : ""}`}
-                    />
-                    {active ? t(`source.${zone.source}`) : t("zone.idle")}
-                </div>
                 <div className="current-track">
-                    <h2>
-                        {active
-                            ? (zone.track?.title ?? "") || t("zone.unknownTitle")
-                            : t("zone.noAudio")}
-                    </h2>
+                    <div className="current-track-heading">
+                        <h2>
+                            {active
+                                ? (zone.track?.title ?? "") || t("zone.unknownTitle")
+                                : t("zone.noAudio")}
+                        </h2>
+                        <div className="current-eyebrow current-source">
+                            <span
+                                className={`current-dot ${zone.playback === "playing" ? "is-playing" : ""}`}
+                            />
+                            {active ? t(`source.${zone.source}`) : t("zone.idle")}
+                        </div>
+                    </div>
                     {active && <p>{(zone.track?.artist ?? "") || t("zone.unknownArtist")}</p>}
                     {active && zone.track?.album && (
                         <p className="current-album">{zone.track.album}</p>
@@ -45,34 +47,12 @@ export function Player({ zone }: { zone: ZoneState }) {
                         <TransportControls zone={zone} />
                         {library && <ShuffleRepeat zone={zone} />}
                     </div>
-                    <div className="current-volume">
-                        <div className="current-volume-label">
-                            <span>{t("current.zoneVolume")}</span>
-                            <button
-                                className="current-text-button"
-                                onClick={() => {
-                                    setEq(true);
-                                }}
-                                aria-label={t("eq.title", { zone: zone.name })}
-                            >
-                                EQ{zone.eqEnabled ? " •" : ""}
-                            </button>
-                        </div>
-                        <VolumeSlider
-                            label={t("current.volumeFor", { name: zone.name })}
-                            volume={zone.volume}
-                            muted={zone.muted}
-                            onVolumeChange={(v) => {
-                                api.zones.setVolume(zone.index, v).catch(logApiError);
-                            }}
-                            onMuteToggle={() => {
-                                api.zones.toggleMute(zone.index).catch(logApiError);
-                            }}
-                            onUnmute={() => {
-                                api.zones.setMute(zone.index, false).catch(logApiError);
-                            }}
-                        />
-                    </div>
+                    <PlayerVolume
+                        zone={zone}
+                        onEq={() => {
+                            setEq(true);
+                        }}
+                    />
                 </div>
                 <div className="current-progress">
                     {active &&
@@ -98,5 +78,34 @@ export function Player({ zone }: { zone: ZoneState }) {
                 />
             )}
         </section>
+    );
+}
+
+function PlayerVolume({ zone, onEq }: { zone: ZoneState; onEq: () => void }) {
+    const t = useTranslations();
+    return (
+        <div className="current-volume">
+            <VolumeSlider
+                label={t("current.volumeFor", { name: zone.name })}
+                volume={zone.volume}
+                muted={zone.muted}
+                onVolumeChange={(v) => {
+                    api.zones.setVolume(zone.index, v).catch(logApiError);
+                }}
+                onMuteToggle={() => {
+                    api.zones.toggleMute(zone.index).catch(logApiError);
+                }}
+                onUnmute={() => {
+                    api.zones.setMute(zone.index, false).catch(logApiError);
+                }}
+            />
+            <button
+                className="current-text-button"
+                onClick={onEq}
+                aria-label={t("eq.title", { zone: zone.name })}
+            >
+                EQ{zone.eqEnabled ? " •" : ""}
+            </button>
+        </div>
     );
 }

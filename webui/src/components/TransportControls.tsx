@@ -95,13 +95,20 @@ export function TransportControls({ zone }: TransportControlsProps) {
 
   const onClickPlayPause = useCallback(() => {
     if (!didLongPress.current) {
-      runAction("play-pause", () => api.zones[isPlaying ? "pause" : "play"](index));
+      const action = isPlaying
+        ? () => api.zones.pause(index)
+        : () => api.zones.play(index);
+      runAction("play-pause", action);
     }
     didLongPress.current = false;
   }, [index, isPlaying, runAction]);
 
   const cmd = (action: "next" | "previous") => {
-    runAction(action, () => api.zones[action](index));
+    if (action === "next") {
+      runAction("next", () => api.zones.next(index));
+    } else {
+      runAction("previous", () => api.zones.previous(index));
+    }
   };
 
   return (

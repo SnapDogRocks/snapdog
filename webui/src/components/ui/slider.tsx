@@ -52,13 +52,13 @@ function Slider({
           className="absolute bg-primary select-none data-horizontal:h-full data-vertical:w-full"
         />
       </SliderPrimitive.Track>
-      {Array.from({ length: _values.length }, (_, index) => (
+      {_values.map((thumbValue, index) => (
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
           role="slider"
           aria-label={ariaLabel}
-          aria-valuetext={getAriaValueText?.(_values[index] ?? min, index) ?? ariaValueText ?? `${_values[index] ?? min}`}
+          aria-valuetext={getAriaValueText?.(thumbValue, index) ?? ariaValueText ?? `${thumbValue}`}
           className="block size-4 shrink-0 rounded-4xl border border-primary bg-white shadow-sm ring-ring/50 transition-colors select-none hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
         />
       ))}

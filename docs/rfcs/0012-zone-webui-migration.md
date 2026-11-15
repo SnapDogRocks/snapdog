@@ -169,3 +169,23 @@ Production export, TypeScript, translation validation and lint pass. Chromium ax
 checks report no violations on the tested light/dark main screens, mobile views,
 move menus and EQ dialogs. Layout checks cover 320, 390, 768, 1024 and 1440px without
 document overflow. Desktop and phone screenshots were visually inspected.
+
+
+## Player control alignment — 2026-11-15
+
+Removed the visible zone-volume caption while retaining the zone-specific accessible
+slider name. Volume, mute and EQ now share one centered row with transport controls.
+At intermediate widths a 144px cover sits beside the metadata and control block,
+with the seek bar spanning the card below. Container queries use actual card width
+rather than viewport width. On small phones the controls wrap into full-width rows
+instead of leaving an indented volume row beside the artwork.
+
+The source label sits at the upper right beside the title; artwork and title share
+the same top edge. Zone playback bars animate gently with staggered timings only
+while playing and remain static when reduced motion is requested.
+
+Final local qualification after rebasing onto current main: 1,063 Rust workspace tests
+pass (two skipped), workspace Clippy and formatting pass, and the embedded debug
+binary builds with both CLI WebUI choices. Frontend export, lint, 49 unit tests and
+158 translation keys pass. Browser measurements verify aligned controls at eleven
+viewport widths from 320 through 1440px and static playback bars under reduced motion.

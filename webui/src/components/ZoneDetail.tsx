@@ -90,7 +90,6 @@ function TrackInfo({ zone, forceCenter = false }: { zone: ZoneState; forceCenter
 
 export function ZoneDetail({ zone }: { zone: ZoneState }) {
   const [showEq, setShowEq] = useState(false);
-  const t = useTranslations();
 
   // Cover URL for ambient background glow — rendered at the ZoneDetail level
   // so it is structurally behind ALL interactive children and can never
@@ -123,31 +122,7 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
             </div>
 
             {/* Controls & Metadata */}
-            <div className="flex flex-col justify-between flex-1 min-w-0 @sm:max-w-[360px] @md:max-w-[380px] @lg:max-w-[400px] space-y-3.5 @sm:space-y-0 @sm:h-44 @md:h-48 @lg:h-56 mt-4 @sm:mt-0">
-              <TrackInfo zone={zone} forceCenter={false} />
-              <SeekBar zone={zone} />
-              <div className="flex items-center justify-center gap-3 relative w-full">
-                <div className="mx-auto"><TransportControls zone={zone} /></div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => { setShowEq(true); }}
-                  className={`absolute right-0 text-xs px-2.5 h-8 rounded-full bg-secondary/50 border border-border/20 ${zone.eqEnabled ? "text-primary-ink font-bold border-primary/30" : ""}`}
-                  aria-label={t("eq.title", { zone: zone.name })}
-                >
-                  EQ
-                </Button>
-              </div>
-              <ShuffleRepeat zone={zone} />
-              <VolumeSlider
-                label={t("current.volumeFor", { name: zone.name })}
-                volume={zone.volume}
-                muted={zone.muted}
-                onVolumeChange={(v) => { api.zones.setVolume(zone.index, v).catch(logApiError); }}
-                onMuteToggle={() => { api.zones.toggleMute(zone.index).catch(logApiError); }}
-                onUnmute={() => { api.zones.setMute(zone.index, false).catch(logApiError); }}
-              />
-            </div>
+            <ZoneControlPanel zone={zone} onOpenEq={() => { setShowEq(true); }} />
           </div>
         </div>
 
@@ -158,6 +133,38 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
         </div>
       </div>
       {showEq && <EqOverlay initialEnabled={zone.eqEnabled ?? false} zoneId={zone.index} label={zone.name} onClose={(enabled) => { setShowEq(false); useAppStore.getState().updateZoneEq(zone.index, enabled); }} />}
+    </div>
+  );
+}
+
+function ZoneControlPanel({ zone, onOpenEq }: { zone: ZoneState; onOpenEq: () => void }) {
+  const t = useTranslations();
+
+  return (
+    <div className="flex flex-col justify-between flex-1 min-w-0 @sm:max-w-[360px] @md:max-w-[380px] @lg:max-w-[400px] space-y-3.5 @sm:space-y-0 @sm:h-44 @md:h-48 @lg:h-56 mt-4 @sm:mt-0">
+      <TrackInfo zone={zone} forceCenter={false} />
+      <SeekBar zone={zone} />
+      <div className="flex items-center justify-center gap-3 relative w-full">
+        <div className="mx-auto"><TransportControls zone={zone} /></div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onOpenEq}
+          className={`absolute right-0 text-xs px-2.5 h-8 rounded-full bg-secondary/50 border border-border/20 ${zone.eqEnabled ? "text-primary-ink font-bold border-primary/30" : ""}`}
+          aria-label={t("eq.title", { zone: zone.name })}
+        >
+          EQ
+        </Button>
+      </div>
+      <ShuffleRepeat zone={zone} />
+      <VolumeSlider
+        label={t("current.volumeFor", { name: zone.name })}
+        volume={zone.volume}
+        muted={zone.muted}
+        onVolumeChange={(v) => { api.zones.setVolume(zone.index, v).catch(logApiError); }}
+        onMuteToggle={() => { api.zones.toggleMute(zone.index).catch(logApiError); }}
+        onUnmute={() => { api.zones.setMute(zone.index, false).catch(logApiError); }}
+      />
     </div>
   );
 }

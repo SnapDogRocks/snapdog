@@ -104,32 +104,36 @@ export function LegacyApp() {
     let closestIndex = 0;
     let closestDistance = Infinity;
 
-    const children = innerWrapper.children;
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i] as HTMLElement;
+    let closestChild: HTMLElement | null = null;
+    for (const [index, child] of Array.from(innerWrapper.children).entries()) {
+      if (!(child instanceof HTMLElement)) continue;
       const childCenter = child.getBoundingClientRect().left + child.clientWidth / 2;
       const distance = Math.abs(containerCenter - childCenter);
       if (distance < closestDistance) {
         closestDistance = distance;
-        closestIndex = i;
+        closestIndex = index;
+        closestChild = child;
       }
     }
     setActiveDot(closestIndex);
-    const nearest = (children[closestIndex] as HTMLElement | undefined)?.dataset.zoneIndex;
-    if (nearest && Number(nearest) !== useAppStore.getState().selectedZone) selectZone(Number(nearest));
+    const zoneIndex = Number(closestChild?.dataset.zoneIndex);
+    const state = useAppStore.getState();
+    if (Number.isSafeInteger(zoneIndex) && state.zones.has(zoneIndex) && zoneIndex !== state.selectedZone) {
+      selectZone(zoneIndex);
+    }
   }, [selectZone]);
 
+  const scrollCarouselTo = (index: number) => {
+    carouselRef.current?.firstElementChild?.children.item(index)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  };
+
   const scrollCarousel = (direction: "left" | "right") => {
-    if (carouselRef.current) {
-      const el = carouselRef.current;
-      const innerWrapper = el.firstElementChild;
-      if (!innerWrapper) return;
-      const targetIndex = direction === "left" ? activeDot - 1 : activeDot + 1;
-      const children = innerWrapper.children;
-      if (children[targetIndex]) {
-        (children[targetIndex] as HTMLElement).scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-      }
-    }
+    const offset = direction === "left" ? -1 : 1;
+    scrollCarouselTo(activeDot + offset);
   };
 
   const zoneList = Array.from(zoneMap.values());
@@ -315,18 +319,7 @@ export function LegacyApp() {
             {zoneList.map((z, idx) => (
               <button
                 key={z.index}
-                onClick={() => {
-                  if (carouselRef.current) {
-                    const el = carouselRef.current;
-                    const innerWrapper = el.firstElementChild;
-                    if (innerWrapper) {
-                      const children = innerWrapper.children;
-                      if (children[idx]) {
-                        (children[idx] as HTMLElement).scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-                      }
-                    }
-                  }
-                }}
+                onClick={() => { scrollCarouselTo(idx); }}
                 className={`h-6 min-w-6 rounded-full transition-all duration-300 ${idx === activeDot ? "w-8 bg-primary" : "w-6 bg-muted-foreground/30 hover:bg-muted-foreground/60"}`}
                 aria-label={z.name}
               />

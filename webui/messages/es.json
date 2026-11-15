@@ -167,7 +167,6 @@
     "stale": "Puede que los valores mostrados no estén actualizados.",
     "nowPlaying": "En reproducción",
     "live": "Emisión en directo",
-    "zoneVolume": "Volumen de la zona",
     "volumeFor": "Volumen — {name}",
     "speakers": "Altavoces",
     "clearSelection": "Borrar selección",

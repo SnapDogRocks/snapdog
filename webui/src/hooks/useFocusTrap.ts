@@ -32,8 +32,8 @@ export function useFocusTrap<T extends HTMLElement>() {
 
     const focusInitial = () => {
       if (initialFocusComplete) return;
-      const first = focusable()[0];
-      if (first) {
+      const first = focusable().at(0);
+      if (first !== undefined) {
         first.focus();
         initialFocusComplete = true;
         return;
@@ -49,9 +49,9 @@ export function useFocusTrap<T extends HTMLElement>() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
       const nodes = focusable();
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (!first || !last) {
+      const first = nodes.at(0);
+      const last = nodes.at(-1);
+      if (first === undefined || last === undefined) {
         e.preventDefault();
         el.focus();
       } else if (!el.contains(document.activeElement)) {
