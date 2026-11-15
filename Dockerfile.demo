@@ -7,6 +7,8 @@ WORKDIR /app/webui
 RUN npm install -g pnpm@11.28.8
 COPY webui/package.json webui/pnpm-lock.yaml webui/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
+# The demo's equalizer has at most five bands. The mock backend enforces the same limit.
+ENV NEXT_PUBLIC_MAX_EQ_BANDS=5
 COPY webui/ ./
 RUN pnpm run build
 
