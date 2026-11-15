@@ -49,6 +49,7 @@ fn the_document_describes_every_notification() {
             presence: true,
             enabled: true,
             timer_active: false,
+            auto_off_delay: Some(900),
         },
         Notification::PlaybackError {
             zone: 1,

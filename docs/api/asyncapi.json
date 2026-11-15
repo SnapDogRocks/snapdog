@@ -539,6 +539,15 @@
         "payload": {
           "description": "Zone presence state changed.",
           "properties": {
+            "auto_off_delay": {
+              "description": "Auto-off delay in seconds, as `GET /zones/{n}/presence/timeout` reports it. It is sent\nwhen the delay changes too (API, MQTT, KNX). Absent in the events of servers before\nthis field.",
+              "format": "int32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "enabled": {
               "description": "Whether presence-triggered playback is enabled.",
               "type": "boolean"

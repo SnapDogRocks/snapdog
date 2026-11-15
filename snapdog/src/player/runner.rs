@@ -1082,6 +1082,7 @@ async fn run(
                     }
                     ZoneCommand::SetAutoOffDelay(delay) => {
                         update_and_notify(store, zone_index, notify, |z| z.auto_off_delay = delay).await;
+                        notify_presence(store, zone_index, notify).await;
                     }
                 }
             }
@@ -1211,6 +1212,7 @@ async fn notify_presence(
                 presence: z.presence,
                 enabled: z.presence_enabled,
                 timer_active: z.auto_off_active,
+                auto_off_delay: Some(z.auto_off_delay),
             },
         );
     }

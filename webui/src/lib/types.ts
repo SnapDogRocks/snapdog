@@ -245,6 +245,7 @@ export interface WsZonePresenceChanged {
   presence: boolean;
   enabled: boolean;
   timer_active: boolean;
+  auto_off_delay?: number;
 }
 
 export interface WsZoneEqChanged {
