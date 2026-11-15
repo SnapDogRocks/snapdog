@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.35.0](https://github.com/SnapDogRocks/snapdog/compare/v0.34.1...v0.35.0) (2026-11-15)
+
+
+### Features
+
+* **webui:** introduce zone interface with speaker moves and legacy mode ([#467](https://github.com/SnapDogRocks/snapdog/issues/467)) ([c429aed](https://github.com/SnapDogRocks/snapdog/commit/c429aed89d953a6e6f8e10efeac105fc45932b6d))
+
+
+### Bug Fixes
+
+* **ci:** add server-image release scope ([#469](https://github.com/SnapDogRocks/snapdog/issues/469)) ([258d291](https://github.com/SnapDogRocks/snapdog/commit/258d2919d13cb8e4d9cf6463369265af2a6119fe))
+
 ## [0.34.1](https://github.com/SnapDogRocks/snapdog/compare/v0.34.0...v0.34.1) (2026-11-13)
 
 
