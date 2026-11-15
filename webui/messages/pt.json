@@ -67,7 +67,8 @@
     "frequency": "Frequência",
     "gain": "Ganho",
     "qFactor": "Fator Q",
-    "curve": "Curva de resposta em frequência do EQ"
+    "curve": "Curva de resposta em frequência do EQ",
+    "loading": "A carregar o equalizador…"
   },
   "playlist": {
     "title": "Listas de reprodução",
@@ -85,7 +86,11 @@
     "searchTracks": "Faixas",
     "searching": "A pesquisar…",
     "libraryEmpty": "Nada encontrado na biblioteca de música",
-    "playAlbum": "Reproduzir álbum"
+    "playAlbum": "Reproduzir álbum",
+    "openPlaylist": "Abrir {name}",
+    "backToPlaylists": "Voltar às listas de reprodução",
+    "tracksLoading": "A carregar faixas…",
+    "libraryUnavailable": "Biblioteca de música indisponível. Ainda pode explorar as listas de reprodução acima."
   },
   "auth": {
     "title": "Autenticação necessária",
@@ -150,5 +155,41 @@
     "share": "Partilhar ligação",
     "copied": "Copiado!",
     "securityNote": "Este código QR contém a sua chave de API. Partilhe apenas com pessoas de confiança."
+  },
+  "current": {
+    "previousZone": "Zona anterior",
+    "nextZone": "Zona seguinte",
+    "unavailable": "O SnapDog não está disponível",
+    "loadFailed": "Não foi possível carregar o sistema. Verifique a ligação e tente novamente.",
+    "commandFailed": "Não foi possível guardar a alteração. Tente novamente.",
+    "details": "Detalhes técnicos",
+    "dismiss": "Ignorar erro",
+    "stale": "Os valores apresentados podem estar desatualizados.",
+    "nowPlaying": "A reproduzir",
+    "live": "Transmissão em direto",
+    "zoneVolume": "Volume da zona",
+    "volumeFor": "Volume de {name}",
+    "speakers": "Colunas",
+    "clearSelection": "Limpar seleção",
+    "selectAll": "Selecionar tudo",
+    "dragHint": "Arraste a pega para uma zona ou ative-a para escolher um destino. Selecione várias colunas para as mover em conjunto. Escape cancela.",
+    "selectSpeaker": "Selecionar {name}",
+    "moveSpeaker": "Mover {name}",
+    "noSpeakers": "Não há colunas nesta zona. Mova para aqui colunas de outra zona.",
+    "noOtherZone": "Não há outra zona",
+    "moving": "A mover colunas…",
+    "move": "Mover",
+    "loading": "A ligar ao seu sistema de som…",
+    "dropHere": "Solte aqui para mover",
+    "speakerCount": "{count, plural, one {# coluna} other {# colunas}}",
+    "restored": "{count, plural, one {# coluna restaurada} other {# colunas restauradas}}",
+    "moved": "{count, plural, one {# coluna movida} other {# colunas movidas}}",
+    "moveFailed": "{count, plural, one {Não foi possível mover # coluna. Verifique a respetiva atribuição e tente novamente.} other {Não foi possível mover # colunas. Verifique as respetivas atribuições e tente novamente.}}",
+    "undoSkipped": "{count, plural, one {Foi mantida # atribuição posterior.} other {Foram mantidas # atribuições posteriores.}}",
+    "undo": "Anular",
+    "dragToZone": "Arrastar para uma zona",
+    "authUnavailable": "Não foi possível contactar o SnapDog. Verifique a ligação e tente novamente.",
+    "restoring": "A restaurar colunas…",
+    "undoFailed": "{count, plural, one {Não foi possível restaurar # coluna. Tente novamente usando Anular.} other {Não foi possível restaurar # colunas. Tente novamente usando Anular.}}"
   }
 }

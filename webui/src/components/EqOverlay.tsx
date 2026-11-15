@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Dialog as DialogPrimitive } from "radix-ui";
 import { useTranslations } from "next-intl";
-import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { api, type EqBand, type EqConfig } from "@/lib/api";
@@ -44,6 +44,7 @@ interface EqOverlayProps {
   zoneId?: number;
   clientId?: number;
   label: string;
+  initialEnabled?: boolean;
   onClose: (enabled: boolean) => void;
 }
 
@@ -61,28 +62,52 @@ function requireZoneId(zoneId: number | undefined): number {
   return zoneId;
 }
 
-export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) {
+export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: EqOverlayProps) {
   const t = useTranslations("eq");
-  const trapRef = useFocusTrap<HTMLDivElement>();
+  const tZone = useTranslations("zone");
   const [tab, setTab] = useState<Tab>("eq");
-  const [config, setConfig] = useState<EqConfig>({ enabled: false, bands: [], preset: "flat" });
+  const [config, setConfig] = useState<EqConfig>({ enabled: initialEnabled ?? false, bands: [], preset: "flat" });
+  const configRef = useRef(config);
+  const mountedRef = useRef(false);
+  const openerRef = useRef<HTMLElement | null>(null);
   const [abBypass, setAbBypass] = useState(false);
   const [selectedBand, setSelectedBand] = useState<number | null>(null);
   const [speakerMode, setSpeakerMode] = useState<"off" | "spinorama" | "custom">("off");
   const [speakerAbBypass, setSpeakerAbBypass] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const targetKey = clientId != null ? `client:${clientId}` : `zone:${zoneId ?? "missing"}`;
+  const [loadState, setLoadState] = useState<{ target: string; status: "loading" | "ready" | "error" }>({ target: "", status: "loading" });
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const showTabs = clientId != null;
 
-  const eqApi = useMemo(() => clientId
+  const eqApi = useMemo(() => clientId != null
     ? { get: () => api.clientEq.get(clientId), set: (c: EqConfig) => api.clientEq.set(clientId, c), applyPreset: (n: string) => api.clientEq.applyPreset(clientId, n) }
     : { get: () => api.eq.get(requireZoneId(zoneId)), set: (c: EqConfig) => api.eq.set(requireZoneId(zoneId), c), applyPreset: (n: string) => api.eq.applyPreset(requireZoneId(zoneId), n) },
     [zoneId, clientId]);
 
   // Load current EQ
   useEffect(() => {
-    eqApi.get().then((c) => { setConfig(c); setLoading(false); }).catch(() => { setLoading(false); });
-  }, [eqApi]);
+    let active = true;
+    eqApi.get().then((c) => {
+      if (!active) return;
+      configRef.current = c;
+      setConfig(c);
+      setLoadState({ target: targetKey, status: "ready" });
+    }).catch((e: unknown) => {
+      if (!active) return;
+      logApiError(e);
+      setLoadState({ target: targetKey, status: "error" });
+    });
+    return () => { active = false; };
+  }, [eqApi, targetKey, loadAttempt]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const loading = loadState.target !== targetKey || loadState.status === "loading";
+  const loadError = !loading && loadState.status === "error";
 
   // Push to server
   const pushConfig = useCallback(
@@ -92,64 +117,80 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
 
   const update = useCallback(
     (patch: Partial<EqConfig>) => {
-      setConfig((prev) => {
-        const next = { ...prev, ...patch, preset: null };
-        pushConfig(next);
-        return next;
-      });
+      const next = { ...configRef.current, ...patch, preset: null };
+      configRef.current = next;
+      setConfig(next);
+      pushConfig(next);
     },
     [pushConfig],
   );
 
   const updateBand = useCallback(
     (idx: number, patch: Partial<EqBand>) => {
-      setConfig((prev) => {
-        const bands = prev.bands.map((b, i) => (i === idx ? { ...b, ...patch } : b));
-        const next = { ...prev, bands, preset: null };
-        pushConfig(next);
-        return next;
-      });
+      const current = configRef.current;
+      const bands = current.bands.map((b, i) => (i === idx ? { ...b, ...patch } : b));
+      const next = { ...current, bands, preset: null };
+      configRef.current = next;
+      setConfig(next);
+      pushConfig(next);
     },
     [pushConfig],
   );
 
   const addBand = () => {
-    if (config.bands.length >= MAX_EQ_BANDS) return;
-    update({ bands: [...config.bands, { ...DEFAULT_BAND }] });
+    const current = configRef.current;
+    if (current.bands.length >= MAX_EQ_BANDS) return;
+    update({ bands: [...current.bands, { ...DEFAULT_BAND }] });
   };
 
   const removeBand = (idx: number) => {
-    update({ bands: config.bands.filter((_, i) => i !== idx) });
+    update({ bands: configRef.current.bands.filter((_, i) => i !== idx) });
   };
 
   const applyPreset = (name: string) => {
-    eqApi.applyPreset(name).then(setConfig).catch(logApiError);
+    eqApi.applyPreset(name).then((next) => {
+      if (!mountedRef.current) return;
+      configRef.current = next;
+      setConfig(next);
+    }).catch(logApiError);
   };
 
   const toggleEnabled = (on: boolean) => {
     if (on) {
       eqApi.get().then((c) => {
+        if (!mountedRef.current) return;
         const next = { ...c, enabled: true };
+        configRef.current = next;
         setConfig(next);
         pushConfig(next);
       }).catch(logApiError);
     } else {
-      eqApi.set({ ...config, enabled: false }).catch(logApiError);
-      setConfig((prev) => ({ ...prev, enabled: false }));
+      const next = { ...configRef.current, enabled: false };
+      configRef.current = next;
+      eqApi.set(next).catch(logApiError);
+      setConfig(next);
     }
   };
 
   const toggleAB = () => {
     const next = !abBypass;
     setAbBypass(next);
-    pushConfig({ ...config, enabled: !next });
+    const nextConfig = { ...configRef.current, enabled: !next };
+    configRef.current = nextConfig;
+    setConfig(nextConfig);
+    pushConfig(nextConfig);
   };
 
   const handleClose = () => {
-    if (abBypass) {
-      pushConfig({ ...config, enabled: true });
+    if (abBypass && loadState.target === targetKey && loadState.status === "ready") {
+      const nextConfig = { ...configRef.current, enabled: true };
+      configRef.current = nextConfig;
+      pushConfig(nextConfig);
     }
-    onClose(config.enabled);
+    const enabled = loadState.target === targetKey && loadState.status === "ready"
+      ? configRef.current.enabled
+      : initialEnabled ?? configRef.current.enabled;
+    onClose(enabled);
   };
 
   const response = useMemo(
@@ -157,17 +198,30 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
     [config.bands],
   );
 
-  if (loading) return null;
+  const retryLoad = () => {
+    setLoadState({ target: targetKey, status: "loading" });
+    setLoadAttempt((attempt) => attempt + 1);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label={t("title", { zone: label })} onKeyDown={(e) => { if (e.key === "Escape") handleClose(); }} onDragStart={(e) => { e.preventDefault(); }}>
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={handleClose} role="presentation" />
-      <div className="relative z-10 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-xl space-y-5" ref={trapRef}>
+    <DialogPrimitive.Root open onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
+        <DialogPrimitive.Content
+          className="fixed left-1/2 top-1/2 z-50 flex w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col gap-5 max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-xl outline-none"
+          onOpenAutoFocus={() => {
+            openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (openerRef.current?.isConnected) openerRef.current.focus({ preventScroll: true });
+          }}
+        >
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">{t("title", { zone: label })}</h2>
-            {tab === "eq" && (
+            <DialogPrimitive.Title className="text-lg font-semibold">{t("title", { zone: label })}</DialogPrimitive.Title>
+            {!loading && !loadError && tab === "eq" && (
               <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("toggle")}>
                 <button role="radio" aria-checked={!config.enabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${!config.enabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { toggleEnabled(false); }}>Off</button>
                 <button role="radio" aria-checked={config.enabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${config.enabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { toggleEnabled(true); }}>On</button>
@@ -192,11 +246,12 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
                 A/B
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={handleClose} aria-label={t("close")}>✕</Button>
+            <DialogPrimitive.Close asChild>
+              <Button variant="ghost" size="sm" aria-label={t("close")}>✕</Button>
+            </DialogPrimitive.Close>
           </div>
         </div>
 
-        {/* Segmented control tabs — only for client overlays */}
         {showTabs && (
           <div className="inline-flex rounded-lg bg-muted p-0.5 w-full" role="tablist">
             <button role="tab" aria-selected={tab === "eq"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "eq" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setTab("eq"); }}>EQ</button>
@@ -204,8 +259,17 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
           </div>
         )}
 
-        {/* Tab content — crossfade, both mounted to avoid flash */}
-        <div className={tab === "eq" ? '' : 'hidden'}>
+        {tab === "eq" && loading ? (
+          <div className="py-8 text-center text-sm text-muted-foreground animate-pulse" role="status">{t("loading")}</div>
+        ) : tab === "eq" && loadError ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground" role="alert">
+            <span>{tZone("error")}</span>
+            <Button variant="outline" size="sm" onClick={retryLoad}>{tZone("retry")}</Button>
+          </div>
+        ) : tab === "speaker" && showTabs ? (
+          <SpeakerTab clientId={clientId} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} />
+        ) : (
+        <>
           <>
             {config.enabled ? (
               <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
@@ -261,14 +325,11 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
               <FrequencyResponseCurve response={[]} curveLabel={t("curve")} />
             )}
           </>
-        </div>
-        {showTabs && (
-          <div className={tab === "speaker" ? '' : 'hidden'}>
-            <SpeakerTab clientId={clientId} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} />
-          </div>
+        </>
         )}
-      </div>
-    </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 
@@ -276,11 +337,14 @@ export function EqOverlay({ zoneId, clientId, label, onClose }: EqOverlayProps) 
 
 function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; mode: "off" | "spinorama" | "custom"; setMode: (v: "off" | "spinorama" | "custom") => void; abBypass: boolean }) {
   const t = useTranslations("eq");
+  const tZone = useTranslations("zone");
   const [search, setSearch] = useState("");
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [currentConfig, setCurrentConfig] = useState<EqConfig | null>(null);
   const [appliedName, setAppliedName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [customBands, setCustomBands] = useState<EqBand[]>([]);
   const [customSelected, setCustomSelected] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(MAX_SPEAKER_RESULTS);
@@ -298,20 +362,34 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
   }, [clientId]);
 
   useEffect(() => {
+    let active = true;
     Promise.all([
       api.speakers.list(),
       api.speakers.get(clientId),
-	    ]).then(([list, config]) => {
-	      setSpeakers(list);
-	      setCurrentConfig(config);
+    ]).then(([list, config]) => {
+      if (!active) return;
+      setSpeakers(list);
+      setCurrentConfig(config);
       const name = config.preset?.startsWith("spinorama:") ? config.preset.slice("spinorama:".length) : null;
       setAppliedName(name);
       setCustomBands(name ? [] : limitEqBands(config.bands));
       setVisibleCount(MAX_SPEAKER_RESULTS);
       if (config.enabled || name != null) setMode(name ? "spinorama" : "custom");
       setLoading(false);
-    }).catch(() => { setLoading(false); });
-  }, [clientId, setMode]);
+    }).catch((e: unknown) => {
+      if (!active) return;
+      logApiError(e);
+      setLoadError(true);
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [clientId, loadAttempt, setMode]);
+
+  const retryLoad = () => {
+    setLoading(true);
+    setLoadError(false);
+    setLoadAttempt((attempt) => attempt + 1);
+  };
 
   const filtered = useMemo(() => {
     if (!search) return speakers;
@@ -390,6 +468,14 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
   );
 
   if (loading) return <div className="text-sm text-muted-foreground py-8 text-center">Loading speakers…</div>;
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground" role="alert">
+        <span>{tZone("error")}</span>
+        <Button variant="outline" size="sm" onClick={retryLoad}>{tZone("retry")}</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -540,6 +626,10 @@ function BandRow({
             max={Math.log10(FREQ_MAX_HZ)}
             step={0.01}
             onValueChange={([v]) => { if (v !== undefined) onChange({ freq: Math.round(Math.pow(10, v)) }); }}
+            getAriaValueText={(value) => {
+              const frequency = Math.round(Math.pow(10, value));
+              return frequency >= 1000 ? `${(frequency / 1000).toFixed(1)} kHz` : `${frequency} Hz`;
+            }}
             className="flex-1"
             aria-label={t("frequency")}
           />
@@ -553,6 +643,7 @@ function BandRow({
             max={GAIN_MAX_DB}
             step={GAIN_STEP_DB}
             onValueChange={([v]) => { if (v !== undefined) onChange({ gain: v }); }}
+            getAriaValueText={(value) => `${value.toFixed(1)} dB`}
             className="flex-1"
             aria-label={t("gain")}
           />
@@ -566,6 +657,7 @@ function BandRow({
             max={Q_MAX}
             step={Q_STEP}
             onValueChange={([v]) => { if (v !== undefined) onChange({ q: Math.round(v * 10) / 10 }); }}
+            getAriaValueText={(value) => value.toFixed(1)}
             className="flex-1"
             aria-label={t("qFactor")}
           />

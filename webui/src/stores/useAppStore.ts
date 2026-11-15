@@ -53,6 +53,54 @@ export interface PlaybackErrorState {
   recoverable: boolean;
 }
 
+type ZoneMutation = (zone: ZoneState | undefined) => ZoneState | undefined;
+type ClientMutation = (client: ClientInfo | undefined) => ClientInfo | undefined;
+
+interface LoadRequest {
+  id: number;
+  authEpoch: number;
+  zoneMutations: { id: number; apply: ZoneMutation }[];
+  clientMutations: { id: number; apply: ClientMutation }[];
+}
+
+const activeLoadRequests = new Set<LoadRequest>();
+let authEpoch = 0;
+let authListenerWindow: Window | null = null;
+let nextLoadId = 0;
+let activeLoadId = 0;
+let pendingLoad: { id: number; authEpoch: number; promise: Promise<void> } | null = null;
+
+function ensureAuthChangeListener() {
+  if (typeof window === "undefined" || authListenerWindow === window) return;
+  authListenerWindow?.removeEventListener("snapdog:auth-changed", handleAuthChanged);
+  authListenerWindow = window;
+  authListenerWindow.addEventListener("snapdog:auth-changed", handleAuthChanged);
+}
+
+function handleAuthChanged() {
+  authEpoch++;
+}
+
+function recordZoneMutation(id: number, apply: ZoneMutation) {
+  for (const request of activeLoadRequests) request.zoneMutations.push({ id, apply });
+}
+
+function recordClientMutation(id: number, apply: ClientMutation) {
+  for (const request of activeLoadRequests) request.clientMutations.push({ id, apply });
+}
+
+function zoneFromInfo(z: ZoneInfo, existing?: ZoneState): ZoneState {
+  return {
+    ...z,
+    track: existing?.track ?? null,
+    presenceEnabled: existing?.presenceEnabled ?? true,
+    presenceTimerActive: existing?.presenceTimerActive ?? false,
+    buffered_ms: existing?.buffered_ms ?? null,
+    eqEnabled: existing?.eqEnabled ?? false,
+    error: existing?.error ?? null,
+  };
+}
+
 // ── Store shape ───────────────────────────────────────────────
 
 interface AppState {
@@ -62,6 +110,9 @@ interface AppState {
   isConnected: boolean;
   serverGoingAway: boolean;
   isLoading: boolean;
+  isRefreshing: boolean;
+  hasLoaded: boolean;
+  loadError: string | null;
   needsAuth: boolean;
   /** Bumped when the playlist list must be reloaded (`playlists_changed`, reconnect). */
   playlistsVersion: number;
@@ -101,137 +152,216 @@ export const useAppStore = create<AppState>((set, get) => ({
   isConnected: false,
   serverGoingAway: false,
   isLoading: true,
+  isRefreshing: false,
+  hasLoaded: false,
+  loadError: null,
   needsAuth: false,
   playlistsVersion: 0,
 
   bumpPlaylists: () => { set((s) => ({ playlistsVersion: s.playlistsVersion + 1 })); },
 
-  loadAll: async () => {
-    set({ isLoading: true });
-    try {
-      const [zoneList, clientList] = await Promise.all([
-        api.zones.list(),
-        api.clients.list(),
-      ]);
+  loadAll: () => {
+    ensureAuthChangeListener();
+    const requestAuthEpoch = authEpoch;
+    if (pendingLoad?.authEpoch === requestAuthEpoch) return pendingLoad.promise;
 
-      const zones = new Map<number, ZoneState>();
-      for (const z of zoneList) {
-        zones.set(z.index, { ...z, track: null, presenceEnabled: z.presence_enabled, presenceTimerActive: z.presence_timer_active, buffered_ms: null, error: null });
-      }
+    const request: LoadRequest = {
+      id: ++nextLoadId,
+      authEpoch: requestAuthEpoch,
+      zoneMutations: [],
+      clientMutations: [],
+    };
+    activeLoadId = request.id;
+    activeLoadRequests.add(request);
+    const hasLoaded = get().hasLoaded;
+    set({ isLoading: !hasLoaded, isRefreshing: hasLoaded, loadError: null });
 
-      // Fetch track metadata and EQ state for each zone in parallel
-      const [metaResults, eqResults] = await Promise.all([
-        Promise.allSettled(zoneList.map((z) => api.zones.getTrackMetadata(z.index))),
-        Promise.allSettled(zoneList.map((z) => api.eq.get(z.index))),
-      ]);
+    const isCurrent = () =>
+      authEpoch === request.authEpoch && activeLoadId === request.id;
 
-      for (const [i, z] of zoneList.entries()) {
-        const zone = zones.get(z.index);
-        if (!zone) continue;
-        const metaResult = metaResults[i];
-        const eqResult = eqResults[i];
-        if (metaResult?.status === "fulfilled") {
-          zone.track = metaResult.value;
+    const promise = (async () => {
+      try {
+        const [zoneList, clientList] = await Promise.all([
+          api.zones.list(),
+          api.clients.list(),
+        ]);
+
+        // Fetch track metadata and EQ state for each zone in parallel.
+        const [metaResults, eqResults] = await Promise.all([
+          Promise.allSettled(zoneList.map((z) => api.zones.getTrackMetadata(z.index))),
+          Promise.allSettled(zoneList.map((z) => api.eq.get(z.index))),
+        ]);
+
+        if (!isCurrent()) return;
+
+        const zones = new Map<number, ZoneState>();
+        for (const [i, z] of zoneList.entries()) {
+          const metaResult = metaResults[i];
+          const eqResult = eqResults[i];
+          zones.set(z.index, {
+            ...z,
+            track: metaResult?.status === "fulfilled" ? metaResult.value : null,
+            presenceEnabled: z.presence_enabled,
+            presenceTimerActive: z.presence_timer_active,
+            buffered_ms: null,
+            eqEnabled: eqResult?.status === "fulfilled" ? eqResult.value.enabled : false,
+            error: null,
+          });
         }
-        if (eqResult?.status === "fulfilled") {
-          zone.eqEnabled = eqResult.value.enabled;
+
+        // Replay WebSocket/store updates received after this snapshot began.
+        for (const mutation of request.zoneMutations) {
+          const updated = mutation.apply(zones.get(mutation.id));
+          if (updated) zones.set(mutation.id, updated);
+          else zones.delete(mutation.id);
+        }
+
+        const clients = new Map<number, ClientInfo>();
+        for (const c of clientList) clients.set(c.index, c);
+        for (const mutation of request.clientMutations) {
+          const updated = mutation.apply(clients.get(mutation.id));
+          if (updated) clients.set(mutation.id, updated);
+          else clients.delete(mutation.id);
+        }
+
+        const current = get();
+        const stored = typeof window !== "undefined" ? Number(sessionStorage.getItem("selectedZone")) : 0;
+        const initial = current.hasLoaded && current.selectedZone && zones.has(current.selectedZone)
+          ? current.selectedZone
+          : stored && zones.has(stored)
+            ? stored
+            : (zoneList[0]?.index ?? 1);
+        set({
+          zones,
+          clients,
+          selectedZone: initial,
+          isLoading: false,
+          isRefreshing: false,
+          hasLoaded: true,
+          loadError: null,
+          needsAuth: false,
+        });
+      } catch (e) {
+        if (!isCurrent()) return;
+        const status = e instanceof Error && "status" in e ? (e as { status: number }).status : 0;
+        const message = e instanceof Error ? e.message : String(e);
+        set({
+          isLoading: false,
+          isRefreshing: false,
+          loadError: message,
+          needsAuth: status === 401,
+        });
+      } finally {
+        activeLoadRequests.delete(request);
+        if (pendingLoad?.id === request.id) pendingLoad = null;
+        if (authEpoch !== request.authEpoch && activeLoadRequests.size === 0 && !get().hasLoaded) {
+          set({ isLoading: false, isRefreshing: false });
         }
       }
-
-      const clients = new Map<number, ClientInfo>();
-      for (const c of clientList) clients.set(c.index, c);
-
-      const stored = typeof window !== "undefined" ? Number(sessionStorage.getItem("selectedZone")) : 0;
-      const initial = stored && zones.has(stored) ? stored : (zoneList[0]?.index ?? 1);
-      set({ zones, clients, selectedZone: initial, isLoading: false, needsAuth: false });
-    } catch (e) {
-      const status = e instanceof Error && "status" in e ? (e as { status: number }).status : 0;
-      set({ isLoading: false, needsAuth: status === 401 });
-    }
+    })();
+    pendingLoad = { id: request.id, authEpoch: request.authEpoch, promise };
+    return promise;
   },
 
   setZones: (list) => {
+    const existing = get().zones;
+    const byId = new Map(list.map((zone) => [zone.index, zone]));
+    const ids = new Set([...existing.keys(), ...byId.keys()]);
     const zones = new Map<number, ZoneState>();
-    for (const z of list) {
-      const existing = get().zones.get(z.index);
-      zones.set(z.index, {
-        ...z,
-        track: existing?.track ?? null,
-        presenceEnabled: existing?.presenceEnabled ?? true,
-        presenceTimerActive: existing?.presenceTimerActive ?? false,
-        buffered_ms: existing?.buffered_ms ?? null,
-        eqEnabled: existing?.eqEnabled ?? false,
-        error: existing?.error ?? null,
-      });
+    for (const id of ids) {
+      const incoming = byId.get(id);
+      const apply: ZoneMutation = (current) => incoming ? zoneFromInfo(incoming, current) : undefined;
+      recordZoneMutation(id, apply);
+      const updated = apply(existing.get(id));
+      if (updated) zones.set(id, updated);
     }
     set({ zones });
   },
 
   updateZone: (id, patch) => {
     const zones = new Map(get().zones);
-    const z = zones.get(id);
-    if (z) {
+    const apply: ZoneMutation = (z) => {
+      if (!z) return undefined;
       const { track: trackPatch, ...rest } = patch;
       const updatedTrack = trackPatch === null ? null : trackPatch ? { ...DEFAULT_TRACK, ...z.track, ...trackPatch } : z.track;
       const clearsError = rest.playback === "playing" || (trackPatch !== undefined && trackPatch !== null);
-      zones.set(id, { ...z, ...rest, track: updatedTrack, error: clearsError ? null : z.error });
-    }
+      return { ...z, ...rest, track: updatedTrack, error: clearsError ? null : z.error };
+    };
+    recordZoneMutation(id, apply);
+    const updated = apply(zones.get(id));
+    if (updated) zones.set(id, updated);
     set({ zones });
   },
 
   updateZoneVolume: (id, volume, muted) => {
     const zones = new Map(get().zones);
-    const z = zones.get(id);
-    if (z) zones.set(id, { ...z, volume, muted });
+    const apply: ZoneMutation = (z) => z ? { ...z, volume, muted } : undefined;
+    recordZoneMutation(id, apply);
+    const updated = apply(zones.get(id));
+    if (updated) zones.set(id, updated);
     set({ zones });
   },
 
   updateZoneProgress: (id, position_ms, duration_ms, buffered_ms) => {
     const zones = new Map(get().zones);
-    const z = zones.get(id);
-    if (z?.track) {
-      zones.set(id, { ...z, track: { ...z.track, position_ms, duration_ms }, buffered_ms });
-    }
+    const apply: ZoneMutation = (z) =>
+      z?.track ? { ...z, track: { ...z.track, position_ms, duration_ms }, buffered_ms } : z;
+    recordZoneMutation(id, apply);
+    const updated = apply(zones.get(id));
+    if (updated) zones.set(id, updated);
     set({ zones });
   },
 
   updateZonePresence: (id, presence, enabled, timerActive) => {
     const zones = new Map(get().zones);
-    const z = zones.get(id);
-    if (z) {
-      zones.set(id, { ...z, presence, presenceEnabled: enabled, presenceTimerActive: timerActive });
-    }
+    const apply: ZoneMutation = (z) => z
+      ? { ...z, presence, presenceEnabled: enabled, presenceTimerActive: timerActive }
+      : undefined;
+    recordZoneMutation(id, apply);
+    const updated = apply(zones.get(id));
+    if (updated) zones.set(id, updated);
     set({ zones });
   },
 
   updateZoneEq: (id, enabled) => {
     const zones = new Map(get().zones);
-    const z = zones.get(id);
-    if (z) {
-      zones.set(id, { ...z, eqEnabled: enabled });
-    }
+    const apply: ZoneMutation = (z) => z ? { ...z, eqEnabled: enabled } : undefined;
+    recordZoneMutation(id, apply);
+    const updated = apply(zones.get(id));
+    if (updated) zones.set(id, updated);
     set({ zones });
   },
 
   setZoneError: (id, error) => {
     const zones = new Map(get().zones);
-    const z = zones.get(id);
-    if (z) {
-      zones.set(id, { ...z, error });
-    }
+    const apply: ZoneMutation = (z) => z ? { ...z, error } : undefined;
+    recordZoneMutation(id, apply);
+    const updated = apply(zones.get(id));
+    if (updated) zones.set(id, updated);
     set({ zones });
   },
 
   setClients: (list) => {
+    const existing = get().clients;
+    const byId = new Map(list.map((client) => [client.index, client]));
+    const ids = new Set([...existing.keys(), ...byId.keys()]);
     const clients = new Map<number, ClientInfo>();
-    for (const c of list) clients.set(c.index, c);
+    for (const id of ids) {
+      const incoming = byId.get(id);
+      const apply: ClientMutation = (current) => incoming ? { ...current, ...incoming } : undefined;
+      recordClientMutation(id, apply);
+      const updated = apply(existing.get(id));
+      if (updated) clients.set(id, updated);
+    }
     set({ clients });
   },
 
   updateClient: (id, patch) => {
     const clients = new Map(get().clients);
-    const c = clients.get(id);
-    if (c) clients.set(id, { ...c, ...patch });
+    const apply: ClientMutation = (client) => client ? { ...client, ...patch } : undefined;
+    recordClientMutation(id, apply);
+    const updated = apply(clients.get(id));
+    if (updated) clients.set(id, updated);
     set({ clients });
   },
 

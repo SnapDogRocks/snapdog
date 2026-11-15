@@ -21,8 +21,47 @@ interface PlaylistBrowserProps {
 
 const INITIAL_VISIBLE_COUNT = 6;
 
+const PLAYLIST_CACHE_LIMIT = 4;
+type PlaylistCacheEntry = { promise: Promise<PlaylistInfo[]> } | { value: PlaylistInfo[] };
+const playlistRequests = new Map<number, PlaylistCacheEntry>();
+
+function trimPlaylistCache() {
+  while (playlistRequests.size > PLAYLIST_CACHE_LIMIT) {
+    const oldestResolved = Array.from(playlistRequests.entries()).find(([, entry]) => "value" in entry);
+    if (!oldestResolved) return;
+    playlistRequests.delete(oldestResolved[0]);
+  }
+}
+
+function playlistsForVersion(version: number): Promise<PlaylistInfo[]> {
+  const inFlight = playlistRequests.get(version);
+  if (inFlight) {
+    playlistRequests.delete(version);
+    playlistRequests.set(version, inFlight);
+    return "promise" in inFlight ? inFlight.promise : Promise.resolve(inFlight.value);
+  }
+
+  const request = api.media.playlists().then((list) => {
+    const current = playlistRequests.get(version);
+    if (current && "promise" in current && current.promise === request) {
+      playlistRequests.set(version, { value: list });
+      trimPlaylistCache();
+    }
+    return list;
+  }).catch((error: unknown) => {
+    const current = playlistRequests.get(version);
+    if (current && "promise" in current && current.promise === request) playlistRequests.delete(version);
+    logApiError(error);
+    throw error;
+  });
+  playlistRequests.set(version, { promise: request });
+  trimPlaylistCache();
+  return request;
+}
+
 export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
   const t = useTranslations("playlist");
+  const tZone = useTranslations("zone");
   const [playlists, setPlaylists] = useState<PlaylistInfo[]>([]);
   const [search, setSearch] = useState("");
   // Selection is the stable playlist_id, the index moves when the list changes.
@@ -30,36 +69,35 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
   const selectedIdRef = useRef<string | null>(null);
   const playlistsVersion = useAppStore((s) => s.playlistsVersion);
   const [tracks, setTracks] = useState<TrackInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [trackStatus, setTrackStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [listState, setListState] = useState<{ version: number | null; status: "loading" | "success" | "error" }>({ version: null, status: "loading" });
+  const [playlistRetry, setPlaylistRetry] = useState(0);
+  const trackRequestId = useRef(0);
   const [showAll, setShowAll] = useState(false);
-
-  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  const loading = listState.version !== playlistsVersion || listState.status === "loading";
+  const playlistError = listState.version === playlistsVersion && listState.status === "error";
 
   // Initial load, and again on `playlists_changed` and after a reconnect.
   useEffect(() => {
-    const ctl = new AbortController();
-    void (async () => {
-      try {
-        const list = await api.media.playlists();
-        if (ctl.signal.aborted) return;
-        setPlaylists(list);
-        const current = selectedIdRef.current;
-        if (current !== null) {
-          if (list.some((p) => p.playlist_id === current)) {
-            setTracks(await api.media.tracksById(current));
-          } else {
-            setSelectedId(null);
-            setTracks([]);
-          }
-        }
-      } catch (e) {
-        logApiError(e);
-      } finally {
-        if (!ctl.signal.aborted) setLoading(false);
+    let active = true;
+    void playlistsForVersion(playlistsVersion).then((list) => {
+      if (!active) return;
+      setPlaylists(list);
+      setListState({ version: playlistsVersion, status: "success" });
+      const currentSelectedId = selectedIdRef.current;
+      if (currentSelectedId !== null && !list.some((p) => p.playlist_id === currentSelectedId)) {
+        trackRequestId.current += 1;
+        selectedIdRef.current = null;
+        setSelectedId(null);
+        setTracks([]);
+        setTrackStatus("idle");
       }
-    })();
-    return () => { ctl.abort(); };
-  }, [playlistsVersion]);
+    }).catch(() => {
+        if (!active) return;
+      setListState({ version: playlistsVersion, status: "error" });
+    });
+    return () => { active = false; };
+  }, [playlistsVersion, playlistRetry]);
 
   const filteredPlaylists = useMemo(() => {
     if (!search) return playlists;
@@ -67,13 +105,35 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
     return playlists.filter((pl) => pl.name.toLowerCase().includes(q));
   }, [playlists, search]);
 
-  const selectPlaylist = async (playlistId: string) => {
+  const loadTracks = async (playlistId: string) => {
+    const requestId = ++trackRequestId.current;
+    selectedIdRef.current = playlistId;
     setSelectedId(playlistId);
+    setTracks([]);
+    setTrackStatus("loading");
     try {
-      setTracks(await api.media.tracksById(playlistId));
-    } catch {
-      setTracks([]);
+      const loadedTracks = await api.media.tracksById(playlistId);
+      if (trackRequestId.current !== requestId) return;
+      setTracks(loadedTracks);
+      setTrackStatus("idle");
+    } catch (e) {
+      if (trackRequestId.current !== requestId) return;
+      logApiError(e);
+      setTrackStatus("error");
     }
+  };
+
+  const closePlaylist = () => {
+    trackRequestId.current += 1;
+    selectedIdRef.current = null;
+    setSelectedId(null);
+    setTracks([]);
+    setTrackStatus("idle");
+  };
+
+  const retryPlaylists = () => {
+    setListState({ version: playlistsVersion, status: "loading" });
+    setPlaylistRetry((attempt) => attempt + 1);
   };
 
   const playTrack = (playlistId: string, trackIndex: number) => {
@@ -92,7 +152,18 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
   const hasMore = !search && !showAll && filteredPlaylists.length > INITIAL_VISIBLE_COUNT;
 
   if (loading && playlists.length === 0) {
-    return <div className="h-32 flex items-center justify-center text-muted-foreground animate-pulse">{t("loading")}</div>;
+    return <div className="h-32 flex items-center justify-center text-muted-foreground animate-pulse" role="status">{t("loading")}</div>;
+  }
+
+  if (playlistError && playlists.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground" role="alert">
+        <span>{tZone("error")}</span>
+        <Button variant="outline" size="sm" onClick={retryPlaylists}>
+          {tZone("retry")}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -120,12 +191,23 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               </div>
             </div>
 
+            {playlistError && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs" role="alert">
+                <span>{tZone("error")}</span>
+                <Button variant="ghost" size="sm" onClick={retryPlaylists}>
+                  {tZone("retry")}
+                </Button>
+              </div>
+            )}
+
             {/* Carousel-like Grid */}
             <div className="grid grid-cols-3 @sm:grid-cols-3 @md:grid-cols-3 @lg:grid-cols-4 @xl:grid-cols-6 gap-3">
               {visiblePlaylists.map((pl) => (
                 <div key={pl.playlist_id} className="group relative space-y-1.5">
                   <button
-                    onClick={() => { void selectPlaylist(pl.playlist_id); }}
+                    type="button"
+                    aria-label={t("openPlaylist", { name: pl.name })}
+                    onClick={() => { void loadTracks(pl.playlist_id); }}
                     className="w-full aspect-square rounded-xl bg-primary/5 flex items-center justify-center overflow-hidden border border-border/50 group-hover:border-primary/40 transition-all shadow-sm relative"
                   >
                     {pl.cover_art ? (
@@ -142,24 +224,22 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                         }}
                       />
                     ) : (
-                      <HugeiconsIcon icon={MusicNote03Icon} size={28} className="text-primary/30" />
+                      <HugeiconsIcon icon={MusicNote03Icon} size={28} className="text-primary-ink/30" />
                     )}
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                       <Button
-                         size="icon"
-                         variant="ghost"
-                         className="rounded-full bg-primary text-primary-foreground shadow-lg transform scale-90 group-hover:scale-100 transition-transform hover:bg-primary/90"
-                         onClick={(e) => {
-                           e.stopPropagation();
-                           playTrack(pl.playlist_id, 0);
-                         }}
-                       >
-                         <HugeiconsIcon icon={PlayIcon} size={20} fill="currentColor" />
-                       </Button>
-                    </div>
                   </button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={t("play", { name: pl.name })}
+                    title={t("play", { name: pl.name })}
+                    className="absolute bottom-11 right-2 z-10 size-9 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90"
+                    onClick={() => { playTrack(pl.playlist_id, 0); }}
+                  >
+                    <HugeiconsIcon icon={PlayIcon} size={18} fill="currentColor" />
+                  </Button>
                   <div className="px-0.5">
-                    <div className="text-sm font-bold truncate group-hover:text-primary transition-colors leading-tight">{pl.name}</div>
+                    <div className="text-sm font-bold truncate group-hover:text-primary-ink transition-colors leading-tight">{pl.name}</div>
                     <div className="text-xs text-muted-foreground uppercase tracking-tight">
                       {t("tracks", { count: pl.song_count })}
                     </div>
@@ -173,7 +253,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => { setShowAll(true); }}
-                className="w-full text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary h-8"
+                className="w-full text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary-ink h-8"
               >
                 {t("showMore")} ({playlists.length - INITIAL_VISIBLE_COUNT}+)
               </Button>
@@ -183,7 +263,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => { setShowAll(false); }}
-                className="w-full text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary h-8"
+                className="w-full text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary-ink h-8"
               >
                 {t("showLess")}
               </Button>
@@ -207,7 +287,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
           >
             {/* Detail Header */}
             <div className="flex items-center gap-3 border-b border-border/50 pb-4 px-1">
-              <Button variant="ghost" size="icon" onClick={() => { setSelectedId(null); }} className="rounded-full size-10 -ml-1 shrink-0">
+              <Button variant="ghost" size="icon" aria-label={t("backToPlaylists")} onClick={closePlaylist} className="rounded-full size-10 -ml-1 shrink-0">
                 <HugeiconsIcon icon={ArrowLeft01Icon} size={20} />
               </Button>
               <div className="size-12 rounded-lg overflow-hidden bg-primary/10 shadow-sm shrink-0">
@@ -241,7 +321,26 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               </Button>
             </div>
 
+            {playlistError && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs" role="alert">
+                <span>{tZone("error")}</span>
+                <Button variant="ghost" size="sm" onClick={retryPlaylists}>
+                  {tZone("retry")}
+                </Button>
+              </div>
+            )}
+
             {/* Track List */}
+            {trackStatus === "loading" ? (
+              <div className="py-8 text-center text-sm text-muted-foreground animate-pulse" role="status">{t("tracksLoading")}</div>
+            ) : trackStatus === "error" ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground" role="alert">
+                <span>{tZone("error")}</span>
+                <Button variant="outline" size="sm" onClick={() => { void loadTracks(selectedId); }}>
+                  {tZone("retry")}
+                </Button>
+              </div>
+            ) : (
             <div className="space-y-0.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin" ref={(el) => {
               // Auto-scroll to current track
               if (el && zone.track?.playlist_id === selectedId) {
@@ -278,13 +377,14 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                     </div>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-semibold truncate group-hover:text-primary transition-colors">{t.title}</div>
+                    <div className="text-[13px] font-semibold truncate group-hover:text-primary-ink transition-colors">{t.title}</div>
                     <div className="text-[11px] text-muted-foreground truncate">{t.artist}</div>
                   </div>
                   <span className="text-[10px] tabular-nums text-muted-foreground opacity-60 font-medium">{formatDuration(t.duration)}</span>
                 </button>
               ); })}
             </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

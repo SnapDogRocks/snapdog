@@ -30,6 +30,10 @@ struct Cli {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
+    /// `WebUI` served at `/`: current or legacy (overrides [http].webui)
+    #[arg(long, value_enum)]
+    webui: Option<WebUiChoice>,
+
     /// Validate the configuration and exit without starting any services
     #[arg(long, requires = "config")]
     check_config: bool,
@@ -96,6 +100,20 @@ struct Cli {
     #[cfg(target_os = "windows")]
     #[arg(long)]
     service: bool,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum WebUiChoice {
+    Current,
+    Legacy,
+}
+
+const fn selected_webui(configured: config::WebUi, cli: Option<WebUiChoice>) -> config::WebUi {
+    match cli {
+        Some(WebUiChoice::Current) => config::WebUi::Current,
+        Some(WebUiChoice::Legacy) => config::WebUi::Legacy,
+        None => configured,
+    }
 }
 
 /// Volume coalescing window — rapid volume changes within this window are merged.
@@ -242,6 +260,7 @@ pub async fn run_app() -> Result<()> {
     }
 
     // CLI overrides
+    app_config.http.webui = selected_webui(app_config.http.webui, cli.webui);
     if let Some(port) = cli.port {
         app_config.http.port = port;
     }
@@ -1077,4 +1096,47 @@ fn is_docker() -> bool {
     std::path::Path::new("/.dockerenv").exists()
         || std::fs::read_to_string("/proc/1/cgroup")
             .is_ok_and(|s| s.contains("docker") || s.contains("containerd"))
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::{Cli, WebUiChoice, selected_webui};
+    use crate::config::{HttpConfig, WebUi};
+    use clap::Parser;
+
+    #[test]
+    fn webui_defaults_to_the_configured_current_mode() {
+        let cli = Cli::try_parse_from(["snapdog"]).unwrap();
+        assert!(cli.webui.is_none());
+        assert_eq!(
+            selected_webui(HttpConfig::default().webui, cli.webui),
+            WebUi::Current
+        );
+    }
+
+    #[test]
+    fn webui_cli_choice_overrides_config_only_when_present() {
+        assert_eq!(selected_webui(WebUi::Legacy, None), WebUi::Legacy);
+        assert_eq!(
+            selected_webui(WebUi::Current, Some(WebUiChoice::Legacy)),
+            WebUi::Legacy
+        );
+        assert_eq!(
+            selected_webui(WebUi::Legacy, Some(WebUiChoice::Current)),
+            WebUi::Current
+        );
+
+        let cli = Cli::try_parse_from(["snapdog", "--webui", "legacy"]).unwrap();
+        assert_eq!(selected_webui(WebUi::Current, cli.webui), WebUi::Legacy);
+    }
+
+    #[test]
+    fn invalid_webui_choice_is_rejected_by_clap() {
+        let error = Cli::try_parse_from(["snapdog", "--webui", "retro"])
+            .err()
+            .expect("an invalid WebUI choice should fail parsing");
+        let message = error.to_string();
+        assert!(message.contains("current"), "{message}");
+        assert!(message.contains("legacy"), "{message}");
+    }
 }

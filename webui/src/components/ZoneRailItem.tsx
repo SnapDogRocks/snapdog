@@ -30,7 +30,7 @@ export function ZoneRailItem({ zone, selected, onSelect }: ZoneRailItemProps) {
         dragOver
           ? "bg-primary/20 ring-2 ring-primary"
           : selected
-            ? "bg-primary/10 text-primary shadow-[0_0_12px_rgba(225,136,46,0.15)]"
+            ? "bg-primary/10 text-primary-ink shadow-[0_0_12px_rgba(225,136,46,0.15)]"
             : "hover:bg-muted text-foreground"
       }`}
     >
@@ -71,7 +71,7 @@ export function ZoneRailItem({ zone, selected, onSelect }: ZoneRailItemProps) {
           <div className="text-xs text-muted-foreground tabular-nums">{zone.volume}</div>
         )}
         {zone.eqEnabled && (
-          <span className="text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.5 rounded uppercase tracking-wider scale-90" aria-label="EQ Active">
+          <span className="text-[8px] font-bold text-primary-ink bg-primary/10 px-1 py-0.5 rounded uppercase tracking-wider scale-90" aria-label="EQ Active">
             EQ
           </span>
         )}

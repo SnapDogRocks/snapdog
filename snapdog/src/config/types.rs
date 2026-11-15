@@ -95,6 +95,17 @@ pub enum AudioCodec {
     F32lz4e,
 }
 
+/// Embedded `WebUI` entry served at `/`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebUi {
+    /// Current Next.js interface.
+    #[default]
+    Current,
+    /// Preserved legacy interface.
+    Legacy,
+}
+
 impl AudioCodec {
     /// String representation for Snapcast protocol.
     #[must_use]
@@ -190,7 +201,7 @@ pub struct FileConfig {
     /// Network settings shared by every listener.
     #[serde(default)]
     pub network: NetworkConfig,
-    /// HTTP server settings (port, API keys).
+    /// HTTP server settings (port, `WebUI`, API keys).
     #[serde(default)]
     pub http: HttpConfig,
     /// Snapcast connection and management settings.
@@ -647,6 +658,9 @@ pub struct HttpConfig {
     /// Port for the REST API, WebSocket, and embedded `WebUI`.
     #[serde(default = "default_http_port")]
     pub port: u16,
+    /// `WebUI` entry served at `/`. Defaults to `current`.
+    #[serde(default)]
+    pub webui: WebUi,
     /// Where to listen: one string or a list of IP addresses, interface names or
     /// `"loopback"`. Unset: `[network].bind`, then `::` (dual-stack IPv4 and IPv6 where the
     /// OS allows it). Use `0.0.0.0` for IPv4 only.
@@ -713,6 +727,7 @@ impl Default for HttpConfig {
     fn default() -> Self {
         Self {
             port: default_http_port(),
+            webui: WebUi::default(),
             bind: Vec::new(),
             base_url: default_base_url(),
             tls_cert: None,
@@ -1807,5 +1822,25 @@ mod spotify_config_tests {
             toml::from_str("name = \"Docks\"\nport = 0\nzeroconf_backend = \"avahi\"").unwrap();
         assert_eq!(cfg.port, 0);
         assert_eq!(cfg.zeroconf_backend.as_deref(), Some("avahi"));
+    }
+}
+
+#[cfg(test)]
+mod webui_config_tests {
+    use super::{HttpConfig, WebUi};
+
+    #[test]
+    fn webui_defaults_to_current_and_accepts_legacy() {
+        let default: HttpConfig = toml::from_str("").unwrap();
+        assert_eq!(default.webui, WebUi::Current);
+
+        let legacy: HttpConfig = toml::from_str("webui = 'legacy'").unwrap();
+        assert_eq!(legacy.webui, WebUi::Legacy);
+    }
+
+    #[test]
+    fn unknown_webui_choice_is_rejected() {
+        let error = toml::from_str::<HttpConfig>("webui = 'future'").unwrap_err();
+        assert!(error.to_string().contains("future"), "{error}");
     }
 }

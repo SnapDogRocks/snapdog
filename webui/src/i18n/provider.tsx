@@ -21,10 +21,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
+    let stale = false;
     messageImports[locale]()
-      .then((m) => { setMessages(m.default); })
+      .then((m) => { if (!stale) { setMessages(m.default); document.documentElement.lang = locale; } })
       .catch((err: unknown) => { console.error(`Failed to load "${locale}" messages`, err); });
-    document.documentElement.lang = locale;
+    return () => { stale = true; };
   }, [locale]);
 
   if (!messages) return null;

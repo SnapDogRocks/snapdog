@@ -87,6 +87,7 @@ function ClientCard({ client }: { client: ClientInfo }) {
         <div className="flex items-center gap-1">
           <div className="flex-1">
             <VolumeSlider
+              label={`${t("clients", { count: 1 })}: ${client.name}`}
               volume={client.volume}
               muted={client.muted}
               onVolumeChange={(v) => { api.clients.setVolume(client.index, v).catch(logApiError); }}
@@ -99,7 +100,7 @@ function ClientCard({ client }: { client: ClientInfo }) {
           {client.is_snapdog && (
             <button
               onClick={() => { setShowEq(true); }}
-              className={`text-[10px] transition-colors px-1 ${eqEnabled ? "text-orange-500 font-bold" : "text-muted-foreground hover:text-foreground"}`}
+              className={`text-xs transition-colors px-2 min-h-8 ${eqEnabled ? "text-primary-ink font-bold" : "text-muted-foreground hover:text-foreground"}`}
               aria-label={`EQ ${client.name}`}
             >
               EQ
@@ -107,7 +108,7 @@ function ClientCard({ client }: { client: ClientInfo }) {
           )}
         </div>
       </div>
-      {showEq && <EqOverlay clientId={client.index} label={client.name} onClose={(enabled) => { setShowEq(false); setEqEnabled(enabled); }} />}
+      {showEq && <EqOverlay initialEnabled={eqEnabled} clientId={client.index} label={client.name} onClose={(enabled) => { setShowEq(false); setEqEnabled(enabled); }} />}
     </div>
   );
 }
@@ -139,7 +140,7 @@ export function ClientList({ zone }: { zone: ZoneState }) {
         {offlineCount > 0 && (
           <button
             onClick={toggleOffline}
-            className="ml-auto text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+            className="ml-auto text-[10px] text-muted-foreground hover:text-foreground transition-colors"
             aria-label={showOffline ? t("hideOffline") : t("showOffline", { count: offlineCount })}
             aria-pressed={showOffline}
           >

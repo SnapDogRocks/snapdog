@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { logApiError } from "@/lib/log-api-error";
 import { QRCodeSVG } from "qrcode.react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
@@ -43,7 +44,7 @@ function ConnectOverlay({ onClose }: { onClose: () => void }) {
     ? `snapdog://connect?url=${encodeURIComponent(baseUrl)}&token=${encodeURIComponent(apiKey)}`
     : `snapdog://connect?url=${encodeURIComponent(baseUrl)}`;
 
-  const shareUrl = apiKey ? `${baseUrl}/?auth=${apiKey}` : baseUrl;
+  const shareUrl = apiKey ? `${baseUrl}/?auth=${encodeURIComponent(apiKey)}` : baseUrl;
 
   const handleShare = useCallback(async () => {
     // navigator.share is feature-detected at runtime (older browsers lack the
@@ -56,9 +57,10 @@ function ConnectOverlay({ onClose }: { onClose: () => void }) {
         // User cancelled
       }
     } else {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => { setCopied(false); }, 2000);
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+      } catch (error) { logApiError(error); }
     }
   }, [shareUrl]);
 

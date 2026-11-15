@@ -67,7 +67,8 @@
     "frequency": "Fréquence",
     "gain": "Gain",
     "qFactor": "Facteur Q",
-    "curve": "Courbe de réponse en fréquence"
+    "curve": "Courbe de réponse en fréquence",
+    "loading": "Chargement de l’égaliseur…"
   },
   "playlist": {
     "title": "Playlists",
@@ -85,7 +86,11 @@
     "searchTracks": "Titres",
     "searching": "Recherche…",
     "libraryEmpty": "Rien trouvé dans la bibliothèque musicale",
-    "playAlbum": "Lire l’album"
+    "playAlbum": "Lire l’album",
+    "openPlaylist": "Ouvrir {name}",
+    "backToPlaylists": "Retour aux playlists",
+    "tracksLoading": "Chargement des titres…",
+    "libraryUnavailable": "Bibliothèque musicale indisponible. Vous pouvez toujours parcourir les playlists ci-dessus."
   },
   "auth": {
     "title": "Authentification requise",
@@ -150,5 +155,41 @@
     "share": "Partager le lien",
     "copied": "Copié !",
     "securityNote": "Ce QR code contient votre clé API. Ne partagez qu'avec des personnes de confiance."
+  },
+  "current": {
+    "previousZone": "Zone précédente",
+    "nextZone": "Zone suivante",
+    "unavailable": "SnapDog n’est pas disponible",
+    "loadFailed": "Impossible de charger votre système. Vérifiez la connexion, puis réessayez.",
+    "commandFailed": "Impossible d’enregistrer la modification. Veuillez réessayer.",
+    "details": "Détails techniques",
+    "dismiss": "Ignorer l’erreur",
+    "stale": "Les valeurs affichées ne sont peut-être plus à jour.",
+    "nowPlaying": "En cours de lecture",
+    "live": "Flux en direct",
+    "zoneVolume": "Volume de la zone",
+    "volumeFor": "Volume de {name}",
+    "speakers": "Enceintes",
+    "clearSelection": "Effacer la sélection",
+    "selectAll": "Tout sélectionner",
+    "dragHint": "Faites glisser la poignée vers une zone ou activez-la pour choisir une destination. Sélectionnez plusieurs enceintes pour les déplacer ensemble. Échap annule.",
+    "selectSpeaker": "Sélectionner {name}",
+    "moveSpeaker": "Déplacer {name}",
+    "noSpeakers": "Aucune enceinte dans cette zone. Déplacez-y des enceintes depuis une autre zone.",
+    "noOtherZone": "Aucune autre zone",
+    "moving": "Déplacement des enceintes…",
+    "move": "Déplacer",
+    "loading": "Connexion à votre système audio…",
+    "dropHere": "Relâchez pour déplacer ici",
+    "speakerCount": "{count, plural, one {# enceinte} other {# enceintes}}",
+    "restored": "{count, plural, one {# enceinte restaurée} other {# enceintes restaurées}}",
+    "moved": "{count, plural, one {# enceinte déplacée} other {# enceintes déplacées}}",
+    "moveFailed": "{count, plural, one {Impossible de déplacer # enceinte. Vérifiez son attribution et réessayez.} other {Impossible de déplacer # enceintes. Vérifiez leurs attributions et réessayez.}}",
+    "undoSkipped": "{count, plural, one {# changement ultérieur a été conservé.} other {# changements ultérieurs ont été conservés.}}",
+    "undo": "Annuler",
+    "dragToZone": "Faites glisser vers une zone",
+    "authUnavailable": "Impossible de joindre SnapDog. Vérifiez la connexion, puis réessayez.",
+    "restoring": "Restauration des enceintes…",
+    "undoFailed": "{count, plural, one {Impossible de restaurer # enceinte. Réessayez avec « Annuler ».} other {Impossible de restaurer # enceintes. Réessayez avec « Annuler ».}}"
   }
 }

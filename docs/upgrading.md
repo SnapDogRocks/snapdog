@@ -3,6 +3,13 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## WebUI: current interface is now the default
+
+The current interface is served at `/` by default. To keep the legacy interface at `/`, pass
+`--webui legacy` or set `webui = "legacy"` under `[http]` in `snapdog.toml`. A CLI choice overrides
+the configuration for that run. The legacy interface also remains available at `/legacy` and
+`/legacy/`. No data migration is needed.
+
 ## Media API: creating and changing Subsonic playlists (off by default)
 
 Nothing changes until you switch it on with `[subsonic].playlist_write = true`.

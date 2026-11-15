@@ -67,7 +67,8 @@
     "frequency": "Frequentie",
     "gain": "Versterking",
     "qFactor": "Q-factor",
-    "curve": "EQ-frequentieresponsecurve"
+    "curve": "EQ-frequentieresponsecurve",
+    "loading": "Equalizer laden…"
   },
   "playlist": {
     "title": "Afspeellijsten",
@@ -85,7 +86,11 @@
     "searchTracks": "Nummers",
     "searching": "Zoeken…",
     "libraryEmpty": "Niets gevonden in de muziekbibliotheek",
-    "playAlbum": "Album afspelen"
+    "playAlbum": "Album afspelen",
+    "openPlaylist": "{name} openen",
+    "backToPlaylists": "Terug naar afspeellijsten",
+    "tracksLoading": "Nummers laden…",
+    "libraryUnavailable": "Muziekbibliotheek niet beschikbaar. Je kunt de afspeellijsten hierboven wel bekijken."
   },
   "auth": {
     "title": "Authenticatie vereist",
@@ -150,5 +155,41 @@
     "share": "Link delen",
     "copied": "Gekopieerd!",
     "securityNote": "Deze QR-code bevat je API-sleutel. Deel alleen met vertrouwde personen."
+  },
+  "current": {
+    "previousZone": "Vorige zone",
+    "nextZone": "Volgende zone",
+    "unavailable": "SnapDog is niet beschikbaar",
+    "loadFailed": "Je systeem kon niet worden geladen. Controleer de verbinding en probeer het opnieuw.",
+    "commandFailed": "De wijziging kon niet worden opgeslagen. Probeer het opnieuw.",
+    "details": "Technische details",
+    "dismiss": "Fout sluiten",
+    "stale": "De weergegeven waarden zijn mogelijk verouderd.",
+    "nowPlaying": "Speelt nu",
+    "live": "Livestream",
+    "zoneVolume": "Zonevolume",
+    "volumeFor": "Volume van {name}",
+    "speakers": "Luidsprekers",
+    "clearSelection": "Selectie wissen",
+    "selectAll": "Alles selecteren",
+    "dragHint": "Sleep de greep naar een zone of activeer deze om een bestemming te kiezen. Selecteer meerdere luidsprekers om ze samen te verplaatsen. Escape annuleert.",
+    "selectSpeaker": "{name} selecteren",
+    "moveSpeaker": "{name} verplaatsen",
+    "noSpeakers": "Geen luidsprekers in deze zone. Verplaats luidsprekers hierheen vanuit een andere zone.",
+    "noOtherZone": "Geen andere zone",
+    "moving": "Luidsprekers verplaatsen…",
+    "move": "Verplaatsen",
+    "loading": "Verbinden met je audiosysteem…",
+    "dropHere": "Laat hier los om te verplaatsen",
+    "speakerCount": "{count, plural, one {# luidspreker} other {# luidsprekers}}",
+    "restored": "{count, plural, one {# luidspreker hersteld} other {# luidsprekers hersteld}}",
+    "moved": "{count, plural, one {# luidspreker verplaatst} other {# luidsprekers verplaatst}}",
+    "moveFailed": "{count, plural, one {# luidspreker kon niet worden verplaatst. Controleer de toewijzing en probeer het opnieuw.} other {# luidsprekers konden niet worden verplaatst. Controleer de toewijzingen en probeer het opnieuw.}}",
+    "undoSkipped": "{count, plural, one {# latere toewijzing is behouden.} other {# latere toewijzingen zijn behouden.}}",
+    "undo": "Ongedaan maken",
+    "dragToZone": "Sleep naar een zone",
+    "authUnavailable": "SnapDog is niet bereikbaar. Controleer de verbinding en probeer het opnieuw.",
+    "restoring": "Luidsprekers herstellen…",
+    "undoFailed": "{count, plural, one {# luidspreker kon niet worden hersteld. Probeer het opnieuw met Ongedaan maken.} other {# luidsprekers konden niet worden hersteld. Probeer het opnieuw met Ongedaan maken.}}"
   }
 }

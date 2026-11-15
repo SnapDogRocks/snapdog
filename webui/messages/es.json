@@ -67,7 +67,8 @@
     "frequency": "Frecuencia",
     "gain": "Ganancia",
     "qFactor": "Factor Q",
-    "curve": "Curva de respuesta en frecuencia"
+    "curve": "Curva de respuesta en frecuencia",
+    "loading": "Cargando el ecualizador…"
   },
   "playlist": {
     "title": "Listas de reproducción",
@@ -85,7 +86,11 @@
     "searchTracks": "Canciones",
     "searching": "Buscando…",
     "libraryEmpty": "No se encontró nada en la biblioteca musical",
-    "playAlbum": "Reproducir álbum"
+    "playAlbum": "Reproducir álbum",
+    "openPlaylist": "Abrir {name}",
+    "backToPlaylists": "Volver a las listas de reproducción",
+    "tracksLoading": "Cargando pistas…",
+    "libraryUnavailable": "La biblioteca de música no está disponible. Aún puedes explorar las listas de reproducción de arriba."
   },
   "auth": {
     "title": "Autenticación requerida",
@@ -150,5 +155,41 @@
     "share": "Compartir enlace",
     "copied": "¡Copiado!",
     "securityNote": "Este código QR contiene tu clave API. Comparte solo con personas de confianza."
+  },
+  "current": {
+    "previousZone": "Zona anterior",
+    "nextZone": "Zona siguiente",
+    "unavailable": "SnapDog no está disponible",
+    "loadFailed": "No se pudo cargar el sistema. Comprueba la conexión e inténtalo de nuevo.",
+    "commandFailed": "No se pudo guardar el cambio. Inténtalo de nuevo.",
+    "details": "Detalles técnicos",
+    "dismiss": "Descartar error",
+    "stale": "Puede que los valores mostrados no estén actualizados.",
+    "nowPlaying": "En reproducción",
+    "live": "Emisión en directo",
+    "zoneVolume": "Volumen de la zona",
+    "volumeFor": "Volumen — {name}",
+    "speakers": "Altavoces",
+    "clearSelection": "Borrar selección",
+    "selectAll": "Seleccionar todo",
+    "dragHint": "Arrastra el asa a una zona o actívala para elegir un destino. Selecciona varios altavoces para moverlos juntos. Escape cancela.",
+    "selectSpeaker": "Seleccionar {name}",
+    "moveSpeaker": "Mover {name}",
+    "noSpeakers": "No hay altavoces en esta zona. Mueve aquí los altavoces de otra zona.",
+    "noOtherZone": "No hay otra zona",
+    "moving": "Moviendo altavoces…",
+    "move": "Mover",
+    "loading": "Conectando con tu sistema de sonido…",
+    "dropHere": "Suelta aquí para mover",
+    "speakerCount": "{count, plural, one {# altavoz} other {# altavoces}}",
+    "restored": "{count, plural, one {# altavoz restaurado} other {# altavoces restaurados}}",
+    "moved": "{count, plural, one {# altavoz movido} other {# altavoces movidos}}",
+    "moveFailed": "{count, plural, one {No se pudo mover # altavoz. Comprueba su asignación e inténtalo de nuevo.} other {No se pudieron mover # altavoces. Comprueba sus asignaciones e inténtalo de nuevo.}}",
+    "undoSkipped": "{count, plural, one {Se mantuvo # asignación posterior.} other {Se mantuvieron # asignaciones posteriores.}}",
+    "undo": "Deshacer",
+    "dragToZone": "Arrastrar a una zona",
+    "authUnavailable": "No se pudo conectar con SnapDog. Comprueba la conexión e inténtalo de nuevo.",
+    "restoring": "Restaurando altavoces…",
+    "undoFailed": "{count, plural, one {No se pudo restaurar # altavoz. Vuelve a intentarlo con Deshacer.} other {No se pudieron restaurar # altavoces. Vuelve a intentarlo con Deshacer.}}"
   }
 }

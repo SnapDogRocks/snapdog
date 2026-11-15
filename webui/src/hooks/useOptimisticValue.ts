@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 
 /**
  * Optimistic UI pattern for server-controlled values.
@@ -21,10 +21,17 @@ export function useOptimisticValue(
   const [localValue, setLocalValue] = useState(serverValue);
   const [pending, setPending] = useState(false);
   const committedRef = useRef<number | null>(null);
+  const serverValueRef = useRef(serverValue);
+  const draggingRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useLayoutEffect(() => {
+    serverValueRef.current = serverValue;
+  }, [serverValue]);
 
   // Sync from server when not waiting for confirmation
   useEffect(() => {
+    if (draggingRef.current) return;
     if (committedRef.current === null) {
       setLocalValue(serverValue);
     } else if (Math.abs(serverValue - committedRef.current) <= tolerance) {
@@ -40,12 +47,26 @@ export function useOptimisticValue(
 
   /** Call during drag/interaction — updates local immediately, no server call. */
   const setOptimistic = useCallback((value: number) => {
+    clearTimeout(timeoutRef.current);
+    committedRef.current = null;
+    setPending(false);
+    draggingRef.current = true;
     setLocalValue(value);
+  }, []);
+
+  /** Call if an interaction is cancelled before commit. */
+  const cancel = useCallback(() => {
+    clearTimeout(timeoutRef.current);
+    committedRef.current = null;
+    draggingRef.current = false;
+    setPending(false);
+    setLocalValue(serverValueRef.current);
   }, []);
 
   /** Call on commit (release) — holds value until server confirms. */
   const commit = useCallback(
     (value: number) => {
+      draggingRef.current = false;
       setLocalValue(value);
       committedRef.current = value;
       setPending(true);
@@ -54,10 +75,11 @@ export function useOptimisticValue(
       timeoutRef.current = setTimeout(() => {
         committedRef.current = null;
         setPending(false);
+        setLocalValue(serverValueRef.current);
       }, timeoutMs);
     },
     [timeoutMs],
   );
 
-  return { value: localValue, setOptimistic, commit, pending };
+  return { value: localValue, setOptimistic, commit, cancel, pending };
 }

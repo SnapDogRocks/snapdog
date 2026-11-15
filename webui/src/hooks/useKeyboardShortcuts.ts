@@ -8,6 +8,35 @@ import { logApiError } from "@/lib/log-api-error";
 /** Volume step per arrow key press. */
 const VOLUME_STEP = 5;
 
+const INTERACTIVE_TARGETS = [
+  "input",
+  "textarea",
+  "select",
+  "button",
+  "a[href]",
+  "summary",
+  "[role='button']",
+  "[role='dialog']",
+  "[role='alertdialog']",
+  "[role='slider']",
+  "[role='spinbutton']",
+  "[role='textbox']",
+  "[role='combobox']",
+  "[role='listbox']",
+  "[role='option']",
+  "[role='menu']",
+  "[role='menuitem']",
+  "[role='tab']",
+  "[contenteditable]:not([contenteditable='false'])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  return target.closest(INTERACTIVE_TARGETS) !== null;
+}
+
 /**
  * Global keyboard shortcuts for the active zone.
  * Space = Play/Pause, ←/→ = Prev/Next, ↑/↓ = Volume.
@@ -19,23 +48,25 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Don't intercept when typing in inputs
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (isInteractiveTarget(e.target)) return;
 
       const zone = zones.get(selectedZone);
       if (!zone) return;
 
       switch (e.key) {
         case " ":
+          if (zone.source === "idle") return;
           e.preventDefault();
           api.zones[zone.playback === "playing" ? "pause" : "play"](zone.index).catch(logApiError);
           break;
         case "ArrowLeft":
+          if (!zone.track?.can_prev) return;
           e.preventDefault();
           api.zones.previous(zone.index).catch(logApiError);
           break;
         case "ArrowRight":
+          if (!zone.track?.can_next) return;
           e.preventDefault();
           api.zones.next(zone.index).catch(logApiError);
           break;

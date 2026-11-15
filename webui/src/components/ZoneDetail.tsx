@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AlertCircleIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
+import { PlaybackErrorBanner } from "@/components/PlaybackErrorBanner";
 import { api } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";
 import { useAppStore, type ZoneState } from "@/stores/useAppStore";
@@ -36,7 +35,7 @@ function ZoneHeader({ zone }: { zone: ZoneState }) {
       <div className="flex items-center gap-2 truncate">
         <h2 className="text-sm font-semibold truncate">{zone.name}</h2>
         {zone.eqEnabled && (
-          <span className="text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.5 rounded uppercase tracking-wider shrink-0" aria-label="EQ Active">
+          <span className="text-[8px] font-bold text-primary-ink bg-primary/10 px-1 py-0.5 rounded uppercase tracking-wider shrink-0" aria-label="EQ Active">
             EQ
           </span>
         )}
@@ -52,7 +51,7 @@ function ZoneHeader({ zone }: { zone: ZoneState }) {
           </span>
         )}
         {sourceKey ? (
-        <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+        <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-primary/10 text-primary-ink">
           {t(`source.${sourceKey}`)}
         </span>
       ) : (
@@ -75,7 +74,7 @@ function TrackInfo({ zone, forceCenter = false }: { zone: ZoneState; forceCenter
       <div className={`${alignmentClass} w-full flex flex-col justify-start`}>
         <div className="text-base font-bold leading-snug">{t("noAudio")}</div>
         <div className="text-sm text-muted-foreground mt-0.5">{"\u00A0"}</div>
-        <div className="text-xs text-muted-foreground/70 mt-0.5">{"\u00A0"}</div>
+        <div className="text-xs text-muted-foreground mt-0.5">{"\u00A0"}</div>
       </div>
     );
   }
@@ -84,43 +83,7 @@ function TrackInfo({ zone, forceCenter = false }: { zone: ZoneState; forceCenter
     <div className={`${alignmentClass} w-full flex flex-col justify-start`}>
       <Marquee className="text-base font-bold leading-snug">{track.title || t("unknownTitle")}</Marquee>
       <Marquee className="text-sm text-muted-foreground mt-0.5">{track.artist || t("unknownArtist")}</Marquee>
-      <Marquee className="text-xs text-muted-foreground/70 mt-0.5">{track.album || "\u00A0"}</Marquee>
-    </div>
-  );
-}
-
-function PlaybackErrorBanner({ zone }: { zone: ZoneState }) {
-  if (!zone.error) return null;
-
-  return (
-    <div
-      className="flex items-start gap-3 rounded-lg border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-sm text-destructive shadow-sm"
-      role="alert"
-      aria-live="polite"
-    >
-      <HugeiconsIcon icon={AlertCircleIcon} size={18} className="mt-0.5 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="break-words font-medium leading-snug">{zone.error.message}</p>
-        {zone.error.details && (
-          <details>
-            <summary className="cursor-pointer select-none text-[11px] font-medium text-destructive/80 hover:text-destructive">
-              Technical details
-            </summary>
-            <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md border border-destructive/15 bg-background/70 p-2 font-mono text-[11px] leading-relaxed text-destructive/85">
-              {zone.error.details}
-            </pre>
-          </details>
-        )}
-      </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => { useAppStore.getState().setZoneError(zone.index, null); }}
-        className="-mr-1 -mt-1 size-7 shrink-0 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
-        aria-label="Dismiss error"
-      >
-        <HugeiconsIcon icon={Cancel01Icon} size={14} />
-      </Button>
+      <Marquee className="text-xs text-muted-foreground mt-0.5">{track.album || "\u00A0"}</Marquee>
     </div>
   );
 }
@@ -135,7 +98,7 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
   const glowUrl = zone.source !== "idle" ? (zone.track?.cover_url ?? null) : null;
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-y-auto scrollbar-thin select-none @container">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto scrollbar-thin select-none @container">
       {/* Ambient cover glow */}
       {glowUrl && (
         <div className="absolute inset-0 pointer-events-none select-none isolate z-0" aria-hidden="true">
@@ -169,7 +132,7 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
                   variant="ghost"
                   size="sm"
                   onClick={() => { setShowEq(true); }}
-                  className={`absolute right-0 text-xs px-2.5 h-8 rounded-full bg-secondary/50 border border-border/20 ${zone.eqEnabled ? "text-orange-500 font-bold border-orange-500/30" : ""}`}
+                  className={`absolute right-0 text-xs px-2.5 h-8 rounded-full bg-secondary/50 border border-border/20 ${zone.eqEnabled ? "text-primary-ink font-bold border-primary/30" : ""}`}
                   aria-label={t("eq.title", { zone: zone.name })}
                 >
                   EQ
@@ -177,6 +140,7 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
               </div>
               <ShuffleRepeat zone={zone} />
               <VolumeSlider
+                label={t("current.volumeFor", { name: zone.name })}
                 volume={zone.volume}
                 muted={zone.muted}
                 onVolumeChange={(v) => { api.zones.setVolume(zone.index, v).catch(logApiError); }}
@@ -193,7 +157,7 @@ export function ZoneDetail({ zone }: { zone: ZoneState }) {
           <PlaylistBrowser zone={zone} />
         </div>
       </div>
-      {showEq && <EqOverlay zoneId={zone.index} label={zone.name} onClose={(enabled) => { setShowEq(false); useAppStore.getState().updateZoneEq(zone.index, enabled); }} />}
+      {showEq && <EqOverlay initialEnabled={zone.eqEnabled ?? false} zoneId={zone.index} label={zone.name} onClose={(enabled) => { setShowEq(false); useAppStore.getState().updateZoneEq(zone.index, enabled); }} />}
     </div>
   );
 }

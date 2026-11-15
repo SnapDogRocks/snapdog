@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useReducer } from "react";
+import { useEffect, useLayoutEffect, useRef, useCallback, useReducer } from "react";
 import { useTranslations } from "next-intl";
 import { Slider } from "@/components/ui/slider";
 import { api } from "@/lib/api";
@@ -29,7 +29,8 @@ type SeekAction =
   | { type: "commit"; target: number }
   | { type: "tick"; delta: number; duration: number }
   | { type: "track_change" }
-  | { type: "timeout" };
+  | { type: "timeout"; position: number }
+  | { type: "cancel"; position: number };
 
 function seekReducer(state: SeekState, action: SeekAction): SeekState {
   switch (action.type) {
@@ -61,9 +62,11 @@ function seekReducer(state: SeekState, action: SeekAction): SeekState {
       return state;
     case "track_change":
       return { type: "synced", position: 0 };
+    case "cancel":
+      return { type: "synced", position: action.position };
     case "timeout":
       if (state.type === "seeking") {
-        return { type: "synced", position: state.target };
+        return { type: "synced", position: action.position };
       }
       return state;
   }
@@ -86,11 +89,15 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
 
   const trackKey = `${track?.title}-${track?.artist}`;
   const lastTrackRef = useRef(trackKey);
+  const serverPositionRef = useRef(serverPosition);
+  const requestId = useRef(0);
+  useLayoutEffect(() => { serverPositionRef.current = serverPosition; }, [serverPosition]);
 
   // Track change detection
   useEffect(() => {
     if (trackKey !== lastTrackRef.current) {
       lastTrackRef.current = trackKey;
+      requestId.current++;
       dispatch({ type: "track_change" });
     }
   }, [trackKey]);
@@ -114,10 +121,10 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
     if (state.type !== "seeking") return;
     const remaining = SEEK_TIMEOUT_MS - (Date.now() - state.sentAt);
     if (remaining <= 0) {
-      dispatch({ type: "timeout" });
+      dispatch({ type: "timeout", position: serverPositionRef.current });
       return;
     }
-    const timer = setTimeout(() => { dispatch({ type: "timeout" }); }, remaining);
+    const timer = setTimeout(() => { dispatch({ type: "timeout", position: serverPositionRef.current }); }, remaining);
     return () => { clearTimeout(timer); };
   }, [state]);
 
@@ -135,7 +142,11 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
       const target = value[0];
       if (!canSeek || target === undefined) return;
       dispatch({ type: "commit", target });
-      api.zones.seekPosition(zone.index, target).catch(logApiError);
+      const id = ++requestId.current;
+      api.zones.seekPosition(zone.index, target).catch((error: unknown) => {
+        logApiError(error);
+        if (requestId.current === id) dispatch({ type: "timeout", position: serverPositionRef.current });
+      });
     },
     [zone.index, canSeek],
   );
@@ -168,6 +179,7 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
           step={SEEK_STEP_MS}
           onValueChange={handleSeek}
           onValueCommit={handleSeekCommit}
+          onPointerCancel={() => { requestId.current++; dispatch({ type: "cancel", position: serverPositionRef.current }); }}
           disabled={!canSeek}
           className="w-full relative"
           aria-label={t("label")}

@@ -1,0 +1,117 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { useAppStore } from "@/stores/useAppStore";
+import { useWebSocket } from "@/hooks/useWebSocket";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { api } from "@/lib/api";
+import { setApiKey } from "@/lib/auth";
+import { trackFromZoneChanged } from "@/lib/ws-zone";
+import type { WsNotification } from "@/lib/types";
+export function useAppSession() {
+    const needsAuth = useAppStore((s) => s.needsAuth);
+    const [serverName, setServerName] = useState("SnapDog");
+    const notification = useCallback((n: WsNotification) => {
+        const store = useAppStore.getState();
+        switch (n.type) {
+            case "zone_changed":
+                store.updateZone(n.zone, {
+                    playback: n.playback,
+                    volume: n.volume,
+                    muted: n.muted,
+                    source: n.source,
+                    shuffle: n.shuffle,
+                    repeat: n.repeat,
+                    track: trackFromZoneChanged(n),
+                });
+                break;
+            case "playlists_changed":
+                store.bumpPlaylists();
+                break;
+            case "zone_volume_changed":
+                store.updateZoneVolume(n.zone, n.volume, n.muted);
+                break;
+            case "zone_progress":
+                store.updateZoneProgress(
+                    n.zone,
+                    n.position_ms,
+                    n.duration_ms,
+                    n.buffered_ms ?? null,
+                );
+                break;
+            case "client_state_changed":
+                store.updateClient(n.client, {
+                    volume: n.volume,
+                    muted: n.muted,
+                    connected: n.connected,
+                    zone_index: n.zone,
+                    is_snapdog: n.is_snapdog,
+                });
+                break;
+            case "zone_presence_changed":
+                store.updateZonePresence(n.zone, n.presence, n.enabled, n.timer_active);
+                break;
+            case "zone_eq_changed":
+                store.updateZoneEq(n.zone, n.enabled, n.bands, n.preset);
+                break;
+            case "playback_error":
+                store.setZoneError(n.zone, {
+                    message: n.message,
+                    details: n.details,
+                    recoverable: n.recoverable,
+                });
+                break;
+        }
+    }, []);
+    const { isConnected, serverGoingAway, retryIn } = useWebSocket(
+        notification,
+        () => {
+            void useAppStore.getState().loadAll();
+            useAppStore.getState().bumpPlaylists();
+        },
+        !needsAuth,
+    );
+    useKeyboardShortcuts();
+    useEffect(() => {
+        const unauthorized = () => {
+            useAppStore.setState({ needsAuth: true });
+        };
+        window.addEventListener("snapdog:unauthorized", unauthorized);
+        const params = new URLSearchParams(window.location.search);
+        const auth = params.get("auth");
+        if (auth) {
+            setApiKey(auth);
+            params.delete("auth");
+            const search = params.toString();
+            window.history.replaceState(
+                {},
+                "",
+                `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`,
+            );
+        }
+        void useAppStore.getState().loadAll();
+        return () => {
+            window.removeEventListener("snapdog:unauthorized", unauthorized);
+        };
+    }, []);
+    useEffect(() => {
+        useAppStore.getState().setConnected(isConnected, serverGoingAway);
+    }, [isConnected, serverGoingAway]);
+    useEffect(() => {
+        if (needsAuth) return;
+        let stale = false;
+        api.system
+            .version()
+            .then((v) => {
+                if (stale) return;
+                setServerName(v.name);
+                document.title = v.name === "SnapDog" ? "SnapDog" : `SnapDog — ${v.name}`;
+            })
+            .catch(() => {
+                /* System information is optional; retain the default title. */
+            });
+        return () => {
+            stale = true;
+        };
+    }, [needsAuth]);
+    return { serverName, retryIn };
+}

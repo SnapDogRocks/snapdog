@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { api, ApiError } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";
 import { formatTime } from "@/lib/format-time";
+import { Button } from "@/components/ui/button";
 import type { SearchItem } from "@/lib/types";
 import type { ZoneState } from "@/stores/useAppStore";
 
@@ -19,9 +20,13 @@ const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 300;
 const RESULTS_PER_KIND = 8;
 
+type SearchState =
+  | { text: string; status: "loading" | "unavailable" | "error"; items: SearchItem[] }
+  | { text: string; status: "success"; items: SearchItem[] };
+
 function Cover({ src }: { src: string | null | undefined }) {
   if (!src) {
-    return <HugeiconsIcon icon={MusicNote03Icon} size={24} className="text-primary/30" />;
+    return <HugeiconsIcon icon={MusicNote03Icon} size={24} className="text-primary-ink/30" />;
   }
   return (
     <img
@@ -39,43 +44,72 @@ function Cover({ src }: { src: string | null | undefined }) {
 /** Albums and tracks of the media server that match the playlist search text. */
 export function LibrarySearch({ zone, query }: LibrarySearchProps) {
   const t = useTranslations("playlist");
+  const tZone = useTranslations("zone");
   const text = query.trim();
   const active = text.length >= MIN_QUERY_LENGTH;
-  const [found, setFound] = useState<{ text: string; items: SearchItem[] } | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
+  const [result, setResult] = useState<SearchState | null>(null);
+  const [retry, setRetry] = useState(0);
+
+  const retrySearch = () => {
+    setResult({ text, status: "loading", items: [] });
+    setRetry((attempt) => attempt + 1);
+  };
 
   useEffect(() => {
     if (!active) return;
     let stale = false;
     const timer = setTimeout(() => {
+      setResult({ text, status: "loading", items: [] });
       api.media
         .search(text, { kinds: ["album", "track"], limit: RESULTS_PER_KIND })
         .then((res) => {
           if (stale) return;
-          setUnavailable(false);
-          setFound({ text, items: res.items });
+          setResult({ text, status: "success", items: res.items });
         })
         .catch((e: unknown) => {
           if (stale) return;
-          // 503: no media server is configured, so there is nothing to search and nothing to say.
-          if (e instanceof ApiError && e.status === 503) setUnavailable(true);
-          else logApiError(e);
-          setFound(null);
+          // 503 means the optional music library is not configured; show the inline unavailable state.
+          if (e instanceof ApiError && e.status === 503) {
+            setResult({ text, status: "unavailable", items: [] });
+          } else {
+            logApiError(e);
+            setResult({ text, status: "error", items: [] });
+          }
         });
     }, DEBOUNCE_MS);
     return () => {
       stale = true;
       clearTimeout(timer);
     };
-  }, [active, text]);
+  }, [active, text, retry]);
 
-  if (!active || unavailable) return null;
-  if (found?.text !== text) {
+  if (!active) return null;
+  if (result?.text !== text || result.status === "loading") {
     return <div className="px-1 text-xs text-muted-foreground animate-pulse">{t("searching")}</div>;
   }
+  if (result.status === "unavailable") {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground" role="status">
+        <span>{t("libraryUnavailable")}</span>
+        <Button variant="ghost" size="sm" onClick={retrySearch}>
+          {tZone("retry")}
+        </Button>
+      </div>
+    );
+  }
+  if (result.status === "error") {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs" role="alert">
+        <span>{tZone("error")}</span>
+        <Button variant="ghost" size="sm" onClick={retrySearch}>
+          {tZone("retry")}
+        </Button>
+      </div>
+    );
+  }
 
-  const albums = found.items.filter((i) => i.kind === "album" && i.album_id);
-  const tracks = found.items.filter((i) => i.kind === "track" && i.track_id);
+  const albums = result.items.filter((i) => i.kind === "album" && i.album_id);
+  const tracks = result.items.filter((i) => i.kind === "track" && i.track_id);
   if (albums.length === 0 && tracks.length === 0) {
     return <div className="px-1 text-xs text-muted-foreground/70">{t("libraryEmpty")}</div>;
   }
@@ -102,7 +136,7 @@ export function LibrarySearch({ zone, query }: LibrarySearchProps) {
                   </div>
                 </div>
                 <div className="px-0.5">
-                  <div className="text-sm font-bold truncate group-hover:text-primary transition-colors leading-tight">{album.title}</div>
+                  <div className="text-sm font-bold truncate group-hover:text-primary-ink transition-colors leading-tight">{album.title}</div>
                   {album.subtitle && <div className="text-xs text-muted-foreground truncate">{album.subtitle}</div>}
                 </div>
               </button>
@@ -129,7 +163,7 @@ export function LibrarySearch({ zone, query }: LibrarySearchProps) {
                   </div>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold truncate group-hover:text-primary transition-colors">{track.title}</div>
+                  <div className="text-[13px] font-semibold truncate group-hover:text-primary-ink transition-colors">{track.title}</div>
                   {track.subtitle && <div className="text-[11px] text-muted-foreground truncate">{track.subtitle}</div>}
                 </div>
                 <span className="text-[10px] tabular-nums text-muted-foreground opacity-60 font-medium">{formatTime(track.duration * 1000)}</span>

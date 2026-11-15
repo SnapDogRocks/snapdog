@@ -30,6 +30,8 @@ interface VolumeSliderProps {
   max?: number;
   /** Compact mode for client chips (smaller controls, no value display) */
   compact?: boolean;
+  /** Accessible name for this specific zone or speaker volume control. */
+  label?: string;
 }
 
 export function VolumeSlider({
@@ -40,15 +42,31 @@ export function VolumeSlider({
   onUnmute,
   max = 100,
   compact = false,
+  label,
 }: VolumeSliderProps) {
   const t = useTranslations("volume");
-  const { value: localVolume, setOptimistic, commit } = useOptimisticValue(volume);
+  const { value: localVolume, setOptimistic, commit, cancel } = useOptimisticValue(volume);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pendingVolumeRef = useRef<number | null>(null);
+  const lastSentVolumeRef = useRef<number | null>(null);
+  const mountedRef = useRef(false);
+  const pointerActiveRef = useRef(false);
+  const unmuteRequestedRef = useRef(false);
   const effectiveMax = clampVolume(max, ABSOLUTE_MAX_VOLUME);
   const displayVolume = clampVolume(localVolume, effectiveMax);
 
-  // Clean up debounce timer on unmount
-  useEffect(() => () => { clearTimeout(timerRef.current); }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timerRef.current);
+      pendingVolumeRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!muted) unmuteRequestedRef.current = false;
+  }, [muted]);
 
   const volumeIcon = muted
     ? VolumeMute02Icon
@@ -60,10 +78,24 @@ export function VolumeSlider({
     (value: number[]) => {
       if (value[0] === undefined) return;
       const v = clampVolume(value[0], effectiveMax);
-      setOptimistic(v);
-      if (muted) onUnmute();
+      if (pointerActiveRef.current) setOptimistic(v);
+      if (muted && !unmuteRequestedRef.current) {
+        unmuteRequestedRef.current = true;
+        onUnmute();
+      }
       clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => { onVolumeChange(v); }, VOLUME_DEBOUNCE_MS);
+      if (!pointerActiveRef.current) {
+        pendingVolumeRef.current = null;
+        return;
+      }
+      pendingVolumeRef.current = v;
+      timerRef.current = setTimeout(() => {
+        const pendingVolume = pendingVolumeRef.current;
+        pendingVolumeRef.current = null;
+        if (!mountedRef.current || pendingVolume === null) return;
+        lastSentVolumeRef.current = pendingVolume;
+        onVolumeChange(pendingVolume);
+      }, VOLUME_DEBOUNCE_MS);
     },
     [effectiveMax, muted, onVolumeChange, onUnmute, setOptimistic],
   );
@@ -72,28 +104,43 @@ export function VolumeSlider({
     (value: number[]) => {
       if (value[0] === undefined) return;
       const v = clampVolume(value[0], effectiveMax);
+      if (muted && !unmuteRequestedRef.current) {
+        unmuteRequestedRef.current = true;
+        onUnmute();
+      }
       clearTimeout(timerRef.current);
+      pendingVolumeRef.current = null;
       commit(v);
-      onVolumeChange(v);
+      if (lastSentVolumeRef.current !== v) onVolumeChange(v);
+      lastSentVolumeRef.current = null;
     },
-    [commit, effectiveMax, onVolumeChange],
+    [commit, effectiveMax, muted, onUnmute, onVolumeChange],
   );
+
+  const handlePointerCancel = useCallback(() => {
+    pointerActiveRef.current = false;
+    clearTimeout(timerRef.current);
+    pendingVolumeRef.current = null;
+    const restoreServerVolume = lastSentVolumeRef.current !== null;
+    lastSentVolumeRef.current = null;
+    cancel();
+    if (restoreServerVolume) onVolumeChange(clampVolume(volume, effectiveMax));
+  }, [cancel, effectiveMax, onVolumeChange, volume]);
+
+  const handlePointerDown = useCallback(() => {
+    pointerActiveRef.current = true;
+    unmuteRequestedRef.current = false;
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    pointerActiveRef.current = false;
+  }, []);
 
   const iconSize = compact ? 14 : 18;
   const btnSize = compact ? "size-6" : "size-8";
 
   return (
-    <div
-      className={`flex items-center gap-${compact ? "1.5" : "3"} w-full`}
-      onWheel={(e) => {
-        e.preventDefault();
-        const delta = e.deltaY < 0 ? 5 : -5;
-        const nextVolume = clampVolume(displayVolume + delta, effectiveMax);
-        if (muted) onUnmute();
-        commit(nextVolume);
-        onVolumeChange(nextVolume);
-      }}
-    >
+    <div className={`flex items-center gap-${compact ? "1.5" : "3"} w-full`}>
       <Button
         variant="ghost"
         size="icon"
@@ -111,9 +158,13 @@ export function VolumeSlider({
           step={1}
           onValueChange={handleChange}
           onValueCommit={handleCommit}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
           onDragStart={(e: React.DragEvent) => { e.preventDefault(); }}
           className="flex-1 min-w-0"
-          aria-label={t("label")}
+          aria-label={label ?? t("label")}
+          getAriaValueText={(value) => `${Math.round(value)}%`}
         />
         {effectiveMax < ABSOLUTE_MAX_VOLUME && (
           <>
