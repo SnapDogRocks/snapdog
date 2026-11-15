@@ -358,10 +358,15 @@ pub fn build_router(state: &SharedState) -> Router {
         );
     }
 
+    let webui_mode = state.config.http.webui;
     let app = Router::new()
         .merge(health::router(state.clone()))
         .merge(protected)
-        .fallback(webui::fallback);
+        .fallback(
+            move |req: axum::http::Request<axum::body::Body>| async move {
+                webui::fallback(&req, webui_mode)
+            },
+        );
 
     // The interactive console is opt-in. Its page embeds the whole document and no
     // key can be sent when a browser opens it, so it is never behind the API key. The

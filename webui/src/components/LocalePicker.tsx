@@ -108,12 +108,12 @@ export function LocalePicker() {
               tabIndex={-1}
               className={`w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center justify-between ${
                 l === locale
-                  ? "text-primary font-medium"
+                  ? "text-primary-ink font-medium"
                   : "text-foreground hover:bg-muted/50"
               }`}
             >
               {labels[l]}
-              {l === locale && <span className="text-primary text-xs">✓</span>}
+              {l === locale && <span className="text-primary-ink text-xs">✓</span>}
             </button>
           ))}
         </div>

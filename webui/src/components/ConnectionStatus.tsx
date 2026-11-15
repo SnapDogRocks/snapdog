@@ -1,23 +1,25 @@
 import { useTranslations } from "next-intl";
 import { useAppStore } from "@/stores/useAppStore";
-
 export function ConnectionStatus({ retryIn }: { retryIn: number }) {
-  const t = useTranslations("connection");
-  const isConnected = useAppStore((s) => s.isConnected);
-  const serverGoingAway = useAppStore((s) => s.serverGoingAway);
-  const countdown = Math.max(0, retryIn);
-
-  if (isConnected) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm" role="alert" aria-live="assertive">
-      <div className="bg-card border border-border rounded-xl p-6 shadow-lg text-center space-y-3">
-        <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-        <p className="text-sm font-medium">{serverGoingAway ? t("serverRestarting") : t("lost")}</p>
-        <p className="text-xs text-muted-foreground">
-          {countdown > 0 ? t("retryingIn", { seconds: countdown }) : t("reconnecting")}
-        </p>
-      </div>
-    </div>
-  );
+    const t = useTranslations();
+    const isConnected = useAppStore((s) => s.isConnected);
+    const serverGoingAway = useAppStore((s) => s.serverGoingAway);
+    if (isConnected) return null;
+    return (
+        <div
+            className="connection-notice fixed bottom-4 left-1/2 z-40 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-xl border border-border bg-popover px-4 py-3 text-sm text-popover-foreground shadow-lg"
+            role="status"
+            aria-live="polite"
+        >
+            <strong>
+                {serverGoingAway ? t("connection.serverRestarting") : t("connection.lost")}
+            </strong>
+            <span className="ml-2">
+                {retryIn > 0
+                    ? t("connection.retryingIn", { seconds: retryIn })
+                    : t("connection.reconnecting")}
+            </span>
+            <p className="mt-1 text-xs text-muted-foreground">{t("current.stale")}</p>
+        </div>
+    );
 }

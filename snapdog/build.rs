@@ -7,6 +7,7 @@
 
 use std::path::Path;
 use std::process::Command;
+use std::{fs::OpenOptions, io::Write};
 
 fn main() {
     build_webui();
@@ -30,13 +31,15 @@ fn build_webui() {
     println!("cargo::rerun-if-changed=../webui/tsconfig.json");
     println!("cargo::rerun-if-changed=../webui/messages");
 
-    // Skip if already built (CI) or explicitly disabled
-    if out_dir.join("index.html").exists() {
+    // Skip if both embedded entries are already built (CI).
+    if webui_entries_exist(&out_dir) {
         return;
     }
     if std::env::var("SKIP_WEBUI_BUILD").is_ok() {
-        std::fs::create_dir_all(&out_dir).ok();
-        std::fs::write(out_dir.join("index.html"), "<!-- placeholder -->").ok();
+        std::fs::create_dir_all(&out_dir).expect("failed to create WebUI output directory");
+        for entry in ["index.html", "legacy.html"] {
+            create_placeholder_if_missing(&out_dir.join(entry));
+        }
         return;
     }
 
@@ -56,6 +59,28 @@ fn build_webui() {
         .status()
         .expect("failed to run `pnpm run build` — is pnpm installed?");
     assert!(status.success(), "`pnpm run build` failed with {status}");
+
+    assert!(
+        webui_entries_exist(&out_dir),
+        "`pnpm run build` must create both webui/out/index.html and webui/out/legacy.html"
+    );
+}
+
+fn webui_entries_exist(out_dir: &Path) -> bool {
+    ["index.html", "legacy.html"].iter().all(|entry| {
+        std::fs::read(out_dir.join(entry))
+            .is_ok_and(|content| !content.is_empty() && content != b"<!-- placeholder -->")
+    })
+}
+
+fn create_placeholder_if_missing(path: &Path) {
+    match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(mut file) => file
+            .write_all(b"<!-- placeholder -->")
+            .unwrap_or_else(|e| panic!("failed to write {}: {e}", path.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => panic!("failed to create {}: {error}", path.display()),
+    }
 }
 
 #[cfg(target_os = "windows")]

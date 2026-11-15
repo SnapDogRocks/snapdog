@@ -12,19 +12,52 @@ export function useFocusTrap<T extends HTMLElement>() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const hadTabIndex = el.hasAttribute("tabindex");
+    const originalTabIndex = el.getAttribute("tabindex");
+    let initialFocusComplete = false;
 
-    const focusable = () =>
+    const focusable = () => Array.from(
       el.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
+        'button, [href], input, select, textarea, summary, [contenteditable="true"], [tabindex]:not([tabindex="-1"])'
+      ),
+    ).filter((node) => {
+      if (node.matches(":disabled, [aria-disabled='true'], [aria-hidden='true']")) return false;
+      if (node.closest("[hidden], [inert], [aria-hidden='true']")) return false;
+      const style = window.getComputedStyle(node);
+      return style.display !== "none" && style.visibility !== "hidden" && node.getClientRects().length > 0;
+    });
+
+    const focusInitial = () => {
+      if (initialFocusComplete) return;
+      const first = focusable().at(0);
+      if (first !== undefined) {
+        first.focus();
+        initialFocusComplete = true;
+        return;
+      }
+      // Keep focus inside while asynchronous content mounts, then move it to
+      // the first available control when the subtree changes.
+      if (document.activeElement === previouslyFocused || document.activeElement === document.body) {
+        el.tabIndex = -1;
+        el.focus();
+      }
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
       const nodes = focusable();
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (!first || !last) return;
-      if (e.shiftKey && document.activeElement === first) {
+      const first = nodes.at(0);
+      const last = nodes.at(-1);
+      if (first === undefined || last === undefined) {
+        e.preventDefault();
+        el.focus();
+      } else if (!el.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {
@@ -33,11 +66,24 @@ export function useFocusTrap<T extends HTMLElement>() {
       }
     };
 
-    // Focus first focusable element on mount
-    focusable()[0]?.focus();
-
+    focusInitial();
+    const observer = new MutationObserver(focusInitial);
+    observer.observe(el, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "disabled", "hidden", "tabindex", "aria-hidden"],
+    });
     el.addEventListener("keydown", handleKeyDown);
-    return () => { el.removeEventListener("keydown", handleKeyDown); };
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("keydown", handleKeyDown);
+      if (!hadTabIndex) el.removeAttribute("tabindex");
+      else if (originalTabIndex !== null) el.setAttribute("tabindex", originalTabIndex);
+      if (previouslyFocused?.isConnected && (el.contains(document.activeElement) || document.activeElement === el || document.activeElement === document.body)) {
+        previouslyFocused.focus();
+      }
+    };
   }, []);
 
   return ref;

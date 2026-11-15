@@ -11,6 +11,7 @@
 @import "@fontsource/jetbrains-mono/latin-500.css";
 @import "@fontsource/jetbrains-mono/latin-700.css";
 @import "tailwindcss";
+@import "./current.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
@@ -51,6 +52,8 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  /* Readable accent text; legacy themes retain their primary color. */
+  --color-primary-ink: var(--primary-text, var(--primary));
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -217,3 +220,8 @@ button:focus-visible {
 @utility animate-fade-in {
   animation: fade-in 0.4s ease-out;
 }
+
+/* Keep legacy amber readable on the light surfaces. */
+:root { --primary: oklch(0.49 0.12 58); --ring: oklch(0.49 0.12 58); }
+:root.dark { --primary: oklch(0.769 0.188 70.08); --ring: oklch(0.769 0.188 70.08); }
+@media (prefers-color-scheme: dark) { :root:not(.light) { --primary: oklch(0.769 0.188 70.08); --ring: oklch(0.769 0.188 70.08); } }

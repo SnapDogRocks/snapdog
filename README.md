@@ -294,6 +294,7 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 
 [http]
 port = 5555
+webui = "current"                     # current | legacy (default: current)
 bind = "::"                            # default; 0.0.0.0 for IPv4 only; a list listens on each address
 base_url = "http://192.168.1.10:5555"  # Required for MQTT cover art URLs; REST API uses relative URLs
 # tls_cert = "/etc/snapdog/tls/fullchain.pem"  # Enables HTTPS
@@ -368,6 +369,8 @@ zone = "Living Room"
 name = "Deutschlandfunk"
 url = "https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac"
 ```
+
+`http.webui` selects the interface served at `/`; `--webui current` or `--webui legacy` overrides it for that run. `/legacy` and `/legacy/` always open the legacy interface. `/index.html` follows the selected mode.
 
 Snapcast sink paths, stream names, and AirPlay names are auto-generated from zone/client definitions. KNX addresses are explicit in client mode (fits into existing installations). In device mode, ETS assigns group addresses via the `.knxprod` product database.
 

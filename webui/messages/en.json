@@ -67,7 +67,8 @@
     "frequency": "Frequency",
     "gain": "Gain",
     "qFactor": "Q factor",
-    "curve": "EQ frequency response curve"
+    "curve": "EQ frequency response curve",
+    "loading": "Loading equalizer…"
   },
   "playlist": {
     "title": "Playlists",
@@ -85,7 +86,11 @@
     "searchTracks": "Tracks",
     "searching": "Searching…",
     "libraryEmpty": "Nothing found in the music library",
-    "playAlbum": "Play album"
+    "playAlbum": "Play album",
+    "openPlaylist": "Open {name}",
+    "backToPlaylists": "Back to playlists",
+    "tracksLoading": "Loading tracks…",
+    "libraryUnavailable": "Music library unavailable. You can still browse the playlists above."
   },
   "auth": {
     "title": "Authentication Required",
@@ -150,5 +155,40 @@
     "share": "Share Link",
     "copied": "Copied!",
     "securityNote": "This QR code contains your API key. Share only with trusted people."
+  },
+  "current": {
+    "previousZone": "Previous zone",
+    "nextZone": "Next zone",
+    "unavailable": "SnapDog is unavailable",
+    "loadFailed": "Could not load your system. Check the connection and try again.",
+    "commandFailed": "The change could not be saved. Please try again.",
+    "details": "Technical details",
+    "dismiss": "Dismiss error",
+    "stale": "Displayed values may be out of date.",
+    "nowPlaying": "Now playing",
+    "live": "Live stream",
+    "volumeFor": "Volume — {name}",
+    "speakers": "Speakers",
+    "clearSelection": "Clear selection",
+    "selectAll": "Select all",
+    "dragHint": "Drag the handle to a zone, or activate it to choose a destination. Select several speakers to move them together. Escape cancels.",
+    "selectSpeaker": "Select {name}",
+    "moveSpeaker": "Move {name}",
+    "noSpeakers": "No speakers in this zone. Move speakers here from another zone.",
+    "noOtherZone": "No other zone",
+    "moving": "Moving speakers…",
+    "move": "Move",
+    "loading": "Connecting to your sound system…",
+    "dropHere": "Release to move here",
+    "speakerCount": "{count, plural, one {# speaker} other {# speakers}}",
+    "restored": "{count, plural, one {# speaker restored} other {# speakers restored}}",
+    "moved": "{count, plural, one {# speaker moved} other {# speakers moved}}",
+    "moveFailed": "{count, plural, one {# speaker could not be moved. Check its assignment and try again.} other {# speakers could not be moved. Check their assignments and try again.}}",
+    "undoSkipped": "{count, plural, one {# later assignment was kept.} other {# later assignments were kept.}}",
+    "undo": "Undo",
+    "dragToZone": "Drag to a zone",
+    "authUnavailable": "Could not reach SnapDog. Check the connection and try again.",
+    "restoring": "Restoring speakers…",
+    "undoFailed": "{count, plural, one {# speaker could not be restored. Try Undo again.} other {# speakers could not be restored. Try Undo again.}}"
   }
 }

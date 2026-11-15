@@ -67,7 +67,8 @@
     "frequency": "Częstotliwość",
     "gain": "Wzmocnienie",
     "qFactor": "Współczynnik Q",
-    "curve": "Krzywa charakterystyki częstotliwościowej EQ"
+    "curve": "Krzywa charakterystyki częstotliwościowej EQ",
+    "loading": "Ładowanie korektora…"
   },
   "playlist": {
     "title": "Listy odtwarzania",
@@ -85,7 +86,11 @@
     "searchTracks": "Utwory",
     "searching": "Szukanie…",
     "libraryEmpty": "Nic nie znaleziono w bibliotece muzycznej",
-    "playAlbum": "Odtwórz album"
+    "playAlbum": "Odtwórz album",
+    "openPlaylist": "Otwórz {name}",
+    "backToPlaylists": "Wróć do list odtwarzania",
+    "tracksLoading": "Ładowanie utworów…",
+    "libraryUnavailable": "Biblioteka muzyczna jest niedostępna. Nadal możesz przeglądać powyższe listy odtwarzania."
   },
   "auth": {
     "title": "Wymagane uwierzytelnienie",
@@ -150,5 +155,40 @@
     "share": "Udostępnij link",
     "copied": "Skopiowano!",
     "securityNote": "Ten kod QR zawiera Twój klucz API. Udostępniaj go tylko zaufanym osobom."
+  },
+  "current": {
+    "previousZone": "Poprzednia strefa",
+    "nextZone": "Następna strefa",
+    "unavailable": "SnapDog jest niedostępny",
+    "loadFailed": "Nie udało się wczytać systemu. Sprawdź połączenie i spróbuj ponownie.",
+    "commandFailed": "Nie udało się zapisać zmiany. Spróbuj ponownie.",
+    "details": "Szczegóły techniczne",
+    "dismiss": "Zamknij błąd",
+    "stale": "Wyświetlane wartości mogą być nieaktualne.",
+    "nowPlaying": "Teraz odtwarzane",
+    "live": "Transmisja na żywo",
+    "volumeFor": "Głośność — {name}",
+    "speakers": "Głośniki",
+    "clearSelection": "Wyczyść zaznaczenie",
+    "selectAll": "Zaznacz wszystko",
+    "dragHint": "Przeciągnij uchwyt do strefy lub aktywuj go, aby wybrać miejsce docelowe. Zaznacz kilka głośników, aby przenieść je razem. Escape anuluje.",
+    "selectSpeaker": "Wybierz {name}",
+    "moveSpeaker": "Przenieś {name}",
+    "noSpeakers": "W tej strefie nie ma głośników. Przenieś tu głośniki z innej strefy.",
+    "noOtherZone": "Brak innej strefy",
+    "moving": "Przenoszenie głośników…",
+    "move": "Przenieś",
+    "loading": "Łączenie z systemem audio…",
+    "dropHere": "Upuść tutaj, aby przenieść",
+    "speakerCount": "{count, plural, one {# głośnik} few {# głośniki} many {# głośników} other {# głośnika}}",
+    "restored": "{count, plural, one {Przywrócono # głośnik} few {Przywrócono # głośniki} many {Przywrócono # głośników} other {Przywrócono # głośnika}}",
+    "moved": "{count, plural, one {Przeniesiono # głośnik} few {Przeniesiono # głośniki} many {Przeniesiono # głośników} other {Przeniesiono # głośnika}}",
+    "moveFailed": "{count, plural, one {Nie udało się przenieść # głośnika. Sprawdź jego przypisanie i spróbuj ponownie.} few {Nie udało się przenieść # głośników. Sprawdź ich przypisania i spróbuj ponownie.} many {Nie udało się przenieść # głośników. Sprawdź ich przypisania i spróbuj ponownie.} other {Nie udało się przenieść # głośnika. Sprawdź jego przypisanie i spróbuj ponownie.}}",
+    "undoSkipped": "{count, plural, one {Zachowano # późniejsze przypisanie.} few {Zachowano # późniejsze przypisania.} many {Zachowano # późniejszych przypisań.} other {Zachowano # późniejszego przypisania.}}",
+    "undo": "Cofnij",
+    "dragToZone": "Przeciągnij do strefy",
+    "authUnavailable": "Nie udało się połączyć z SnapDog. Sprawdź połączenie i spróbuj ponownie.",
+    "restoring": "Przywracanie głośników…",
+    "undoFailed": "{count, plural, one {Nie udało się przywrócić # głośnika. Spróbuj ponownie wybrać „Cofnij”.} few {Nie udało się przywrócić # głośników. Spróbuj ponownie wybrać „Cofnij”.} many {Nie udało się przywrócić # głośników. Spróbuj ponownie wybrać „Cofnij”.} other {Nie udało się przywrócić # głośnika. Spróbuj ponownie wybrać „Cofnij”.}}"
   }
 }

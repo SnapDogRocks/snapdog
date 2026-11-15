@@ -9,9 +9,17 @@ export function getApiKey(): string | null {
 
 export function setApiKey(key: string) {
   sessionStorage.setItem(STORAGE_KEY, key);
+  notifyAuthChanged();
 }
 
 export function clearApiKey() {
   sessionStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(STORAGE_KEY);
+  notifyAuthChanged();
+}
+
+function notifyAuthChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("snapdog:auth-changed"));
+  }
 }

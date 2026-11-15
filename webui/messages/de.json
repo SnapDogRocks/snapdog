@@ -67,7 +67,8 @@
     "frequency": "Frequenz",
     "gain": "Verstärkung",
     "qFactor": "Q-Faktor",
-    "curve": "EQ-Frequenzgangkurve"
+    "curve": "EQ-Frequenzgangkurve",
+    "loading": "Equalizer wird geladen…"
   },
   "playlist": {
     "title": "Playlisten",
@@ -85,7 +86,11 @@
     "searchTracks": "Titel",
     "searching": "Suche läuft…",
     "libraryEmpty": "Nichts in der Musikbibliothek gefunden",
-    "playAlbum": "Album abspielen"
+    "playAlbum": "Album abspielen",
+    "openPlaylist": "{name} öffnen",
+    "backToPlaylists": "Zurück zu den Playlisten",
+    "tracksLoading": "Titel werden geladen…",
+    "libraryUnavailable": "Musikbibliothek nicht verfügbar. Du kannst weiterhin die Playlisten oben durchsuchen."
   },
   "auth": {
     "title": "Authentifizierung erforderlich",
@@ -150,5 +155,40 @@
     "share": "Link teilen",
     "copied": "Kopiert!",
     "securityNote": "Dieser QR-Code enthält deinen API-Schlüssel. Nur mit vertrauenswürdigen Personen teilen."
+  },
+  "current": {
+    "previousZone": "Vorherige Zone",
+    "nextZone": "Nächste Zone",
+    "unavailable": "SnapDog ist nicht verfügbar",
+    "loadFailed": "Dein System konnte nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
+    "commandFailed": "Die Änderung konnte nicht gespeichert werden. Bitte versuche es erneut.",
+    "details": "Technische Details",
+    "dismiss": "Fehler ausblenden",
+    "stale": "Die angezeigten Werte sind möglicherweise nicht aktuell.",
+    "nowPlaying": "Jetzt läuft",
+    "live": "Livestream",
+    "volumeFor": "Lautstärke — {name}",
+    "speakers": "Lautsprecher",
+    "clearSelection": "Auswahl aufheben",
+    "selectAll": "Alle auswählen",
+    "dragHint": "Den Griff in eine Zone ziehen oder aktivieren, um ein Ziel zu wählen. Mehrere Lautsprecher lassen sich gemeinsam verschieben. Escape bricht ab.",
+    "selectSpeaker": "{name} auswählen",
+    "moveSpeaker": "{name} verschieben",
+    "noSpeakers": "Keine Lautsprecher in dieser Zone. Verschiebe Lautsprecher aus einer anderen Zone hierher.",
+    "noOtherZone": "Keine andere Zone",
+    "moving": "Lautsprecher werden verschoben…",
+    "move": "Verschieben",
+    "loading": "Verbindung zum Soundsystem wird hergestellt…",
+    "dropHere": "Hier loslassen, um zu verschieben",
+    "speakerCount": "{count, plural, one {# Lautsprecher} other {# Lautsprecher}}",
+    "restored": "{count, plural, one {# Lautsprecher wiederhergestellt} other {# Lautsprecher wiederhergestellt}}",
+    "moved": "{count, plural, one {# Lautsprecher verschoben} other {# Lautsprecher verschoben}}",
+    "moveFailed": "{count, plural, one {# Lautsprecher konnte nicht verschoben werden. Prüfe seine Zuordnung und versuche es erneut.} other {# Lautsprecher konnten nicht verschoben werden. Prüfe ihre Zuordnungen und versuche es erneut.}}",
+    "undoSkipped": "{count, plural, one {# spätere Zuordnung wurde beibehalten.} other {# spätere Zuordnungen wurden beibehalten.}}",
+    "undo": "Rückgängig",
+    "dragToZone": "In eine Zone ziehen",
+    "authUnavailable": "SnapDog konnte nicht erreicht werden. Prüfe die Verbindung und versuche es erneut.",
+    "restoring": "Lautsprecher werden wiederhergestellt…",
+    "undoFailed": "{count, plural, one {# Lautsprecher konnte nicht wiederhergestellt werden. Versuche es noch einmal mit „Rückgängig“.} other {# Lautsprecher konnten nicht wiederhergestellt werden. Versuche es noch einmal mit „Rückgängig“.}}"
   }
 }

@@ -40,8 +40,9 @@ function authHeaders(): Record<string, string> {
 function check401(res: Response) {
   if (res.status === 401) {
     clearApiKey();
-    // Trigger re-auth by reloading — the store will detect 401 on loadAll
-    window.location.reload();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("snapdog:unauthorized"));
+    }
   }
 }
 

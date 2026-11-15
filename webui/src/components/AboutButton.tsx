@@ -224,7 +224,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider flex items-center gap-1">
               {t("sourceLabel")} <GitHubIcon size={8} />
             </span>
-            <span className="font-semibold text-primary mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm whitespace-nowrap">
+            <span className="font-semibold text-primary-ink mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm whitespace-nowrap">
               {t("sourceValue")}
             </span>
           </a>
@@ -236,7 +236,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer translate-x-[40px]"
           >
             <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("licenseLabel")}</span>
-            <span className="font-semibold text-primary mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm">
+            <span className="font-semibold text-primary-ink mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm">
               {t("licenseValue")}
             </span>
           </a>
@@ -297,7 +297,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
         >
           <div className="flex flex-col min-w-0">
             <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">KNX / ETS</span>
-            <span className="font-semibold text-foreground text-xs sm:text-sm tracking-tight group-hover:text-primary transition-colors">
+            <span className="font-semibold text-foreground text-xs sm:text-sm tracking-tight group-hover:text-primary-ink transition-colors">
               {t("knxprodTitle")}
             </span>
             {knxProduct && (
@@ -306,7 +306,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
               </span>
             )}
           </div>
-          <HugeiconsIcon icon={Download04Icon} className="size-5 text-muted-foreground/60 group-hover:text-primary transition-colors shrink-0" />
+          <HugeiconsIcon icon={Download04Icon} className="size-5 text-muted-foreground/60 group-hover:text-primary-ink transition-colors shrink-0" />
         </button>
 
         {/* Footer Group (Copyright & Done Button) */}
