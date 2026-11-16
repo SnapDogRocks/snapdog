@@ -187,28 +187,6 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
 
         <p className="text-xs text-muted-foreground leading-relaxed">{t("description")}</p>
 
-        <div className="flex flex-wrap gap-2">
-          <a
-            href="https://github.com/SnapDogRocks/snapdog"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border/40 px-2.5 py-1.5 font-mono text-xs text-primary-ink transition-colors hover:bg-muted/30 hover:border-border/70 cursor-pointer"
-          >
-            <GitHubIcon size={12} />
-            {t("sourceValue")}
-            <HugeiconsIcon icon={ArrowUpRight01Icon} size={12} />
-          </a>
-          <a
-            href="https://www.gnu.org/licenses/gpl-3.0.html"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border/40 px-2.5 py-1.5 font-mono text-xs text-primary-ink transition-colors hover:bg-muted/30 hover:border-border/70 cursor-pointer"
-          >
-            {t("licenseValue")}
-            <HugeiconsIcon icon={ArrowUpRight01Icon} size={12} />
-          </a>
-        </div>
-
         {update && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-border/30 bg-muted/15 px-3 py-2.5 dark:bg-muted/5">
             <div className="flex min-w-0 flex-col">
@@ -273,6 +251,28 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             </div>
             <HugeiconsIcon icon={Download04Icon} className="size-5 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-primary-ink" />
           </button>
+        </div>
+
+        <div className="flex flex-wrap justify-center gap-2">
+          <a
+            href="https://github.com/SnapDogRocks/snapdog"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border/40 px-2.5 py-1.5 font-mono text-xs text-primary-ink transition-colors hover:bg-muted/30 hover:border-border/70 cursor-pointer"
+          >
+            <GitHubIcon size={12} />
+            {t("sourceValue")}
+            <HugeiconsIcon icon={ArrowUpRight01Icon} size={12} />
+          </a>
+          <a
+            href="https://www.gnu.org/licenses/gpl-3.0.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border/40 px-2.5 py-1.5 font-mono text-xs text-primary-ink transition-colors hover:bg-muted/30 hover:border-border/70 cursor-pointer"
+          >
+            {t("licenseValue")}
+            <HugeiconsIcon icon={ArrowUpRight01Icon} size={12} />
+          </a>
         </div>
 
         <div className="text-center font-mono text-[10px] text-muted-foreground/45">© 2026 Fabian Schmieder</div>
