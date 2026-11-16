@@ -1,10 +1,8 @@
 [
+  "about.knxTitle",
   "about.licenseValue",
-  "about.modelLabel",
   "about.modelValue",
-  "about.sourceLabel",
   "about.sourceValue",
-  "about.versionLabel",
   "app.title",
   "client.clients",
   "eq.gain",

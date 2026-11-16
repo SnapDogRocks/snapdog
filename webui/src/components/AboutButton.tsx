@@ -6,7 +6,7 @@ import { api, type KnxProductInfo } from "@/lib/api";
 import type { UpdateStatus } from "@/lib/types";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon, Download04Icon } from "@hugeicons/core-free-icons";
+import { ArrowUpRight01Icon, Cancel01Icon, Download04Icon } from "@hugeicons/core-free-icons";
 import { useTranslations } from "next-intl";
 
 const ignoreUnavailableOptionalEndpoint = () => undefined;
@@ -148,109 +148,54 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 600, opacity: 0 }}
         transition={{ type: "spring", damping: 30, stiffness: 300 }}
-        className="relative z-10 w-full max-w-none sm:max-w-sm mx-0 sm:mx-4 rounded-t-3xl sm:rounded-2xl border-t border-x sm:border border-border bg-card p-5 sm:p-6 pb-6 shadow-2xl flex flex-col items-center gap-4 text-center touch-none select-none cursor-default flex-shrink-0"
+        className="relative z-10 w-full max-w-none sm:max-w-md mx-0 sm:mx-4 rounded-t-3xl sm:rounded-2xl border-t border-x sm:border border-border bg-card p-4 sm:p-5 pb-5 shadow-2xl flex flex-col gap-3 text-left touch-none select-none cursor-default flex-shrink-0"
       >
-        {/* Drag handle line indicator */}
-        <div className="w-12 h-1 rounded-full bg-muted-foreground/20 mx-auto cursor-grab active:cursor-grabbing shrink-0 hover:bg-muted-foreground/45 transition-colors" />
+        {/* Drag handle: the way to close the sheet on a phone */}
+        <div className="w-12 h-1 rounded-full bg-muted-foreground/20 mx-auto cursor-grab active:cursor-grabbing shrink-0 hover:bg-muted-foreground/45 transition-colors sm:hidden" />
 
-        {/* Top-right floating close button */}
         <motion.button
           onClick={onClose}
           whileHover={{ scale: 1.1, rotate: 90 }}
           whileTap={{ scale: 0.95 }}
-          className="absolute top-4 right-4 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer shrink-0 z-20"
+          className="absolute top-3 right-3 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer shrink-0 z-20"
           aria-label={t("closeLabel")}
         >
           <HugeiconsIcon icon={Cancel01Icon} size={16} />
         </motion.button>
 
-        {/* Host bar */}
-        <div className="w-full flex items-center justify-center px-1 text-xs font-mono text-muted-foreground/70 border-b border-border/30 pb-2.5 flex-shrink-0">
-          <span>{serverName !== "SnapDog" ? serverName : hostname || "..."}</span>
-        </div>
-
-        {/* Header Group (Logo, Headings, Soundwave) */}
-        <div className="flex flex-col items-center gap-2 mt-0.5 flex-shrink-0">
+        {/* Header: logo, name, version, host and model in two lines */}
+        <div className="flex items-center gap-3 pr-8">
           <img
             src="/assets/snapdog-icon.svg"
             alt="SnapDog Logo"
-            className="size-12 sm:size-16 mx-auto opacity-95 animate-pulse-slow"
+            className="size-12 shrink-0 opacity-95 animate-pulse-slow"
           />
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight mt-0.5">SnapDog</h2>
-          <p className="text-xs text-muted-foreground leading-relaxed px-4">
-            {t("description")}
-          </p>
-
-          {/* Retro digital soundwave visualizer */}
-          <div className="flex items-center justify-center gap-0.5 h-4 mt-2">
-            {Array.from({ length: 9 }, (_, i) => (
-              <motion.div
-                key={i}
-                animate={{
-                  height: [4, 16, 4],
-                }}
-                transition={{
-                  duration: 1.0 + (i % 3) * 0.25,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                  delay: i * 0.08,
-                }}
-                className="w-[2px] rounded-full bg-primary/60"
-              />
-            ))}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold tracking-tight">SnapDog</h2>
+              {version && (
+                <span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-xs tabular-nums text-primary-ink">
+                  v{version}
+                </span>
+              )}
+            </div>
+            <div className="truncate font-mono text-xs text-muted-foreground/70">
+              {serverName !== "SnapDog" ? serverName : hostname || "…"} · {t("modelValue")}
+            </div>
           </div>
         </div>
 
-        {/* Monospace Tech Spec Grid */}
-        <div className="grid grid-cols-2 gap-2 w-full font-mono text-left text-xs pt-1 flex-shrink-0">
-          <div className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30">
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("modelLabel")}</span>
-            <span className="font-semibold text-foreground mt-0.5 tracking-tight text-xs sm:text-sm">{t("modelValue")}</span>
-          </div>
-
-          <div className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 translate-x-[40px]">
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("versionLabel")}</span>
-            <span className="font-semibold text-foreground mt-0.5 tabular-nums tracking-tight text-xs sm:text-sm">
-              {version ? `v${version}` : "v0.11.4"}
-            </span>
-          </div>
-
-          <a
-            href="https://github.com/SnapDogRocks/snapdog"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer"
-          >
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider flex items-center gap-1">
-              {t("sourceLabel")} <GitHubIcon size={8} />
-            </span>
-            <span className="font-semibold text-primary-ink mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm whitespace-nowrap">
-              {t("sourceValue")}
-            </span>
-          </a>
-
-          <a
-            href="https://www.gnu.org/licenses/gpl-3.0.html"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex flex-col py-2 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer translate-x-[40px]"
-          >
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">{t("licenseLabel")}</span>
-            <span className="font-semibold text-primary-ink mt-0.5 group-hover:underline tracking-tight text-xs sm:text-sm">
-              {t("licenseValue")}
-            </span>
-          </a>
-        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">{t("description")}</p>
 
         {update && (
-          <div className="w-full flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 text-left">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border/30 bg-muted/15 px-3 py-2.5 dark:bg-muted/5">
             <div className="flex min-w-0 flex-col">
-              <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">Container update</span>
-              <span className="text-xs font-semibold truncate">
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/65">{t("updateTitle")}</span>
+              <span className="truncate text-xs font-semibold">
                 {update.progress?.phase ?? update.state}
                 {update.availableVersion ? ` · ${update.availableVersion}` : ""}
               </span>
-              {update.lastError && <span className="text-[10px] text-destructive truncate">{update.lastError}</span>}
+              {update.lastError && <span className="truncate text-[10px] text-destructive">{update.lastError}</span>}
             </div>
             <button
               disabled={updateBusy}
@@ -261,70 +206,76 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
                   setUpdateBusy(false);
                 });
               }}
-              className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50 cursor-pointer"
             >
-              {updateBusy ? "…" : update.updateAvailable ? "Update" : "Check"}
+              {updateBusy ? "…" : update.updateAvailable ? t("updateApply") : t("updateCheck")}
             </button>
           </div>
         )}
 
-        {/* KNX Programming Mode — only visible when KNX is configured */}
-        {knxAvailable && (
-          <div className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 font-mono">
-            <div className="flex flex-col">
-              <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">KNX</span>
-              <span className="font-semibold text-foreground text-xs sm:text-sm tracking-tight">Programming Mode</span>
+        {/* KNX: the programming mode (only when KNX runs as a device) and the ETS product database */}
+        <div className="divide-y divide-border/30 overflow-hidden rounded-lg border border-border/30 bg-muted/15 dark:bg-muted/5">
+          {knxAvailable && (
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <div className="flex flex-col">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/65">{t("knxTitle")}</span>
+                <span className="text-xs font-semibold sm:text-sm">{t("programmingMode")}</span>
+              </div>
+              <button
+                onClick={() => {
+                  const next = !progMode;
+                  api.knx.setProgrammingMode(next).then(() => { setProgMode(next); }).catch(() => { /* leave progMode as-is on failure */ });
+                }}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer ${progMode ? "bg-red-500" : "bg-muted"}`}
+                role="switch"
+                aria-checked={progMode}
+                aria-label={t("programmingMode")}
+              >
+                <span className={`absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow transition-transform ${progMode ? "translate-x-5" : ""}`} />
+              </button>
             </div>
-            <button
-              onClick={() => {
-                const next = !progMode;
-                api.knx.setProgrammingMode(next).then(() => { setProgMode(next); }).catch(() => { /* leave progMode as-is on failure */ });
-              }}
-              className={`relative w-11 h-6 rounded-full transition-colors ${progMode ? "bg-red-500" : "bg-muted"}`}
-              role="switch"
-              aria-checked={progMode}
-              aria-label="KNX Programming Mode"
-            >
-              <span className={`absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform ${progMode ? "translate-x-5" : ""}`} />
-            </button>
-          </div>
-        )}
-
-        {/* KNX ETS product database (.knxprod) download — for importing SnapDog into ETS */}
-        <button
-          onClick={() => { api.knx.downloadKnxprod().catch(() => { /* download failed silently; nothing to recover here */ }); }}
-          className="w-full flex items-center justify-between py-2.5 px-3 rounded-lg bg-muted/15 dark:bg-muted/5 border border-border/30 hover:bg-muted/30 dark:hover:bg-muted/15 hover:border-border/60 transition-all duration-200 group cursor-pointer text-left"
-        >
-          <div className="flex flex-col min-w-0">
-            <span className="text-[8px] sm:text-[9px] uppercase font-semibold text-muted-foreground/65 tracking-wider">KNX / ETS</span>
-            <span className="font-semibold text-foreground text-xs sm:text-sm tracking-tight group-hover:text-primary-ink transition-colors">
-              {t("knxprodTitle")}
-            </span>
-            {knxProduct && (
-              <span className="text-[9px] sm:text-[10px] font-mono text-muted-foreground/50 tracking-tight mt-0.5">
-                v{knxProduct.app_version} · {knxProduct.application_number} · HW {knxProduct.hardware_version}
-              </span>
-            )}
-          </div>
-          <HugeiconsIcon icon={Download04Icon} className="size-5 text-muted-foreground/60 group-hover:text-primary-ink transition-colors shrink-0" />
-        </button>
-
-        {/* Footer Group (Copyright & Done Button) */}
-        <div className="w-full flex flex-col items-center gap-3 mt-1 flex-shrink-0">
-          <div className="text-[10px] font-mono text-muted-foreground/45">
-            © 2026 Fabian Schmieder
-          </div>
-
-          {/* Prominent main done button */}
-          <motion.button
-            onClick={onClose}
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/95 active:scale-[0.98] transition-all duration-150 shadow-md shadow-primary/10 text-sm cursor-pointer"
+          )}
+          <button
+            onClick={() => { api.knx.downloadKnxprod().catch(() => { /* download failed silently; nothing to recover here */ }); }}
+            className="group flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/30 dark:hover:bg-muted/15 cursor-pointer"
           >
-            {t("done")}
-          </motion.button>
+            <div className="flex min-w-0 flex-col">
+              <span className="text-xs font-semibold tracking-tight transition-colors group-hover:text-primary-ink sm:text-sm">
+                {t("knxprodTitle")}
+              </span>
+              {knxProduct && (
+                <span className="mt-0.5 font-mono text-[10px] tracking-tight text-muted-foreground/50">
+                  v{knxProduct.app_version} · {knxProduct.application_number} · HW {knxProduct.hardware_version}
+                </span>
+              )}
+            </div>
+            <HugeiconsIcon icon={Download04Icon} className="size-5 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-primary-ink" />
+          </button>
         </div>
+
+        <div className="flex flex-wrap justify-center gap-2">
+          <a
+            href="https://github.com/SnapDogRocks/snapdog"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border/40 px-2.5 py-1.5 font-mono text-xs text-primary-ink transition-colors hover:bg-muted/30 hover:border-border/70 cursor-pointer"
+          >
+            <GitHubIcon size={12} />
+            {t("sourceValue")}
+            <HugeiconsIcon icon={ArrowUpRight01Icon} size={12} />
+          </a>
+          <a
+            href="https://www.gnu.org/licenses/gpl-3.0.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border/40 px-2.5 py-1.5 font-mono text-xs text-primary-ink transition-colors hover:bg-muted/30 hover:border-border/70 cursor-pointer"
+          >
+            {t("licenseValue")}
+            <HugeiconsIcon icon={ArrowUpRight01Icon} size={12} />
+          </a>
+        </div>
+
+        <div className="text-center font-mono text-[10px] text-muted-foreground/45">© 2026 Fabian Schmieder</div>
       </motion.div>
     </div>
   );
