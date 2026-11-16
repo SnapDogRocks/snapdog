@@ -137,15 +137,15 @@
     "dialogLabel": "À propos de SnapDog",
     "closeLabel": "Fermer le dialogue",
     "description": "Contrôleur audio multi-zones avec intégration AirPlay, Spotify, Subsonic, MQTT et KNX",
-    "modelLabel": "MODÈLE",
     "modelValue": "SNAPDOG-CORE",
-    "versionLabel": "VERSION",
-    "sourceLabel": "SOURCE",
-    "sourceValue": "SnapDogRocks/snapdog ↗",
-    "licenseLabel": "LICENCE",
-    "licenseValue": "GPL-3.0 ↗",
-    "done": "Terminé",
-    "knxprodTitle": "Télécharger .knxprod (base de données ETS)"
+    "sourceValue": "SnapDogRocks/snapdog",
+    "licenseValue": "GPL-3.0",
+    "knxprodTitle": "Télécharger .knxprod (base de données ETS)",
+    "updateTitle": "Mise à jour du conteneur",
+    "updateCheck": "Vérifier",
+    "updateApply": "Mettre à jour",
+    "knxTitle": "KNX",
+    "programmingMode": "Mode programmation"
   },
   "connect": {
     "title": "Connecter",
