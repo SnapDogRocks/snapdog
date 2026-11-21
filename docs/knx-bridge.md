@@ -154,6 +154,23 @@ behind it until the channel has room. In device mode the device task is not held
 channel between it and the listener holds 64 updates and what does not fit is dropped and
 counted (the warning above).
 
+## Repeat objects
+
+The zone has one repeat mode (off, playlist or track), and four objects act on it. Each object
+owns one mode:
+
+| Object | 1 | 0 |
+|---|---|---|
+| Repeat | playlist repeat | off, only while playlist repeat is active |
+| Track Repeat | track repeat | off, only while track repeat is active |
+| Repeat Toggle | playlist repeat, or off when it is active | as 1 |
+| Track Repeat Toggle | track repeat, or off when it is active | as 1 |
+
+A toggle pressed while the other mode is active switches to its own mode: Track Repeat Toggle
+during playlist repeat gives track repeat. Writing 0 to the object of the mode that is not
+active changes nothing. Repeat Status reports playlist repeat and Track Repeat Status track
+repeat. The REST API keeps its own repeat toggle, which cycles off, playlist, track, off.
+
 ## Supervision
 
 - **Client:** `run_client` (`supervisor.rs`) connects, runs the bridge, and connects again

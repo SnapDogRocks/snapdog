@@ -1249,25 +1249,24 @@ async fn execute<S: BuildHasher + Sync>(
                 "previous" => Some(ZoneCommand::Previous),
                 "mute_toggle" => Some(ZoneCommand::ToggleMute),
                 "shuffle_toggle" => Some(ZoneCommand::ToggleShuffle),
-                "repeat_toggle" | "track_repeat_toggle" => Some(ZoneCommand::CycleRepeat),
+                // Each object owns one mode: its toggle switches between Off and that mode, its
+                // switch set to 0 clears only that mode. The REST cycle stays CycleRepeat.
+                "repeat_toggle" => Some(ZoneCommand::ToggleRepeatMode(
+                    snapdog_common::RepeatMode::Playlist,
+                )),
+                "track_repeat_toggle" => Some(ZoneCommand::ToggleRepeatMode(
+                    snapdog_common::RepeatMode::Track,
+                )),
                 "mute" => Some(ZoneCommand::SetMute(decode_bool(data))),
                 "shuffle" => Some(ZoneCommand::SetShuffle(decode_bool(data))),
-                "repeat" => {
-                    let on = decode_bool(data);
-                    Some(ZoneCommand::SetRepeat(if on {
-                        snapdog_common::RepeatMode::Playlist
-                    } else {
-                        snapdog_common::RepeatMode::Off
-                    }))
-                }
-                "track_repeat" => {
-                    let on = decode_bool(data);
-                    Some(ZoneCommand::SetRepeat(if on {
-                        snapdog_common::RepeatMode::Track
-                    } else {
-                        snapdog_common::RepeatMode::Off
-                    }))
-                }
+                "repeat" => Some(repeat_switch(
+                    decode_bool(data),
+                    snapdog_common::RepeatMode::Playlist,
+                )),
+                "track_repeat" => Some(repeat_switch(
+                    decode_bool(data),
+                    snapdog_common::RepeatMode::Track,
+                )),
                 "volume" => decode_percent(data).map(|v| ZoneCommand::SetVolume(i32::from(v))),
                 "volume_dim" => decode_dim(data).map(ZoneCommand::AdjustVolume),
                 "playlist" => decode_u8(data).map(|v| ZoneCommand::SetPlaylist(v as usize, 0)),
@@ -1487,6 +1486,15 @@ fn decode_dim(payload: &[u8]) -> Option<i32> {
     Some(if increase { step } else { -step })
 }
 
+/// A repeat switch object: 1 sets its mode, 0 clears it only while that mode is active.
+const fn repeat_switch(on: bool, mode: snapdog_common::RepeatMode) -> ZoneCommand {
+    if on {
+        ZoneCommand::SetRepeat(mode)
+    } else {
+        ZoneCommand::ClearRepeatMode(mode)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1578,6 +1586,8 @@ mod tests {
         m.insert("1/0/13".into(), (1, "track_repeat"));
         m.insert("1/0/15".into(), (1, "shuffle"));
         m.insert("1/0/16".into(), (1, "playlist_next"));
+        m.insert("1/0/18".into(), (1, "repeat_toggle"));
+        m.insert("1/0/19".into(), (1, "track_repeat_toggle"));
         m
     }
 
@@ -1969,6 +1979,36 @@ mod tests {
         assert!(matches!(
             rx.recv().await,
             Some(ZoneCommand::SetRepeat(snapdog_common::RepeatMode::Track))
+        ));
+    }
+
+    #[tokio::test]
+    async fn zone_repeat_toggles_each_own_their_mode() {
+        use snapdog_common::RepeatMode::{Playlist, Track};
+        let (mut rx, _) = run_incoming("1/0/18", &encode_bool(true), &test_state()).await;
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::ToggleRepeatMode(Playlist))
+        ));
+        let (mut rx, _) = run_incoming("1/0/19", &encode_bool(true), &test_state()).await;
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::ToggleRepeatMode(Track))
+        ));
+    }
+
+    #[tokio::test]
+    async fn zone_repeat_switches_off_clear_only_their_own_mode() {
+        use snapdog_common::RepeatMode::{Playlist, Track};
+        let (mut rx, _) = run_incoming("1/0/12", &encode_bool(false), &test_state()).await;
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::ClearRepeatMode(Playlist))
+        ));
+        let (mut rx, _) = run_incoming("1/0/13", &encode_bool(false), &test_state()).await;
+        assert!(matches!(
+            rx.recv().await,
+            Some(ZoneCommand::ClearRepeatMode(Track))
         ));
     }
 
