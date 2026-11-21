@@ -9,10 +9,11 @@ New optional keys under `[[zone]]`: `default_volume` (0 to 100, set at every ser
 `max_volume` (0 to 100, default 100, a hard limit for every source of a zone volume) and `airplay` /
 `spotify` (default `true`). Without them nothing changes for a TOML setup.
 
-**KNX device mode:** the ETS parameters "Default volume", "Max. volume", "AirPlay enabled" and
-"Spotify enabled" now take effect; before they were read and ignored. With the ETS defaults every
-zone starts at 50 % after a server restart, instead of the volume it had before. Set "Default volume"
-in ETS to the start volume you want.
+**KNX device mode:** the zone parameters "Max. volume", "AirPlay enabled" and "Spotify enabled" now
+take effect; before they were read and ignored. "Default volume" is now "Volume at start", a list
+with "Last value" (the default: the zone keeps the volume it had) and 1 % to 100 %. A device that
+was programmed with the older product file keeps working: a value of 0 % there means "Last value",
+every other value is the start volume. Import the new product file to get the list.
 
 ## SnapDog 1.0: the deprecated playlist `id` and `zone_changed.playlist` are removed (breaks `/api/v1`)
 
