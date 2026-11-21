@@ -171,8 +171,10 @@ impl VolumeCoalescer {
 
 /// A zone reconcile in process mode, which the main loop carries out itself.
 const fn is_process_reconcile(cmd: &player::SnapcastCmd) -> bool {
-    cfg!(all(feature = "snapcast-process", not(feature = "snapcast-embedded")))
-        && matches!(cmd, player::SnapcastCmd::ReconcileZones)
+    cfg!(all(
+        feature = "snapcast-process",
+        not(feature = "snapcast-embedded")
+    )) && matches!(cmd, player::SnapcastCmd::ReconcileZones)
 }
 
 #[cfg(target_os = "windows")]
