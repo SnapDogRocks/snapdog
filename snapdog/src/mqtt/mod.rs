@@ -62,6 +62,8 @@ pub struct MqttRuntime {
     pub snap_tx: mpsc::Sender<SnapcastCmd>,
     /// Notification stream (`ZoneChanged`, `ClientStateChanged`, ...) as JSON.
     pub notifications: broadcast::Receiver<Arc<str>>,
+    /// Sender of the same stream, for the changes MQTT makes itself (client zone moves).
+    pub notify: broadcast::Sender<Arc<str>>,
     /// Who `SnapDog` says it is in the Home Assistant discovery message.
     pub server: ServerInfo,
 }
@@ -131,6 +133,7 @@ impl MqttBridge {
             runtime.zone_commands,
             runtime.state.clone(),
             runtime.snap_tx,
+            runtime.notify,
         );
         let session = Session {
             publisher: publisher.clone(),

@@ -444,10 +444,10 @@ async fn set_zone(
     }
 
     // Update state (zone assignment is SnapDog-owned)
-    crate::state::update_client_and_notify(&state.store, idx, &state.notifications, |c| {
-        c.zone_index = target_zone;
-    })
-    .await;
+    if !crate::state::assign_client_zone(&state.store, &state.notifications, idx, target_zone).await
+    {
+        return Err(not_found());
+    }
 
     // Tell main loop to reconcile Snapcast groups
     let _ = state.snap_tx.send(SnapcastCmd::ReconcileZones).await;

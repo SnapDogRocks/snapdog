@@ -445,6 +445,30 @@ pub fn spawn_auto_save(store: SharedState) {
     });
 }
 
+/// Assign a client to a zone and announce it with `ClientStateChanged`.
+///
+/// The one place where REST, KNX and MQTT move a client, so all three accept the same targets
+/// and every move reaches the WebSocket, MQTT state and KNX status. The caller queues the
+/// Snapcast reconcile. Returns `false`, and changes nothing, for an unknown client or zone.
+pub async fn assign_client_zone(
+    store: &SharedState,
+    notify: &crate::api::ws::NotifySender,
+    client_index: usize,
+    zone_index: usize,
+) -> bool {
+    {
+        let s = store.read().await;
+        if zone_index == 0
+            || !s.zones.contains_key(&zone_index)
+            || !s.clients.contains_key(&client_index)
+        {
+            return false;
+        }
+    }
+    update_client_and_notify(store, client_index, notify, |c| c.zone_index = zone_index).await;
+    true
+}
+
 /// Update a client's state via closure and broadcast a [`Notification::ClientStateChanged`] event.
 ///
 /// No-op if `client_index` does not exist in the store.

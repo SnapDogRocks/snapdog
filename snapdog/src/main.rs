@@ -536,11 +536,10 @@ pub async fn run_app() -> Result<()> {
     let mut knx_device_control: Option<knx::DeviceControlHandle> = None;
     let mut knx_bridge: Option<knx::KnxBridge> = None;
     if config.knx.is_some() {
-        let knx_notifications = notify_tx.subscribe();
         match knx::start(
             &config,
             store.clone(),
-            knx_notifications,
+            notify_tx.clone(),
             zone_commands.clone(),
             snap_cmd_tx.clone(),
         )
@@ -612,6 +611,7 @@ pub async fn run_app() -> Result<()> {
                 state: store.clone(),
                 snap_tx: snap_cmd_tx.clone(),
                 notifications: notify_tx.subscribe(),
+                notify: notify_tx.clone(),
                 server: mqtt::ServerInfo {
                     id: server_id.clone(),
                     stable_id: server_identity.persisted,
