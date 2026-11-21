@@ -16,7 +16,7 @@ use super::context::{
     update_and_notify, update_volume_and_notify,
 };
 
-use super::helpers::{DecodeState, PlaybackCtx};
+use super::helpers::{DecodeState, PlaybackCtx, mark_zone_stopped};
 use super::helpers::{
     handle_next, handle_previous, handle_track_complete, prefetch_next_tracks, radio_track_info,
     start_radio_decode, start_subsonic_track_decode, subsonic_track_info,
@@ -570,7 +570,15 @@ async fn run(
                                         let lookahead = crate::config::CACHE_LOOKAHEAD;
                                         prefetch_next_tracks(sub, &playlist.entry, track_idx, cache, lookahead);
                                     }
+                                } else {
+                                    tracing::warn!(zone = zone_index, "Queue has no such track");
+                                    source = ActiveSource::Idle;
+                                    mark_zone_stopped(store, zone_index, notify).await;
                                 }
+                            } else {
+                                tracing::warn!(zone = zone_index, "Could not fetch the queue");
+                                source = ActiveSource::Idle;
+                                mark_zone_stopped(store, zone_index, notify).await;
                             }
                         }
                     }
@@ -644,6 +652,10 @@ async fn run(
                                                 z.playlist_track_index = Some(track_idx);
                                                 z.track = Some(subsonic_track_info(track));
                                             }).await;
+                                        } else {
+                                            tracing::warn!(zone = zone_index, track = track_idx, "Could not fetch the track");
+                                            source = ActiveSource::Idle;
+                                            mark_zone_stopped(store, zone_index, notify).await;
                                         }
                             }
                     }
