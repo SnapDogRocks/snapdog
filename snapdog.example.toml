@@ -393,6 +393,16 @@ icon = "🏠"
 # How far one KNX seek step (Track Seek objects) jumps, in seconds, 1 to 60. Default: 10.
 # In device mode ETS sets it per zone.
 # seek_interval_secs = 10
+# Volume the zone gets at every server start, 0 to 100. Without it the zone keeps the volume it
+# had before the restart. In device mode the ETS parameter "Default volume" sets it.
+# default_volume = 30
+# Highest volume of the zone, whatever sets it (web interface, KNX, MQTT, AirPlay, Spotify),
+# 0 to 100. Default: 100. In device mode the ETS parameter "Max. volume" sets it.
+# max_volume = 80
+# Whether the zone offers an AirPlay and a Spotify Connect receiver. Default: true.
+# In device mode the ETS parameters "AirPlay enabled" and "Spotify enabled" set them.
+# airplay = true
+# spotify = true
 
 # Optional: presence-triggered playback
 # [zone.presence]
