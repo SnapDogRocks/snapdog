@@ -746,6 +746,48 @@ where
     }
 }
 
+/// One supported output configuration of a device: a channel count and a rate range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OutputRange {
+    channels: u16,
+    min_rate: u32,
+    max_rate: u32,
+}
+
+/// Choose the output layout `(channels, rate)` for a stream.
+///
+/// `supported` is `None` when the device could not be probed: the stream format is then used
+/// as is and the device decides. Otherwise the device must offer the stream's channel count
+/// at the stream's rate, either among its supported ranges or as its default. The output
+/// path copies frames without remapping or resampling, so any other layout is refused with a
+/// message that names a remedy.
+fn choose_output_config(
+    supported: Option<&[OutputRange]>,
+    default: Option<(u16, u32)>,
+    channels: u16,
+    rate: u32,
+) -> anyhow::Result<(u16, u32)> {
+    let Some(supported) = supported else {
+        return Ok((channels, rate));
+    };
+    if supported
+        .iter()
+        .any(|r| r.channels == channels && r.min_rate <= rate && r.max_rate >= rate)
+        || default == Some((channels, rate))
+    {
+        return Ok((channels, rate));
+    }
+    let offered = default.map_or_else(
+        || "no default configuration".to_owned(),
+        |(c, r)| format!("a default of {c} channels at {r} Hz"),
+    );
+    anyhow::bail!(
+        "The output device cannot play {channels} channels at {rate} Hz ({offered}). \
+         Set the server's sample format to a layout the device supports, or select an ALSA \
+         `plug` device (for example `--soundcard plughw:CARD=...`) that converts it."
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_lines)]
 // Audio output setup with callback — splitting would obscure control flow
@@ -772,43 +814,36 @@ fn run_cpal(
 
     tracing::info!(device = %device.description().map(|d| format!("{d}")).unwrap_or_default(), "Using audio device");
 
-    // Probe device capabilities — try native format, fallback to default
+    // Probe device capabilities: the stream's own layout, or the device default if it is the
+    // same layout. Samples are copied frame by frame without remapping, so a different
+    // channel count or rate would play at the wrong speed with garbled channels.
     let target_rate = format.rate();
     let target_channels = format.channels();
-    let config = match device.supported_output_configs() {
-        Ok(supported) => {
-            let native = supported.into_iter().find(|cfg| {
-                cfg.channels() == target_channels
-                    && cfg.min_sample_rate() <= target_rate
-                    && cfg.max_sample_rate() >= target_rate
-            });
-            if let Some(cfg) = native {
-                cfg.with_sample_rate(target_rate).into()
-            } else {
-                tracing::warn!(
-                    target_rate,
-                    target_channels,
-                    "Stream format not natively supported, using device default"
-                );
-                let default: cpal::StreamConfig = device.default_output_config()?.into();
-                if default.sample_rate != target_rate {
-                    anyhow::bail!(
-                        "Device default rate ({} Hz) differs from stream ({target_rate} Hz). \
-                         Configure the server to match or enable the 'resampler' feature.",
-                        default.sample_rate
-                    );
-                }
-                default
-            }
-        }
+    let supported: Option<Vec<OutputRange>> = match device.supported_output_configs() {
+        Ok(ranges) => Some(
+            ranges
+                .map(|cfg| OutputRange {
+                    channels: cfg.channels(),
+                    min_rate: cfg.min_sample_rate(),
+                    max_rate: cfg.max_sample_rate(),
+                })
+                .collect(),
+        ),
         Err(e) => {
             tracing::warn!(error = %e, "Cannot probe device, using stream format directly");
-            cpal::StreamConfig {
-                channels: target_channels,
-                sample_rate: target_rate,
-                buffer_size: cpal::BufferSize::Default,
-            }
+            None
         }
+    };
+    let default = device
+        .default_output_config()
+        .ok()
+        .map(|d| (d.channels(), d.sample_rate()));
+    let (out_channels, out_rate) =
+        choose_output_config(supported.as_deref(), default, target_channels, target_rate)?;
+    let config = cpal::StreamConfig {
+        channels: out_channels,
+        sample_rate: out_rate,
+        buffer_size: cpal::BufferSize::Default,
     };
 
     let channels = config.channels as usize;
@@ -992,6 +1027,58 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::{OutputRange, choose_output_config};
+
+    const STEREO_48K: OutputRange = OutputRange {
+        channels: 2,
+        min_rate: 44_100,
+        max_rate: 48_000,
+    };
+
+    #[test]
+    fn the_stream_layout_is_used_when_the_device_supports_it() {
+        let six = OutputRange {
+            channels: 6,
+            ..STEREO_48K
+        };
+        assert_eq!(
+            choose_output_config(Some(&[six, STEREO_48K]), Some((6, 48_000)), 2, 48_000).unwrap(),
+            (2, 48_000)
+        );
+    }
+
+    #[test]
+    fn a_matching_device_default_is_accepted() {
+        assert_eq!(
+            choose_output_config(Some(&[]), Some((2, 48_000)), 2, 48_000).unwrap(),
+            (2, 48_000)
+        );
+    }
+
+    #[test]
+    fn a_different_channel_count_at_the_same_rate_is_refused() {
+        // Used to be accepted: a mono stream on a stereo device played at double speed.
+        let err = choose_output_config(Some(&[STEREO_48K]), Some((2, 48_000)), 1, 48_000)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("1 channels at 48000 Hz"), "{err}");
+        assert!(err.contains("plug"), "{err}");
+        assert!(!err.contains("resampler"), "{err}");
+        assert!(choose_output_config(Some(&[]), Some((6, 48_000)), 2, 48_000).is_err());
+    }
+
+    #[test]
+    fn nothing_matching_is_refused() {
+        assert!(choose_output_config(Some(&[STEREO_48K]), None, 2, 96_000).is_err());
+    }
+
+    #[test]
+    fn an_unprobed_device_gets_the_stream_format() {
+        assert_eq!(
+            choose_output_config(None, None, 2, 96_000).unwrap(),
+            (2, 96_000)
+        );
+    }
 
     /// A fake output that behaves like the cpal callback: it reports a format change while
     /// the shared format differs from the one it started with, and ends when stopped.
