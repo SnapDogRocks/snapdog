@@ -866,9 +866,7 @@ pub async fn run_app() -> Result<()> {
     // Signal streams live as long as the loop. Creating them inside the select arm re-registers
     // them on every iteration, so a signal that arrives while another arm runs is lost.
     #[cfg(unix)]
-    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-    #[cfg(unix)]
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut signals = ShutdownSignals::new()?;
     #[cfg(not(unix))]
     let mut ctrl_c = std::pin::pin!(tokio::signal::ctrl_c());
     // Exit status of the process: non-zero after a fatal error so that a service manager
@@ -944,10 +942,10 @@ pub async fn run_app() -> Result<()> {
             // Shutdown signals
             () = async {
                 #[cfg(unix)]
-                tokio::select! {
-                    _ = sigint.recv() => { tracing::info!("Received Ctrl-C, shutting down gracefully..."); }
-                    _ = sigterm.recv() => { tracing::info!("Received SIGTERM, shutting down gracefully..."); }
-                };
+                {
+                    let name = signals.recv().await;
+                    tracing::info!(signal = name, "Shutting down gracefully...");
+                }
                 #[cfg(not(unix))]
                 {
                     let _ = (&mut ctrl_c).await;
@@ -1111,6 +1109,58 @@ fn is_docker() -> bool {
     std::path::Path::new("/.dockerenv").exists()
         || std::fs::read_to_string("/proc/1/cgroup")
             .is_ok_and(|s| s.contains("docker") || s.contains("containerd"))
+}
+
+/// SIGINT and SIGTERM, registered once for the whole run.
+///
+/// Registering a listener inside a select arm drops it whenever another arm runs, and a signal
+/// that arrives in that moment is lost. These streams keep a signal until it is read.
+#[cfg(unix)]
+struct ShutdownSignals {
+    sigint: tokio::signal::unix::Signal,
+    sigterm: tokio::signal::unix::Signal,
+}
+
+#[cfg(unix)]
+impl ShutdownSignals {
+    fn new() -> std::io::Result<Self> {
+        use tokio::signal::unix::{SignalKind, signal};
+        Ok(Self {
+            sigint: signal(SignalKind::interrupt())?,
+            sigterm: signal(SignalKind::terminate())?,
+        })
+    }
+
+    /// Wait for the next shutdown signal and name it.
+    async fn recv(&mut self) -> &'static str {
+        tokio::select! {
+            _ = self.sigint.recv() => "SIGINT",
+            _ = self.sigterm.recv() => "SIGTERM",
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod signal_tests {
+    use super::ShutdownSignals;
+
+    /// #501: a SIGTERM that arrives while the main loop is busy in another arm is kept and
+    /// read once the loop waits again.
+    #[tokio::test]
+    async fn a_signal_sent_while_nobody_waits_is_not_lost() {
+        let mut signals = ShutdownSignals::new().unwrap();
+        let status = std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        // The loop is busy elsewhere for a while.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let name = tokio::time::timeout(std::time::Duration::from_secs(2), signals.recv())
+            .await
+            .expect("the signal is kept until it is read");
+        assert_eq!(name, "SIGTERM");
+    }
 }
 
 #[cfg(test)]
