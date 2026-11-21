@@ -78,6 +78,7 @@ impl ReceiverProvider for SpotifyReceiver {
         let task = tokio::spawn(async move {
             if let Err(e) = run_spotify(config, zone_index, audio_tx, event_tx).await {
                 tracing::error!(zone = zone_index, error = %e, "Spotify receiver failed");
+                crate::health::report(crate::health::FaultSource::Spotify(zone_index), false);
             }
         });
         self.task = Some(task);

@@ -325,17 +325,7 @@ use super::group_objects::{
     self, CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS,
     CGO_MUTE_TOGGLE, CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS,
     CLIENT_GOS, GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE, GGO_SYSTEM_FAULT,
-    MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZGO_CONTROL_STATUS, ZGO_MUTE,
-    ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY, ZGO_PLAY_PAUSE, ZGO_PLAYLIST,
-    ZGO_PLAYLIST_NAME, ZGO_PLAYLIST_NEXT, ZGO_PLAYLIST_PREVIOUS, ZGO_PLAYLIST_STATUS,
-    ZGO_PLAYLIST_STEP, ZGO_PLAYLIST_STEP_UPDOWN, ZGO_PRESENCE, ZGO_PRESENCE_ENABLE,
-    ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS, ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE,
-    ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP, ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST,
-    ZGO_TRACK_NEXT, ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS, ZGO_TRACK_PLAYING,
-    ZGO_TRACK_POSITION, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT,
-    ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_SEEK, ZGO_TRACK_SEEK_UPDOWN,
-    ZGO_TRACK_STEP, ZGO_TRACK_STEP_UPDOWN, ZGO_TRACK_TITLE, ZGO_VOLUME, ZGO_VOLUME_DIM,
-    ZGO_VOLUME_STATUS, ZONE_GOS,
+    MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZONE_GOS,
 };
 
 /// Fixed-size array of `N` values. A newtype because Rust only derives `Default` for arrays up to
@@ -1644,58 +1634,12 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) ->
         }
         let knx = &zone_cfg.knx;
         // Map each configured GA to its zone GO ASAP
-        let zone_gas: &[(&Option<String>, usize)] = &[
-            (&knx.play, ZGO_PLAY),
-            (&knx.pause, ZGO_PAUSE),
-            (&knx.stop, ZGO_STOP),
-            (&knx.track_next, ZGO_TRACK_NEXT),
-            (&knx.track_previous, ZGO_TRACK_PREVIOUS),
-            (&knx.volume, ZGO_VOLUME),
-            (&knx.volume_status, ZGO_VOLUME_STATUS),
-            (&knx.volume_dim, ZGO_VOLUME_DIM),
-            (&knx.mute, ZGO_MUTE),
-            (&knx.mute_status, ZGO_MUTE_STATUS),
-            (&knx.mute_toggle, ZGO_MUTE_TOGGLE),
-            (&knx.control_status, ZGO_CONTROL_STATUS),
-            (&knx.track_playing_status, ZGO_TRACK_PLAYING),
-            (&knx.shuffle, ZGO_SHUFFLE),
-            (&knx.shuffle_status, ZGO_SHUFFLE_STATUS),
-            (&knx.shuffle_toggle, ZGO_SHUFFLE_TOGGLE),
-            (&knx.repeat, ZGO_REPEAT),
-            (&knx.repeat_status, ZGO_REPEAT_STATUS),
-            (&knx.repeat_toggle, ZGO_REPEAT_TOGGLE),
-            (&knx.track_repeat, ZGO_TRACK_REPEAT),
-            (&knx.track_repeat_status, ZGO_TRACK_REPEAT_STATUS),
-            (&knx.track_repeat_toggle, ZGO_TRACK_REPEAT_TOGGLE),
-            (&knx.playlist, ZGO_PLAYLIST),
-            (&knx.playlist_status, ZGO_PLAYLIST_STATUS),
-            (&knx.playlist_next, ZGO_PLAYLIST_NEXT),
-            (&knx.playlist_previous, ZGO_PLAYLIST_PREVIOUS),
-            (&knx.playlist_step, ZGO_PLAYLIST_STEP),
-            (&knx.playlist_step_updown, ZGO_PLAYLIST_STEP_UPDOWN),
-            (&knx.track_number, ZGO_TRACK_NUMBER),
-            (&knx.track_number_status, ZGO_TRACK_NUMBER_STATUS),
-            (&knx.playlist_name_status, ZGO_PLAYLIST_NAME),
-            (&knx.play_pause, ZGO_PLAY_PAUSE),
-            (&knx.track_step, ZGO_TRACK_STEP),
-            (&knx.track_step_updown, ZGO_TRACK_STEP_UPDOWN),
-            (&knx.track_position, ZGO_TRACK_POSITION),
-            (&knx.track_seek, ZGO_TRACK_SEEK),
-            (&knx.track_seek_updown, ZGO_TRACK_SEEK_UPDOWN),
-            (&knx.track_title_status, ZGO_TRACK_TITLE),
-            (&knx.track_artist_status, ZGO_TRACK_ARTIST),
-            (&knx.track_album_status, ZGO_TRACK_ALBUM),
-            (&knx.track_progress_status, ZGO_TRACK_PROGRESS),
-            (&knx.presence, ZGO_PRESENCE),
-            (&knx.presence_enable_status, ZGO_PRESENCE_ENABLE),
-            (&knx.presence_enable, ZGO_PRESENCE_ENABLE),
-            (&knx.presence_timer_status, ZGO_PRESENCE_TIMER_ACTIVE),
-        ];
-        for (ga_opt, go_idx) in zone_gas {
+        let zone_gas = super::zone_object_addresses(knx);
+        for (ga_opt, go_idx, _) in zone_gas {
             if let Some(ga_str) = ga_opt
                 && let Ok(ga) = GroupAddress::from_str(ga_str)
             {
-                let asap = group_objects::zone_asap(idx, *go_idx);
+                let asap = group_objects::zone_asap(idx, go_idx);
                 ga_asap_pairs.push((ga.raw(), asap));
             }
         }
@@ -2019,7 +1963,9 @@ fn classify_group_frame(bau: &Bau, frame: &CemiFrame) -> GroupPolicy {
     reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
 )]
 mod tests {
-    use super::group_objects::zone_asap;
+    use super::group_objects::{
+        ZGO_MUTE_STATUS, ZGO_PLAY, ZGO_PRESENCE_ENABLE, ZGO_VOLUME_STATUS, zone_asap,
+    };
     use super::*;
 
     #[test]

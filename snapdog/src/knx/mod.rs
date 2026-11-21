@@ -333,7 +333,16 @@ async fn publish_heartbeat<P: KnxPublisher>(
         &true.into(),
     )
     .await;
-    let healthy = SYSTEM_HEALTHY.load(std::sync::atomic::Ordering::Relaxed);
+    publish_fault(knx, crate::health::is_healthy(), last_healthy, sink).await;
+}
+
+/// Send System Fault when the health state differs from the last one sent.
+async fn publish_fault<P: KnxPublisher>(
+    knx: &crate::config::KnxConfig,
+    healthy: bool,
+    last_healthy: &mut Option<bool>,
+    sink: &mut StatusSink<'_, P>,
+) {
     if *last_healthy != Some(healthy) {
         *last_healthy = Some(healthy);
         sink.write(
@@ -382,6 +391,8 @@ async fn publisher_loop<P, S>(
     // A late heartbeat is sent late, not followed by a catch-up burst.
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_healthy: Option<bool> = None;
+    // A fault or a recovery is sent at once, not at the next heartbeat.
+    let mut health = crate::health::subscribe();
     // `(first request, answer at)` of a resync that waits for things to settle.
     let mut resync_due: Option<(tokio::time::Instant, tokio::time::Instant)> = None;
     let mut last_answer: HashMap<GroupAddress, tokio::time::Instant> = HashMap::new();
@@ -392,6 +403,12 @@ async fn publisher_loop<P, S>(
         tokio::select! {
             _ = heartbeat.tick() => {
                 publish_heartbeat(config, &mut last_healthy, &mut sink).await;
+            }
+            Ok(()) = health.changed() => {
+                let healthy = health.borrow_and_update().is_empty();
+                if let Some(knx) = config.knx.as_ref() {
+                    publish_fault(knx, healthy, &mut last_healthy, &mut sink).await;
+                }
             }
             () = async {
                 match progress_due {
@@ -581,7 +598,7 @@ async fn publish_zone_state<P: KnxPublisher>(
         go(ZGO_PLAYLIST_STATUS),
         knx.playlist_status.as_deref(),
         DPT_VALUE_1_UCOUNT,
-        &DptValue::from(zone.playlist_index.unwrap_or(0) as u8),
+        &DptValue::from(playlist_status_value(zone.playlist_index)),
     )
     .await;
     sink.write(
@@ -729,13 +746,20 @@ async fn publish_client_state<P: KnxPublisher>(
         &client.connected.into(),
     )
     .await;
+    let zone = DptValue::from(u8::try_from(client.zone_index).unwrap_or(u8::MAX));
     sink.write(
         go(CGO_ZONE_STATUS),
         knx.zone_status.as_deref(),
         DPT_VALUE_1_UCOUNT,
-        &DptValue::from(client.zone_index as u8),
+        &zone,
     )
     .await;
+    // "Zone" is bidirectional: in device mode its object follows the zone, so a read of it
+    // answers the current zone after a change from the web interface or the API, and devices
+    // linked to it see the change. Client mode has no address to send it on (`None`): there the
+    // zone is reported on the Zone Status address.
+    sink.write(go(CGO_ZONE), None, DPT_VALUE_1_UCOUNT, &zone)
+        .await;
     sink.write(
         go(CGO_LATENCY_STATUS),
         knx.latency_status.as_deref(),
@@ -743,6 +767,12 @@ async fn publish_client_state<P: KnxPublisher>(
         &DptValue::from(client.latency_ms.clamp(0, 255) as u8),
     )
     .await;
+}
+
+/// The Playlist Status byte: the playlist index, saturated at 255 so index 256 and up are not
+/// reported as 0 (radio). No playlist is 0, like radio: the object has no value for "none".
+fn playlist_status_value(index: Option<usize>) -> u8 {
+    index.map_or(0, |i| u8::try_from(i).unwrap_or(u8::MAX))
 }
 
 // ── Listener ──────────────────────────────────────────────────
@@ -935,31 +965,123 @@ pub(crate) fn duplicate_addresses(config: &AppConfig) -> Vec<String> {
     duplicates
 }
 
+/// Every zone address key of the configuration with the object it is linked to and its key
+/// name. One list for client mode (status reads), device mode (association table) and tests,
+/// so a key cannot be linked in one place and forgotten in another. Keys ending in `_status`
+/// are the addresses a zone sends on.
+pub(crate) fn zone_object_addresses(
+    k: &crate::config::ZoneKnxAddresses,
+) -> Vec<(&Option<String>, usize, &'static str)> {
+    vec![
+        (&k.play, ZGO_PLAY, "play"),
+        (&k.pause, ZGO_PAUSE, "pause"),
+        (&k.stop, ZGO_STOP, "stop"),
+        (&k.track_next, ZGO_TRACK_NEXT, "track_next"),
+        (&k.track_previous, ZGO_TRACK_PREVIOUS, "track_previous"),
+        (&k.volume, ZGO_VOLUME, "volume"),
+        (&k.volume_status, ZGO_VOLUME_STATUS, "volume_status"),
+        (&k.volume_dim, ZGO_VOLUME_DIM, "volume_dim"),
+        (&k.mute, ZGO_MUTE, "mute"),
+        (&k.mute_status, ZGO_MUTE_STATUS, "mute_status"),
+        (&k.mute_toggle, ZGO_MUTE_TOGGLE, "mute_toggle"),
+        (&k.control_status, ZGO_CONTROL_STATUS, "control_status"),
+        (
+            &k.track_playing_status,
+            ZGO_TRACK_PLAYING,
+            "track_playing_status",
+        ),
+        (&k.shuffle, ZGO_SHUFFLE, "shuffle"),
+        (&k.shuffle_status, ZGO_SHUFFLE_STATUS, "shuffle_status"),
+        (&k.shuffle_toggle, ZGO_SHUFFLE_TOGGLE, "shuffle_toggle"),
+        (&k.repeat, ZGO_REPEAT, "repeat"),
+        (&k.repeat_status, ZGO_REPEAT_STATUS, "repeat_status"),
+        (&k.repeat_toggle, ZGO_REPEAT_TOGGLE, "repeat_toggle"),
+        (&k.track_repeat, ZGO_TRACK_REPEAT, "track_repeat"),
+        (
+            &k.track_repeat_status,
+            ZGO_TRACK_REPEAT_STATUS,
+            "track_repeat_status",
+        ),
+        (
+            &k.track_repeat_toggle,
+            ZGO_TRACK_REPEAT_TOGGLE,
+            "track_repeat_toggle",
+        ),
+        (&k.playlist, ZGO_PLAYLIST, "playlist"),
+        (&k.playlist_status, ZGO_PLAYLIST_STATUS, "playlist_status"),
+        (&k.playlist_next, ZGO_PLAYLIST_NEXT, "playlist_next"),
+        (
+            &k.playlist_previous,
+            ZGO_PLAYLIST_PREVIOUS,
+            "playlist_previous",
+        ),
+        (&k.playlist_step, ZGO_PLAYLIST_STEP, "playlist_step"),
+        (
+            &k.playlist_step_updown,
+            ZGO_PLAYLIST_STEP_UPDOWN,
+            "playlist_step_updown",
+        ),
+        (&k.track_number, ZGO_TRACK_NUMBER, "track_number"),
+        (
+            &k.track_number_status,
+            ZGO_TRACK_NUMBER_STATUS,
+            "track_number_status",
+        ),
+        (
+            &k.playlist_name_status,
+            ZGO_PLAYLIST_NAME,
+            "playlist_name_status",
+        ),
+        (&k.play_pause, ZGO_PLAY_PAUSE, "play_pause"),
+        (&k.track_step, ZGO_TRACK_STEP, "track_step"),
+        (
+            &k.track_step_updown,
+            ZGO_TRACK_STEP_UPDOWN,
+            "track_step_updown",
+        ),
+        (&k.track_position, ZGO_TRACK_POSITION, "track_position"),
+        (&k.track_seek, ZGO_TRACK_SEEK, "track_seek"),
+        (
+            &k.track_seek_updown,
+            ZGO_TRACK_SEEK_UPDOWN,
+            "track_seek_updown",
+        ),
+        (&k.track_title_status, ZGO_TRACK_TITLE, "track_title_status"),
+        (
+            &k.track_artist_status,
+            ZGO_TRACK_ARTIST,
+            "track_artist_status",
+        ),
+        (&k.track_album_status, ZGO_TRACK_ALBUM, "track_album_status"),
+        (
+            &k.track_progress_status,
+            ZGO_TRACK_PROGRESS,
+            "track_progress_status",
+        ),
+        (&k.presence, ZGO_PRESENCE, "presence"),
+        (
+            &k.presence_enable_status,
+            ZGO_PRESENCE_ENABLE,
+            "presence_enable_status",
+        ),
+        (&k.presence_enable, ZGO_PRESENCE_ENABLE, "presence_enable"),
+        (
+            &k.presence_timer_status,
+            ZGO_PRESENCE_TIMER_ACTIVE,
+            "presence_timer_status",
+        ),
+    ]
+}
+
 /// Every configured status object with its group address: a label for messages and the
 /// canonical address. Zones come first, then clients, then the global objects.
 fn status_addresses(config: &AppConfig) -> Vec<(String, String)> {
     let mut list = Vec::new();
     for zone in &config.zones {
-        let k = &zone.knx;
-        let fields = [
-            (&k.volume_status, "volume_status"),
-            (&k.mute_status, "mute_status"),
-            (&k.control_status, "control_status"),
-            (&k.track_title_status, "track_title_status"),
-            (&k.track_artist_status, "track_artist_status"),
-            (&k.track_album_status, "track_album_status"),
-            (&k.track_progress_status, "track_progress_status"),
-            (&k.track_playing_status, "track_playing_status"),
-            (&k.track_repeat_status, "track_repeat_status"),
-            (&k.playlist_status, "playlist_status"),
-            (&k.track_number_status, "track_number_status"),
-            (&k.shuffle_status, "shuffle_status"),
-            (&k.repeat_status, "repeat_status"),
-            (&k.presence_enable_status, "presence_enable_status"),
-            (&k.presence_timer_status, "presence_timer_status"),
-        ];
-        for (ga, name) in fields {
-            if let Some(ga) = ga {
+        for (ga, _, name) in zone_object_addresses(&zone.knx) {
+            if let Some(ga) = ga
+                && name.ends_with("_status")
+            {
                 list.push((format!("zone {} {name}", zone.index), canonical_ga(ga)));
             }
         }
@@ -1029,10 +1151,6 @@ fn shared_status_addresses(config: &AppConfig) -> Vec<String> {
 /// schedules can follow KNX time even when the OS clock is not synced.
 pub static KNX_TIME_OFFSET_SECS: std::sync::atomic::AtomicI64 =
     std::sync::atomic::AtomicI64::new(0);
-
-/// Server health flag driving the global "System Fault" GO. `true` = healthy (no fault).
-/// Set `false` when the Snapcast backend is unreachable.
-pub static SYSTEM_HEALTHY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 /// Build the device-level (global) group-address → action map for incoming telegrams.
 ///
@@ -2676,7 +2794,22 @@ zone = "Z1"
 
     #[test]
     fn every_status_address_is_in_the_read_set() {
-        let toml = r#"
+        // Every zone key, each with an address of its own; the expectation comes from the send
+        // flag of the objects in `ZONE_GOS`, not from a hand list.
+        let blank =
+            crate::config::load_raw(toml::from_str("[[zone]]\nname = \"Z1\"\n").unwrap()).unwrap();
+        let keys: Vec<(&str, usize)> = zone_object_addresses(&blank.zones[0].knx)
+            .into_iter()
+            .map(|(_, go, name)| (name, go))
+            .collect();
+        let zone_keys = keys
+            .iter()
+            .enumerate()
+            .map(|(i, (name, _))| format!("{name} = \"1/0/{}\"", i + 1))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let toml = format!(
+            r#"
 [knx]
 role = "client"
 url = "udp://192.168.1.50:3671"
@@ -2688,22 +2821,7 @@ all_stop = "0/0/4"
 [[zone]]
 name = "Z1"
 [zone.knx]
-volume_status = "1/0/1"
-mute_status = "1/0/2"
-control_status = "1/0/3"
-track_title_status = "1/0/4"
-track_artist_status = "1/0/5"
-track_album_status = "1/0/6"
-track_progress_status = "1/0/7"
-track_playing_status = "1/0/8"
-track_repeat_status = "1/0/9"
-playlist_status = "1/0/10"
-shuffle_status = "1/0/11"
-repeat_status = "1/0/12"
-presence_enable_status = "1/0/13"
-presence_timer_status = "1/0/14"
-play = "1/0/20"
-
+{zone_keys}
 [[client]]
 name = "C1"
 mac = "02:42:ac:11:00:10"
@@ -2715,15 +2833,148 @@ latency_status = "2/0/3"
 zone_status = "2/0/4"
 connected_status = "2/0/5"
 volume = "2/0/20"
+"#
+        );
+        let cfg = crate::config::load_raw(toml::from_str(&toml).unwrap()).unwrap();
+        let set = build_status_ga_set(&cfg);
+
+        let sent_objects: HashSet<usize> = group_objects::ZONE_GOS
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.flags.transmit)
+            .map(|(i, _)| i)
+            .collect();
+        for (i, (name, go)) in keys.iter().enumerate() {
+            let ga = format!("1/0/{}", i + 1);
+            let is_status = name.ends_with("_status");
+            let flags = &group_objects::ZONE_GOS[*go].flags;
+            if is_status {
+                assert!(
+                    flags.transmit,
+                    "{name}: a status key belongs to a sending object"
+                );
+            } else {
+                assert!(
+                    flags.write,
+                    "{name}: a command key belongs to a writable object"
+                );
+            }
+            assert_eq!(
+                set.contains(&ga),
+                is_status,
+                "{name} ({ga}) in the read set"
+            );
+        }
+        for go in &sent_objects {
+            assert!(
+                keys.iter().any(|(n, g)| g == go && n.ends_with("_status")),
+                "the sending object {} has a status key",
+                group_objects::ZONE_GOS[*go].name
+            );
+        }
+        assert!(set.contains(&canonical_ga(
+            cfg.zones[0].knx.playlist_name_status.as_deref().unwrap()
+        )));
+        assert!(!set.contains("2/0/20") && !set.contains("0/0/4"));
+    }
+
+    #[test]
+    fn playlist_status_saturates_instead_of_wrapping_to_radio() {
+        assert_eq!(playlist_status_value(None), 0);
+        assert_eq!(playlist_status_value(Some(3)), 3);
+        assert_eq!(playlist_status_value(Some(255)), 255);
+        assert_eq!(playlist_status_value(Some(256)), 255);
+        assert_eq!(playlist_status_value(Some(usize::MAX)), 255);
+    }
+
+    #[tokio::test]
+    async fn the_client_zone_object_follows_the_zone_in_device_mode_only() {
+        let cfg = cfg_with_status_gas();
+        let store = state::init(&cfg, None).unwrap();
+
+        let device = sink::testing::Recorder::<false>::default();
+        let mut device_sink = StatusSink::new(&device);
+        publish_client_state(1, &cfg, &store, &mut device_sink).await;
+        let zone_object = transport::Target::Object(client_asap(1, CGO_ZONE));
+        assert!(
+            device
+                .writes
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(t, _, v)| *t == zone_object && *v == DptValue::from(1u8)),
+            "a read of Zone answers the current zone"
+        );
+
+        // Client mode: the Zone command address is not written, Zone Status carries the zone.
+        let toml = r#"
+[[zone]]
+name = "Z1"
+[[client]]
+name = "C1"
+mac = "02:42:ac:11:00:10"
+zone = "Z1"
+[client.knx]
+zone = "2/0/9"
+zone_status = "2/0/4"
 "#;
         let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
-        let set = build_status_ga_set(&cfg);
-        assert_eq!(
-            set.len(),
-            14 + 5 + 3,
-            "all status addresses, no command address"
+        let store = state::init(&cfg, None).unwrap();
+        let rec = Rec::default();
+        let mut sink = StatusSink::new(&rec);
+        publish_client_state(1, &cfg, &store, &mut sink).await;
+        let sent = written(&rec);
+        assert!(sent.iter().any(|(g, _, _)| g == "2/0/4"));
+        assert!(!sent.iter().any(|(g, _, _)| g == "2/0/9"));
+    }
+
+    #[tokio::test]
+    async fn a_fault_is_sent_at_once_and_recovery_clears_it() {
+        let toml = r#"
+[knx]
+role = "client"
+url = "udp://192.168.1.50:3671"
+system_fault = "0/0/3"
+heartbeat_minutes = 60
+
+[[zone]]
+name = "Z1"
+"#;
+        let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
+        let store = state::init(&cfg, None).unwrap();
+        let (snap_tx, _snap_rx) = mpsc::channel(4);
+        let bridge = Bridge::new(
+            &cfg,
+            store,
+            HashMap::<usize, ZoneCommandSender>::new(),
+            snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
-        assert!(!set.contains("1/0/20") && !set.contains("2/0/20") && !set.contains("0/0/4"));
+        let rec = Rec::default();
+        let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
+        let (_read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
+        let fut = publisher_loop(&rec, &bridge, &mut notify_rx, &mut read_rx);
+        tokio::pin!(fut);
+        settle(&mut fut).await;
+        let faults = |rec: &Rec| -> Vec<DptValue> {
+            written(rec)
+                .into_iter()
+                .filter(|(g, _, _)| g == "0/0/3")
+                .map(|(_, _, v)| v)
+                .collect()
+        };
+        let before = faults(&rec).len();
+
+        // Well before the next heartbeat (an hour away), the fault and the recovery are sent.
+        crate::health::report(crate::health::FaultSource::AirPlay(777), false);
+        settle(&mut fut).await;
+        assert_eq!(faults(&rec)[before..], [DptValue::from(true)]);
+        crate::health::report(crate::health::FaultSource::AirPlay(777), true);
+        settle(&mut fut).await;
+        assert_eq!(
+            faults(&rec)[before..],
+            [DptValue::from(true), DptValue::from(false)]
+        );
     }
 
     #[test]
