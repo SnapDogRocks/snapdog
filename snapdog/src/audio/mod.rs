@@ -7,6 +7,7 @@
 //! and sends them to a consumer (`ZonePlayer`) for resampling, EQ, and output.
 
 pub mod cache;
+pub mod channels;
 pub mod eq;
 pub mod icy;
 pub mod resample;

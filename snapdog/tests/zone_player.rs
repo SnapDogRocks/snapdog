@@ -366,3 +366,38 @@ mod receiver_gate {
         .await;
     }
 }
+
+/// #491: a mono source on the stereo zone is mapped before it is sent, so one second of
+/// mono input yields one second of stereo frames, not two.
+#[cfg(feature = "test-harness")]
+#[tokio::test]
+async fn a_mono_source_reaches_the_backend_as_stereo_frames() {
+    let h = common::spawn_zone_harness_capturing(test_config()).await;
+    let rate = snapdog_common::DEFAULT_SAMPLE_RATE;
+    h.test_pcm_tx[&1]
+        .send(snapdog::audio::PcmMessage::Format {
+            sample_rate: rate,
+            channels: 1,
+        })
+        .await
+        .unwrap();
+    // 480 mono samples = 10 ms at 48 kHz.
+    h.test_pcm_tx[&1]
+        .send(snapdog::audio::PcmMessage::Audio(vec![0.25_f32; 480]))
+        .await
+        .unwrap();
+
+    let call = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Some(c) = h.backend.calls().into_iter().next() {
+                break c;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("send_audio was called");
+
+    assert_eq!(call.channels, 2);
+    assert_eq!(call.len, 960, "480 mono frames become 480 stereo frames");
+}

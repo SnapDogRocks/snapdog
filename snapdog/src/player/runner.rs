@@ -407,6 +407,11 @@ async fn run(
     );
     let mut airplay_resampler: Option<audio::resample::F32Resampling> = None;
     let mut spotify_resampler: Option<audio::resample::F32Resampling> = None;
+    // Channel counts of the current decode and of each receiver. Their audio is mapped to the
+    // configured count before resampling, so EQ, fade and the stream see whole output frames.
+    let mut source_channels = config.audio.channels;
+    let mut airplay_channels = config.audio.channels;
+    let mut spotify_channels = config.audio.channels;
 
     // Per-zone EQ
     let mut zone_eq = audio::eq::ZoneEq::new(config.audio.sample_rate, config.audio.channels);
@@ -426,7 +431,7 @@ async fn run(
 
     /// Handle audio samples from an external receiver (AirPlay/Spotify).
     macro_rules! handle_receiver_audio {
-        ($samples:expr, $active:path, $source_type:expr, $label:literal, $open:ident, $resampler:ident) => {{
+        ($samples:expr, $active:path, $source_type:expr, $label:literal, $open:ident, $resampler:ident, $channels:ident) => {{
             if !$open {
                 continue; // drained and dropped until the receiver plays again
             }
@@ -436,9 +441,10 @@ async fn run(
                 update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = $source_type; }).await;
             }
             receiver_paused = false;
+            let mapped = audio::channels::map_channels($samples, $channels, config.audio.channels);
             let mut samples = match &mut $resampler {
-                Some(r) => match r.process(&$samples) { Some(resampled) => resampled, None => continue },
-                None => $samples,
+                Some(r) => match r.process(&mapped) { Some(resampled) => resampled, None => continue },
+                None => mapped,
             };
             zone_eq.process(&mut samples);
             if let Err(e) = backend.send_audio(zone_index, &samples, config.audio.sample_rate, config.audio.channels).await {
@@ -449,7 +455,7 @@ async fn run(
 
     /// Handle events from an external receiver (AirPlay/Spotify).
     macro_rules! handle_receiver_event {
-        ($event:expr, $active:path, $source_type:expr, $open:ident, $resampler:ident, $remote:ident) => {{
+        ($event:expr, $active:path, $source_type:expr, $open:ident, $resampler:ident, $remote:ident, $channels:ident) => {{
             use crate::receiver::ReceiverEvent;
             match $event {
                 ReceiverEvent::PlaybackState { playing } => {
@@ -471,10 +477,11 @@ async fn run(
                     }
                 }
                 ReceiverEvent::SessionStarted { format } => {
+                    $channels = format.channels;
                     $resampler = Some(audio::resample::F32Resampling::new(
                         format.sample_rate,
                         config.audio.sample_rate,
-                        format.channels,
+                        config.audio.channels,
                     ));
                 }
                 ReceiverEvent::Metadata {
@@ -1060,6 +1067,12 @@ async fn run(
                     ZoneCommand::SetShuffle(v) => { update_and_notify(store, zone_index, notify, |z| z.shuffle = v).await; }
                     ZoneCommand::ToggleShuffle => { update_and_notify(store, zone_index, notify, |z| z.shuffle = !z.shuffle).await; }
                     ZoneCommand::SetRepeat(mode) => { update_and_notify(store, zone_index, notify, |z| z.repeat = mode).await; }
+                    ZoneCommand::ToggleRepeatMode(mode) => {
+                        update_and_notify(store, zone_index, notify, |z| z.repeat = super::commands::toggled_repeat(z.repeat, mode)).await;
+                    }
+                    ZoneCommand::ClearRepeatMode(mode) => {
+                        update_and_notify(store, zone_index, notify, |z| z.repeat = super::commands::cleared_repeat(z.repeat, mode)).await;
+                    }
                     ZoneCommand::CycleRepeat => {
                         update_and_notify(store, zone_index, notify, |z| {
                             z.repeat = match z.repeat {
@@ -1155,10 +1168,12 @@ async fn run(
             pcm = async { match &mut decode_rx { Some(rx) => rx.recv().await, None => std::future::pending().await } } => {
                 match pcm {
                     Some(audio::PcmMessage::Format { sample_rate, channels }) => {
-                        resampler = audio::resample::F32Resampling::new(sample_rate, config.audio.sample_rate, channels);
-                        tracing::debug!(from = sample_rate, to = config.audio.sample_rate, "Resampler configured");
+                        source_channels = channels;
+                        resampler = audio::resample::F32Resampling::new(sample_rate, config.audio.sample_rate, config.audio.channels);
+                        tracing::debug!(from = sample_rate, to = config.audio.sample_rate, channels, output_channels = config.audio.channels, "Resampler configured");
                     }
                     Some(audio::PcmMessage::Audio(samples)) => {
+                        let samples = audio::channels::map_channels(samples, source_channels, config.audio.channels);
                         let mut samples = resampler.process_or_passthrough(samples);
                         zone_eq.process(&mut samples);
                         if let Some(ref mut fade) = zone_fade
@@ -1224,18 +1239,18 @@ async fn run(
                 }
             }
             Some(samples) = airplay_audio_rx.recv() => {
-                handle_receiver_audio!(samples, ActiveSource::AirPlay, SourceType::AirPlay, "AirPlay", airplay_open, airplay_resampler);
+                handle_receiver_audio!(samples, ActiveSource::AirPlay, SourceType::AirPlay, "AirPlay", airplay_open, airplay_resampler, airplay_channels);
             }
             Some(event) = airplay_event_rx.recv() => {
-                handle_receiver_event!(event, ActiveSource::AirPlay, SourceType::AirPlay, airplay_open, airplay_resampler, airplay_remote);
+                handle_receiver_event!(event, ActiveSource::AirPlay, SourceType::AirPlay, airplay_open, airplay_resampler, airplay_remote, airplay_channels);
             }
             // ── Spotify Connect: audio ────────────────────────────
             Some(samples) = spotify_audio_rx.recv() => {
-                handle_receiver_audio!(samples, ActiveSource::Spotify, SourceType::Spotify, "Spotify", spotify_open, spotify_resampler);
+                handle_receiver_audio!(samples, ActiveSource::Spotify, SourceType::Spotify, "Spotify", spotify_open, spotify_resampler, spotify_channels);
             }
             // ── Spotify Connect: events ───────────────────────────
             Some(event) = spotify_event_rx.recv() => {
-                handle_receiver_event!(event, ActiveSource::Spotify, SourceType::Spotify, spotify_open, spotify_resampler, spotify_remote);
+                handle_receiver_event!(event, ActiveSource::Spotify, SourceType::Spotify, spotify_open, spotify_resampler, spotify_remote, spotify_channels);
             }
             // Auto-off timer expired
             () = &mut auto_off_timer, if auto_off_armed => {
