@@ -58,8 +58,9 @@ struct Cli {
     #[arg(short, long)]
     port: Option<u16>,
 
-    /// HTTP bind address (default: ::, dual-stack IPv4+IPv6). Use 0.0.0.0 for IPv4 only.
-    /// Several addresses, separated by commas, listen on each of them.
+    /// HTTP bind address, `loopback` or interface name like `eth0`, as `[http].bind`
+    /// (default: ::, dual-stack IPv4+IPv6). Use 0.0.0.0 for IPv4 only.
+    /// Several entries, separated by commas, listen on each of them.
     #[arg(short, long, value_delimiter = ',')]
     bind: Vec<String>,
 
@@ -125,8 +126,6 @@ const SNAPCAST_CMD_CHANNEL_SIZE: usize = 64;
 const SNAPSERVER_STARTUP_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 /// State file names (relative to `config.system.state_dir`).
 const STATE_FILE: &str = "zones.json";
-/// Individual address of a KNX device started with `--knx-device` and no `--knx-address`.
-const DEFAULT_KNX_DEVICE_ADDRESS: &str = "15.15.255";
 const EQ_FILE: &str = "eq.json";
 
 /// Coalesces rapid volume changes per client within a time window.
@@ -243,99 +242,58 @@ pub async fn run_app() -> Result<()> {
         std::process::exit(1);
     }
 
-    let mut app_config = if let Some(ref config_path) = cli.config {
-        config::load(config_path)?
-    } else {
-        // --knx-device without --config: an ETS-programmed device provides its
-        // config from persisted parameter memory; otherwise built-in defaults
-        // (RFC KEA-0004 boot-time apply).
-        config::load_raw_no_validate(knx::ets_device_config(cli.knx_address.as_deref()))?
-    };
-
-    // --knx-device enables device mode
-    if cli.knx_device {
-        let knx = app_config.knx.get_or_insert_default();
-        knx.role = config::KnxRole::Device;
-        let address = cli
-            .knx_address
-            .clone()
-            .unwrap_or_else(|| DEFAULT_KNX_DEVICE_ADDRESS.into());
-        if let Some(configured) = knx.individual_address.as_ref()
-            && *configured != address
-        {
-            let message = format!(
-                "--knx-device replaces [knx].individual_address = {configured} from the \
-                 configuration file with {address}. Pass --knx-address {configured} to keep the \
-                 file's address."
-            );
-            app_config.warn(message);
-        }
-        let knx = app_config.knx.get_or_insert_default();
-        knx.individual_address = Some(address);
-    }
-
-    // --knx-prog-mode: set flag for BAU task to activate on start
-    if cli.knx_prog_mode
-        && let Some(ref mut knx) = app_config.knx
-    {
-        knx.start_prog_mode = true;
-    }
-
-    // --knx-sync-system-clock: allow the KNX Time GO to set the OS clock
-    if cli.knx_sync_system_clock {
-        app_config.knx.get_or_insert_default().sync_system_clock = true;
-    }
-
-    // CLI overrides
-    app_config.http.webui = selected_webui(app_config.http.webui, cli.webui);
-    if let Some(port) = cli.port {
-        app_config.http.port = port;
-    }
-    if !cli.bind.is_empty() {
-        app_config.http.bind.clone_from(&cli.bind);
-    }
-    if let Some(ref cert) = cli.tls_cert {
-        app_config.http.tls_cert = Some(cert.clone());
-    }
-    if let Some(ref key) = cli.tls_key {
-        app_config.http.tls_key = Some(key.clone());
-    }
-    if let Some(ref codec) = cli.codec {
-        app_config.snapcast.codec = match codec.as_str() {
-            "pcm" => config::AudioCodec::Pcm,
-            "flac" => config::AudioCodec::Flac,
-            "f32lz4" => config::AudioCodec::F32lz4,
-            "f32lz4e" => config::AudioCodec::F32lz4e,
-            other => anyhow::bail!("Unknown codec '{other}' — use pcm, flac, f32lz4, or f32lz4e"),
-        };
-    }
-    if let Some(rate) = cli.sample_rate {
-        app_config.audio.sample_rate = rate;
-    }
-    if let Some(bits) = cli.bit_depth {
-        app_config.audio.bit_depth = bits;
-    }
-    if let Some(port) = cli.streaming_port {
-        app_config.snapcast.streaming_port = port;
-    }
-    if let Some(ref s) = cli.name {
-        app_config.name = s.clone();
-    }
-    if let Some(ref level) = cli.log_level {
-        app_config.system.log_level = match level.as_str() {
-            "trace" => config::LogLevel::Trace,
-            "debug" => config::LogLevel::Debug,
-            "info" => config::LogLevel::Info,
-            "warn" => config::LogLevel::Warn,
-            "error" => config::LogLevel::Error,
-            other => anyhow::bail!(
+    let codec = cli
+        .codec
+        .as_deref()
+        .map(|codec| match codec {
+            "pcm" => Ok(config::AudioCodec::Pcm),
+            "flac" => Ok(config::AudioCodec::Flac),
+            "f32lz4" => Ok(config::AudioCodec::F32lz4),
+            "f32lz4e" => Ok(config::AudioCodec::F32lz4e),
+            other => Err(anyhow::anyhow!(
+                "Unknown codec '{other}' — use pcm, flac, f32lz4, or f32lz4e"
+            )),
+        })
+        .transpose()?;
+    let log_level = cli
+        .log_level
+        .as_deref()
+        .map(|level| match level {
+            "trace" => Ok(config::LogLevel::Trace),
+            "debug" => Ok(config::LogLevel::Debug),
+            "info" => Ok(config::LogLevel::Info),
+            "warn" => Ok(config::LogLevel::Warn),
+            "error" => Ok(config::LogLevel::Error),
+            other => Err(anyhow::anyhow!(
                 "Unknown log level '{other}' — use trace, debug, info, warn, or error"
-            ),
-        };
-    }
-
-    // The command-line overrides above bypass file validation: check them too.
-    config::validate(&mut app_config)?;
+            )),
+        })
+        .transpose()?;
+    // The command line is applied to the raw configuration before validation and bind
+    // resolution, so a flag behaves like the same key in the file.
+    let overrides = config::Overrides {
+        knx_device: cli.knx_device.then(|| {
+            cli.knx_address
+                .clone()
+                .unwrap_or_else(|| config::DEFAULT_KNX_DEVICE_ADDRESS.into())
+        }),
+        knx_prog_mode: cli.knx_prog_mode,
+        knx_sync_system_clock: cli.knx_sync_system_clock,
+        webui: cli
+            .webui
+            .map(|choice| selected_webui(config::WebUi::default(), Some(choice))),
+        port: cli.port,
+        bind: cli.bind.clone(),
+        tls_cert: cli.tls_cert.clone(),
+        tls_key: cli.tls_key.clone(),
+        codec,
+        sample_rate: cli.sample_rate,
+        bit_depth: cli.bit_depth,
+        streaming_port: cli.streaming_port,
+        name: cli.name.clone(),
+        log_level,
+    };
+    let mut app_config = config::load_with_overrides(cli.config.as_deref(), &overrides)?;
 
     // Validate TLS configuration
     match (&app_config.http.tls_cert, &app_config.http.tls_key) {
