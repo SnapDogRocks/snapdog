@@ -544,6 +544,8 @@ pub async fn run_app() -> Result<()> {
         start_receivers: true,
         #[cfg(feature = "test-harness")]
         test_pcm_rx: std::sync::Mutex::new(std::collections::HashMap::new()),
+        #[cfg(feature = "test-harness")]
+        test_airplay_rx: std::sync::Mutex::new(std::collections::HashMap::new()),
     })
     .await?;
 
