@@ -189,8 +189,10 @@ pub async fn start_radio_decode(
     let icy_covers = ctx.covers.clone();
     let zone_index = ctx.zone_index;
     let fallback_cover = radio.cover.clone();
-    tokio::spawn(async move {
-        let mut meta_cover_handle: Option<JoinHandle<()>> = None;
+    let icy_task = tokio::spawn(async move {
+        // Dropped with the task, so a cover fetch of this station ends with it.
+        let mut meta_cover = AbortOnDrop(None);
+        let meta_cover_handle = &mut meta_cover.0;
         while let Some(meta) = icy_rx.recv().await {
             if let Some(raw_title) = meta.title {
                 tracing::debug!(zone = zone_index, title = %raw_title, "ICY metadata");
@@ -210,7 +212,7 @@ pub async fn start_radio_decode(
             };
             if let Some(url) = cover_url {
                 spawn_cover_fetch(
-                    &mut meta_cover_handle,
+                    meta_cover_handle,
                     &icy_covers,
                     &icy_store,
                     zone_index,
@@ -251,11 +253,26 @@ pub async fn start_radio_decode(
     }
     let url = radio.url.clone();
     let ac = ctx.config.audio.clone();
+    // The metadata task lives as long as the decode: when the decode ends or is aborted on a
+    // source change, titles still buffered for this station are not written to the next source.
+    let icy_guard = AbortOnDrop(Some(icy_task));
     *ds.current_decode = Some(tokio::spawn(async move {
+        let _icy_guard = icy_guard;
         if let Err(e) = audio::decode_http_stream(url, tx, ac, Some(icy_tx)).await {
             tracing::error!(error = %e, "Radio decode failed");
         }
     }));
+}
+
+/// Aborts the task it holds when dropped.
+struct AbortOnDrop(Option<JoinHandle<()>>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
 }
 
 pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
@@ -610,6 +627,45 @@ async fn prefetch_one(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #492: titles still buffered for a station when its decode is aborted (a source change)
+    /// are never applied, because the metadata task ends with the decode.
+    #[tokio::test]
+    async fn buffered_icy_titles_are_dropped_when_the_decode_is_aborted() {
+        let applied = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let (icy_tx, mut icy_rx) = mpsc::channel::<String>(4);
+        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel::<()>();
+
+        // The metadata task, held up until the decode is gone, as when it is busy with a cover.
+        let sink = applied.clone();
+        let icy_task = tokio::spawn(async move {
+            let _ = gate_rx.await;
+            while let Some(title) = icy_rx.recv().await {
+                sink.lock().unwrap().push(title);
+            }
+        });
+
+        // The decode holds the guard and the sender, as start_radio_decode arranges it.
+        let guard = AbortOnDrop(Some(icy_task));
+        let decode = tokio::spawn(async move {
+            let _guard = guard;
+            for title in ["A - one", "A - two"] {
+                icy_tx.send(title.to_string()).await.unwrap();
+            }
+            std::future::pending::<()>().await;
+        });
+        tokio::task::yield_now().await;
+
+        // Source change: the decode is aborted while both titles are buffered.
+        decode.abort();
+        let _ = decode.await;
+        let _ = gate_tx.send(());
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(
+            applied.lock().unwrap().is_empty(),
+            "no title of the old station is applied"
+        );
+    }
 
     #[test]
     fn parse_icy_title_basic() {
