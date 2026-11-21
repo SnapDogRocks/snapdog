@@ -117,7 +117,7 @@ Sigstore. Verify an immutable release before deployment:
 
 ```bash
 cosign verify ghcr.io/snapdogrocks/snapdog:v0.25.1 \
-  --certificate-identity-regexp '^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9].*$' \
+  --certificate-identity-regexp '^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
