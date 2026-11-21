@@ -81,6 +81,13 @@ pub fn resolve_zone(
             .seek_interval_secs
             .unwrap_or(super::types::DEFAULT_SEEK_INTERVAL_SECS),
         presence: raw.presence,
+        // Out-of-range values are clamped here; `validate` reports them.
+        max_volume: raw.max_volume.clamp(0, 100),
+        default_volume: raw
+            .default_volume
+            .map(|v| v.clamp(0, raw.max_volume.clamp(0, 100))),
+        airplay: raw.airplay,
+        spotify: raw.spotify,
     }
 }
 
