@@ -200,7 +200,7 @@ pub enum FilterType {
 }
 
 /// Single EQ band configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EqBand {
     /// Center frequency in Hz.
@@ -225,6 +225,26 @@ pub struct EqConfig {
     /// Name of the preset this config was loaded from, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
+    /// Gain in dB applied before the bands while the EQ is enabled. Speaker corrections use
+    /// a negative preamp to leave headroom for boosted bands. 0 when absent.
+    #[serde(default, skip_serializing_if = "is_zero_db")]
+    pub preamp_db: f32,
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if signature"
+)]
+fn is_zero_db(db: &f32) -> bool {
+    *db == 0.0
+}
+
+impl EqConfig {
+    /// The preamp as a linear gain factor.
+    #[must_use]
+    pub fn preamp_gain(&self) -> f32 {
+        10f32.powf(self.preamp_db / 20.0)
+    }
 }
 
 impl Default for EqConfig {
@@ -233,6 +253,7 @@ impl Default for EqConfig {
             enabled: false,
             bands: vec![],
             preset: Some("flat".into()),
+            preamp_db: 0.0,
         }
     }
 }

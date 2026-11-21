@@ -197,8 +197,12 @@ impl SubsonicClient {
     /// Returns an error if the API request fails.
     pub async fn get_playlists(&self) -> Result<Vec<PlaylistEntry>> {
         let resp: SubsonicResponse<PlaylistsWrapper> = self.get("getPlaylists", &[]).await?;
+        // Subsonic reports errors (wrong credentials included) as HTTP 200 with
+        // `status: "failed"`: that must not read as an empty list, or the playlist cache
+        // replaces the last good list with it.
         Ok(resp
             .subsonic_response
+            .ok_or_failure("getPlaylists")?
             .playlists
             .map(|p| p.playlist)
             .unwrap_or_default())
@@ -213,6 +217,7 @@ impl SubsonicClient {
         let resp: SubsonicResponse<PlaylistWrapper> =
             self.get("getPlaylist", &[("id", id)]).await?;
         resp.subsonic_response
+            .ok_or_failure("getPlaylist")?
             .playlist
             .context("Playlist not found")
     }
@@ -224,7 +229,11 @@ impl SubsonicClient {
     /// Returns an error if the API request fails or the album is not found.
     pub async fn get_album(&self, id: &str) -> Result<Playlist> {
         let resp: SubsonicResponse<PlaylistWrapper> = self.get("getAlbum", &[("id", id)]).await?;
-        let album = resp.subsonic_response.album.context("Album not found")?;
+        let album = resp
+            .subsonic_response
+            .ok_or_failure("getAlbum")?
+            .album
+            .context("Album not found")?;
         Ok(Playlist {
             id: album.id,
             name: album.name,
@@ -280,14 +289,7 @@ impl SubsonicClient {
     /// which is returned as a [`SubsonicFailure`].
     async fn write(&self, method: &str, params: &[(&str, &str)]) -> Result<Option<Playlist>> {
         let resp: SubsonicResponse<PlaylistWrapper> = self.get(method, params).await?;
-        let inner = resp.subsonic_response;
-        if inner.status == "ok" {
-            return Ok(inner.playlist);
-        }
-        let (code, message) = inner
-            .error
-            .map_or_else(|| (0, format!("{method} failed")), |e| (e.code, e.message));
-        Err(SubsonicFailure { code, message }.into())
+        Ok(resp.subsonic_response.ok_or_failure(method)?.playlist)
     }
 
     /// Create a playlist. Returns it when the server answers with it (Subsonic 1.14 and later).
@@ -488,6 +490,19 @@ async fn read_response_bytes_limited(
 #[serde(rename_all = "kebab-case")]
 struct SubsonicResponse<T> {
     subsonic_response: SubsonicInner<T>,
+}
+
+impl<T> SubsonicInner<T> {
+    /// The response if its status is `ok`, else the server's error as [`SubsonicFailure`].
+    fn ok_or_failure(self, method: &str) -> Result<Self> {
+        if self.status == "ok" {
+            return Ok(self);
+        }
+        let (code, message) = self
+            .error
+            .map_or_else(|| (0, format!("{method} failed")), |e| (e.code, e.message));
+        Err(SubsonicFailure { code, message }.into())
+    }
 }
 
 #[derive(Deserialize)]

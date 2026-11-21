@@ -162,23 +162,21 @@ async fn fade_transition(
     if let Some(rx) = decode_rx.as_mut() {
         let deadline =
             tokio::time::Instant::now() + std::time::Duration::from_millis(u64::from(fade_ms));
-        loop {
-            let timeout = tokio::time::timeout_at(deadline, rx.recv());
-            match timeout.await {
-                Ok(Some(audio::PcmMessage::Audio(samples))) => {
-                    let mut samples = resampler.process_or_passthrough(samples);
-                    zone_eq.process(&mut samples);
-                    fade.process(&mut samples, channels);
-                    let _ = backend
-                        .send_audio(zone_index, &samples, sample_rate, channels)
-                        .await;
-                    if fade.remaining == 0 {
-                        break;
-                    }
-                }
-                _ => break, // Timeout or channel closed
-            }
-        }
+        drain_with_fade_out(
+            rx,
+            &mut fade,
+            deadline,
+            |samples| {
+                let mut samples = resampler.process_or_passthrough(samples);
+                zone_eq.process(&mut samples);
+                samples
+            },
+            backend,
+            zone_index,
+            sample_rate,
+            channels,
+        )
+        .await;
     }
 
     stop_decode(current_decode, decode_rx).await;
@@ -188,6 +186,38 @@ async fn fade_transition(
     let mut fade_in = ZoneFade::new(fade_ms, sample_rate);
     fade_in.start_fade_in();
     *zone_fade = Some(fade_in);
+}
+
+/// Play the old stream out under a fade-out until the fade completes, `deadline` passes or the
+/// stream ends. Non-audio messages (`Position`, `BufferProgress`, `Format`) are skipped: they
+/// arrive between audio chunks and must not end the fade early, which would cut the stream.
+#[allow(clippy::too_many_arguments)]
+async fn drain_with_fade_out(
+    rx: &mut mpsc::Receiver<audio::PcmMessage>,
+    fade: &mut ZoneFade,
+    deadline: tokio::time::Instant,
+    mut prepare: impl FnMut(Vec<f32>) -> Vec<f32>,
+    backend: &dyn crate::snapcast::backend::SnapcastBackend,
+    zone_index: usize,
+    sample_rate: u32,
+    channels: u16,
+) {
+    loop {
+        match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Some(audio::PcmMessage::Audio(samples))) => {
+                let mut samples = prepare(samples);
+                let done = fade.process(&mut samples, channels);
+                let _ = backend
+                    .send_audio(zone_index, &samples, sample_rate, channels)
+                    .await;
+                if done {
+                    break;
+                }
+            }
+            Ok(Some(_)) => {}           // not audio: keep draining
+            Ok(None) | Err(_) => break, // stream ended or deadline passed
+        }
+    }
 }
 
 /// Check if a receiver (AirPlay/Spotify) is active and the source conflict
@@ -226,20 +256,27 @@ impl ZoneFade {
     }
 
     /// Apply gain ramp to samples. Returns true when fade is complete.
+    ///
+    /// After a completed fade-out every further sample is silent, so the rest of the buffer
+    /// that holds the end of the fade does not play at full gain. After a completed fade-in
+    /// the rest of the buffer is left as it is.
     fn process(&mut self, samples: &mut [f32], channels: u16) -> bool {
-        if self.total == 0 || self.remaining == 0 {
+        if self.total == 0 {
             return true;
         }
-        let ch = channels as usize;
-        for frame in samples.chunks_exact_mut(ch) {
-            let gain = snapdog_common::fade_gain(self.remaining, self.total, self.fading_out);
+        let ch = usize::from(channels.max(1));
+        for frame in samples.chunks_mut(ch) {
+            let gain = if self.remaining > 0 {
+                snapdog_common::fade_gain(self.remaining, self.total, self.fading_out)
+            } else if self.fading_out {
+                0.0
+            } else {
+                break;
+            };
             for sample in frame.iter_mut() {
                 *sample *= gain;
             }
             self.remaining = self.remaining.saturating_sub(1);
-            if self.remaining == 0 {
-                break;
-            }
         }
         self.remaining == 0
     }
@@ -1188,15 +1225,10 @@ async fn run(
                         let samples = audio::channels::map_channels(samples, source_channels, config.audio.channels);
                         let mut samples = resampler.process_or_passthrough(samples);
                         zone_eq.process(&mut samples);
+                        // Only a fade-in is ever pending here; fade-outs run in `fade_transition`.
                         if let Some(ref mut fade) = zone_fade
                             && fade.process(&mut samples, config.audio.channels) {
-                                if fade.fading_out {
-                                    // Fade-out complete — don't send silence, wait for new stream
-                                    zone_fade = None;
-                                } else {
-                                    // Fade-in complete
-                                    zone_fade = None;
-                                }
+                                zone_fade = None;
                             }
                         if let Err(e) = backend.send_audio(zone_index, &samples, config.audio.sample_rate, config.audio.channels).await {
                             tracing::error!(zone = zone_index, error = %e, "Audio send failed");
@@ -1346,6 +1378,36 @@ fn resolve_presence_source(
 #[cfg(test)]
 mod fade_tests {
     use super::ZoneFade;
+    use crate::snapcast::backend::{BoxFuture, SnapcastBackend};
+
+    /// Records the audio it is sent.
+    #[derive(Default)]
+    struct Recorder(std::sync::Mutex<Vec<f32>>);
+
+    impl SnapcastBackend for Recorder {
+        fn send_audio(
+            &self,
+            _: usize,
+            samples: &[f32],
+            _: u32,
+            _: u16,
+        ) -> BoxFuture<'_, anyhow::Result<()>> {
+            self.0.lock().unwrap().extend_from_slice(samples);
+            Box::pin(async { Ok(()) })
+        }
+        fn execute(&self, _: crate::player::SnapcastCmd) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn stop(&self) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn get_status(&self) -> BoxFuture<'_, anyhow::Result<serde_json::Value>> {
+            Box::pin(async { Ok(serde_json::Value::Null) })
+        }
+        fn delete_client(&self, _: &str) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
 
     #[test]
     fn fade_out_stereo() {
@@ -1356,6 +1418,63 @@ mod fade_tests {
         // First frame should be near 1.0, last frame should be near 0.0
         assert!(buf[0] > 0.9);
         assert!(buf[198] < 0.02);
+    }
+
+    #[test]
+    fn fade_out_silences_the_rest_of_a_longer_buffer() {
+        let mut fade = ZoneFade::new(100, 1000); // 100 frames
+        let mut buf = vec![1.0f32; 600]; // 300 frames * 2 channels
+        assert!(fade.process(&mut buf, 2));
+        assert!(buf[0] > 0.9);
+        assert!(
+            buf[200..].iter().all(|&s| s == 0.0),
+            "no burst after the fade end"
+        );
+        // A further buffer after the completed fade-out is silent too.
+        let mut next = vec![1.0f32; 10];
+        assert!(fade.process(&mut next, 2));
+        assert!(next.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn fade_in_leaves_the_rest_of_a_longer_buffer() {
+        let mut fade = ZoneFade::new(100, 1000);
+        fade.start_fade_in();
+        let mut buf = vec![1.0f32; 600];
+        assert!(fade.process(&mut buf, 2));
+        assert!(buf[200..].iter().all(|&s| s == 1.0));
+    }
+
+    #[tokio::test]
+    async fn the_fade_out_runs_through_position_and_progress_messages() {
+        use crate::audio::PcmMessage;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        // 100 frames of fade at 1 kHz, mono; audio in chunks of 30 frames with progress
+        // and position messages in between, the way a caching stream sends them.
+        for i in 0..6 {
+            tx.send(PcmMessage::Audio(vec![1.0; 30])).await.unwrap();
+            tx.send(PcmMessage::BufferProgress {
+                buffered_bytes: i,
+                total_bytes: None,
+            })
+            .await
+            .unwrap();
+            tx.send(PcmMessage::Position(i64::from(i as u8)))
+                .await
+                .unwrap();
+        }
+        let mut fade = ZoneFade::new(100, 1000);
+        let backend = Recorder::default();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        super::drain_with_fade_out(&mut rx, &mut fade, deadline, |s| s, &backend, 1, 1000, 1).await;
+        let played = backend.0.lock().unwrap().clone();
+        assert_eq!(fade.remaining, 0, "the fade completed");
+        assert_eq!(
+            played.len(),
+            120,
+            "four chunks: the fade ends in the fourth"
+        );
+        assert!(played[100..].iter().all(|&s| s == 0.0));
     }
 
     #[test]

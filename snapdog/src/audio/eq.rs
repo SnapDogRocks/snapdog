@@ -311,12 +311,16 @@ pub const fn preset_names() -> &'static [&'static str] {
 pub struct ZoneEq {
     bands: Vec<BandPair>,
     enabled: bool,
+    /// Linear preamp gain, 1.0 for none.
+    preamp: f32,
     sample_rate: f32,
     channels: usize,
 }
 
 /// One biquad per channel for a single band.
 struct BandPair {
+    /// The settings the filters were built from.
+    spec: EqBand,
     filters: Vec<DirectForm2Transposed<f32>>,
 }
 
@@ -327,24 +331,44 @@ impl ZoneEq {
         Self {
             bands: vec![],
             enabled: false,
+            preamp: 1.0,
             sample_rate: sample_rate as f32,
             channels: channels as usize,
         }
     }
 
-    /// Update the EQ configuration. Rebuilds all filter coefficients.
+    /// Update the EQ configuration. A band whose settings did not change keeps its filters
+    /// and their state, so moving one band does not click in the others; changed bands are
+    /// rebuilt.
     pub fn set_config(&mut self, config: &EqConfig) {
         self.enabled = config.enabled;
+        self.preamp = config.preamp_gain();
+        let mut old: Vec<Option<BandPair>> = std::mem::take(&mut self.bands)
+            .into_iter()
+            .map(Some)
+            .collect();
         self.bands = config
             .bands
             .iter()
-            .filter_map(|b| self.make_band(b))
+            .enumerate()
+            .filter_map(|(i, b)| match old.get_mut(i).and_then(Option::take) {
+                Some(kept) if kept.spec == *b => Some(kept),
+                _ => self.make_band(b),
+            })
             .collect();
     }
 
     /// Process interleaved f32 samples in-place.
     pub fn process(&mut self, samples: &mut [f32]) {
-        if !self.enabled || self.bands.is_empty() {
+        if !self.enabled {
+            return;
+        }
+        if self.preamp != 1.0 {
+            for s in samples.iter_mut() {
+                *s *= self.preamp;
+            }
+        }
+        if self.bands.is_empty() {
             return;
         }
         let ch = self.channels;
@@ -380,13 +404,66 @@ impl ZoneEq {
         let filters = (0..self.channels)
             .map(|_| DirectForm2Transposed::<f32>::new(coeffs))
             .collect();
-        Some(BandPair { filters })
+        Some(BandPair {
+            spec: band.clone(),
+            filters,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn peak(freq: f32, gain: f32) -> EqBand {
+        EqBand {
+            freq,
+            gain,
+            q: 1.0,
+            filter_type: FilterType::Peaking,
+        }
+    }
+
+    #[test]
+    fn the_preamp_scales_the_signal() {
+        let mut eq = ZoneEq::new(48000, 1);
+        eq.set_config(&EqConfig {
+            enabled: true,
+            bands: vec![],
+            preset: None,
+            preamp_db: -6.0,
+        });
+        let mut s = vec![1.0f32; 4];
+        eq.process(&mut s);
+        assert!(s.iter().all(|&x| (x - 0.501).abs() < 0.01), "{s:?}");
+    }
+
+    #[test]
+    fn unchanged_bands_keep_their_filter_state() {
+        let config = |second_gain| EqConfig {
+            enabled: true,
+            bands: vec![peak(100.0, 6.0), peak(1000.0, second_gain)],
+            preset: None,
+            preamp_db: 0.0,
+        };
+        let mut live = ZoneEq::new(48000, 1);
+        let mut reference = ZoneEq::new(48000, 1);
+        live.set_config(&config(3.0));
+        reference.set_config(&config(3.0));
+        let warmup: Vec<f32> = (0..480).map(|i| (i as f32 * 0.05).sin()).collect();
+        live.process(&mut warmup.clone());
+        reference.process(&mut warmup.clone());
+
+        // Only the second band changes: the first keeps its state.
+        live.set_config(&config(-3.0));
+        // Same state: the next sample gives the same output as the never-touched filter.
+        let next = 0.25;
+        assert_eq!(
+            live.bands[0].filters[0].run(next),
+            reference.bands[0].filters[0].run(next)
+        );
+        assert_ne!(live.bands[1].spec, reference.bands[1].spec);
+    }
 
     #[test]
     fn passthrough_when_disabled() {
@@ -404,6 +481,7 @@ mod tests {
             enabled: true,
             bands: vec![],
             preset: None,
+            preamp_db: 0.0,
         });
         let mut samples = vec![0.5f32, -0.5, 0.3, -0.3];
         let original = samples.clone();
@@ -423,6 +501,7 @@ mod tests {
                 filter_type: FilterType::Peaking,
             }],
             preset: None,
+            preamp_db: 0.0,
         });
         let mut samples: Vec<f32> = (0..1024).map(|i| (i as f32 * 0.1).sin()).collect();
         let original = samples.clone();
@@ -442,6 +521,7 @@ mod tests {
                 filter_type: FilterType::Peaking,
             }],
             preset: None,
+            preamp_db: 0.0,
         });
         let input: Vec<f32> = (0..256).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
         let mut samples = input.clone();
@@ -462,6 +542,7 @@ mod tests {
                 filter_type: FilterType::Peaking,
             }],
             preset: None,
+            preamp_db: 0.0,
         };
         let input: Vec<f32> = (0..512).map(|i| (i as f32 * 0.03).sin() * 0.5).collect();
         let mut a = input.clone();
@@ -500,6 +581,7 @@ mod tests {
                                 filter_type: ft,
                             }],
                             preset: None,
+                            preamp_db: 0.0,
                         });
                         let mut s = input.clone();
                         eq.process(&mut s);

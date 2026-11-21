@@ -179,10 +179,21 @@ fn parse_index(body: &str) -> Result<Vec<String>> {
 
 /// Parse `EqualizerAPO` format into [`EqConfig`].
 ///
-/// Format: `Filter N: ON PK Fc 1234 Hz Gain +1.23 dB Q 1.50`
+/// Format: `Preamp: -4.0 dB` and `Filter N: ON PK Fc 1234 Hz Gain +1.23 dB Q 1.50`.
+/// Low- and high-pass filters carry no gain (`Filter N: ON HP Fc 20 Hz Q 0.7`).
 fn parse_autoeq(text: &str, speaker: &str) -> EqConfig {
     let mut bands = Vec::new();
+    let mut preamp_db = 0.0;
     for line in text.lines() {
+        if let Some(rest) = line.trim().strip_prefix("Preamp:")
+            && let Some(db) = rest
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse::<f32>().ok())
+        {
+            preamp_db = db;
+            continue;
+        }
         if !line.starts_with("Filter") || !line.contains("ON") {
             continue;
         }
@@ -203,19 +214,24 @@ fn parse_autoeq(text: &str, speaker: &str) -> EqConfig {
             .and_then(|i| parts.get(i + 1))
             .and_then(|s| s.parse::<f32>().ok());
 
-        if let (Some(freq), Some(gain), Some(q)) = (freq, gain, q) {
-            let filter_type = parts
-                .iter()
-                .position(|&p| p == "ON")
-                .and_then(|i| parts.get(i + 1))
-                .map_or(FilterType::Peaking, |&t| match t {
-                    "LSC" | "LS" => FilterType::LowShelf,
-                    "HSC" | "HS" => FilterType::HighShelf,
-                    "LP" => FilterType::LowPass,
-                    "HP" => FilterType::HighPass,
-                    _ => FilterType::Peaking,
-                });
+        let filter_type = parts
+            .iter()
+            .position(|&p| p == "ON")
+            .and_then(|i| parts.get(i + 1))
+            .map_or(FilterType::Peaking, |&t| match t {
+                "LSC" | "LS" => FilterType::LowShelf,
+                "HSC" | "HS" => FilterType::HighShelf,
+                "LP" | "LPQ" => FilterType::LowPass,
+                "HP" | "HPQ" => FilterType::HighPass,
+                _ => FilterType::Peaking,
+            });
+        // A pass filter has no gain; the gain of every other type is required.
+        let gain = match filter_type {
+            FilterType::LowPass | FilterType::HighPass => Some(gain.unwrap_or(0.0)),
+            _ => gain,
+        };
 
+        if let (Some(freq), Some(gain), Some(q)) = (freq, gain, q) {
             bands.push(EqBand {
                 freq,
                 gain,
@@ -228,6 +244,7 @@ fn parse_autoeq(text: &str, speaker: &str) -> EqConfig {
         enabled: true,
         bands,
         preset: Some(format!("spinorama:{speaker}")),
+        preamp_db,
     }
 }
 
@@ -280,5 +297,20 @@ Filter 3: ON LSC Fc 105 Hz Gain -2.21 dB Q 1.21
         assert_eq!(config.bands[0].filter_type, FilterType::Peaking);
         assert_eq!(config.bands[2].filter_type, FilterType::LowShelf);
         assert!(config.enabled);
+        assert_eq!(
+            config.preamp_db, -4.0,
+            "the preamp leaves headroom for the boosts"
+        );
+    }
+
+    #[test]
+    fn parse_autoeq_keeps_pass_filters_without_gain() {
+        let input = "Filter 1: ON HP Fc 20 Hz Q 0.71\nFilter 2: ON LP Fc 18000 Hz Q 0.71\n";
+        let config = parse_autoeq(input, "x");
+        assert_eq!(config.preamp_db, 0.0);
+        assert_eq!(config.bands.len(), 2);
+        assert_eq!(config.bands[0].filter_type, FilterType::HighPass);
+        assert_eq!(config.bands[1].filter_type, FilterType::LowPass);
+        assert_eq!(config.bands[1].freq, 18000.0);
     }
 }
