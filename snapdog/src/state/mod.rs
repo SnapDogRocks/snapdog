@@ -404,6 +404,9 @@ impl Store {
             let valid_zone = self.zones.contains_key(&saved_client.zone_index);
             if let Some(client) = self.clients.get_mut(&idx) {
                 client.volume = saved_client.volume;
+                // `base_volume` is what the reconnect path pushes to the client, so
+                // leaving it at the configured default would undo the restored volume.
+                client.base_volume = saved_client.base_volume.clamp(0, client.max_volume);
                 client.muted = saved_client.muted;
                 client.latency_ms = saved_client.latency_ms;
                 if valid_zone {
@@ -602,6 +605,7 @@ mod tests {
         // Modify state
         store.zones.get_mut(&1).unwrap().volume = 80;
         store.clients.get_mut(&1).unwrap().muted = true;
+        store.clients.get_mut(&1).unwrap().base_volume = 30;
         store.persist().unwrap();
 
         // Load into fresh store
@@ -609,6 +613,24 @@ mod tests {
         store2.load(&path).unwrap();
         assert_eq!(store2.zones[&1].volume, 80);
         assert!(store2.clients[&1].muted);
+        assert_eq!(store2.clients[&1].base_volume, 30);
+    }
+
+    #[test]
+    fn load_clamps_restored_base_volume_to_max_volume() {
+        let config = test_config();
+        let mut store = Store::from_config(&config);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        store.set_persist_path(path.clone());
+        store.clients.get_mut(&1).unwrap().base_volume = 90;
+        store.persist().unwrap();
+
+        let mut store2 = Store::from_config(&config);
+        store2.clients.get_mut(&1).unwrap().max_volume = 60;
+        store2.load(&path).unwrap();
+        assert_eq!(store2.clients[&1].base_volume, 60);
     }
 
     #[test]
