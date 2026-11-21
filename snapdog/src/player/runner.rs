@@ -994,6 +994,12 @@ async fn run(
                     ZoneCommand::SetShuffle(v) => { update_and_notify(store, zone_index, notify, |z| z.shuffle = v).await; }
                     ZoneCommand::ToggleShuffle => { update_and_notify(store, zone_index, notify, |z| z.shuffle = !z.shuffle).await; }
                     ZoneCommand::SetRepeat(mode) => { update_and_notify(store, zone_index, notify, |z| z.repeat = mode).await; }
+                    ZoneCommand::ToggleRepeatMode(mode) => {
+                        update_and_notify(store, zone_index, notify, |z| z.repeat = super::commands::toggled_repeat(z.repeat, mode)).await;
+                    }
+                    ZoneCommand::ClearRepeatMode(mode) => {
+                        update_and_notify(store, zone_index, notify, |z| z.repeat = super::commands::cleared_repeat(z.repeat, mode)).await;
+                    }
                     ZoneCommand::CycleRepeat => {
                         update_and_notify(store, zone_index, notify, |z| {
                             z.repeat = match z.repeat {
