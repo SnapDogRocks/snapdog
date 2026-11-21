@@ -333,7 +333,17 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
 
 // ── Speaker Tab ───────────────────────────────────────────────
 
-function SpeakerTab({ clientId, mode, setMode, abBypass, setAbBypass }: { clientId: number; mode: "off" | "spinorama" | "custom"; setMode: (v: "off" | "spinorama" | "custom") => void; abBypass: boolean; setAbBypass: (v: boolean) => void }) {
+type SpeakerMode = "off" | "spinorama" | "custom";
+
+interface SpeakerTabProps {
+  clientId: number;
+  mode: SpeakerMode;
+  setMode: React.Dispatch<React.SetStateAction<SpeakerMode>>;
+  abBypass: boolean;
+  setAbBypass: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+function SpeakerTab({ clientId, mode, setMode, abBypass, setAbBypass }: SpeakerTabProps) {
   const t = useTranslations("eq");
   const tZone = useTranslations("zone");
   const [search, setSearch] = useState("");
@@ -347,7 +357,7 @@ function SpeakerTab({ clientId, mode, setMode, abBypass, setAbBypass }: { client
   const [customSelected, setCustomSelected] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(MAX_SPEAKER_RESULTS);
   const abBypassRef = useRef(false);
-  const currentConfigRef = useRef<EqConfig | null>(null);
+  const currentConfigRef = useRef<EqConfig>(null);
   const prevAbBypass = useRef(abBypass);
 
   useEffect(() => { abBypassRef.current = abBypass; }, [abBypass]);
