@@ -1180,6 +1180,18 @@ pub struct RawZoneConfig {
     pub seek_interval_secs: Option<u8>,
     /// Presence-triggered playback configuration.
     pub presence: Option<PresenceConfig>,
+    /// Zone volume set at every server start (0 to 100). Without it the zone keeps the volume it
+    /// had before the restart.
+    pub default_volume: Option<i32>,
+    /// Highest zone volume, whatever sets it (0 to 100, default 100).
+    #[serde(default = "default_max_volume")]
+    pub max_volume: i32,
+    /// Whether the zone offers an `AirPlay` receiver (default `true`).
+    #[serde(default = "default_true")]
+    pub airplay: bool,
+    /// Whether the zone offers a Spotify Connect receiver (default `true`).
+    #[serde(default = "default_true")]
+    pub spotify: bool,
 }
 
 /// KNX group addresses for zone control (all optional, explicit config only).
@@ -1592,6 +1604,14 @@ pub struct ZoneConfig {
     pub seek_interval_secs: u8,
     /// Presence-triggered playback configuration.
     pub presence: Option<PresenceConfig>,
+    /// Zone volume set at every server start, within `max_volume`.
+    pub default_volume: Option<i32>,
+    /// Highest zone volume, whatever sets it (0 to 100).
+    pub max_volume: i32,
+    /// Whether the zone offers an `AirPlay` receiver.
+    pub airplay: bool,
+    /// Whether the zone offers a Spotify Connect receiver.
+    pub spotify: bool,
 }
 
 /// Resolved KNX group addresses for a zone (all optional, explicit config only).
