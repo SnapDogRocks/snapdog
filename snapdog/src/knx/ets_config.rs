@@ -26,7 +26,7 @@ use crate::config::{
 /// Icon for ETS-derived zones/clients (ETS programs no icon).
 const ETS_ICON: &str = "🎵";
 /// Default KNX individual address when none is given (15.15.255).
-const DEFAULT_IA: &str = "15.15.255";
+const DEFAULT_IA: &str = crate::config::DEFAULT_KNX_DEVICE_ADDRESS;
 
 /// Build the effective `FileConfig` for KNX **device mode** started without a
 /// TOML config.

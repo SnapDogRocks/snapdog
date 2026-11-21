@@ -588,14 +588,25 @@ where
         OneOrMany::One(one) => vec![one],
         OneOrMany::Many(many) => many,
     };
+    resolve_http_bind(&entries).map_err(serde::de::Error::custom)
+}
+
+/// Turn `[http].bind` entries (addresses, `loopback`, interface names) into addresses.
+///
+/// The same for the file key and for `--bind`. An entry that is neither is kept as written
+/// and fails when the listener binds it.
+///
+/// # Errors
+///
+/// Returns the message of an interface name that resolves to no usable address.
+pub fn resolve_http_bind(entries: &[String]) -> Result<Vec<String>, String> {
     let mut bind = Vec::with_capacity(entries.len());
     for entry in entries {
-        if super::interfaces::is_address_or_known_name(&entry) {
-            let addrs =
-                super::interfaces::resolve_here(&entry).map_err(serde::de::Error::custom)?;
+        if super::interfaces::is_address_or_known_name(entry) {
+            let addrs = super::interfaces::resolve_here(entry)?;
             bind.extend(addrs.iter().map(ToString::to_string));
         } else {
-            bind.push(entry);
+            bind.push(entry.clone());
         }
     }
     Ok(bind)
