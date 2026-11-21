@@ -57,6 +57,14 @@ pub enum ReceiverEvent {
     },
     /// The audio session ended (client disconnected).
     SessionEnded,
+    /// The sender started or resumed playback (`true`), or paused or stopped it (`false`).
+    ///
+    /// A zone that was taken over by a local action accepts this receiver's audio again only
+    /// after it reported playing: the last action wins.
+    PlaybackState {
+        /// Whether the sender is playing.
+        playing: bool,
+    },
     /// Track metadata changed.
     Metadata {
         /// Track title.

@@ -211,8 +211,13 @@ impl shairplay::AudioHandler for BridgeHandler {
                 channels: u16::from(format.channels),
             },
         });
+        let _ = self
+            .event_tx
+            .try_send(ReceiverEvent::PlaybackState { playing: true });
         Box::new(BridgeSession {
             audio_tx: self.audio_tx.clone(),
+            event_tx: self.event_tx.clone(),
+            paused: false,
         })
     }
 
@@ -275,11 +280,27 @@ impl shairplay::AudioHandler for BridgeHandler {
 
 struct BridgeSession {
     audio_tx: AudioSender,
+    event_tx: ReceiverEventTx,
+    /// Set by a flush (the sender paused or seeked); the next audio means it plays again.
+    paused: bool,
 }
 
 impl shairplay::AudioSession for BridgeSession {
     fn audio_process(&mut self, samples: &[f32]) {
+        if self.paused {
+            self.paused = false;
+            let _ = self
+                .event_tx
+                .try_send(ReceiverEvent::PlaybackState { playing: true });
+        }
         let _ = self.audio_tx.try_send(samples.to_vec());
+    }
+
+    fn audio_flush(&mut self) {
+        self.paused = true;
+        let _ = self
+            .event_tx
+            .try_send(ReceiverEvent::PlaybackState { playing: false });
     }
 }
 
