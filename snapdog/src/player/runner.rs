@@ -962,7 +962,7 @@ async fn run(
                             .and_then(|z| z.track.as_ref().map(|t| (t.position_ms, t.duration_ms)))
                             .unwrap_or((0, 0));
                         if dur > 0 {
-                            let target = (pos + offset_ms).clamp(0, dur);
+                            let target = pos.saturating_add(offset_ms).clamp(0, dur);
                             let _ = self_tx.send(ZoneCommand::Seek(target)).await;
                         }
                     }
@@ -976,7 +976,7 @@ async fn run(
                     ZoneCommand::AdjustVolume(delta) => {
                         let new_vol = {
                             let s = store.read().await;
-                            s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| (z.volume + delta).clamp(0, 100))
+                            s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| z.volume.saturating_add(delta).clamp(0, 100))
                         };
                         update_volume_and_notify(store, zone_index, notify, |z| z.volume = new_vol).await;
                         let gid = store.read().await.zones.get(&zone_index).and_then(|z| z.snapcast_group_id.clone());

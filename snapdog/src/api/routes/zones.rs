@@ -18,7 +18,7 @@ use snapdog_common::RepeatMode;
 /// Embedded `SnapDog` icon PNG (1024×1024) used as placeholder when no cover art is available.
 const PLACEHOLDER_COVER: &[u8] = include_bytes!("../../../../assets/snapdog-icon-placeholder.png");
 
-/// Volume value: absolute (e.g. `75`) or relative (e.g. `"+5"`, `"-3"`).
+/// Volume value: absolute (`75` or `"75"`) or relative (a string with a sign, `"+5"` or `"-3"`).
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub enum VolumeValue {
@@ -27,14 +27,40 @@ pub enum VolumeValue {
 }
 
 impl VolumeValue {
+    /// The step of a relative value (a string with a sign), `None` for an absolute one.
+    ///
+    /// # Errors
+    ///
+    /// A string that is not a number.
+    pub fn relative_step(&self) -> Result<Option<i32>, &'static str> {
+        match self {
+            Self::Absolute(_) => Ok(None),
+            Self::Relative(s) => {
+                let s = s.trim();
+                if !s.starts_with(['+', '-']) {
+                    return Ok(None);
+                }
+                s.parse()
+                    .map(Some)
+                    .map_err(|_| "Invalid volume (use e.g. 45, \"45\", \"+5\" or \"-3\")")
+            }
+        }
+    }
+
     pub fn resolve(&self, current: i32) -> Result<i32, &'static str> {
         let v = match self {
             Self::Absolute(v) => *v,
             Self::Relative(s) => {
-                let delta: i32 = s
+                let s = s.trim();
+                let n: i32 = s
                     .parse()
-                    .map_err(|_| "Invalid relative volume (use e.g. \"+5\" or \"-3\")")?;
-                current + delta
+                    .map_err(|_| "Invalid volume (use e.g. 45, \"45\", \"+5\" or \"-3\")")?;
+                // Only a leading sign makes a string relative. A bare number is absolute.
+                if s.starts_with(['+', '-']) {
+                    current.saturating_add(n)
+                } else {
+                    n
+                }
             }
         };
         Ok(v.clamp(0, 100))
@@ -309,7 +335,7 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
 
 /// Set zone volume level
 ///
-/// Updates the volume level of the specified zone. Supports absolute or relative values (e.g. "+5", "-5", or "45").
+/// Updates the volume level of the specified zone. A number or an unsigned string ("45") sets the level, a string with a sign ("+5", "-5") changes it by that amount.
 #[utoipa::path(
     put,
     path = "/api/v1/zones/{zone_index}/volume",
@@ -335,7 +361,13 @@ async fn set_volume(
     let volume = value
         .resolve(current)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    send_cmd(&state, idx, ZoneCommand::SetVolume(volume)).await?;
+    // A relative step is applied in the zone task, in order with other volume commands, so two
+    // quick steps add up instead of both resolving against the same volume.
+    let cmd = value
+        .relative_step()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?
+        .map_or(ZoneCommand::SetVolume(volume), ZoneCommand::AdjustVolume);
+    send_cmd(&state, idx, cmd).await?;
     Ok::<_, ApiError>(Json(volume))
 }
 
@@ -1799,6 +1831,30 @@ pub struct ZoneTrackMetadata {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn volume_value_unsigned_string_is_absolute_and_signed_string_is_relative() {
+        let abs = |v: VolumeValue| v.resolve(30).unwrap();
+        assert_eq!(abs(VolumeValue::Absolute(45)), 45);
+        assert_eq!(abs(VolumeValue::Relative("45".into())), 45);
+        assert_eq!(abs(VolumeValue::Relative("+5".into())), 35);
+        assert_eq!(abs(VolumeValue::Relative("-5".into())), 25);
+        assert_eq!(abs(VolumeValue::Relative("-100".into())), 0);
+    }
+
+    #[test]
+    fn volume_value_overflow_saturates_and_garbage_is_rejected() {
+        assert_eq!(
+            VolumeValue::Relative("+2147483647".into()).resolve(30),
+            Ok(100)
+        );
+        assert_eq!(
+            VolumeValue::Relative("-2147483648".into()).resolve(30),
+            Ok(0)
+        );
+        assert!(VolumeValue::Relative("loud".into()).resolve(30).is_err());
+        assert!(VolumeValue::Relative(String::new()).resolve(30).is_err());
+    }
+
     use super::*;
 
     #[test]

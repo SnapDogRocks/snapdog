@@ -132,15 +132,33 @@ const EQ_FILE: &str = "eq.json";
 /// Coalesces rapid volume changes per client within a time window.
 struct VolumeCoalescer {
     pending: std::collections::HashMap<String, (i32, tokio::time::Instant)>,
+    /// Volumes sent recently, with the time they went out. Snapcast reports them back a moment
+    /// later, and a relative step in between must build on them, not on the old state.
+    recent: std::collections::HashMap<String, (i32, tokio::time::Instant)>,
     window: std::time::Duration,
 }
+
+/// How long a sent volume counts as the current one for relative steps.
+const RECENT_VOLUME_MS: u64 = 1000;
 
 impl VolumeCoalescer {
     fn new(window: std::time::Duration) -> Self {
         Self {
             pending: std::collections::HashMap::new(),
+            recent: std::collections::HashMap::new(),
             window,
         }
+    }
+
+    /// The volume a client is about to get or got a moment ago, if any.
+    fn latest(&self, client_id: &str) -> Option<i32> {
+        if let Some((volume, _)) = self.pending.get(client_id) {
+            return Some(*volume);
+        }
+        self.recent
+            .get(client_id)
+            .filter(|(_, sent)| sent.elapsed() < std::time::Duration::from_millis(RECENT_VOLUME_MS))
+            .map(|(volume, _)| *volume)
     }
 
     fn push(&mut self, client_id: String, volume: i32) {
@@ -158,8 +176,9 @@ impl VolumeCoalescer {
             .filter(|(_, (_, deadline))| now >= *deadline)
             .map(|(id, (vol, _))| (id.clone(), *vol))
             .collect();
-        for (id, _) in &expired {
+        for (id, volume) in &expired {
             self.pending.remove(id);
+            self.recent.insert(id.clone(), (*volume, now));
         }
         expired
     }
@@ -894,12 +913,16 @@ pub async fn run_app() -> Result<()> {
             Some(cmd) = snap_cmd_rx.recv() => {
                 // Convert relative volume adjustments to absolute
                 let cmd = if let player::SnapcastCmd::Client { ref client_id, action: player::ClientAction::AdjustVolume(delta) } = cmd {
-                    let current = store.read().await.clients.values()
-                        .find(|c| c.snapcast_id.as_deref() == Some(client_id))
-                        .map_or(state::DEFAULT_VOLUME, |c| c.base_volume);
+                    // Build on a volume still in flight, so quick relative steps add up.
+                    let current = match coalescer.latest(client_id) {
+                        Some(v) => v,
+                        None => store.read().await.clients.values()
+                            .find(|c| c.snapcast_id.as_deref() == Some(client_id))
+                            .map_or(state::DEFAULT_VOLUME, |c| c.base_volume),
+                    };
                     player::SnapcastCmd::Client {
                         client_id: client_id.clone(),
-                        action: player::ClientAction::Volume((current + delta).clamp(0, 100)),
+                        action: player::ClientAction::Volume(current.saturating_add(delta).clamp(0, 100)),
                     }
                 } else {
                     cmd
