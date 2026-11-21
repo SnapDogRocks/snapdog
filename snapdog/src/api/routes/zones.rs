@@ -1230,12 +1230,6 @@ async fn play_url(
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct PlaylistPayload {
-    /// Unified playlist index.
-    ///
-    /// Deprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
-    #[schema(deprecated)]
-    #[allow(clippy::doc_markdown)]
-    id: Option<usize>,
     /// Unified playlist index (0-based).
     index: Option<usize>,
     #[serde(default)]
@@ -1243,15 +1237,11 @@ pub struct PlaylistPayload {
 }
 
 impl PlaylistPayload {
-    /// The playlist index from `index` or the deprecated `id`. Both must agree if both are set.
+    /// The playlist index. A body without `index` (for example one that still sends only the
+    /// `id` removed in 1.0) is refused with a message that names the field.
     fn index(&self) -> Result<usize, ApiError> {
-        match (self.index, self.id) {
-            (Some(i), Some(d)) if i != d => Err(ApiError::BadRequest(
-                "`index` and `id` differ, send `index` only".into(),
-            )),
-            (Some(i), _) | (None, Some(i)) => Ok(i),
-            (None, None) => Err(ApiError::BadRequest("`index` is required".into())),
-        }
+        self.index
+            .ok_or_else(|| ApiError::BadRequest("`index` is required".into()))
     }
 }
 
@@ -1849,32 +1839,27 @@ mod tests {
 
     #[test]
     fn playlist_payload_defaults_to_first_track() {
-        let req: PlaylistPayload = serde_json::from_str(r#"{"id":2}"#).unwrap();
+        let req: PlaylistPayload = serde_json::from_str(r#"{"index":2}"#).unwrap();
         assert_eq!(req.index().unwrap(), 2);
         assert_eq!(req.track, 0);
     }
 
     #[test]
     fn playlist_payload_accepts_start_track() {
-        let req: PlaylistPayload = serde_json::from_str(r#"{"id":2,"track":7}"#).unwrap();
+        let req: PlaylistPayload = serde_json::from_str(r#"{"index":2,"track":7}"#).unwrap();
         assert_eq!(req.index().unwrap(), 2);
         assert_eq!(req.track, 7);
     }
 
-    /// MED-M1-A2a: `index`, the deprecated `id`, both equal work, both different and neither fail.
+    /// Version 1.0 removed `id`: only `index` counts. A client that still sends `id` next to
+    /// `index` is not affected, one that sends only `id` gets a 400 that names `index`.
     #[test]
-    fn playlist_payload_index_and_deprecated_id() {
+    fn playlist_payload_takes_index_and_ignores_a_removed_id() {
         let parse = |s: &str| serde_json::from_str::<PlaylistPayload>(s).unwrap().index();
         assert_eq!(parse(r#"{"index":3}"#).unwrap(), 3);
-        assert_eq!(parse(r#"{"id":3}"#).unwrap(), 3);
-        assert_eq!(parse(r#"{"id":3,"index":3}"#).unwrap(), 3);
-        assert!(matches!(
-            parse(r#"{"id":3,"index":4}"#),
-            Err(ApiError::BadRequest(_))
-        ));
-        assert!(matches!(
-            parse(r#"{"track":1}"#),
-            Err(ApiError::BadRequest(_))
-        ));
+        assert_eq!(parse(r#"{"id":9,"index":3}"#).unwrap(), 3);
+        for body in [r#"{"id":3}"#, r#"{"track":1}"#] {
+            assert!(matches!(parse(body), Err(ApiError::BadRequest(m)) if m.contains("index")));
+        }
     }
 }

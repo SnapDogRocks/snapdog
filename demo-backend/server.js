@@ -198,7 +198,6 @@ const PLAYLISTS = [
 const plInfoList = PLAYLISTS.map((pl) => ({
   index: pl.index,
   playlist_id: pl.playlist_id,
-  id: pl.index, // deprecated alias of `index`, kept for old clients
   name: pl.name,
   song_count: pl.tracks.length,
   duration: pl.tracks.reduce((acc, t) => acc + t.duration, 0),
@@ -722,7 +721,6 @@ function buildWsZoneChanged(zoneId) {
     track_count: meta ? meta.playlist_track_count : null,
     playlist_index: meta ? meta.playlist_index : null,
     playlist_id: meta ? meta.playlist_id : null,
-    playlist: meta ? meta.playlist_index : null, // deprecated alias of `playlist_index`
     playlist_name: meta ? meta.playlist_name : null,
     playlist_total: meta ? meta.playlist_total : null,
     can_playlist_next: meta ? meta.can_playlist_next : false,
@@ -1335,15 +1333,12 @@ app.post('/api/v1/zones/:id/play/playlist', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   
-  // `index` is the contract field, `id` the deprecated alias. Both with
-  // different values is a 400, like on the real server.
+  // `index` is required, as on the real server. The `id` removed in 1.0 is ignored.
   const body = req.body || {};
-  const hasIndex = body.index !== undefined && body.index !== null;
-  const hasId = body.id !== undefined && body.id !== null;
-  if (hasIndex && hasId && Number(body.index) !== Number(body.id)) {
-    return res.status(400).json({ error: 'index and id differ' });
+  if (body.index === undefined || body.index === null) {
+    return res.status(400).json({ error: '`index` is required' });
   }
-  const plIdx = Number(hasIndex ? body.index : body.id);
+  const plIdx = Number(body.index);
   const trackIdx = parseInt(body.track) || 0;
   const pl = Number.isInteger(plIdx) ? PLAYLISTS.find(p => p.index === plIdx) : undefined;
   if (pl) startPlaylist(z, pl, trackIdx);

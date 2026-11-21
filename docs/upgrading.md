@@ -3,6 +3,22 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## SnapDog 1.0: the deprecated playlist `id` and `zone_changed.playlist` are removed (breaks `/api/v1`)
+
+This change **breaks compatibility of `/api/v1`** for clients that still use the names deprecated in
+0.31.0 (see "Media API: `playlist_id` and `index`" below).
+
+- `PlaylistInfo` and `PlaylistDetails` (`GET /media/playlists`, `GET /media/playlists/{index}` and
+  the `by-id` paths) no longer carry `id`. Read `index`, and `playlist_id` to address a playlist.
+- The body of `POST /zones/{zone_index}/play/playlist` takes `index` only. A body with only `id`
+  answers 400 `` `index` is required ``. A client that sends `id` next to `index` is not affected,
+  `id` is ignored.
+- The WebSocket event `zone_changed` no longer carries `playlist`. Read `playlist_index`.
+
+The Home Assistant integration, `pysnapdog`, the web interface and the Apple and Android clients
+moved to the new names before this release. Older TestFlight builds of the Apple app and Android
+builds from before 0.31.0 send only `id` and cannot start a playlist on a 1.0 server.
+
 ## WebUI: current interface is now the default
 
 The current interface is served at `/` by default. To keep the legacy interface at `/`, pass
@@ -75,12 +91,12 @@ or MQTT.
 
 ### Deprecated, and removed with 1.0
 
-`id` in `PlaylistInfo`, `PlaylistDetails` and the play body, and `playlist` in `ZoneChanged`, are
-deprecated. They are removed with SnapDog 1.0, which **breaks compatibility of `/api/v1`** for
+`id` in `PlaylistInfo`, `PlaylistDetails` and the play body, and `playlist` in `ZoneChanged`, were
+deprecated. They are removed in SnapDog 1.0 (see the section at the top), which **breaks compatibility of `/api/v1`** for
 clients that still read them. `/api/v1` is the path version of the API and not a stability
-promise, and the index paths keep working. The OpenAPI and AsyncAPI documents mark each of them
-`deprecated`, and a check in the release pipeline refuses every 1.x version (also pre-releases)
-while one is left.
+promise, and the index paths keep working. Until then the OpenAPI and AsyncAPI documents marked each
+of them `deprecated`, and a check in the release pipeline refused every 1.x version (also
+pre-releases) while one was left.
 
 ### What to do
 
