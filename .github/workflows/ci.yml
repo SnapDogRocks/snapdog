@@ -65,6 +65,24 @@ jobs:
               - 'openapi.json'
               - '.config/**'
               - 'rust-toolchain*'
+              # Non-Rust files that Rust tests read or embed: a change to one of them must run
+              # the test that guards it. Kept in step with GUARDED_FILES in
+              # snapdog/tests/ci_guard.rs, which fails when a file listed there is not matched.
+              - '.github/workflows/**'
+              - '.github/scripts/**'
+              - 'README.md'
+              - 'snapdog.example.toml'
+              - 'docs/api/**'
+              - 'aur/**'
+              - 'assets/**'
+              - 'knx/**'
+              - 'xtask/i18n/**'
+              - 'snapdog/assets/**'
+              - 'snapdog/dbus/**'
+              - 'snapdog/debian/**'
+              - 'snapdog/systemd/**'
+              - 'snapdog-client/dbus/**'
+              - 'snapdog-client/debian/**'
             webui:
               - 'webui/**'
             knx:
@@ -329,6 +347,8 @@ jobs:
           docker buildx build --check --file deploy/updater/Dockerfile deploy/updater
       - name: Test updater control plane
         run: node --test deploy/updater/control.test.mjs
+      - name: Test updater script
+        run: bash deploy/updater/test-update.sh
 
   integration-tests:
     name: Integration Tests
