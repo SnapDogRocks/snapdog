@@ -471,7 +471,7 @@ fn zone_components(
     merge(
         &mut playlist,
         json!({
-            "min": 0, "max": 999, "step": 1, "mode": "box",
+            "min": 0, "max": super::parse::MAX_PLAYLIST_INDEX, "step": 1, "mode": "box",
             "value_template":
                 "{{ value_json.playlist_index if value_json.playlist_index is not none else none }}",
             "command_topic": command("playlist"),
