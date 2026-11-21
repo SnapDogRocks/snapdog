@@ -51,6 +51,11 @@ export function VolumeSlider({
   const lastSentVolumeRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
   const pointerActiveRef = useRef(false);
+  // Radix commits only when the value at release differs from the one at pointer-down. A drag
+  // that ends where it started (or at the max_volume cap) is committed here instead, so the
+  // slider never stays in the dragging state and keeps following the server.
+  const committedSinceDownRef = useRef(false);
+  const lastValueRef = useRef<number | null>(null);
   const unmuteRequestedRef = useRef(false);
   const effectiveMax = clampVolume(max, ABSOLUTE_MAX_VOLUME);
   const displayVolume = clampVolume(localVolume, effectiveMax);
@@ -78,7 +83,10 @@ export function VolumeSlider({
     (value: number[]) => {
       if (value[0] === undefined) return;
       const v = clampVolume(value[0], effectiveMax);
-      if (pointerActiveRef.current) setOptimistic(v);
+      if (pointerActiveRef.current) {
+        lastValueRef.current = v;
+        setOptimistic(v);
+      }
       if (muted && !unmuteRequestedRef.current) {
         unmuteRequestedRef.current = true;
         onUnmute();
@@ -108,6 +116,7 @@ export function VolumeSlider({
         unmuteRequestedRef.current = true;
         onUnmute();
       }
+      committedSinceDownRef.current = true;
       clearTimeout(timerRef.current);
       pendingVolumeRef.current = null;
       commit(v);
@@ -130,10 +139,22 @@ export function VolumeSlider({
   const handlePointerDown = useCallback(() => {
     pointerActiveRef.current = true;
     unmuteRequestedRef.current = false;
+    committedSinceDownRef.current = false;
+    lastValueRef.current = null;
   }, []);
+
+  const handleCommitRef = useRef(handleCommit);
+  useEffect(() => { handleCommitRef.current = handleCommit; }, [handleCommit]);
 
   const handlePointerUp = useCallback(() => {
     pointerActiveRef.current = false;
+    // Runs after the Radix pointer-up handler, which commits a changed value synchronously.
+    setTimeout(() => {
+      const last = lastValueRef.current;
+      lastValueRef.current = null;
+      if (!mountedRef.current || committedSinceDownRef.current || last === null) return;
+      handleCommitRef.current([last]);
+    }, 0);
   }, []);
 
   const iconSize = compact ? 14 : 18;
