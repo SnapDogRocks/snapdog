@@ -170,6 +170,21 @@ async fn send_cmd(state: &SharedState, idx: usize, cmd: ZoneCommand) -> Result<(
         .map_err(|e| ApiError::Internal(e.to_string()))
 }
 
+/// Send a command whose index the zone checks, and turn a missing index into a 404.
+async fn send_checked(
+    state: &SharedState,
+    idx: usize,
+    cmd: ZoneCommand,
+    missing: &'static str,
+) -> Result<(), ApiError> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    send_cmd(state, idx, ZoneCommand::Checked(Box::new(cmd), tx)).await?;
+    match rx.await {
+        Ok(false) => Err(ApiError::NotFound(missing)),
+        _ => Ok(()),
+    }
+}
+
 fn require_http_url(url: &str) -> Result<(), ApiError> {
     if url::Url::parse(url)
         .is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.host().is_some())
@@ -601,7 +616,7 @@ async fn set_zone_playlist_by_id(
     request_body = usize,
     responses(
         (status = 200, description = "Playlist changed successfully"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -610,7 +625,7 @@ async fn set_playlist(
     Path(idx): Path<usize>,
     Json(v): Json<usize>,
 ) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::SetPlaylist(v, 0)).await
+    send_checked(&state, idx, ZoneCommand::SetPlaylist(v, 0), "playlist").await
 }
 
 /// Switch to next playlist
@@ -1202,7 +1217,8 @@ async fn get_track_playing(
     request_body = i32,
     responses(
         (status = 200, description = "Track play command sent"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 400, description = "Negative track index", body = ErrorBody),
+        (status = 404, description = "Zone not found, no active playlist, or no such track", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1211,7 +1227,9 @@ async fn play_track(
     Path(idx): Path<usize>,
     Json(v): Json<i32>,
 ) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::SetTrack(v as usize)).await
+    let track = usize::try_from(v)
+        .map_err(|_| ApiError::BadRequest("track index must be non-negative".into()))?;
+    send_checked(&state, idx, ZoneCommand::SetTrack(track), "track").await
 }
 
 /// Play arbitrary audio stream URL
@@ -1289,7 +1307,7 @@ pub struct PlaylistByIdPayload {
     request_body = PlaylistPayload,
     responses(
         (status = 200, description = "Playlist playback triggered"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1299,7 +1317,13 @@ async fn play_subsonic_playlist(
     Json(v): Json<PlaylistPayload>,
 ) -> impl IntoResponse {
     let index = v.index()?;
-    send_cmd(&state, idx, ZoneCommand::PlayPlaylist(index, v.track)).await
+    send_checked(
+        &state,
+        idx,
+        ZoneCommand::PlayPlaylist(index, v.track),
+        "playlist",
+    )
+    .await
 }
 
 /// Play playlist by `playlist_id`
@@ -1359,7 +1383,13 @@ async fn play_playlist_track(
 ) -> impl IntoResponse {
     let track = usize::try_from(v)
         .map_err(|_| ApiError::BadRequest("track index must be non-negative".into()))?;
-    send_cmd(&state, zone, ZoneCommand::PlayPlaylist(playlist, track)).await
+    send_checked(
+        &state,
+        zone,
+        ZoneCommand::PlayPlaylist(playlist, track),
+        "playlist",
+    )
+    .await
 }
 
 /// Play Subsonic track by ID

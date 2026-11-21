@@ -3698,7 +3698,7 @@
             }
           },
           "404": {
-            "description": "Zone not found",
+            "description": "Zone or playlist not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -3966,6 +3966,16 @@
           "200": {
             "description": "Track play command sent"
           },
+          "400": {
+            "description": "Negative track index",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3973,7 +3983,7 @@
             }
           },
           "404": {
-            "description": "Zone not found",
+            "description": "Zone not found, no active playlist, or no such track",
             "content": {
               "application/json": {
                 "schema": {
@@ -4189,7 +4199,7 @@
             }
           },
           "404": {
-            "description": "Zone not found",
+            "description": "Zone or playlist not found",
             "content": {
               "application/json": {
                 "schema": {

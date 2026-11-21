@@ -84,7 +84,10 @@ pub struct TestApp {
     /// Direct handle to the in-memory store for setup/inspection.
     pub store: state::SharedState,
     /// Per-zone receivers capturing emitted [`ZoneCommand`]s (1-based index).
-    pub zone_rx: HashMap<usize, mpsc::Receiver<ZoneCommand>>,
+    pub zone_rx: HashMap<usize, Mutex<mpsc::Receiver<ZoneCommand>>>,
+    /// Commands taken off the receivers while a request was running (checked commands are
+    /// answered there and stored unwrapped), returned first by [`TestApp::drain_zone`].
+    zone_buf: Mutex<HashMap<usize, Vec<ZoneCommand>>>,
     /// Receiver capturing emitted [`SnapcastCmd`]s.
     pub snap_rx: mpsc::Receiver<SnapcastCmd>,
     /// Receiver tapping the WebSocket notification broadcast (pre-serialized JSON).
@@ -107,7 +110,7 @@ pub fn build_test_app(config: AppConfig) -> TestApp {
     for z in &config.zones {
         let (tx, rx) = mpsc::channel::<ZoneCommand>(64);
         zone_commands.insert(z.index, tx);
-        zone_rx.insert(z.index, rx);
+        zone_rx.insert(z.index, Mutex::new(rx));
     }
     let (snap_tx, snap_rx) = mpsc::channel::<SnapcastCmd>(64);
 
@@ -128,6 +131,7 @@ pub fn build_test_app(config: AppConfig) -> TestApp {
         state,
         store,
         zone_rx,
+        zone_buf: Mutex::new(HashMap::new()),
         snap_rx,
         notify_rx,
         _tmp: tmp,
@@ -158,7 +162,7 @@ impl TestApp {
                 .expect("build request"),
             None => builder.body(Body::empty()).expect("build request"),
         };
-        let resp = router.oneshot(req).await.expect("router responds");
+        let resp = self.serve(router, req).await;
         let status = resp.status();
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
@@ -181,7 +185,7 @@ impl TestApp {
             .uri(uri)
             .body(Body::empty())
             .expect("build request");
-        let resp = router.oneshot(req).await.expect("router responds");
+        let resp = self.serve(router, req).await;
         let status = resp.status();
         let total = resp
             .headers()
@@ -200,14 +204,51 @@ impl TestApp {
     }
 
     /// Drain and return all [`ZoneCommand`]s captured for a zone so far.
+    #[allow(clippy::needless_pass_by_ref_mut)] // `&mut` as before, the tests hold `mut app`
     pub fn drain_zone(&mut self, zone: usize) -> Vec<ZoneCommand> {
-        let mut out = Vec::new();
-        if let Some(rx) = self.zone_rx.get_mut(&zone) {
+        self.take_zone_commands();
+        self.zone_buf
+            .lock()
+            .unwrap()
+            .remove(&zone)
+            .unwrap_or_default()
+    }
+
+    /// Run a request through the router.
+    ///
+    /// A handler that sends a checked command waits for the zone's answer. No zone player runs
+    /// here, so the commands are taken off the channels meanwhile: a checked one is answered
+    /// "accepted" and stored unwrapped, as a test expects to see it.
+    async fn serve(&self, router: axum::Router, req: Request<Body>) -> axum::response::Response {
+        let fut = router.oneshot(req);
+        tokio::pin!(fut);
+        let resp = loop {
+            tokio::select! {
+                r = &mut fut => break r.expect("router responds"),
+                () = tokio::time::sleep(std::time::Duration::from_millis(2)) => self.take_zone_commands(),
+            }
+        };
+        self.take_zone_commands();
+        resp
+    }
+
+    /// Move queued zone commands into the buffer, answering checked ones as accepted.
+    #[allow(clippy::significant_drop_tightening)] // both locks are needed to the end
+    fn take_zone_commands(&self) {
+        let mut buf = self.zone_buf.lock().unwrap();
+        for (zone, rx) in &self.zone_rx {
+            let mut rx = rx.lock().unwrap();
             while let Ok(cmd) = rx.try_recv() {
-                out.push(cmd);
+                let cmd = match cmd {
+                    ZoneCommand::Checked(inner, reply) => {
+                        let _ = reply.send(true);
+                        *inner
+                    }
+                    other => other,
+                };
+                buf.entry(*zone).or_default().push(cmd);
             }
         }
-        out
     }
 
     /// Drain and return all [`SnapcastCmd`]s captured so far.

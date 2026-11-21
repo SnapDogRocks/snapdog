@@ -527,7 +527,18 @@ async fn run(
     loop {
         tokio::select! {
             Some(cmd) = commands.recv() => {
+                // A checked command carries a reply channel: answer whether its index exists.
+                let (cmd, mut reply) = match cmd {
+                    ZoneCommand::Checked(inner, reply) => (*inner, Some(reply)),
+                    other => (other, None),
+                };
+                let mut answer = |ok: bool| {
+                    if let Some(r) = reply.take() {
+                        let _ = r.send(ok);
+                    }
+                };
                 match cmd {
+                    ZoneCommand::Checked(..) => answer(false), // a checked command is never nested
                     ZoneCommand::PlaySubsonicPlaylist(playlist_id, track_idx) => {
                         if !may_start_local_playback(&source, config.audio.source_conflict) {
                             tracing::info!(zone = zone_index, "Playback blocked: receiver has priority");
@@ -605,6 +616,15 @@ async fn run(
                         update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::Url; }).await;
                     }
                     ZoneCommand::SetTrack(track_idx) => {
+                        let exists = match source {
+                            ActiveSource::Radio { .. } => track_idx < config.radios.len(),
+                            ActiveSource::SubsonicPlaylist { track_count, .. } => track_idx < track_count,
+                            _ => false,
+                        };
+                        answer(exists);
+                        if !exists {
+                            tracing::warn!(zone = zone_index, track = track_idx, "No such track in the active playlist");
+                        }
                         if let ActiveSource::Radio { .. } = source {
                             if track_idx < config.radios.len()
                                 && let Some(radio) = config.radios.get(track_idx) {
@@ -766,8 +786,17 @@ async fn run(
                         let total_count = config.unified_playlist_count(subsonic_playlists.len());
                         if total_count == 0 {
                             tracing::warn!(zone = zone_index, "No playlists available");
+                            answer(false);
                             continue;
                         }
+                        if let ZoneCommand::SetPlaylist(i, _) | ZoneCommand::PlayPlaylist(i, _) = cmd
+                            && i >= total_count
+                        {
+                            tracing::warn!(zone = zone_index, playlist = i, total = total_count, "No such playlist");
+                            answer(false);
+                            continue;
+                        }
+                        answer(true);
 
                         let has_radio = config.has_radio_playlist();
                         let current_unified = match &source {
@@ -782,7 +811,7 @@ async fn run(
                         let (target_unified, start_track) = match cmd {
                             ZoneCommand::NextPlaylist => ((current_unified + 1) % total_count, 0),
                             ZoneCommand::PreviousPlaylist => (if current_unified == 0 { total_count - 1 } else { current_unified - 1 }, 0),
-                            ZoneCommand::SetPlaylist(i, t) | ZoneCommand::PlayPlaylist(i, t) => (i.min(total_count - 1), t),
+                            ZoneCommand::SetPlaylist(i, t) | ZoneCommand::PlayPlaylist(i, t) => (i, t),
                             ZoneCommand::SetPlaylistById(ref id, t) | ZoneCommand::PlayPlaylistById(ref id, t) => {
                                 let ids: Vec<&str> = subsonic_playlists.iter().map(|p| p.id.as_str()).collect();
                                 let Some(i) = config.playlist_index_by_id(id, &ids) else {
