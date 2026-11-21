@@ -5,11 +5,18 @@
 //!
 //! Caches Subsonic track downloads on disk for instant seekable playback and
 //! look-ahead prefetch. Files transition through `.partial` → complete states.
+//!
+//! One [`TrackCache`] is shared by all zones (clones share the index), so there is one index
+//! and one size limit. At most one download per track runs at a time: a second caller gets
+//! no writer and streams without caching. Every writer has its own partial file and indexes
+//! only what it wrote itself, so an entry is never shorter than its source.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use anyhow::{Context, Result, bail};
@@ -33,17 +40,8 @@ pub enum CacheEntry {
         /// MIME content type (e.g., "audio/flac").
         content_type: String,
     },
-    /// Download in progress — partial file available.
-    Partial {
-        /// Path to the partial file on disk.
-        path: PathBuf,
-        /// MIME content type (may be empty if unknown).
-        content_type: String,
-        /// Bytes downloaded so far.
-        bytes_written: u64,
-        /// Total expected bytes, if known.
-        total_bytes: Option<u64>,
-    },
+    /// A download of this track is in progress, not yet usable.
+    Downloading,
     /// Not in cache.
     Miss,
 }
@@ -99,8 +97,18 @@ impl CacheWriter {
     ///
     /// # Errors
     ///
-    /// Returns an error if the file rename fails.
+    /// Returns an error if fewer bytes were written than the server announced (the partial
+    /// file is removed, nothing is indexed) or the file rename fails.
     pub fn complete(mut self) -> Result<PathBuf> {
+        if let Some(total) = self.total_bytes
+            && total != self.bytes_written
+        {
+            // Drop removes the partial file.
+            bail!(
+                "Download incomplete: {} of {total} bytes, not cached",
+                self.bytes_written
+            );
+        }
         self.completed = true;
         self.file.take(); // close file before rename
         fs::rename(&self.partial_path, &self.final_path)
@@ -129,6 +137,11 @@ impl Drop for CacheWriter {
         if !self.completed && self.partial_path.exists() {
             let _ = std::fs::remove_file(&self.partial_path);
         }
+        self.cache
+            .in_flight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.track_id);
     }
 }
 
@@ -139,6 +152,10 @@ impl Drop for CacheWriter {
 pub struct TrackCache {
     config: SubsonicCacheConfig,
     index: std::sync::Arc<Mutex<CacheIndex>>,
+    /// Track ids with a writer alive.
+    in_flight: std::sync::Arc<Mutex<HashSet<String>>>,
+    /// Source of unique partial file names.
+    next_writer: std::sync::Arc<AtomicU64>,
 }
 
 impl TrackCache {
@@ -159,9 +176,20 @@ impl TrackCache {
             CacheIndex::default()
         };
 
+        // Partial files left by an earlier run belong to no writer any more.
+        if let Ok(dir) = fs::read_dir(&config.path) {
+            for entry in dir.flatten() {
+                if entry.path().extension().is_some_and(|e| e == PARTIAL_EXT) {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+
         Ok(Self {
             config: config.clone(),
             index: std::sync::Arc::new(Mutex::new(index)),
+            in_flight: std::sync::Arc::default(),
+            next_writer: std::sync::Arc::default(),
         })
     }
 
@@ -171,8 +199,6 @@ impl TrackCache {
             .index
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let filename_stem = filename_stem_for_track_id(track_id);
-
         // Check for complete file
         if let Some(pos) = idx.entries.iter().position(|e| e.track_id == track_id) {
             let path = Path::new(&self.config.path).join(&idx.entries[pos].filename);
@@ -187,22 +213,19 @@ impl TrackCache {
             drop(idx);
         }
 
-        // Check for partial file
-        let partial = Path::new(&self.config.path).join(format!("{filename_stem}.{PARTIAL_EXT}"));
-        if partial.exists() {
-            let bytes_written = partial.metadata().map_or(0, |m| m.len());
-            return CacheEntry::Partial {
-                path: partial,
-                content_type: String::new(), // unknown for partial without index
-                bytes_written,
-                total_bytes: None,
-            };
+        if self
+            .in_flight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(track_id)
+        {
+            return CacheEntry::Downloading;
         }
-
         CacheEntry::Miss
     }
 
-    /// Start downloading a track to cache. Returns a writer handle.
+    /// Start downloading a track to cache. Returns a writer handle, or `None` while another
+    /// download of the same track is running (the caller streams without caching then).
     ///
     /// # Errors
     ///
@@ -212,7 +235,7 @@ impl TrackCache {
         track_id: &str,
         content_type: &str,
         total_bytes: Option<u64>,
-    ) -> Result<CacheWriter> {
+    ) -> Result<Option<CacheWriter>> {
         if let Some(total_bytes) = total_bytes
             && total_bytes > self.max_bytes()
         {
@@ -221,19 +244,38 @@ impl TrackCache {
                 self.max_bytes()
             );
         }
+        if !self
+            .in_flight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(track_id.to_owned())
+        {
+            return Ok(None);
+        }
+        let release = || {
+            self.in_flight
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(track_id);
+        };
         let ext = ext_for_content_type(content_type);
         let filename_stem = filename_stem_for_track_id(track_id);
         let final_path = Path::new(&self.config.path).join(format!("{filename_stem}.{ext}"));
+        let writer_id = self.next_writer.fetch_add(1, Ordering::Relaxed);
         let partial_path =
-            Path::new(&self.config.path).join(format!("{filename_stem}.{PARTIAL_EXT}"));
+            Path::new(&self.config.path).join(format!("{filename_stem}.{writer_id}.{PARTIAL_EXT}"));
 
-        // Remove any existing partial
-        let _ = fs::remove_file(&partial_path);
+        let file = match fs::File::create(&partial_path) {
+            Ok(file) => file,
+            Err(e) => {
+                release();
+                return Err(e).with_context(|| {
+                    format!("Failed to create cache file: {}", partial_path.display())
+                });
+            }
+        };
 
-        let file = fs::File::create(&partial_path)
-            .with_context(|| format!("Failed to create cache file: {}", partial_path.display()))?;
-
-        Ok(CacheWriter {
+        Ok(Some(CacheWriter {
             file: Some(file),
             partial_path,
             final_path,
@@ -243,7 +285,7 @@ impl TrackCache {
             total_bytes,
             cache: self.clone(),
             completed: false,
-        })
+        }))
     }
 
     /// Check if a track is fully cached.
@@ -407,7 +449,8 @@ mod tests {
 
         let mut writer = cache
             .start_download("track1", "audio/mpeg", Some(1024))
-            .unwrap();
+            .unwrap()
+            .expect("no download of this track in flight");
         writer.write(&[0u8; 512]).unwrap();
         writer.write(&[1u8; 512]).unwrap();
         assert_eq!(writer.bytes_written(), 1024);
@@ -439,12 +482,18 @@ mod tests {
 
         let cache = TrackCache::new(&config).unwrap();
 
-        let mut w = cache.start_download("old", "audio/mpeg", None).unwrap();
+        let mut w = cache
+            .start_download("old", "audio/mpeg", None)
+            .unwrap()
+            .expect("no download of this track in flight");
         w.write(&vec![0u8; 700 * 1024]).unwrap();
         w.complete().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        let mut w = cache.start_download("new", "audio/mpeg", None).unwrap();
+        let mut w = cache
+            .start_download("new", "audio/mpeg", None)
+            .unwrap()
+            .expect("no download of this track in flight");
         w.write(&vec![0u8; 700 * 1024]).unwrap();
         w.complete().unwrap();
 
@@ -463,13 +512,19 @@ mod tests {
         let cache = TrackCache::new(&config).unwrap();
 
         // Add track_a (oldest)
-        let mut w = cache.start_download("track_a", "audio/flac", None).unwrap();
+        let mut w = cache
+            .start_download("track_a", "audio/flac", None)
+            .unwrap()
+            .expect("no download of this track in flight");
         w.write(&[0u8; 100]).unwrap();
         w.complete().unwrap();
 
         // Add track_b (newer)
         std::thread::sleep(std::time::Duration::from_millis(10));
-        let mut w = cache.start_download("track_b", "audio/flac", None).unwrap();
+        let mut w = cache
+            .start_download("track_b", "audio/flac", None)
+            .unwrap()
+            .expect("no download of this track in flight");
         w.write(&[0u8; 100]).unwrap();
         w.complete().unwrap();
 
@@ -488,7 +543,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = TrackCache::new(&test_config(&dir)).unwrap();
 
-        let mut w = cache.start_download("corrupt", "audio/mpeg", None).unwrap();
+        let mut w = cache
+            .start_download("corrupt", "audio/mpeg", None)
+            .unwrap()
+            .expect("no download of this track in flight");
         w.write(&[0u8; 50]).unwrap();
         let path = w.complete().unwrap();
         assert!(path.exists());
@@ -514,7 +572,10 @@ mod tests {
         let cache = TrackCache::new(&test_config(&dir)).unwrap();
 
         // Create a complete entry
-        let mut w = cache.start_download("stale", "audio/flac", None).unwrap();
+        let mut w = cache
+            .start_download("stale", "audio/flac", None)
+            .unwrap()
+            .expect("no download of this track in flight");
         w.write(&[0u8; 10]).unwrap();
         let path = w.complete().unwrap();
 
@@ -539,7 +600,8 @@ mod tests {
         {
             let mut writer = cache
                 .start_download("abandoned", "audio/ogg", None)
-                .unwrap();
+                .unwrap()
+                .expect("no download of this track in flight");
             writer.write(&[0u8; 50]).unwrap();
             partial_path = writer.partial_path().to_path_buf();
             assert!(partial_path.exists());
@@ -557,7 +619,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = TrackCache::new(&test_config(&dir)).unwrap();
 
-        let mut writer = cache.start_download("aborted", "audio/wav", None).unwrap();
+        let mut writer = cache
+            .start_download("aborted", "audio/wav", None)
+            .unwrap()
+            .expect("no download of this track in flight");
         writer.write(&[0u8; 50]).unwrap();
         let partial_path = writer.partial_path().to_path_buf();
         assert!(partial_path.exists());
@@ -571,7 +636,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = TrackCache::new(&test_config(&dir)).unwrap();
 
-        let mut writer = cache.start_download("good", "audio/flac", None).unwrap();
+        let mut writer = cache
+            .start_download("good", "audio/flac", None)
+            .unwrap()
+            .expect("no download of this track in flight");
         writer.write(&[0u8; 50]).unwrap();
         let final_path = writer.complete().unwrap();
 
@@ -579,30 +647,106 @@ mod tests {
         assert!(final_path.exists());
     }
 
-    // ── Re-download overwrites partial ────────────────────────
+    // ── One download per track, one index for all users (#495) ──
 
     #[test]
-    fn start_download_removes_existing_partial() {
+    fn a_second_download_of_the_same_track_gets_no_writer() {
         let dir = tempfile::tempdir().unwrap();
         let cache = TrackCache::new(&test_config(&dir)).unwrap();
+        let other_zone = cache.clone();
 
-        // Create a partial file
-        let mut w1 = cache.start_download("retry", "audio/mpeg", None).unwrap();
-        w1.write(&[0xAA; 100]).unwrap();
-        let partial = w1.partial_path().to_path_buf();
-        // Don't complete — just drop (simulating interrupted download)
-        std::mem::forget(w1); // prevent Drop from cleaning up for this test
-        assert!(partial.exists());
+        let mut first = cache
+            .start_download("t", "audio/mpeg", Some(6))
+            .unwrap()
+            .expect("first writer");
+        assert!(
+            other_zone
+                .start_download("t", "audio/mpeg", Some(6))
+                .unwrap()
+                .is_none(),
+            "a running download is not started twice"
+        );
+        assert!(matches!(other_zone.get("t"), CacheEntry::Downloading));
+        first.write(b"abc").unwrap();
+        drop(first); // cancelled: no entry, no file, and the track is free again
+        assert!(matches!(cache.get("t"), CacheEntry::Miss));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
 
-        // Start a new download for the same track
-        let mut w2 = cache.start_download("retry", "audio/mpeg", None).unwrap();
-        w2.write(&[0xBB; 50]).unwrap();
-        assert_eq!(w2.bytes_written(), 50); // fresh start, not appended
+        let mut again = other_zone
+            .start_download("t", "audio/mpeg", Some(6))
+            .unwrap()
+            .expect("free after the first writer is gone");
+        again.write(b"abcdef").unwrap();
+        again.complete().unwrap();
+        match cache.get("t") {
+            CacheEntry::Complete { path, .. } => assert_eq!(fs::read(path).unwrap(), b"abcdef"),
+            _ => panic!("expected a complete entry"),
+        }
+    }
 
-        let path = w2.complete().unwrap();
-        let data = fs::read(&path).unwrap();
-        assert_eq!(data.len(), 50);
-        assert!(data.iter().all(|&b| b == 0xBB));
+    #[test]
+    fn a_download_shorter_than_announced_is_not_indexed() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TrackCache::new(&test_config(&dir)).unwrap();
+        let mut w = cache
+            .start_download("short", "audio/mpeg", Some(100))
+            .unwrap()
+            .expect("writer");
+        w.write(&[0u8; 40]).unwrap();
+        assert!(w.complete().is_err());
+        assert!(matches!(cache.get("short"), CacheEntry::Miss));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn writers_use_distinct_partial_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TrackCache::new(&test_config(&dir)).unwrap();
+        let a = cache
+            .start_download("a", "audio/mpeg", None)
+            .unwrap()
+            .unwrap();
+        let b = cache
+            .start_download("b", "audio/mpeg", None)
+            .unwrap()
+            .unwrap();
+        assert_ne!(a.partial_path(), b.partial_path());
+    }
+
+    #[test]
+    fn clones_share_entries_and_the_size_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = test_config(&dir);
+        config.max_size_mb = 1;
+        let zone1 = TrackCache::new(&config).unwrap();
+        let zone2 = zone1.clone();
+
+        let mut w = zone1
+            .start_download("one", "audio/mpeg", None)
+            .unwrap()
+            .unwrap();
+        w.write(&vec![0u8; 700 * 1024]).unwrap();
+        w.complete().unwrap();
+        assert!(zone2.is_complete("one"), "zone 2 sees the entry of zone 1");
+
+        let mut w = zone2
+            .start_download("two", "audio/mpeg", None)
+            .unwrap()
+            .unwrap();
+        w.write(&vec![0u8; 700 * 1024]).unwrap();
+        w.complete().unwrap();
+        // Together above 1 MB: the limit holds in total, the older entry goes.
+        assert!(!zone1.is_complete("one"));
+        assert!(zone1.is_complete("two"));
+    }
+
+    #[test]
+    fn partial_files_of_an_earlier_run_are_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let stale = dir.path().join("track-abc.7.partial");
+        fs::write(&stale, b"x").unwrap();
+        let _cache = TrackCache::new(&test_config(&dir)).unwrap();
+        assert!(!stale.exists());
     }
 
     #[test]
@@ -612,7 +756,8 @@ mod tests {
 
         let mut writer = cache
             .start_download("../outside/track", "audio/mpeg", None)
-            .unwrap();
+            .unwrap()
+            .expect("no download of this track in flight");
         writer.write(&[0u8; 10]).unwrap();
         let path = writer.complete().unwrap();
 
@@ -635,7 +780,8 @@ mod tests {
 
         let mut writer = cache
             .start_download("grows-too-large", "audio/mpeg", None)
-            .unwrap();
+            .unwrap()
+            .expect("no download of this track in flight");
         assert!(writer.write(&vec![0u8; 1024 * 1024]).is_ok());
         assert!(writer.write(&[0u8; 1]).is_err());
     }
@@ -665,7 +811,10 @@ mod tests {
 
         {
             let cache = TrackCache::new(&config).unwrap();
-            let mut w = cache.start_download("persist", "audio/flac", None).unwrap();
+            let mut w = cache
+                .start_download("persist", "audio/flac", None)
+                .unwrap()
+                .expect("no download of this track in flight");
             w.write(&[0u8; 42]).unwrap();
             w.complete().unwrap();
         }
@@ -688,7 +837,10 @@ mod tests {
         // Simulate rapid sequential operations
         for i in 0..10 {
             let id = format!("track_{i}");
-            let mut w = cache.start_download(&id, "audio/mpeg", None).unwrap();
+            let mut w = cache
+                .start_download(&id, "audio/mpeg", None)
+                .unwrap()
+                .expect("no download of this track in flight");
             w.write(&[i as u8; 10]).unwrap();
             w.complete().unwrap();
         }
