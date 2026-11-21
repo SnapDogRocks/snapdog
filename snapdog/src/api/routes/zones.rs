@@ -18,7 +18,7 @@ use snapdog_common::RepeatMode;
 /// Embedded `SnapDog` icon PNG (1024×1024) used as placeholder when no cover art is available.
 const PLACEHOLDER_COVER: &[u8] = include_bytes!("../../../../assets/snapdog-icon-placeholder.png");
 
-/// Volume value: absolute (e.g. `75`) or relative (e.g. `"+5"`, `"-3"`).
+/// Volume value: absolute (`75` or `"75"`) or relative (a string with a sign, `"+5"` or `"-3"`).
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub enum VolumeValue {
@@ -31,10 +31,16 @@ impl VolumeValue {
         let v = match self {
             Self::Absolute(v) => *v,
             Self::Relative(s) => {
-                let delta: i32 = s
+                let s = s.trim();
+                let n: i32 = s
                     .parse()
-                    .map_err(|_| "Invalid relative volume (use e.g. \"+5\" or \"-3\")")?;
-                current + delta
+                    .map_err(|_| "Invalid volume (use e.g. 45, \"45\", \"+5\" or \"-3\")")?;
+                // Only a leading sign makes a string relative. A bare number is absolute.
+                if s.starts_with(['+', '-']) {
+                    current.saturating_add(n)
+                } else {
+                    n
+                }
             }
         };
         Ok(v.clamp(0, 100))
@@ -309,7 +315,7 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
 
 /// Set zone volume level
 ///
-/// Updates the volume level of the specified zone. Supports absolute or relative values (e.g. "+5", "-5", or "45").
+/// Updates the volume level of the specified zone. A number or an unsigned string ("45") sets the level, a string with a sign ("+5", "-5") changes it by that amount.
 #[utoipa::path(
     put,
     path = "/api/v1/zones/{zone_index}/volume",
@@ -1809,6 +1815,30 @@ pub struct ZoneTrackMetadata {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn volume_value_unsigned_string_is_absolute_and_signed_string_is_relative() {
+        let abs = |v: VolumeValue| v.resolve(30).unwrap();
+        assert_eq!(abs(VolumeValue::Absolute(45)), 45);
+        assert_eq!(abs(VolumeValue::Relative("45".into())), 45);
+        assert_eq!(abs(VolumeValue::Relative("+5".into())), 35);
+        assert_eq!(abs(VolumeValue::Relative("-5".into())), 25);
+        assert_eq!(abs(VolumeValue::Relative("-100".into())), 0);
+    }
+
+    #[test]
+    fn volume_value_overflow_saturates_and_garbage_is_rejected() {
+        assert_eq!(
+            VolumeValue::Relative("+2147483647".into()).resolve(30),
+            Ok(100)
+        );
+        assert_eq!(
+            VolumeValue::Relative("-2147483648".into()).resolve(30),
+            Ok(0)
+        );
+        assert!(VolumeValue::Relative("loud".into()).resolve(30).is_err());
+        assert!(VolumeValue::Relative(String::new()).resolve(30).is_err());
+    }
+
     use super::*;
 
     #[test]

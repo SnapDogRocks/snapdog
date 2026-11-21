@@ -168,7 +168,7 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
 
 /// Set client volume level
 ///
-/// Updates the volume level of the specified client. Supports absolute or relative values (e.g. "+5", "-5", or "45").
+/// Updates the volume level of the specified client. A number or an unsigned string ("45") sets the level, a string with a sign ("+5", "-5") changes it by that amount.
 #[utoipa::path(
     put,
     path = "/api/v1/clients/{client_index}/volume",
