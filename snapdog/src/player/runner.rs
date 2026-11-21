@@ -331,7 +331,7 @@ async fn run(
         crate::receiver::audio_channel(RECEIVER_AUDIO_CHANNEL_SIZE);
     let (airplay_event_tx, mut airplay_event_rx) =
         mpsc::channel::<crate::receiver::ReceiverEvent>(RECEIVER_EVENT_CHANNEL_SIZE);
-    let mut _airplay_receiver = if ctx.start_receivers {
+    let mut _airplay_receiver = if ctx.start_receivers && zone_config.airplay {
         let ap_config = crate::config::AirplayConfig {
             password: config.airplay.password.clone(),
             mode: config.airplay.mode,
@@ -376,8 +376,10 @@ async fn run(
         let (audio_tx, audio_rx) = crate::receiver::audio_channel(RECEIVER_AUDIO_CHANNEL_SIZE);
         let (event_tx, event_rx) =
             mpsc::channel::<crate::receiver::ReceiverEvent>(RECEIVER_EVENT_CHANNEL_SIZE);
-        let receiver = if let Some(sp_config) =
-            config.spotify.as_ref().filter(|_| ctx.start_receivers)
+        let receiver = if let Some(sp_config) = config
+            .spotify
+            .as_ref()
+            .filter(|_| ctx.start_receivers && zone_config.spotify)
         {
             let mut sp = crate::receiver::spotify::SpotifyReceiver::new(
                 crate::config::SpotifyConfig {
@@ -577,6 +579,7 @@ async fn run(
                     .await;
                 }
                 ReceiverEvent::Volume { percent } => {
+                    let percent = percent.clamp(0, zone_config.max_volume);
                     update_and_notify(store, zone_index, notify, |z| z.volume = percent).await;
                     let gid = store
                         .read()
@@ -1083,7 +1086,9 @@ async fn run(
                         }
                     }
                     ZoneCommand::SetVolume(v) => {
-                        update_volume_and_notify(store, zone_index, notify, |z| z.volume = v.clamp(0, 100)).await;
+                        // max_volume is a hard limit for every source of a volume.
+                        let v = v.clamp(0, zone_config.max_volume);
+                        update_volume_and_notify(store, zone_index, notify, |z| z.volume = v).await;
                         let gid = store.read().await.zones.get(&zone_index).and_then(|z| z.snapcast_group_id.clone());
                         if let Some(gid) = gid {
                             let _ = ctx.snap_tx.send(SnapcastCmd::Group { group_id: gid, action: GroupAction::Volume(v) }).await;
@@ -1092,7 +1097,7 @@ async fn run(
                     ZoneCommand::AdjustVolume(delta) => {
                         let new_vol = {
                             let s = store.read().await;
-                            s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| z.volume.saturating_add(delta).clamp(0, 100))
+                            s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| z.volume.saturating_add(delta).clamp(0, zone_config.max_volume))
                         };
                         update_volume_and_notify(store, zone_index, notify, |z| z.volume = new_vol).await;
                         let gid = store.read().await.zones.get(&zone_index).and_then(|z| z.snapcast_group_id.clone());
