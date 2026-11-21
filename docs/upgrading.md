@@ -3,6 +3,14 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## MQTT: the zone position has its own topic
+
+`zones/<n>/state` no longer contains `media_position` and is only published when it changes,
+instead of once per second during playback. An automation that read the position from the
+state reads `zones/<n>/position` (whole seconds, not retained) instead. The Home Assistant
+entities created by discovery are not affected. Steady playback also no longer rewrites the
+state file every five seconds.
+
 ## SnapDog 1.0: the deprecated playlist `id` and `zone_changed.playlist` are removed (breaks `/api/v1`)
 
 This change **breaks compatibility of `/api/v1`** for clients that still use the names deprecated in
