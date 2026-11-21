@@ -634,7 +634,7 @@ pub async fn run_app() -> Result<()> {
         }
         match mqtt::MqttBridge::start(
             mqtt_config,
-            &config.http.base_url,
+            &config.http.base_url(),
             mqtt::MqttRuntime {
                 zone_commands: zone_commands.clone(),
                 state: store.clone(),
@@ -645,7 +645,7 @@ pub async fn run_app() -> Result<()> {
                     id: server_id.clone(),
                     stable_id: server_identity.persisted,
                     name: config.name.clone(),
-                    base_url: config.http.base_url.clone(),
+                    base_url: config.http.base_url(),
                 },
             },
         )
@@ -689,23 +689,10 @@ pub async fn run_app() -> Result<()> {
         if tls_enabled {
             txt.insert("tls".into(), "true".into());
         }
-        // Determine the effective base_url for mDNS advertisement:
-        // - If explicitly configured (not the localhost default): use it
-        // - If bind address is not wildcard: derive from bind address
-        // - If TLS is enabled with wildcard bind: advertise https scheme
-        let scheme = if tls_enabled { "https" } else { "http" };
-        let default_base = format!("http://localhost:{}", config.http.port);
-        let effective_base_url = if config.http.base_url != default_base {
-            Some(config.http.base_url.clone())
-        } else if let Some(host) = config.http.single_specific_bind() {
-            Some(format!("{scheme}://{host}:{}", config.http.port))
-        } else if tls_enabled {
-            Some(format!("https://localhost:{}", config.http.port))
-        } else {
-            None
-        };
-        if let Some(ref url) = effective_base_url {
-            txt.insert("base_url".into(), url.clone());
+        // Only a URL another host can use: the configured one, or one derived from a single
+        // specific bind address. Never a localhost default.
+        if let Some(url) = config.http.advertised_base_url() {
+            txt.insert("base_url".into(), url);
         }
         let snapcast_port = config
             .mdns

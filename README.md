@@ -622,8 +622,8 @@ SnapDog advertises `_snapdog._tcp` via the OS DNS-SD daemon (Avahi on Linux, mDN
 **`base_url` resolution:** The `base_url` TXT record is included when the server is not reachable on all interfaces. Clients should prefer `base_url` over the mDNS hostname when present:
 
 - `base_url` explicitly configured → use configured value (reverse proxy, custom domain)
-- `[http].bind` set to a specific IP (not `::` or `0.0.0.0`) → auto-derived as `http://{bind}:{port}`
-- Otherwise → `base_url` omitted; clients use the mDNS hostname + port directly
+- `[http].bind` set to a specific IP (not `::` or `0.0.0.0`) → auto-derived as `http://{bind}:{port}` (`https` with TLS, IPv6 in brackets), with the port after all overrides
+- Otherwise → `base_url` omitted; clients use the mDNS hostname + port directly (and HTTPS when TXT `tls` is present)
 
 Optionally, `_snapcast._tcp` can be advertised on the streaming port for standard Snapcast client compatibility:
 
