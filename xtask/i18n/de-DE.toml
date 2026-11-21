@@ -85,6 +85,8 @@
 "Spotify name (empty = zone name)" = "Spotify-Name (leer = Zonenname)"
 "Default latency (ms)" = "Standard-Latenz (ms)"
 "Default volume" = "Standard-Lautstärke"
+"Last value" = "Letzter Wert"
+"Volume at start" = "Lautstärke beim Start"
 "Default zone" = "Standard-Zone"
 "Station name" = "Stationsname"
 "Stream URL" = "Stream URL"

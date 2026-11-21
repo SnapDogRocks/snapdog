@@ -456,3 +456,43 @@ async fn follow_up_commands_do_not_block_a_full_command_channel() {
     .await
     .expect("the zone still handles commands");
 }
+
+/// #509: `max_volume` is a hard limit for every volume command the zone takes.
+#[tokio::test]
+async fn zone_volume_never_exceeds_max_volume() {
+    let mut cfg = test_config();
+    cfg.zones[0].max_volume = 60;
+    let mut h = spawn_zone_harness(cfg).await;
+
+    h.senders[&1]
+        .send(ZoneCommand::SetVolume(90))
+        .await
+        .unwrap();
+    let n = h
+        .await_notification(|v| v["type"] == "zone_volume_changed" && v["zone"] == 1)
+        .await;
+    assert_eq!(n["volume"], 60, "SetVolume is clamped to max_volume");
+
+    h.senders[&1]
+        .send(ZoneCommand::AdjustVolume(20))
+        .await
+        .unwrap();
+    h.senders[&1]
+        .send(ZoneCommand::SetVolume(40))
+        .await
+        .unwrap();
+    h.await_notification(|v| {
+        v["type"] == "zone_volume_changed" && v["zone"] == 1 && v["volume"] == 40
+    })
+    .await;
+    h.senders[&1]
+        .send(ZoneCommand::AdjustVolume(50))
+        .await
+        .unwrap();
+    let n = h
+        .await_notification(|v| {
+            v["type"] == "zone_volume_changed" && v["zone"] == 1 && v["volume"] != 40
+        })
+        .await;
+    assert_eq!(n["volume"], 60, "AdjustVolume stops at max_volume");
+}
