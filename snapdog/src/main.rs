@@ -169,6 +169,12 @@ impl VolumeCoalescer {
     }
 }
 
+/// A zone reconcile in process mode, which the main loop carries out itself.
+const fn is_process_reconcile(cmd: &player::SnapcastCmd) -> bool {
+    cfg!(all(feature = "snapcast-process", not(feature = "snapcast-embedded")))
+        && matches!(cmd, player::SnapcastCmd::ReconcileZones)
+}
+
 #[cfg(target_os = "windows")]
 mod service_windows;
 
@@ -886,6 +892,11 @@ pub async fn run_app() -> Result<()> {
                 // Coalesce client volume commands
                 if let player::SnapcastCmd::Client { ref client_id, action: player::ClientAction::Volume(v) } = cmd {
                     coalescer.push(client_id.clone(), v);
+                } else if is_process_reconcile(&cmd) {
+                    // The process backend has no group logic of its own: regroup the clients
+                    // through the Snapcast JSON-RPC client and re-announce them.
+                    #[cfg(all(feature = "snapcast-process", not(feature = "snapcast-embedded")))]
+                    snapcast::reconcile_zone_groups(process_backend.client(), &config, &store, &notify_tx).await;
                 } else if let Err(e) = cmd_backend.execute(cmd).await {
                     tracing::warn!(error = %e, "Snapcast command failed");
                 }
