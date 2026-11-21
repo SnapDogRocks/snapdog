@@ -229,6 +229,27 @@ pub enum Notification {
 /// We broadcast a pre-serialized JSON string to all clients for efficiency.
 pub type NotifySender = broadcast::Sender<std::sync::Arc<str>>;
 
+/// Receive the next notification, skipping over a lag instead of ending.
+///
+/// When a burst outruns a listener, the broadcast channel drops the oldest events and reports
+/// `Lagged` once. A listener that stops there misses everything after it for good. The next
+/// event still carries the full state, so this logs the gap and keeps going. `None` means the
+/// channel is closed.
+pub async fn recv_skipping_lag(
+    rx: &mut broadcast::Receiver<std::sync::Arc<str>>,
+    listener: &'static str,
+) -> Option<std::sync::Arc<str>> {
+    loop {
+        match rx.recv().await {
+            Ok(message) => return Some(message),
+            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                tracing::warn!(skipped, listener, "Notification listener lagged behind");
+            }
+            Err(broadcast::error::RecvError::Closed) => return None,
+        }
+    }
+}
+
 /// Create a broadcast channel for notifications.
 #[must_use]
 pub fn notification_channel() -> (
@@ -331,6 +352,28 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_listener_keeps_receiving_after_it_lagged_and_stops_when_closed() {
+        let (tx, mut rx) = broadcast::channel::<std::sync::Arc<str>>(4);
+        for i in 0..10 {
+            tx.send(format!("event {i}").into()).unwrap();
+        }
+        // The first six are gone; the listener resumes with the oldest one kept.
+        assert_eq!(
+            recv_skipping_lag(&mut rx, "test").await.as_deref(),
+            Some("event 6")
+        );
+        tx.send("after the lag".into()).unwrap();
+        for expected in ["event 7", "event 8", "event 9", "after the lag"] {
+            assert_eq!(
+                recv_skipping_lag(&mut rx, "test").await.as_deref(),
+                Some(expected)
+            );
+        }
+        drop(tx);
+        assert!(recv_skipping_lag(&mut rx, "test").await.is_none());
+    }
 
     #[test]
     fn a_lagging_client_is_not_told_the_server_is_shutting_down() {

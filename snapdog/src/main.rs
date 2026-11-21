@@ -738,20 +738,9 @@ pub async fn run_app() -> Result<()> {
         tokio::spawn(async move {
             let mut last_cover_hash: std::collections::HashMap<usize, String> =
                 std::collections::HashMap::new();
-            loop {
-                let json = match meta_rx.recv().await {
-                    Ok(json) => json,
-                    // A burst outran this task: the events are gone, the next one still
-                    // carries the full zone state, so keep going.
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        tracing::warn!(
-                            skipped,
-                            "Metadata forwarder lagged behind the notifications"
-                        );
-                        continue;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                };
+            while let Some(json) =
+                api::ws::recv_skipping_lag(&mut meta_rx, "metadata forwarder").await
+            {
                 let Ok(notif) = serde_json::from_str::<api::ws::Notification>(&json) else {
                     continue;
                 };
