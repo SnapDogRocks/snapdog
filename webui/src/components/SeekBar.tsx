@@ -91,6 +91,9 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
   const lastTrackRef = useRef(trackKey);
   const serverPositionRef = useRef(serverPosition);
   const requestId = useRef(0);
+  // Radix commits only a changed value. A drag released where it started ends here instead,
+  // so the bar does not stay in the dragging state.
+  const committedSinceDownRef = useRef(false);
   useLayoutEffect(() => { serverPositionRef.current = serverPosition; }, [serverPosition]);
 
   // Track change detection
@@ -141,6 +144,7 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
     (value: number[]) => {
       const target = value[0];
       if (!canSeek || target === undefined) return;
+      committedSinceDownRef.current = true;
       dispatch({ type: "commit", target });
       const id = ++requestId.current;
       api.zones.seekPosition(zone.index, target).catch((error: unknown) => {
@@ -180,6 +184,12 @@ export function SeekBar({ zone }: { zone: ZoneState }) {
           onValueChange={handleSeek}
           onValueCommit={handleSeekCommit}
           onPointerCancel={() => { requestId.current++; dispatch({ type: "cancel", position: serverPositionRef.current }); }}
+          onPointerDown={() => { committedSinceDownRef.current = false; }}
+          onPointerUp={() => {
+            setTimeout(() => {
+              if (!committedSinceDownRef.current) dispatch({ type: "cancel", position: serverPositionRef.current });
+            }, 0);
+          }}
           disabled={!canSeek}
           className="w-full relative"
           aria-label={t("label")}
