@@ -19,9 +19,17 @@ pub struct IcyMetadata {
 }
 
 /// ICY stream processor. Strips metadata from audio bytes.
+///
+/// The HTTP chunks do not follow the metadata interval, so a length byte or a metadata block
+/// can end in the middle of a chunk. The processor keeps its position across `process` calls.
 pub struct IcyProcessor {
     metaint: usize,
+    /// Audio bytes since the last metadata block.
     audio_count: usize,
+    /// Metadata bytes still to come when a block is in progress.
+    meta_remaining: Option<usize>,
+    /// The part of the current metadata block received so far.
+    meta_buf: Vec<u8>,
     meta_tx: mpsc::Sender<IcyMetadata>,
 }
 
@@ -32,6 +40,8 @@ impl IcyProcessor {
         Self {
             metaint,
             audio_count: 0,
+            meta_remaining: None,
+            meta_buf: Vec::new(),
             meta_tx,
         }
     }
@@ -42,39 +52,35 @@ impl IcyProcessor {
         let mut audio = Vec::with_capacity(data.len());
 
         while !data.is_empty() {
-            let remaining_audio = self.metaint - self.audio_count;
-
-            if remaining_audio > 0 {
-                // Audio bytes
-                let take = remaining_audio.min(data.len());
+            if let Some(remaining) = self.meta_remaining {
+                // Inside a metadata block, possibly continued from the previous chunk.
+                let take = remaining.min(data.len());
+                self.meta_buf.extend_from_slice(&data[..take]);
+                data = data.slice(take..);
+                if take == remaining {
+                    if let Some(meta) = parse_icy_metadata(&self.meta_buf) {
+                        let _ = self.meta_tx.try_send(meta);
+                    }
+                    self.meta_buf.clear();
+                    self.meta_remaining = None;
+                    self.audio_count = 0;
+                } else {
+                    self.meta_remaining = Some(remaining - take);
+                }
+            } else if self.audio_count < self.metaint {
+                let take = (self.metaint - self.audio_count).min(data.len());
                 audio.extend_from_slice(&data[..take]);
                 data = data.slice(take..);
                 self.audio_count += take;
             } else {
-                // Metadata block
-                if data.is_empty() {
-                    break;
-                }
-                let meta_len = data[0] as usize * 16;
+                // The length byte: the block that follows is 16 times as long.
+                let meta_len = usize::from(data[0]) * 16;
                 data = data.slice(1..);
-
-                if meta_len > 0 && data.len() >= meta_len {
-                    let meta_bytes = &data[..meta_len];
-                    if let Some(meta) = parse_icy_metadata(meta_bytes) {
-                        let _ = self.meta_tx.try_send(meta);
-                    }
-                    data = data.slice(meta_len..);
-                } else if meta_len > 0 {
-                    // Incomplete metadata block — skip (rare edge case)
-                    tracing::warn!(
-                        expected = meta_len,
-                        got = data.len(),
-                        "Incomplete ICY metadata block"
-                    );
-                    data = Bytes::new();
+                if meta_len == 0 {
+                    self.audio_count = 0;
+                } else {
+                    self.meta_remaining = Some(meta_len);
                 }
-
-                self.audio_count = 0;
             }
         }
 
@@ -177,5 +183,65 @@ mod tests {
 
         let audio = proc.process(Bytes::from(data));
         assert_eq!(audio, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    }
+
+    /// A stream of `blocks` intervals of `metaint` audio bytes, each followed by a metadata
+    /// block with a title (the second one empty: a length byte of 0).
+    fn stream(metaint: usize, blocks: usize) -> (Vec<u8>, Vec<u8>) {
+        let mut wire = Vec::new();
+        let mut audio = Vec::new();
+        let mut counter = 0u8;
+        for i in 0..blocks {
+            for _ in 0..metaint {
+                counter = counter.wrapping_add(1);
+                wire.push(counter);
+                audio.push(counter);
+            }
+            if i % 2 == 1 {
+                wire.push(0);
+            } else {
+                let mut meta = format!("StreamTitle='Title {i}';").into_bytes();
+                meta.resize(meta.len().div_ceil(16) * 16, 0);
+                wire.push(u8::try_from(meta.len() / 16).unwrap());
+                wire.extend_from_slice(&meta);
+            }
+        }
+        (wire, audio)
+    }
+
+    fn titles(rx: &mut mpsc::Receiver<IcyMetadata>) -> Vec<String> {
+        let mut out = Vec::new();
+        while let Ok(m) = rx.try_recv() {
+            out.extend(m.title);
+        }
+        out
+    }
+
+    #[test]
+    fn a_stream_split_at_every_position_gives_the_same_audio_and_titles() {
+        let metaint = 40;
+        let (wire, expected_audio) = stream(metaint, 3);
+        for split in 1..wire.len() {
+            let (tx, mut rx) = mpsc::channel(8);
+            let mut proc = IcyProcessor::new(metaint, tx);
+            let mut audio = proc.process(Bytes::copy_from_slice(&wire[..split]));
+            audio.extend(proc.process(Bytes::copy_from_slice(&wire[split..])));
+            assert_eq!(audio, expected_audio, "split at {split}");
+            assert_eq!(titles(&mut rx), ["Title 0", "Title 2"], "split at {split}");
+        }
+    }
+
+    #[test]
+    fn a_stream_fed_one_byte_at_a_time_gives_the_same_audio_and_titles() {
+        let metaint = 40;
+        let (wire, expected_audio) = stream(metaint, 4);
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut proc = IcyProcessor::new(metaint, tx);
+        let mut audio = Vec::new();
+        for byte in &wire {
+            audio.extend(proc.process(Bytes::copy_from_slice(std::slice::from_ref(byte))));
+        }
+        assert_eq!(audio, expected_audio);
+        assert_eq!(titles(&mut rx), ["Title 0", "Title 2"]);
     }
 }

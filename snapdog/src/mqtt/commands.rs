@@ -195,6 +195,8 @@ pub struct CommandHandler {
     zone_commands: HashMap<usize, ZoneCommandSender>,
     state: state::SharedState,
     snap_tx: mpsc::Sender<SnapcastCmd>,
+    /// Announces client zone moves (`ClientStateChanged`).
+    notify: crate::api::ws::NotifySender,
     gate: Arc<Mutex<Gate>>,
     /// One zone change at a time: it writes the shared state before it queues the
     /// reconcile, so two of them must not interleave.
@@ -210,12 +212,14 @@ impl CommandHandler {
         zone_commands: HashMap<usize, ZoneCommandSender>,
         state: state::SharedState,
         snap_tx: mpsc::Sender<SnapcastCmd>,
+        notify: crate::api::ws::NotifySender,
     ) -> Self {
         Self {
             topics,
             zone_commands,
             state,
             snap_tx,
+            notify,
             gate: Arc::new(Mutex::new(Gate {
                 limiter: RateLimiter::new(Instant::now()),
                 backlog: HashMap::new(),
@@ -463,18 +467,11 @@ impl CommandHandler {
     /// Assign client `index` to zone `zone` in the shared state. Idempotent: a
     /// delivery that is retried applies it again.
     async fn move_client(&self, index: usize, zone: usize) -> Result<(), Rejected> {
-        let mut store = self.state.write().await;
-        if zone == 0 || !store.zones.contains_key(&zone) {
-            return Err(Rejected::NoSuchTarget);
+        if state::assign_client_zone(&self.state, &self.notify, index, zone).await {
+            Ok(())
+        } else {
+            Err(Rejected::NoSuchTarget)
         }
-        let client = store
-            .clients
-            .get_mut(&index)
-            .ok_or(Rejected::NoSuchTarget)?;
-        client.zone_index = zone;
-        store.dirty = true;
-        drop(store);
-        Ok(())
     }
 }
 
@@ -541,7 +538,13 @@ mod tests {
         let (cmds, zone_rx) = zone_channels();
         let state = test_state_with_client();
         (
-            CommandHandler::new(Topics::new(base), cmds, state.clone(), snap_tx),
+            CommandHandler::new(
+                Topics::new(base),
+                cmds,
+                state.clone(),
+                snap_tx,
+                tokio::sync::broadcast::channel(16).0,
+            ),
             zone_rx,
             snap_rx,
             state,
@@ -777,6 +780,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_client_zone_change_is_announced_once() {
+        let (snap_tx, _snap_rx) = snap_channel();
+        let (cmds, _zone_rx) = zone_channels();
+        let state = test_state_with_client();
+        let (notify, mut notify_rx) = tokio::sync::broadcast::channel(16);
+        let h = CommandHandler::new(
+            Topics::new("snapdog/"),
+            cmds,
+            state.clone(),
+            snap_tx,
+            notify,
+        );
+        send(&h, "snapdog/clients/1/zone/set", "2").await.unwrap();
+        let msg = notify_rx.try_recv().expect("a ClientStateChanged");
+        let v: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        assert_eq!(v["type"], "client_state_changed");
+        assert_eq!(v["zone"], 2);
+        assert!(notify_rx.try_recv().is_err(), "exactly one notification");
+    }
+
+    #[tokio::test]
     async fn client_zone_change_to_an_unknown_zone_or_client_is_refused() {
         let (h, _rx, mut snap_rx, state) = handler("snapdog/");
         for (topic, payload) in [
@@ -909,6 +933,7 @@ mod tests {
             cmds,
             test_state_with_client(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         (h, rx)
     }

@@ -381,6 +381,10 @@ async fn run(
         config.audio.channels,
     );
     let mut receiver_resampler: Option<audio::resample::F32Resampling> = None;
+    // Channel counts of the current decode and receiver sources. Their audio is mapped to the
+    // configured count before resampling, so EQ, fade and the stream see whole output frames.
+    let mut source_channels = config.audio.channels;
+    let mut receiver_channels = config.audio.channels;
 
     // Per-zone EQ
     let mut zone_eq = audio::eq::ZoneEq::new(config.audio.sample_rate, config.audio.channels);
@@ -406,9 +410,10 @@ async fn run(
                 source = $active;
                 update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = $source_type; }).await;
             }
+            let mapped = audio::channels::map_channels($samples, receiver_channels, config.audio.channels);
             let mut samples = match &mut receiver_resampler {
-                Some(r) => match r.process(&$samples) { Some(resampled) => resampled, None => continue },
-                None => $samples,
+                Some(r) => match r.process(&mapped) { Some(resampled) => resampled, None => continue },
+                None => mapped,
             };
             zone_eq.process(&mut samples);
             if let Err(e) = backend.send_audio(zone_index, &samples, config.audio.sample_rate, config.audio.channels).await {
@@ -423,10 +428,11 @@ async fn run(
             use crate::receiver::ReceiverEvent;
             match $event {
                 ReceiverEvent::SessionStarted { format } => {
+                    receiver_channels = format.channels;
                     receiver_resampler = Some(audio::resample::F32Resampling::new(
                         format.sample_rate,
                         config.audio.sample_rate,
-                        format.channels,
+                        config.audio.channels,
                     ));
                 }
                 ReceiverEvent::Metadata {
@@ -1023,6 +1029,12 @@ async fn run(
                     ZoneCommand::SetShuffle(v) => { update_and_notify(store, zone_index, notify, |z| z.shuffle = v).await; }
                     ZoneCommand::ToggleShuffle => { update_and_notify(store, zone_index, notify, |z| z.shuffle = !z.shuffle).await; }
                     ZoneCommand::SetRepeat(mode) => { update_and_notify(store, zone_index, notify, |z| z.repeat = mode).await; }
+                    ZoneCommand::ToggleRepeatMode(mode) => {
+                        update_and_notify(store, zone_index, notify, |z| z.repeat = super::commands::toggled_repeat(z.repeat, mode)).await;
+                    }
+                    ZoneCommand::ClearRepeatMode(mode) => {
+                        update_and_notify(store, zone_index, notify, |z| z.repeat = super::commands::cleared_repeat(z.repeat, mode)).await;
+                    }
                     ZoneCommand::CycleRepeat => {
                         update_and_notify(store, zone_index, notify, |z| {
                             z.repeat = match z.repeat {
@@ -1118,10 +1130,12 @@ async fn run(
             pcm = async { match &mut decode_rx { Some(rx) => rx.recv().await, None => std::future::pending().await } } => {
                 match pcm {
                     Some(audio::PcmMessage::Format { sample_rate, channels }) => {
-                        resampler = audio::resample::F32Resampling::new(sample_rate, config.audio.sample_rate, channels);
-                        tracing::debug!(from = sample_rate, to = config.audio.sample_rate, "Resampler configured");
+                        source_channels = channels;
+                        resampler = audio::resample::F32Resampling::new(sample_rate, config.audio.sample_rate, config.audio.channels);
+                        tracing::debug!(from = sample_rate, to = config.audio.sample_rate, channels, output_channels = config.audio.channels, "Resampler configured");
                     }
                     Some(audio::PcmMessage::Audio(samples)) => {
+                        let samples = audio::channels::map_channels(samples, source_channels, config.audio.channels);
                         let mut samples = resampler.process_or_passthrough(samples);
                         zone_eq.process(&mut samples);
                         if let Some(ref mut fade) = zone_fade

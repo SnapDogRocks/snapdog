@@ -612,6 +612,7 @@ name = "Z1"
             store,
             std::collections::HashMap::<usize, crate::player::ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let (_notify_tx, notify_rx) = broadcast::channel(8);
         let (stop, shutdown) = watch::channel(false);

@@ -72,11 +72,12 @@ export function useKeyboardShortcuts() {
           break;
         case "ArrowUp":
           e.preventDefault();
-          api.zones.setVolume(zone.index, Math.min(100, zone.volume + VOLUME_STEP)).catch(logApiError);
+          // Relative, so repeated keys add up on the server instead of all sending the same target.
+          api.zones.setVolume(zone.index, `+${VOLUME_STEP}`).catch(logApiError);
           break;
         case "ArrowDown":
           e.preventDefault();
-          api.zones.setVolume(zone.index, Math.max(0, zone.volume - VOLUME_STEP)).catch(logApiError);
+          api.zones.setVolume(zone.index, `-${VOLUME_STEP}`).catch(logApiError);
           break;
         case "m":
           api.zones.toggleMute(zone.index).catch(logApiError);

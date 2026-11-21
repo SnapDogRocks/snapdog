@@ -83,13 +83,13 @@ volume_status = "1/1/3"
     let store = state::init(&cfg, None).unwrap();
     store.write().await.zones.get_mut(&1).unwrap().volume = 40;
 
-    let (notify, notify_rx) = broadcast::channel(64);
+    let (notify, _) = broadcast::channel(64);
     let (zone_tx, zone_rx) = mpsc::channel(16);
     let (snap_tx, snap_rx) = mpsc::channel(16);
     let bridge = knx::start(
         &cfg,
         store.clone(),
-        notify_rx,
+        notify.clone(),
         HashMap::from([(1, zone_tx)]),
         snap_tx,
     )

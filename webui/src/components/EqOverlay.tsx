@@ -156,6 +156,7 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
   };
 
   const toggleEnabled = (on: boolean) => {
+    setAbBypass(false);
     if (on) {
       eqApi.get().then((c) => {
         if (!mountedRef.current) return;
@@ -172,20 +173,17 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
     }
   };
 
+  // The bypass is its own state: the server gets the EQ switched off while it lasts, the
+  // config in the dialog keeps `enabled`, so the editor and the A/B button stay usable.
   const toggleAB = () => {
     const next = !abBypass;
     setAbBypass(next);
-    const nextConfig = { ...configRef.current, enabled: !next };
-    configRef.current = nextConfig;
-    setConfig(nextConfig);
-    pushConfig(nextConfig);
+    pushConfig({ ...configRef.current, enabled: configRef.current.enabled && !next });
   };
 
   const handleClose = () => {
     if (abBypass && loadState.target === targetKey && loadState.status === "ready") {
-      const nextConfig = { ...configRef.current, enabled: true };
-      configRef.current = nextConfig;
-      pushConfig(nextConfig);
+      pushConfig(configRef.current);
     }
     const enabled = loadState.target === targetKey && loadState.status === "ready"
       ? configRef.current.enabled
@@ -229,9 +227,9 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
             )}
             {tab === "speaker" && (
               <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("toggle")}>
-                <button role="radio" aria-checked={speakerMode === "off"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "off" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("off"); }}>Off</button>
-                <button role="radio" aria-checked={speakerMode === "spinorama"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "spinorama" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("spinorama"); }}>Spinorama</button>
-                <button role="radio" aria-checked={speakerMode === "custom"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "custom" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("custom"); }}>Custom</button>
+                <button role="radio" aria-checked={speakerMode === "off"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "off" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerAbBypass(false); setSpeakerMode("off"); }}>Off</button>
+                <button role="radio" aria-checked={speakerMode === "spinorama"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "spinorama" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerAbBypass(false); setSpeakerMode("spinorama"); }}>Spinorama</button>
+                <button role="radio" aria-checked={speakerMode === "custom"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "custom" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerAbBypass(false); setSpeakerMode("custom"); }}>Custom</button>
               </div>
             )}
           </div>
@@ -254,7 +252,7 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
 
         {showTabs && (
           <div className="inline-flex rounded-lg bg-muted p-0.5 w-full" role="tablist">
-            <button role="tab" aria-selected={tab === "eq"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "eq" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setTab("eq"); }}>EQ</button>
+            <button role="tab" aria-selected={tab === "eq"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "eq" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerAbBypass(false); setTab("eq"); }}>EQ</button>
             <button role="tab" aria-selected={tab === "speaker"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "speaker" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setTab("speaker"); }}>Speaker</button>
           </div>
         )}
@@ -267,7 +265,7 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
             <Button variant="outline" size="sm" onClick={retryLoad}>{tZone("retry")}</Button>
           </div>
         ) : tab === "speaker" && showTabs ? (
-          <SpeakerTab clientId={clientId} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} />
+          <SpeakerTab clientId={clientId} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} setAbBypass={setSpeakerAbBypass} />
         ) : (
         <>
           <>
@@ -335,7 +333,17 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
 
 // ── Speaker Tab ───────────────────────────────────────────────
 
-function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; mode: "off" | "spinorama" | "custom"; setMode: (v: "off" | "spinorama" | "custom") => void; abBypass: boolean }) {
+type SpeakerMode = "off" | "spinorama" | "custom";
+
+interface SpeakerTabProps {
+  clientId: number;
+  mode: SpeakerMode;
+  setMode: React.Dispatch<React.SetStateAction<SpeakerMode>>;
+  abBypass: boolean;
+  setAbBypass: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+function SpeakerTab({ clientId, mode, setMode, abBypass, setAbBypass }: SpeakerTabProps) {
   const t = useTranslations("eq");
   const tZone = useTranslations("zone");
   const [search, setSearch] = useState("");
@@ -349,17 +357,24 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
   const [customSelected, setCustomSelected] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(MAX_SPEAKER_RESULTS);
   const abBypassRef = useRef(false);
-  const appliedNameRef = useRef<string | null>(null);
+  const currentConfigRef = useRef<EqConfig>(null);
+  const prevAbBypass = useRef(abBypass);
 
   useEffect(() => { abBypassRef.current = abBypass; }, [abBypass]);
-  useEffect(() => { appliedNameRef.current = appliedName; }, [appliedName]);
+  useEffect(() => { currentConfigRef.current = currentConfig; }, [currentConfig]);
 
-  // Restore speaker EQ on unmount if A/B was active
-  useEffect(() => () => {
-    if (abBypassRef.current && appliedNameRef.current) {
-      api.speakers.apply(clientId, appliedNameRef.current).catch(logApiError);
-    }
+  // The A/B bypass sends the same correction switched off, so it is never lost: not when the
+  // dialog closes, not on a tab switch and not when the page is reloaded while bypassed.
+  const sendBypass = useCallback((bypassed: boolean) => {
+    const config = currentConfigRef.current;
+    if (!config || config.bands.length === 0) return;
+    api.speakers.applyCustom(clientId, { ...config, enabled: !bypassed }).catch(logApiError);
   }, [clientId]);
+
+  // End the bypass when the tab goes away (tab switch or closing the dialog).
+  useEffect(() => () => {
+    if (abBypassRef.current) sendBypass(false);
+  }, [sendBypass]);
 
   useEffect(() => {
     let active = true;
@@ -374,7 +389,13 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
       setAppliedName(name);
       setCustomBands(name ? [] : limitEqBands(config.bands));
       setVisibleCount(MAX_SPEAKER_RESULTS);
-      if (config.enabled || name != null) setMode(name ? "spinorama" : "custom");
+      // A correction that is switched off but still has bands was left bypassed.
+      const bypassed = !config.enabled && config.bands.length > 0;
+      if (config.enabled || name != null || bypassed) setMode(name ? "spinorama" : "custom");
+      if (bypassed) {
+        prevAbBypass.current = true;
+        setAbBypass(true);
+      }
       setLoading(false);
     }).catch((e: unknown) => {
       if (!active) return;
@@ -383,7 +404,7 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
       setLoading(false);
     });
     return () => { active = false; };
-  }, [clientId, loadAttempt, setMode]);
+  }, [clientId, loadAttempt, setMode, setAbBypass]);
 
   const retryLoad = () => {
     setLoading(true);
@@ -451,16 +472,11 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
   }, [mode, toggleEnabled]);
 
   // React to A/B bypass changes from parent
-  const prevAbBypass = useRef(abBypass);
   useEffect(() => {
     if (prevAbBypass.current === abBypass) return;
     prevAbBypass.current = abBypass;
-    if (abBypass) {
-      api.speakers.apply(clientId, null).catch(logApiError);
-    } else if (appliedName) {
-      api.speakers.apply(clientId, appliedName).catch(logApiError);
-    }
-  }, [abBypass, clientId, appliedName]);
+    sendBypass(abBypass);
+  }, [abBypass, sendBypass]);
 
   const response = useMemo(
     () => (currentConfig?.bands.length ? computeResponse(currentConfig.bands) : []),
