@@ -291,9 +291,27 @@ async fn handle_player_event(
             }
         }
 
-        PlayerEvent::Playing { position_ms, .. }
-        | PlayerEvent::Paused { position_ms, .. }
-        | PlayerEvent::Seeked { position_ms, .. }
+        PlayerEvent::Playing { position_ms, .. } => {
+            let _ = event_tx.try_send(ReceiverEvent::PlaybackState { playing: true });
+            let _ = event_tx.try_send(ReceiverEvent::Progress {
+                position_ms: u64::from(position_ms),
+                duration_ms: *last_duration_ms,
+            });
+        }
+
+        PlayerEvent::Paused { position_ms, .. } => {
+            let _ = event_tx.try_send(ReceiverEvent::PlaybackState { playing: false });
+            let _ = event_tx.try_send(ReceiverEvent::Progress {
+                position_ms: u64::from(position_ms),
+                duration_ms: *last_duration_ms,
+            });
+        }
+
+        PlayerEvent::Stopped { .. } => {
+            let _ = event_tx.try_send(ReceiverEvent::PlaybackState { playing: false });
+        }
+
+        PlayerEvent::Seeked { position_ms, .. }
         | PlayerEvent::PositionCorrection { position_ms, .. } => {
             let _ = event_tx.try_send(ReceiverEvent::Progress {
                 position_ms: u64::from(position_ms),
@@ -458,8 +476,12 @@ mod tests {
             let (tx, mut rx) = mpsc::channel(4);
             let mut dur = 240_000u64;
             handle_player_event(make(track_uri()), &tx, &mut dur).await;
+            // Playing and Paused also report the playback state; the progress follows it.
+            let progress = std::iter::from_fn(|| rx.try_recv().ok())
+                .find(|e| matches!(e, ReceiverEvent::Progress { .. }))
+                .expect("progress emitted");
             assert!(matches!(
-                rx.try_recv().expect("progress emitted"),
+                progress,
                 ReceiverEvent::Progress {
                     position_ms: 5000,
                     duration_ms: 240_000
@@ -526,19 +548,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unhandled_events_emit_nothing() {
-        let (tx, mut rx) = mpsc::channel(4);
-        let mut dur = 7u64;
-        handle_player_event(
-            PlayerEvent::Stopped {
-                play_request_id: 0,
-                track_id: track_uri(),
-            },
-            &tx,
-            &mut dur,
-        )
-        .await;
-        assert!(rx.try_recv().is_err(), "Stopped emits no ReceiverEvent");
-        assert_eq!(dur, 7, "duration unchanged");
+    async fn playing_paused_and_stopped_report_the_playback_state() {
+        let state = |e: &ReceiverEvent| match e {
+            ReceiverEvent::PlaybackState { playing } => Some(*playing),
+            _ => None,
+        };
+        for (event, expected) in [
+            (
+                PlayerEvent::Playing {
+                    play_request_id: 1,
+                    track_id: track_uri(),
+                    position_ms: 0,
+                },
+                true,
+            ),
+            (
+                PlayerEvent::Paused {
+                    play_request_id: 1,
+                    track_id: track_uri(),
+                    position_ms: 0,
+                },
+                false,
+            ),
+            (
+                PlayerEvent::Stopped {
+                    play_request_id: 0,
+                    track_id: track_uri(),
+                },
+                false,
+            ),
+        ] {
+            let (tx, mut rx) = mpsc::channel(4);
+            let mut dur = 7u64;
+            handle_player_event(event, &tx, &mut dur).await;
+            let first = rx.try_recv().expect("an event");
+            assert_eq!(state(&first), Some(expected));
+            assert_eq!(dur, 7, "duration unchanged");
+        }
     }
 }

@@ -269,6 +269,104 @@ async fn injected_pcm_reaches_backend_send_audio() {
     assert_eq!(call.channels, 2);
 }
 
+// ── A2: the last action wins between a receiver and local control ──
+
+#[cfg(feature = "test-harness")]
+mod receiver_gate {
+    use super::*;
+    use snapdog::receiver::ReceiverEvent;
+    use std::time::Duration;
+
+    fn sent(h: &common::CapturingHarness) -> usize {
+        h.backend.calls().len()
+    }
+
+    /// Wait until `done` holds, polling the shared state.
+    async fn until(what: &str, mut done: impl AsyncFnMut() -> bool) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !done().await {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
+    }
+
+    /// Feed `AirPlay` frames until one reached the backend. Audio and events travel on separate
+    /// channels, so a frame can be taken before an event sent just ahead of it.
+    async fn airplay_frame_is_played(h: &common::CapturingHarness) {
+        let before = sent(h);
+        until("a frame to be played", async || {
+            h.test_airplay_tx[&1]
+                .0
+                .send(vec![0.1_f32; 8])
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            sent(h) > before
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn after_stop_airplay_frames_are_dropped_until_airplay_plays_again() {
+        let h = common::spawn_zone_harness_capturing(test_config()).await;
+        let (audio, events) = &h.test_airplay_tx[&1];
+
+        airplay_frame_is_played(&h).await;
+        assert_eq!(h.store.read().await.zones[&1].source, SourceType::AirPlay);
+
+        // A local Stop is the last action: AirPlay is shut out.
+        h.senders[&1].send(ZoneCommand::Stop).await.unwrap();
+        until("the stop", async || {
+            h.store.read().await.zones[&1].playback == PlaybackState::Stopped
+        })
+        .await;
+        let before = sent(&h);
+        for _ in 0..3 {
+            audio.send(vec![0.1_f32; 8]).await.unwrap();
+        }
+        // The frames are drained, not played, and do not take the zone back.
+        until("the frames to be drained", async || {
+            audio.capacity() == audio.max_capacity()
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(sent(&h), before, "frames after the stop are dropped");
+        assert_eq!(
+            h.store.read().await.zones[&1].playback,
+            PlaybackState::Stopped
+        );
+
+        // AirPlay reports playing again: now it is the last action and takes the zone.
+        events
+            .send(ReceiverEvent::PlaybackState { playing: true })
+            .await
+            .unwrap();
+        airplay_frame_is_played(&h).await;
+        let z = h.store.read().await.zones[&1].clone();
+        assert_eq!(
+            (z.source, z.playback),
+            (SourceType::AirPlay, PlaybackState::Playing)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_paused_receiver_shows_paused() {
+        let h = common::spawn_zone_harness_capturing(test_config()).await;
+        airplay_frame_is_played(&h).await;
+        h.test_airplay_tx[&1]
+            .1
+            .send(ReceiverEvent::PlaybackState { playing: false })
+            .await
+            .unwrap();
+        until("the pause", async || {
+            h.store.read().await.zones[&1].playback == PlaybackState::Paused
+        })
+        .await;
+    }
+}
+
 /// #491: a mono source on the stereo zone is mapped before it is sent, so one second of
 /// mono input yields one second of stereo frames, not two.
 #[cfg(feature = "test-harness")]
@@ -302,4 +400,44 @@ async fn a_mono_source_reaches_the_backend_as_stereo_frames() {
 
     assert_eq!(call.channels, 2);
     assert_eq!(call.len, 960, "480 mono frames become 480 stereo frames");
+}
+
+/// #509: `max_volume` is a hard limit for every volume command the zone takes.
+#[tokio::test]
+async fn zone_volume_never_exceeds_max_volume() {
+    let mut cfg = test_config();
+    cfg.zones[0].max_volume = 60;
+    let mut h = spawn_zone_harness(cfg).await;
+
+    h.senders[&1]
+        .send(ZoneCommand::SetVolume(90))
+        .await
+        .unwrap();
+    let n = h
+        .await_notification(|v| v["type"] == "zone_volume_changed" && v["zone"] == 1)
+        .await;
+    assert_eq!(n["volume"], 60, "SetVolume is clamped to max_volume");
+
+    h.senders[&1]
+        .send(ZoneCommand::AdjustVolume(20))
+        .await
+        .unwrap();
+    h.senders[&1]
+        .send(ZoneCommand::SetVolume(40))
+        .await
+        .unwrap();
+    h.await_notification(|v| {
+        v["type"] == "zone_volume_changed" && v["zone"] == 1 && v["volume"] == 40
+    })
+    .await;
+    h.senders[&1]
+        .send(ZoneCommand::AdjustVolume(50))
+        .await
+        .unwrap();
+    let n = h
+        .await_notification(|v| {
+            v["type"] == "zone_volume_changed" && v["zone"] == 1 && v["volume"] != 40
+        })
+        .await;
+    assert_eq!(n["volume"], 60, "AdjustVolume stops at max_volume");
 }

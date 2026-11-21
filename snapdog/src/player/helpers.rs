@@ -445,6 +445,30 @@ pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'
     }
 }
 
+/// A track could not be fetched: stop the decode and leave the zone `Stopped` and idle,
+/// so it never reads `Playing` without a decoder behind it.
+pub(super) async fn stop_after_failed_fetch(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
+    stop_decode(ds.current_decode, ds.decode_rx).await;
+    *ds.source = ActiveSource::Idle;
+    mark_zone_stopped(ctx.store, ctx.zone_index, ctx.notify).await;
+}
+
+/// Set the zone to `Stopped` with no track, as the Stop command does.
+pub(super) async fn mark_zone_stopped(
+    store: &state::SharedState,
+    zone_index: usize,
+    notify: &NotifySender,
+) {
+    update_and_notify(store, zone_index, notify, |z| {
+        z.playback = PlaybackState::Stopped;
+        z.source = SourceType::Idle;
+        z.track = None;
+        z.cover_url = None;
+        z.buffered_ms = None;
+    })
+    .await;
+}
+
 async fn advance_playlist_track(
     ds: &mut DecodeState<'_>,
     playlist_id: &str,
@@ -460,44 +484,64 @@ async fn advance_playlist_track(
         .get(&ctx.zone_index)
         .is_some_and(|z| z.playback == crate::state::PlaybackState::Playing);
 
-    stop_decode(ds.current_decode, ds.decode_rx).await;
-    if let Some(sub) = &ctx.subsonic
-        && let Ok(playlist) = sub.get_playlist(playlist_id).await
-        && let Some(track) = playlist.entry.get(track_index)
-    {
-        // Only start decode if we were playing; otherwise just load metadata
-        if was_playing {
-            start_subsonic_track_decode(sub, track, ds, ctx).await;
-        }
-        *ds.source = ActiveSource::SubsonicPlaylist {
-            playlist_id: playlist_id.to_string(),
-            track_index,
-            track_count,
-        };
-        update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
-            if was_playing {
-                z.playback = crate::state::PlaybackState::Playing;
+    // Fetch before touching the running decode. `get_queue` also resolves the reserved
+    // album ids, which `get_playlist` does not know.
+    let fetched = match &ctx.subsonic {
+        Some(sub) => match sub.get_queue(playlist_id).await {
+            Ok(playlist) if playlist.entry.get(track_index).is_some() => Some((sub, playlist)),
+            Ok(_) => {
+                tracing::warn!(
+                    zone = ctx.zone_index,
+                    track = track_index,
+                    "Queue has no such track"
+                );
+                None
             }
-            z.playlist_track_index = Some(track_index);
-            z.track = Some(subsonic_track_info(track));
-            z.track.as_mut().unwrap().position_ms = 0;
-        })
-        .await;
-        // Prefetch: always cache the current + next tracks
-        if let Some(cache) = ctx.track_cache {
-            let lookahead = ctx
-                .config
-                .subsonic
-                .as_ref()
-                .map_or(0, |_| crate::config::CACHE_LOOKAHEAD);
-            prefetch_next_tracks(sub, &playlist.entry, track_index, cache, lookahead);
-        }
-        tracing::info!(
-            zone = ctx.zone_index,
-            track = track_index,
-            "Advanced to track"
-        );
+            Err(e) => {
+                tracing::warn!(zone = ctx.zone_index, error = %e, "Could not fetch the queue to advance");
+                None
+            }
+        },
+        None => None,
+    };
+    let Some((sub, playlist)) = fetched else {
+        stop_after_failed_fetch(ds, ctx).await;
+        return;
+    };
+    let track = &playlist.entry[track_index];
+    stop_decode(ds.current_decode, ds.decode_rx).await;
+    // Only start decode if we were playing; otherwise just load metadata
+    if was_playing {
+        start_subsonic_track_decode(sub, track, ds, ctx).await;
     }
+    *ds.source = ActiveSource::SubsonicPlaylist {
+        playlist_id: playlist_id.to_string(),
+        track_index,
+        track_count,
+    };
+    update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
+        if was_playing {
+            z.playback = crate::state::PlaybackState::Playing;
+        }
+        z.playlist_track_index = Some(track_index);
+        z.track = Some(subsonic_track_info(track));
+        z.track.as_mut().unwrap().position_ms = 0;
+    })
+    .await;
+    // Prefetch: always cache the current + next tracks
+    if let Some(cache) = ctx.track_cache {
+        let lookahead = ctx
+            .config
+            .subsonic
+            .as_ref()
+            .map_or(0, |_| crate::config::CACHE_LOOKAHEAD);
+        prefetch_next_tracks(sub, &playlist.entry, track_index, cache, lookahead);
+    }
+    tracing::info!(
+        zone = ctx.zone_index,
+        track = track_index,
+        "Advanced to track"
+    );
 }
 
 use std::sync::LazyLock;
@@ -627,6 +671,144 @@ async fn prefetch_one(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- queue advance against a mock Subsonic server ---
+
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct Harness {
+        config: AppConfig,
+        subsonic: Option<SubsonicClient>,
+        store: state::SharedState,
+        notify: NotifySender,
+        covers: SharedCoverCache,
+        cache: Option<crate::audio::cache::TrackCache>,
+    }
+
+    fn harness(server: &MockServer) -> Harness {
+        let raw: crate::config::FileConfig = toml::from_str(&format!(
+            r#"
+            [[zone]]
+            name = "Ground Floor"
+            [subsonic]
+            url = "{}"
+            username = "u"
+            password = "p"
+            [[client]]
+            name = "Living Room"
+            mac = "00:00:00:00:00:00"
+            zone = "Ground Floor"
+        "#,
+            server.uri()
+        ))
+        .unwrap();
+        let config = crate::config::load_raw(raw).unwrap();
+        let subsonic = config.subsonic.as_ref().map(SubsonicClient::new);
+        let store = state::init(&config, None).unwrap();
+        Harness {
+            config,
+            subsonic,
+            store,
+            notify: crate::api::ws::notification_channel().0,
+            covers: state::cover::new_cache(),
+            cache: None,
+        }
+    }
+
+    async fn run_advance(
+        h: &Harness,
+        queue_id: &str,
+        index: usize,
+    ) -> (ActiveSource, PlaybackState) {
+        let (mut decode, mut cover, mut rx) = (None, None, None);
+        let mut source = ActiveSource::Idle;
+        let mut ds = DecodeState {
+            current_decode: &mut decode,
+            current_cover: &mut cover,
+            decode_rx: &mut rx,
+            source: &mut source,
+        };
+        let ctx = PlaybackCtx {
+            config: &h.config,
+            subsonic: &h.subsonic,
+            store: &h.store,
+            zone_index: 1,
+            notify: &h.notify,
+            covers: &h.covers,
+            track_cache: &h.cache,
+        };
+        // The zone reads Playing, as it does when a track ends on its own.
+        update_and_notify(&h.store, 1, &h.notify, |z| {
+            z.playback = PlaybackState::Playing;
+        })
+        .await;
+        advance_playlist_track(&mut ds, queue_id, index, 2, &ctx).await;
+        let playback = h.store.read().await.zones[&1].playback.clone();
+        (source, playback)
+    }
+
+    fn album_json() -> serde_json::Value {
+        let song = |id: &str, title: &str| serde_json::json!({"id": id, "title": title, "artist": "A", "album": "Alb", "duration": 60});
+        serde_json::json!({"subsonic-response": {"status": "ok", "version": "1.16.1",
+            "album": {"id": "al1", "name": "Alb", "song": [song("t1", "One"), song("t2", "Two")]}}})
+    }
+
+    #[tokio::test]
+    async fn advancing_in_an_album_queue_fetches_the_album_and_selects_the_next_track() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbum"))
+            .and(query_param("id", "al1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(album_json()))
+            .mount(&server)
+            .await;
+        let h = harness(&server);
+        let queue_id = crate::subsonic::album_queue_id("al1");
+
+        let (source, playback) = run_advance(&h, &queue_id, 1).await;
+
+        assert!(
+            matches!(
+                source,
+                ActiveSource::SubsonicPlaylist { track_index: 1, .. }
+            ),
+            "the album queue advances to track 1"
+        );
+        assert_eq!(playback, PlaybackState::Playing);
+        assert_eq!(h.store.read().await.zones[&1].playlist_track_index, Some(1));
+    }
+
+    #[tokio::test]
+    async fn a_failed_fetch_leaves_the_zone_stopped_and_not_playing_without_a_decoder() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let h = harness(&server);
+
+        let (source, playback) = run_advance(&h, "pl1", 1).await;
+
+        assert!(matches!(source, ActiveSource::Idle));
+        assert_eq!(playback, PlaybackState::Stopped);
+    }
+
+    #[tokio::test]
+    async fn an_index_beyond_the_queue_leaves_the_zone_stopped() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbum"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(album_json()))
+            .mount(&server)
+            .await;
+        let h = harness(&server);
+        let queue_id = crate::subsonic::album_queue_id("al1");
+
+        let (_, playback) = run_advance(&h, &queue_id, 5).await;
+
+        assert_eq!(playback, PlaybackState::Stopped);
+    }
 
     /// #492: titles still buffered for a station when its decode is aborted (a source change)
     /// are never applied, because the metadata task ends with the decode.
