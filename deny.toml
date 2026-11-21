@@ -32,6 +32,11 @@ ignore = [
     # release), a dev-dependency of `snapdog` for the integration tests, so it is not in the
     # released binary or in the Docker image.
     { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained since 2026-11-03; pulled in only by the testcontainers dev-dependency of the integration tests; remove once testcontainers drops it" },
+
+    # chrono: reported as unmaintained, not as vulnerable, with no patched version. snapdog uses it
+    # directly, and oauth2 (librespot) pulls it in as well. Replacing it is a separate migration
+    # (for example to jiff); revisit then.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained with no safe upgrade; used directly and by oauth2; remove once snapdog and its dependencies have moved off chrono" },
 ]
 
 [licenses]
