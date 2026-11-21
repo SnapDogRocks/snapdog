@@ -169,6 +169,14 @@ impl VolumeCoalescer {
     }
 }
 
+/// A zone reconcile in process mode, which the main loop carries out itself.
+const fn is_process_reconcile(cmd: &player::SnapcastCmd) -> bool {
+    cfg!(all(
+        feature = "snapcast-process",
+        not(feature = "snapcast-embedded")
+    )) && matches!(cmd, player::SnapcastCmd::ReconcileZones)
+}
+
 #[cfg(target_os = "windows")]
 mod service_windows;
 
@@ -536,11 +544,10 @@ pub async fn run_app() -> Result<()> {
     let mut knx_device_control: Option<knx::DeviceControlHandle> = None;
     let mut knx_bridge: Option<knx::KnxBridge> = None;
     if config.knx.is_some() {
-        let knx_notifications = notify_tx.subscribe();
         match knx::start(
             &config,
             store.clone(),
-            knx_notifications,
+            notify_tx.clone(),
             zone_commands.clone(),
             snap_cmd_tx.clone(),
         )
@@ -612,6 +619,7 @@ pub async fn run_app() -> Result<()> {
                 state: store.clone(),
                 snap_tx: snap_cmd_tx.clone(),
                 notifications: notify_tx.subscribe(),
+                notify: notify_tx.clone(),
                 server: mqtt::ServerInfo {
                     id: server_id.clone(),
                     stable_id: server_identity.persisted,
@@ -899,6 +907,11 @@ pub async fn run_app() -> Result<()> {
                 // Coalesce client volume commands
                 if let player::SnapcastCmd::Client { ref client_id, action: player::ClientAction::Volume(v) } = cmd {
                     coalescer.push(client_id.clone(), v);
+                } else if is_process_reconcile(&cmd) {
+                    // The process backend has no group logic of its own: regroup the clients
+                    // through the Snapcast JSON-RPC client and re-announce them.
+                    #[cfg(all(feature = "snapcast-process", not(feature = "snapcast-embedded")))]
+                    snapcast::reconcile_zone_groups(process_backend.client(), &config, &store, &notify_tx).await;
                 } else if let Err(e) = cmd_backend.execute(cmd).await {
                     tracing::warn!(error = %e, "Snapcast command failed");
                 }

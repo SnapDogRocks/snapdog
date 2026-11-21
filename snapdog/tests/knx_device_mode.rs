@@ -335,7 +335,7 @@ async fn start_device_on(cfg: &config::AppConfig, memory: PathBuf, bind: SocketA
     let store = state::init(cfg, None).unwrap();
     // Commands for a client only go out once Snapcast has told us its id.
     store.write().await.clients.get_mut(&1).unwrap().snapcast_id = Some("snap-1".into());
-    let (notify, notify_rx) = broadcast::channel(64);
+    let (notify, _) = broadcast::channel(64);
     let mut zone_commands = HashMap::new();
     let mut zone_rx = HashMap::new();
     for z in 1..=cfg.zones.len() {
@@ -352,7 +352,7 @@ async fn start_device_on(cfg: &config::AppConfig, memory: PathBuf, bind: SocketA
     let bridge = knx::start_with_options(
         cfg,
         store.clone(),
-        notify_rx,
+        notify.clone(),
         zone_commands,
         snap_tx,
         &options,

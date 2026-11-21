@@ -126,14 +126,14 @@ impl KnxBridge {
 pub async fn start<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<Arc<str>>,
+    notify: crate::api::ws::NotifySender,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
 ) -> Result<KnxBridge> {
     start_with_options(
         config,
         store,
-        notify_rx,
+        notify,
         zone_commands,
         snap_tx,
         &DeviceOptions::default(),
@@ -150,14 +150,15 @@ pub async fn start<S: BuildHasher + Send + Sync + 'static>(
 pub async fn start_with_options<S: BuildHasher + Send + Sync + 'static>(
     config: &AppConfig,
     store: state::SharedState,
-    notify_rx: tokio::sync::broadcast::Receiver<Arc<str>>,
+    notify: crate::api::ws::NotifySender,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
     options: &DeviceOptions,
 ) -> Result<KnxBridge> {
     let knx = config.knx.as_ref().context("KNX not configured")?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let bridge = Bridge::new(config, store, zone_commands, snap_tx);
+    let notify_rx = notify.subscribe();
+    let bridge = Bridge::new(config, store, zone_commands, snap_tx, notify);
     for problem in duplicate_addresses(config) {
         tracing::warn!("KNX group address configured twice: {problem}");
     }
@@ -214,6 +215,8 @@ pub(crate) struct Bridge<S> {
     store: state::SharedState,
     zone_commands: HashMap<usize, ZoneCommandSender, S>,
     snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
+    /// Announces the changes KNX makes itself (client zone moves).
+    notify: crate::api::ws::NotifySender,
     zone_ga_map: HashMap<String, (usize, &'static str)>,
     client_ga_map: HashMap<String, (usize, &'static str)>,
     global_ga_map: HashMap<String, &'static str>,
@@ -228,6 +231,7 @@ impl<S> Bridge<S> {
         store: state::SharedState,
         zone_commands: HashMap<usize, ZoneCommandSender, S>,
         snap_tx: tokio::sync::mpsc::Sender<SnapcastCmd>,
+        notify: crate::api::ws::NotifySender,
     ) -> Self {
         Self {
             zone_ga_map: build_zone_ga_map(config),
@@ -239,6 +243,7 @@ impl<S> Bridge<S> {
             store,
             zone_commands,
             snap_tx,
+            notify,
         }
     }
 }
@@ -779,6 +784,7 @@ async fn listener_loop<L, S>(
                     &bridge.zone_commands,
                     &bridge.snap_tx,
                     &bridge.store,
+                    &bridge.notify,
                     bridge.sync_system_clock,
                 )
                 .await;
@@ -797,6 +803,7 @@ async fn listener_loop<L, S>(
                     &bridge.zone_commands,
                     &bridge.snap_tx,
                     &bridge.store,
+                    &bridge.notify,
                     bridge.sync_system_clock,
                 )
                 .await;
@@ -1132,6 +1139,7 @@ pub(crate) async fn handle_object<S: BuildHasher + Sync>(
     zone_commands: &HashMap<usize, ZoneCommandSender, S>,
     snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
     store: &state::SharedState,
+    notify: &crate::api::ws::NotifySender,
     sync_system_clock: bool,
 ) {
     let Some(command) = object_command(asap) else {
@@ -1145,6 +1153,7 @@ pub(crate) async fn handle_object<S: BuildHasher + Sync>(
         zone_commands,
         snap_tx,
         store,
+        notify,
         sync_system_clock,
     )
     .await;
@@ -1161,6 +1170,7 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
     zone_commands: &HashMap<usize, ZoneCommandSender, S>,
     snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
     store: &state::SharedState,
+    notify: &crate::api::ws::NotifySender,
     sync_system_clock: bool,
 ) {
     let ga_str = format!("{ga}");
@@ -1174,6 +1184,7 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
             zone_commands,
             snap_tx,
             store,
+            notify,
             sync_system_clock,
         )
         .await;
@@ -1188,6 +1199,7 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
             zone_commands,
             snap_tx,
             store,
+            notify,
             sync_system_clock,
         )
         .await;
@@ -1201,6 +1213,7 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
             zone_commands,
             snap_tx,
             store,
+            notify,
             sync_system_clock,
         )
         .await;
@@ -1209,6 +1222,7 @@ pub(crate) async fn handle_incoming<S: BuildHasher + Sync>(
 
 /// Carry out `command`; `source` names the address or object it came from, for the log.
 #[allow(clippy::too_many_lines)] // Match dispatcher for KNX actions — splitting would obscure control flow
+#[allow(clippy::too_many_arguments)] // The targets of a KNX action, all borrowed from the bridge
 async fn execute<S: BuildHasher + Sync>(
     command: Command<'_>,
     data: &[u8],
@@ -1216,6 +1230,7 @@ async fn execute<S: BuildHasher + Sync>(
     zone_commands: &HashMap<usize, ZoneCommandSender, S>,
     snap_tx: &tokio::sync::mpsc::Sender<SnapcastCmd>,
     store: &state::SharedState,
+    notify: &crate::api::ws::NotifySender,
     sync_system_clock: bool,
 ) {
     match command {
@@ -1316,6 +1331,26 @@ async fn execute<S: BuildHasher + Sync>(
                 let _ = tx.send(cmd).await;
             }
         }
+        Command::Client(client_idx, "zone") => {
+            // Handled before the Snapcast id is looked at: a client that is offline can be moved
+            // as over REST and MQTT, and joins its new zone when it connects.
+            let Some(target_zone) = decode_u8(data).map(usize::from) else {
+                return;
+            };
+            if !zone_commands.contains_key(&target_zone)
+                || !state::assign_client_zone(store, notify, client_idx, target_zone).await
+            {
+                tracing::warn!(
+                    client = client_idx,
+                    zone = target_zone,
+                    %source,
+                    "Ignoring KNX client zone change to unknown zone"
+                );
+                return;
+            }
+            let _ = snap_tx.send(SnapcastCmd::ReconcileZones).await;
+            tracing::debug!(client = client_idx, zone = target_zone, %source, "KNX → client zone change");
+        }
         Command::Client(client_idx, action) => {
             let s = store.read().await;
             if let Some(client) = s.clients.get(&client_idx)
@@ -1327,33 +1362,6 @@ async fn execute<S: BuildHasher + Sync>(
                     "volume" => decode_percent(data).map(|v| ClientAction::Volume(i32::from(v))),
                     "volume_dim" => decode_dim(data).map(ClientAction::AdjustVolume),
                     "latency" => decode_u8(data).map(|v| ClientAction::Latency(i32::from(v))),
-                    "zone" => {
-                        if let Some(target_zone) = decode_u8(data) {
-                            let target_zone = usize::from(target_zone);
-                            if target_zone == 0
-                                || !zone_commands.contains_key(&target_zone)
-                                || !s.zones.contains_key(&target_zone)
-                            {
-                                tracing::warn!(
-                                    client = client_idx,
-                                    zone = target_zone,
-                                    %source,
-                                    "Ignoring KNX client zone change to unknown zone"
-                                );
-                                return;
-                            }
-                            drop(s);
-                            let mut store = store.write().await;
-                            if let Some(c) = store.clients.get_mut(&client_idx) {
-                                c.zone_index = target_zone;
-                                store.dirty = true;
-                            }
-                            drop(store);
-                            let _ = snap_tx.send(SnapcastCmd::ReconcileZones).await;
-                            tracing::debug!(client = client_idx, zone = target_zone, %source, "KNX → client zone change");
-                        }
-                        return;
-                    }
                     _ => None,
                 };
                 if let Some(action) = cmd {
@@ -1621,6 +1629,7 @@ mod tests {
             &cmds,
             &snap_tx,
             state,
+            &tokio::sync::broadcast::channel(16).0,
             false,
         )
         .await;
@@ -1650,6 +1659,7 @@ mod tests {
             &cmds,
             &snap_tx,
             &test_state(),
+            &tokio::sync::broadcast::channel(16).0,
             false,
         )
         .await;
@@ -1699,6 +1709,7 @@ mod tests {
             &cmds,
             &snap_tx,
             &test_state(),
+            &tokio::sync::broadcast::channel(16).0,
             false,
         )
         .await;
@@ -2053,6 +2064,44 @@ mod tests {
         assert!(state.read().await.dirty);
     }
 
+    /// A zone move over KNX announces the client once, also for a client that is offline.
+    #[tokio::test]
+    async fn client_zone_change_is_announced_once_also_for_an_offline_client() {
+        for snapcast_id in [Some("snap-1".to_string()), None] {
+            let state = test_state();
+            state.write().await.clients.get_mut(&1).unwrap().snapcast_id = snapcast_id.clone();
+            let (notify, mut notify_rx) = tokio::sync::broadcast::channel(16);
+            let (tx1, _rx1) = mpsc::channel(4);
+            let (tx2, _rx2) = mpsc::channel(4);
+            let cmds = HashMap::from([(1, tx1), (2, tx2)]);
+            let (snap_tx, mut snap_rx) = mpsc::channel(4);
+            handle_incoming(
+                ga("2/0/4"),
+                &encode_u8(2),
+                &zone_ga_map(),
+                &client_ga_map(),
+                &HashMap::new(),
+                &cmds,
+                &snap_tx,
+                &state,
+                &notify,
+                false,
+            )
+            .await;
+            let msg = notify_rx.try_recv().expect("a ClientStateChanged");
+            let v: serde_json::Value = serde_json::from_str(&msg).unwrap();
+            assert_eq!(v["type"], "client_state_changed", "{snapcast_id:?}");
+            assert_eq!(v["client"], 1);
+            assert_eq!(v["zone"], 2);
+            assert!(notify_rx.try_recv().is_err(), "exactly one notification");
+            assert!(matches!(
+                snap_rx.try_recv(),
+                Ok(SnapcastCmd::ReconcileZones)
+            ));
+            assert_eq!(state.read().await.clients[&1].zone_index, 2);
+        }
+    }
+
     // ── IT-T40: GA-map construction from config (passthrough GAs) ──────
 
     fn cfg_with_knx() -> crate::config::AppConfig {
@@ -2147,6 +2196,7 @@ zone = "Z1"
             &cmds,
             &snap_tx,
             &test_state(),
+            &tokio::sync::broadcast::channel(16).0,
             false,
         )
         .await;
@@ -2160,6 +2210,7 @@ zone = "Z1"
             &cmds,
             &snap_tx,
             &test_state(),
+            &tokio::sync::broadcast::channel(16).0,
             false,
         )
         .await;
@@ -2565,6 +2616,7 @@ zone = "Z1"
             store,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let rec = Rec::default();
         let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
@@ -2598,6 +2650,7 @@ zone = "Z1"
             store,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let rec = Rec::default();
         // The gateway takes nothing at first: every initial write fails.
@@ -2792,6 +2845,7 @@ mute_status = "0/0/9"
             store,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let publisher = Resyncing {
             rec: Rec::default(),
@@ -2834,6 +2888,7 @@ mute_status = "0/0/9"
             store,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let publisher = Resyncing {
             rec: Rec::default(),
@@ -2873,6 +2928,7 @@ mute_status = "0/0/9"
             store,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let publisher = Resyncing {
             rec: Rec::default(),
@@ -2920,6 +2976,7 @@ mute_status = "0/0/9"
             store,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE);
         tokio::time::timeout(
@@ -2945,6 +3002,7 @@ mute_status = "0/0/9"
             store,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let rec = Rec::default();
         let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
@@ -2985,6 +3043,7 @@ name = "Z1"
             store,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let rec = Rec::default();
         let (_notify_tx, mut notify_rx) = tokio::sync::broadcast::channel(8);
@@ -3056,7 +3115,7 @@ name = "Z1"
 "#;
         let cfg = crate::config::load_raw(toml::from_str(toml).unwrap()).unwrap();
         let store = state::init(&cfg, None).unwrap();
-        let (_notify_tx, notify_rx) = tokio::sync::broadcast::channel(8);
+        let (notify_tx, _) = tokio::sync::broadcast::channel(8);
         let (snap_tx, _snap_rx) = mpsc::channel(4);
         let dir = std::env::temp_dir().join(format!("snapdog_bridge_tasks_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -3068,7 +3127,7 @@ name = "Z1"
         let bridge = start_with_options(
             &cfg,
             store,
-            notify_rx,
+            notify_tx,
             HashMap::<usize, ZoneCommandSender>::new(),
             snap_tx,
             &options,
