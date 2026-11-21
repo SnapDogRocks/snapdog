@@ -140,6 +140,8 @@ pub enum Mixer {
     /// ALSA hardware mixer control (Linux only).
     #[cfg(target_os = "linux")]
     Hardware {
+        /// ALSA mixer device of the card that plays, e.g. `hw:CARD=DAC`.
+        card: String,
         control: String,
         volume: Arc<VolumeState>,
     },
@@ -156,22 +158,29 @@ pub enum Mixer {
 }
 
 impl Mixer {
-    /// Build the mixer from `--mixer`. Mixers that can read their own state back use
-    /// `report` as the reverse channel; the others ignore it.
-    pub fn from_cli(raw: &str, volume: Arc<VolumeState>, report: Option<VolumeReport>) -> Self {
+    /// Build the mixer from `--mixer`. The hardware mixer controls the card selected with
+    /// `soundcard`. Mixers that can read their own state back use `report` as the reverse
+    /// channel; the others ignore it.
+    pub fn from_cli(
+        raw: &str,
+        soundcard: &str,
+        volume: Arc<VolumeState>,
+        report: Option<VolumeReport>,
+    ) -> Self {
         let (mode, param) = raw.split_once(':').unwrap_or((raw, ""));
         match mode {
             "software" | "" => Self::Software(volume),
             #[cfg(target_os = "linux")]
-            "hardware" => Self::alsa(param, volume),
+            "hardware" => Self::alsa(param, soundcard, volume),
             #[cfg(not(target_os = "linux"))]
             "hardware" => {
+                let _ = soundcard;
                 tracing::warn!(
                     "Hardware mixer not supported on this platform, falling back to software"
                 );
                 Self::Software(volume)
             }
-            "midi" => match parse_midi_param(param) {
+            "midi" => match connect_midi(param) {
                 Ok((conn, channel, cc)) => {
                     tracing::info!(channel = channel + 1, cc, "MIDI mixer connected");
                     Self::Midi {
@@ -203,27 +212,33 @@ impl Mixer {
         }
     }
 
-    /// ALSA control `param`, or an auto-detected one when empty (Linux only).
+    /// ALSA control `param` (or an auto-detected one when empty) on the card that plays
+    /// (Linux only). Without such a control the software mixer takes over, so the device
+    /// never plays at full level without any volume control.
     #[cfg(target_os = "linux")]
-    fn alsa(param: &str, volume: Arc<VolumeState>) -> Self {
-        let control = if param.is_empty() {
-            // Auto-detect: try Master, then first available control
-            detect_alsa_control().unwrap_or_else(|| "Master".to_string())
-        } else {
-            param.to_string()
-        };
-        // Validate the control exists at startup
-        if validate_alsa_control(&control) {
-            tracing::info!(control, "Hardware mixer initialized");
-        } else {
-            tracing::warn!(
-                control,
-                "ALSA mixer control not found — volume changes will fail. \
-                 Available controls: {}",
-                list_alsa_controls().unwrap_or_else(|| "none".into())
-            );
+    fn alsa(param: &str, soundcard: &str, volume: Arc<VolumeState>) -> Self {
+        let card = alsa_mixer_card_for(soundcard);
+        let available = alsa_volume_controls(&card);
+        let requested = (!param.is_empty()).then_some(param);
+        match select_hardware_control(requested, &available) {
+            Some(control) => {
+                tracing::info!(card, control, "Hardware mixer initialized");
+                Self::Hardware {
+                    card,
+                    control,
+                    volume,
+                }
+            }
+            None => {
+                tracing::warn!(
+                    card,
+                    control = requested.unwrap_or("(auto)"),
+                    available = %available.join(", "),
+                    "ALSA mixer control not found on the selected card, using the software mixer"
+                );
+                Self::Software(volume)
+            }
         }
-        Self::Hardware { control, volume }
     }
 
     /// Apply a volume change.
@@ -235,11 +250,13 @@ impl Mixer {
             }
             #[cfg(target_os = "linux")]
             Self::Hardware {
-                control, volume, ..
+                card,
+                control,
+                volume,
             } => {
                 volume.percent.store(percent, Ordering::Relaxed);
                 volume.muted.store(muted, Ordering::Relaxed);
-                set_alsa_volume(control, percent, muted);
+                set_alsa_volume(card, control, percent, muted);
             }
             Self::Midi { conn, channel, cc } => {
                 let value = midi_cc_value(percent, muted);
@@ -287,22 +304,70 @@ fn midi_cc_value(percent: u8, muted: bool) -> u8 {
     (u16::from(percent) * u16::from(MIDI_CC_MAX) / 100).min(u16::from(MIDI_CC_MAX)) as u8
 }
 
-/// Parse `interface:ch[:cc]` → (`MidiOutputConnection`, `channel_0based`, cc)
-fn parse_midi_param(param: &str) -> anyhow::Result<(midir::MidiOutputConnection, u8, u8)> {
-    let parts: Vec<&str> = param.rsplitn(3, ':').collect();
-    // rsplitn reverses: "IAC Driver:1:7" → ["7", "1", "IAC Driver"]
-    let (interface, channel_1, cc) = match parts.len() {
-        3 => (parts[2], parts[1], parts[0].parse::<u8>().unwrap_or(7)),
-        2 => (parts[1], parts[0], 7u8),
-        _ => anyhow::bail!("expected midi:interface:ch[:cc]"),
+/// A parsed `--mixer midi:` parameter.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MidiSpec {
+    /// Text matched against the MIDI output port names, ignoring case.
+    pub interface: String,
+    /// MIDI channel, 0-based (the parameter is 1-based).
+    pub channel: u8,
+    /// Controller number, 0 to 127.
+    pub cc: u8,
+}
+
+/// Default controller: CC 7, channel volume.
+const MIDI_DEFAULT_CC: u8 = 7;
+
+/// Parse `<interface>:<channel>[:<cc>]`: the channel is 1 to 16, the controller 0 to 127
+/// (default 7). The interface is everything before the numbers, so it may contain colons.
+/// When the last two fields are both numbers they are read as channel and controller: an
+/// interface that itself ends in `:<number>` therefore needs the controller written out.
+///
+/// # Errors
+///
+/// Returns an error for an empty interface, a channel outside 1 to 16 or a controller that is
+/// not a number from 0 to 127.
+pub fn parse_midi_spec(param: &str) -> anyhow::Result<MidiSpec> {
+    let fields: Vec<&str> = param.split(':').collect();
+    let numeric = |f: &str| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit());
+    let (interface, channel, cc) = match fields.as_slice() {
+        [head @ .., ch, cc] if !head.is_empty() && numeric(ch) => (head.join(":"), *ch, Some(*cc)),
+        [head @ .., ch] if !head.is_empty() => (head.join(":"), *ch, None),
+        _ => anyhow::bail!("expected midi:<interface>:<channel>[:<cc>], got 'midi:{param}'"),
     };
-    let channel: u8 = channel_1
+    let interface = interface.trim_matches('"').trim().to_owned();
+    anyhow::ensure!(
+        !interface.is_empty(),
+        "midi: the interface name is empty in 'midi:{param}'"
+    );
+    let channel = channel
         .parse::<u8>()
         .ok()
-        .filter(|&c| (1..=16).contains(&c))
-        .map(|c| c - 1)
-        .ok_or_else(|| anyhow::anyhow!("MIDI channel must be 1-16, got '{channel_1}'"))?;
+        .filter(|c| (1..=16).contains(c))
+        .ok_or_else(|| anyhow::anyhow!("midi: the channel must be 1 to 16, got '{channel}'"))?
+        - 1;
+    let cc = match cc {
+        None => MIDI_DEFAULT_CC,
+        Some(raw) => raw
+            .parse::<u8>()
+            .ok()
+            .filter(|&c| c <= MIDI_CC_MAX)
+            .ok_or_else(|| anyhow::anyhow!("midi: the controller must be 0 to 127, got '{raw}'"))?,
+    };
+    Ok(MidiSpec {
+        interface,
+        channel,
+        cc,
+    })
+}
 
+/// Connect to the port named by a `--mixer midi:` parameter → (connection, 0-based channel, cc).
+fn connect_midi(param: &str) -> anyhow::Result<(midir::MidiOutputConnection, u8, u8)> {
+    let MidiSpec {
+        interface,
+        channel,
+        cc,
+    } = parse_midi_spec(param)?;
     let midi_out = midir::MidiOutput::new("snapdog-client").map_err(|e| anyhow::anyhow!("{e}"))?;
     let port = midi_out
         .ports()
@@ -330,24 +395,81 @@ fn parse_midi_param(param: &str) -> anyhow::Result<(midir::MidiOutputConnection,
     Ok((conn, channel, cc))
 }
 
+/// The ALSA mixer device for an ALSA PCM id: `hw:CARD=DAC,DEV=0`, `plughw:1,0` or
+/// `front:CARD=DAC,DEV=0` all belong to the card `hw:CARD=DAC` / `hw:1`. Anything without a
+/// card (`default`, `pipewire`, `pulse`) uses the `default` mixer.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn alsa_mixer_card(pcm_id: &str) -> String {
+    let Some((_, args)) = pcm_id.split_once(':') else {
+        return "default".to_owned();
+    };
+    let card = args
+        .split(',')
+        .find_map(|a| a.trim().strip_prefix("CARD="))
+        .or_else(|| {
+            args.split(',')
+                .next()
+                .map(str::trim)
+                .filter(|a| !a.is_empty() && !a.contains('='))
+        });
+    match card {
+        Some(c) if c.bytes().all(|b| b.is_ascii_digit()) => format!("hw:{c}"),
+        Some(c) => format!("hw:CARD={c}"),
+        None => "default".to_owned(),
+    }
+}
+
+/// The ALSA mixer device of the output `--soundcard` selects.
 #[cfg(target_os = "linux")]
-fn set_alsa_volume(control: &str, percent: u8, muted: bool) {
+fn alsa_mixer_card_for(soundcard: &str) -> String {
+    use cpal::traits::DeviceTrait;
+    if DeviceSelector::parse(soundcard) == DeviceSelector::Default {
+        return "default".to_owned();
+    }
+    match find_output_device(&cpal::default_host(), soundcard)
+        .and_then(|d| d.id().map_err(Into::into))
+    {
+        Ok(id) => alsa_mixer_card(id.id()),
+        Err(e) => {
+            tracing::warn!(soundcard, error = %e, "Cannot resolve the sound card for the hardware mixer");
+            "default".to_owned()
+        }
+    }
+}
+
+/// The control the hardware mixer uses: the requested one if the card has it, otherwise
+/// (nothing requested) the first of Master, Digital, PCM and Speaker, then any control with a
+/// playback volume. `None` means the card has no usable control.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn select_hardware_control(requested: Option<&str>, available: &[String]) -> Option<String> {
+    if let Some(name) = requested {
+        return available.iter().find(|a| *a == name).cloned();
+    }
+    ["Master", "Digital", "PCM", "Speaker"]
+        .iter()
+        .find_map(|c| available.iter().find(|a| a == c))
+        .or_else(|| available.first())
+        .cloned()
+}
+
+#[cfg(target_os = "linux")]
+fn set_alsa_volume(card: &str, control: &str, percent: u8, muted: bool) {
     let vol = if muted { 0 } else { percent };
-    if let Err(e) = set_alsa_volume_inner(control, vol) {
-        tracing::warn!(control, error = %e, "Failed to set ALSA volume");
+    if let Err(e) = set_alsa_volume_inner(card, control, vol) {
+        tracing::warn!(card, control, error = %e, "Failed to set ALSA volume");
     } else {
-        tracing::debug!(control, percent, muted, "Hardware volume set");
+        tracing::debug!(card, control, percent, muted, "Hardware volume set");
     }
 }
 
 #[cfg(target_os = "linux")]
-fn set_alsa_volume_inner(control: &str, percent: u8) -> anyhow::Result<()> {
+fn set_alsa_volume_inner(card: &str, control: &str, percent: u8) -> anyhow::Result<()> {
     use alsa::mixer::{Mixer, SelemId};
-    let mixer = Mixer::new("default", false)?;
+    let mixer = Mixer::new(card, false)?;
     let selem_id = SelemId::new(control, 0);
     let selem = mixer
         .find_selem(&selem_id)
-        .ok_or_else(|| anyhow::anyhow!("ALSA control '{control}' not found"))?;
+        .ok_or_else(|| anyhow::anyhow!("ALSA control '{control}' not found on {card}"))?;
     let (min, max) = selem.get_playback_volume_range();
     // Perceptual volume curve (quadratic) — balances between linear (too quiet
     // at low values on DACs) and cubic (too quiet on amplifiers).
@@ -362,50 +484,23 @@ fn set_alsa_volume_inner(control: &str, percent: u8) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Names of the controls with a playback volume on an ALSA mixer device.
 #[cfg(target_os = "linux")]
-fn validate_alsa_control(control: &str) -> bool {
-    use alsa::mixer::{Mixer, SelemId};
-    let Ok(mixer) = Mixer::new("default", false) else {
-        return false;
+fn alsa_volume_controls(card: &str) -> Vec<String> {
+    use alsa::mixer::{Mixer, Selem};
+    let Ok(mixer) = Mixer::new(card, false) else {
+        return Vec::new();
     };
-    let selem_id = SelemId::new(control, 0);
-    mixer.find_selem(&selem_id).is_some()
-}
-
-#[cfg(target_os = "linux")]
-fn list_alsa_controls() -> Option<String> {
-    use alsa::mixer::Mixer;
-    let mixer = Mixer::new("default", false).ok()?;
-    let names: Vec<String> = mixer
+    mixer
         .iter()
         .filter_map(|elem| {
-            use alsa::mixer::Selem;
             let selem = Selem::new(elem)?;
-            let id = selem.get_id();
-            Some(id.get_name().ok()?.to_string())
+            if !selem.has_playback_volume() {
+                return None;
+            }
+            selem.get_id().get_name().ok().map(str::to_owned)
         })
-        .collect();
-    Some(names.join(", "))
-}
-
-#[cfg(target_os = "linux")]
-fn detect_alsa_control() -> Option<String> {
-    use alsa::mixer::{Mixer, Selem};
-    for candidate in ["Master", "Digital", "PCM", "Speaker"] {
-        if validate_alsa_control(candidate) {
-            return Some(candidate.to_string());
-        }
-    }
-    // Fall back to first available playback control
-    let mixer = Mixer::new("default", false).ok()?;
-    mixer.iter().find_map(|elem| {
-        let selem = Selem::new(elem)?;
-        if selem.has_playback_volume() {
-            Some(selem.get_id().get_name().ok()?.to_string())
-        } else {
-            None
-        }
-    })
+        .collect()
 }
 
 /// Which output device `--soundcard` names.
@@ -992,6 +1087,97 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::{MidiSpec, alsa_mixer_card, parse_midi_spec, select_hardware_control};
+
+    fn midi(param: &str) -> MidiSpec {
+        parse_midi_spec(param).unwrap_or_else(|e| panic!("{param}: {e}"))
+    }
+
+    #[test]
+    fn the_readme_midi_examples_mean_what_they_say() {
+        // "channel 1, CC7 (default)"
+        assert_eq!(
+            midi("Scarlett 18i8:1"),
+            MidiSpec {
+                interface: "Scarlett 18i8".into(),
+                channel: 0,
+                cc: 7
+            }
+        );
+        // "channel 3, CC11": status byte 0xB2
+        let s = midi("\"Scarlett 18i8\":3:11");
+        assert_eq!(
+            (s.interface.as_str(), s.channel, s.cc),
+            ("Scarlett 18i8", 2, 11)
+        );
+        assert_eq!(0xB0 | s.channel, 0xB2);
+    }
+
+    #[test]
+    fn a_midi_interface_name_may_contain_colons() {
+        let s = midi("UM-ONE:UM-ONE MIDI 1:1");
+        assert_eq!(
+            (s.interface.as_str(), s.channel, s.cc),
+            ("UM-ONE:UM-ONE MIDI 1", 0, 7)
+        );
+        // An interface ending in a number needs the controller written out.
+        let s = midi("Port 20:0:16:7");
+        assert_eq!(
+            (s.interface.as_str(), s.channel, s.cc),
+            ("Port 20:0", 15, 7)
+        );
+    }
+
+    #[test]
+    fn invalid_midi_parameters_are_refused() {
+        for bad in [
+            "Scarlett:0",
+            "Scarlett:17",
+            "Scarlett:x",
+            "Scarlett:1:x",
+            "Scarlett:1:128",
+            "Scarlett:1:255",
+            "Scarlett",
+            ":1",
+            "\"\":1",
+            "",
+        ] {
+            assert!(parse_midi_spec(bad).is_err(), "{bad} must be refused");
+        }
+        assert_eq!(midi("Scarlett:16:127").cc, 127);
+    }
+
+    #[test]
+    fn the_hardware_mixer_card_follows_the_selected_device() {
+        assert_eq!(alsa_mixer_card("hw:CARD=DAC,DEV=0"), "hw:CARD=DAC");
+        assert_eq!(alsa_mixer_card("plughw:CARD=1,DEV=0"), "hw:1");
+        assert_eq!(alsa_mixer_card("front:CARD=Device,DEV=0"), "hw:CARD=Device");
+        assert_eq!(alsa_mixer_card("sysdefault:CARD=Device"), "hw:CARD=Device");
+        assert_eq!(alsa_mixer_card("plughw:1,0"), "hw:1");
+        assert_eq!(alsa_mixer_card("hw:2"), "hw:2");
+        assert_eq!(alsa_mixer_card("default"), "default");
+        assert_eq!(alsa_mixer_card("pipewire"), "default");
+        assert_eq!(alsa_mixer_card("dmix:DEV=0"), "default");
+    }
+
+    #[test]
+    fn a_missing_hardware_control_falls_back_to_the_software_mixer() {
+        let controls = ["Headphone".to_owned(), "PCM".to_owned()];
+        assert_eq!(
+            select_hardware_control(Some("PCM"), &controls).as_deref(),
+            Some("PCM")
+        );
+        assert_eq!(select_hardware_control(Some("Master"), &controls), None);
+        assert_eq!(
+            select_hardware_control(None, &controls).as_deref(),
+            Some("PCM")
+        );
+        assert_eq!(
+            select_hardware_control(None, &["Headphone".to_owned()]).as_deref(),
+            Some("Headphone")
+        );
+        assert_eq!(select_hardware_control(None, &[]), None);
+    }
 
     /// A fake output that behaves like the cpal callback: it reports a format change while
     /// the shared format differs from the one it started with, and ends when stopped.
