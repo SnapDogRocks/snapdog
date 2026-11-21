@@ -628,6 +628,45 @@ async fn prefetch_one(
 mod tests {
     use super::*;
 
+    /// #492: titles still buffered for a station when its decode is aborted (a source change)
+    /// are never applied, because the metadata task ends with the decode.
+    #[tokio::test]
+    async fn buffered_icy_titles_are_dropped_when_the_decode_is_aborted() {
+        let applied = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let (icy_tx, mut icy_rx) = mpsc::channel::<String>(4);
+        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel::<()>();
+
+        // The metadata task, held up until the decode is gone, as when it is busy with a cover.
+        let sink = applied.clone();
+        let icy_task = tokio::spawn(async move {
+            let _ = gate_rx.await;
+            while let Some(title) = icy_rx.recv().await {
+                sink.lock().unwrap().push(title);
+            }
+        });
+
+        // The decode holds the guard and the sender, as start_radio_decode arranges it.
+        let guard = AbortOnDrop(Some(icy_task));
+        let decode = tokio::spawn(async move {
+            let _guard = guard;
+            for title in ["A - one", "A - two"] {
+                icy_tx.send(title.to_string()).await.unwrap();
+            }
+            std::future::pending::<()>().await;
+        });
+        tokio::task::yield_now().await;
+
+        // Source change: the decode is aborted while both titles are buffered.
+        decode.abort();
+        let _ = decode.await;
+        let _ = gate_tx.send(());
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(
+            applied.lock().unwrap().is_empty(),
+            "no title of the old station is applied"
+        );
+    }
+
     #[test]
     fn parse_icy_title_basic() {
         assert_eq!(
