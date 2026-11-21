@@ -593,7 +593,7 @@ fn client_components(
         &mut latency,
         json!({
             "entity_category": "config",
-            "min": -10_000, "max": 10_000, "step": 1, "mode": "box",
+            "min": -snapdog_common::MAX_LATENCY_MS, "max": snapdog_common::MAX_LATENCY_MS, "step": 1, "mode": "box",
             "unit_of_measurement": "ms",
             "value_template": "{{ value_json.latency }}",
             "command_topic": command("latency"),
@@ -951,7 +951,10 @@ mod tests {
                 c["client_1_latency"]["min"].as_i64(),
                 c["client_1_latency"]["max"].as_i64()
             ),
-            (Some(-10_000), Some(10_000))
+            (
+                Some(-i64::from(snapdog_common::MAX_LATENCY_MS)),
+                Some(i64::from(snapdog_common::MAX_LATENCY_MS))
+            )
         );
         assert_eq!(c["zone_1_presence_timeout"]["max"], 65535);
         assert_eq!(

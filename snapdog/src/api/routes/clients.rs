@@ -337,6 +337,7 @@ async fn get_latency(
     request_body = i32,
     responses(
         (status = 200, description = "Updated client latency in milliseconds", body = i32),
+        (status = 400, description = "Latency out of range", body = ErrorBody),
         (status = 404, description = "Client not found", body = ErrorBody)
     ),
     tag = "clients"
@@ -346,6 +347,12 @@ async fn set_latency(
     Path(idx): Path<usize>,
     Json(v): Json<i32>,
 ) -> impl IntoResponse {
+    if v.abs() > snapdog_common::MAX_LATENCY_MS {
+        return Err(ApiError::BadRequest(format!(
+            "latency must be between -{0} and {0} ms",
+            snapdog_common::MAX_LATENCY_MS
+        )));
+    }
     let snap_id = read_client(&state, idx)
         .await
         .and_then(|c| c.snapcast_id)

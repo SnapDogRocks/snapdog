@@ -623,6 +623,16 @@
               }
             }
           },
+          "400": {
+            "description": "Latency out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5603,7 +5613,7 @@
             "description": "Seek command processed"
           },
           "400": {
-            "description": "Invalid payload (both or neither field provided)",
+            "description": "Invalid payload (both or neither field provided, or out of range)",
             "content": {
               "application/json": {
                 "schema": {

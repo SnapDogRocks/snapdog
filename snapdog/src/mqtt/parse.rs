@@ -13,10 +13,11 @@ use snapdog_common::RepeatMode;
 /// Largest payload any command accepts, in bytes. The longest legitimate one is a
 /// decimal number or a word like `previous`.
 pub const MAX_PAYLOAD_BYTES: usize = 256;
-/// Seeking beyond a week is a typo, not a position.
-const MAX_SEEK_SECS: f64 = 7.0 * 24.0 * 3600.0;
-/// Snapcast latency offsets beyond ten seconds are a typo, not a setting.
-const MAX_LATENCY_MS: i32 = 10_000;
+/// Seeking beyond a week is a typo, not a position (shared with REST).
+#[allow(clippy::cast_precision_loss)] // a week in milliseconds is exact in f64
+const MAX_SEEK_SECS: f64 = snapdog_common::MAX_SEEK_MS as f64 / 1000.0;
+/// Snapcast latency offsets beyond ten seconds are a typo, not a setting (shared with REST).
+const MAX_LATENCY_MS: i32 = snapdog_common::MAX_LATENCY_MS;
 
 /// A payload that could not be understood. The text names the expectation, never
 /// the payload.

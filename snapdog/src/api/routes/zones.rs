@@ -1069,7 +1069,7 @@ async fn get_track_position(
     request_body = SeekPayload,
     responses(
         (status = 200, description = "Seek command processed"),
-        (status = 400, description = "Invalid payload (both or neither field provided)", body = ErrorBody),
+        (status = 400, description = "Invalid payload (both or neither field provided, or out of range)", body = ErrorBody),
         (status = 404, description = "Zone not found", body = ErrorBody)
     ),
     tag = "zones"
@@ -1080,6 +1080,18 @@ async fn seek_position(
     Json(body): Json<SeekPayload>,
 ) -> impl IntoResponse {
     let cmd = match (body.position_ms, body.offset_ms) {
+        (Some(pos), None) if !(0..=snapdog_common::MAX_SEEK_MS).contains(&pos) => {
+            return Err(ApiError::BadRequest(format!(
+                "position_ms must be between 0 and {}",
+                snapdog_common::MAX_SEEK_MS
+            )));
+        }
+        (None, Some(offset)) if offset.abs() > snapdog_common::MAX_SEEK_MS => {
+            return Err(ApiError::BadRequest(format!(
+                "offset_ms must be between -{0} and {0}",
+                snapdog_common::MAX_SEEK_MS
+            )));
+        }
         (Some(pos), None) => ZoneCommand::Seek(pos),
         (None, Some(offset)) => ZoneCommand::SeekRelative(offset),
         _ => {
