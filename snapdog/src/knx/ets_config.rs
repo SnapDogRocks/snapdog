@@ -90,12 +90,19 @@ fn opt(s: &str) -> Option<String> {
     }
 }
 
-/// Resolve a client's default-zone **index** to a zone **name** that exists in
-/// the ETS zone set (falling back to the first active zone), since
+/// Resolve a client's default zone to a zone **name** that exists in the ETS
+/// zone set (falling back to the first active zone), since
 /// `RawClientConfig.zone` is a name the convention layer looks up.
+///
+/// The ETS parameter is 1-based, as in the product database ("Zone 1" is the
+/// value 1, which is also the default). A value of 0, a value above the zone
+/// count and a value naming an inactive zone all fall back.
 fn client_zone_name(ets: &EtsParams, client: usize) -> String {
-    let idx = ets.client_default_zone[client] as usize;
-    if idx < MAX_ZONES && ets.zone_active[idx] {
+    let byte = ets.client_default_zone[client] as usize;
+    if let Some(idx) = byte.checked_sub(1)
+        && idx < MAX_ZONES
+        && ets.zone_active[idx]
+    {
         return or_else(&ets.zone_names[idx], || format!("Zone {}", idx + 1));
     }
     (0..MAX_ZONES).find(|&z| ets.zone_active[z]).map_or_else(
@@ -283,7 +290,7 @@ mod tests {
         ets.client_active[0] = true;
         ets.client_names[0] = "Speaker".into();
         ets.client_macs[0] = "aa:bb:cc:dd:ee:ff".into();
-        ets.client_default_zone[0] = 2; // → "Bath"
+        ets.client_default_zone[0] = 3; // 1-based: zone 3 → "Bath"
         ets.client_max_volume[0] = 80;
         ets.http_port = 8080;
         ets.log_level = 3; // Debug (Error=0, Warn=1, Info=2, Debug=3, Trace=4)
@@ -391,9 +398,48 @@ mod tests {
         ets.client_active[0] = true;
         ets.client_names[0] = "C".into();
         ets.client_macs[0] = "aa:bb:cc:dd:ee:ff".into();
-        ets.client_default_zone[0] = 9; // inactive → fall back to zone 3 "Only"
+        ets.client_default_zone[0] = 9; // inactive → fall back to zone 4 "Only"
         let cfg = ets_params_to_file_config(&ets, FileConfig::default());
         assert_eq!(cfg.client[0].zone, "Only");
+    }
+
+    #[test]
+    fn client_default_zone_is_one_based() {
+        let mut ets = EtsParams::default();
+        for z in [0, 1, 15] {
+            ets.zone_active[z] = true;
+            ets.zone_names[z] = format!("Z{}", z + 1);
+        }
+        ets.client_active[0] = true;
+        ets.client_names[0] = "C".into();
+        ets.client_macs[0] = "aa:bb:cc:dd:ee:ff".into();
+        for (byte, expected) in [
+            (1, "Z1"),
+            (2, "Z2"),
+            (16, "Z16"),
+            (0, "Z1"),
+            (3, "Z1"),
+            (17, "Z1"),
+        ] {
+            ets.client_default_zone[0] = byte;
+            let cfg = ets_params_to_file_config(&ets, FileConfig::default());
+            assert_eq!(cfg.client[0].zone, expected, "byte {byte}");
+        }
+    }
+
+    #[test]
+    fn ets_default_byte_selects_the_first_of_two_zones() {
+        let mut ets = EtsParams::default();
+        for z in [0, 1] {
+            ets.zone_active[z] = true;
+            ets.zone_names[z] = format!("Z{}", z + 1);
+        }
+        ets.client_active[0] = true;
+        ets.client_names[0] = "C".into();
+        ets.client_macs[0] = "aa:bb:cc:dd:ee:ff".into();
+        ets.client_default_zone[0] = 1; // the ETS default for "Zone 1"
+        let cfg = ets_params_to_file_config(&ets, FileConfig::default());
+        assert_eq!(cfg.client[0].zone, "Z1");
     }
 
     #[test]
@@ -406,7 +452,7 @@ mod tests {
         ets.client_active[0] = true;
         ets.client_names[0] = "Sofa".into();
         ets.client_macs[0] = "aa:bb:cc:dd:ee:ff".into();
-        ets.client_default_zone[0] = 0;
+        ets.client_default_zone[0] = 1;
 
         let cfg = ets_params_to_file_config(&ets, FileConfig::default());
         let app = crate::config::load_raw_no_validate(cfg).expect("ETS config resolves");
