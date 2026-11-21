@@ -449,7 +449,8 @@ pub const fn default_auto_off_delay() -> u16 {
     DEFAULT_AUTO_OFF_DELAY
 }
 
-/// Parse a HH:MM time string into minutes since midnight.
+/// Parse a HH:MM time string into minutes since midnight. `24:00` is the end of the day
+/// (1440), so a schedule ending at midnight covers 23:59; it is only useful as `to`.
 ///
 /// # Errors
 ///
@@ -463,7 +464,10 @@ pub fn parse_time(s: &str) -> anyhow::Result<u16> {
     let m: u16 = parts[1]
         .parse()
         .map_err(|_| anyhow::anyhow!("invalid minute in '{s}'"))?;
-    anyhow::ensure!(h <= 23, "hour must be 0-23, got {h} in '{s}'");
+    if (h, m) == (24, 0) {
+        return Ok(24 * 60);
+    }
+    anyhow::ensure!(h <= 23, "hour must be 0-23 (or 24:00), got {h} in '{s}'");
     anyhow::ensure!(m <= 59, "minute must be 0-59, got {m} in '{s}'");
     Ok(h * 60 + m)
 }
@@ -486,37 +490,41 @@ pub struct AudioConfig {
     pub source_conflict: SourceConflict,
     /// Fade duration in milliseconds when a client switches zones.
     /// Set to 0 to disable. Only applies to `SnapDog` clients. Max: 1000ms.
-    #[serde(
-        default = "default_zone_switch_fade_ms",
-        deserialize_with = "deserialize_fade_ms"
-    )]
+    #[serde(default = "default_zone_switch_fade_ms")]
     pub zone_switch_fade_ms: u16,
     /// Fade duration in milliseconds when switching audio sources within a zone
     /// (e.g., radio → subsonic). Set to 0 to disable. Max: 1000ms.
-    #[serde(
-        default = "default_zone_switch_fade_ms",
-        deserialize_with = "deserialize_fade_ms"
-    )]
+    #[serde(default = "default_zone_switch_fade_ms")]
     pub source_switch_fade_ms: u16,
 }
 
 /// Maximum fade duration in milliseconds.
-const MAX_FADE_MS: u16 = 1000;
+pub const MAX_FADE_MS: u16 = 1000;
 
 const fn default_zone_switch_fade_ms() -> u16 {
     snapdog_common::DEFAULT_FADE_MS
 }
 
-fn deserialize_fade_ms<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u16, D::Error> {
-    let v = u16::deserialize(deserializer)?;
-    if v > MAX_FADE_MS {
-        tracing::warn!(
-            value = v,
-            max = MAX_FADE_MS,
-            "Fade duration exceeds maximum, clamping"
-        );
+impl AudioConfig {
+    /// Clamp the fade durations to [`MAX_FADE_MS`]. Returns a notice per clamped value; the
+    /// load runs before logging is set up, so these go into the configuration notices,
+    /// which the log and `--check-config` show.
+    pub(crate) fn clamp_fades(&mut self) -> Vec<String> {
+        let mut notices = Vec::new();
+        for (key, value) in [
+            ("zone_switch_fade_ms", &mut self.zone_switch_fade_ms),
+            ("source_switch_fade_ms", &mut self.source_switch_fade_ms),
+        ] {
+            if *value > MAX_FADE_MS {
+                notices.push(format!(
+                    "[audio].{key} = {value} is above the maximum of {MAX_FADE_MS} ms, using \
+                     {MAX_FADE_MS}"
+                ));
+                *value = MAX_FADE_MS;
+            }
+        }
+        notices
     }
-    Ok(v.min(MAX_FADE_MS))
 }
 
 /// Source conflict resolution policy.
@@ -891,8 +899,8 @@ pub enum AirplayMode {
 /// `AirPlay` receiver settings (shared across all zones).
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct AirplayConfig {
-    /// Optional password for `AirPlay` connections.
-    pub password: Option<String>,
+    /// Optional password for `AirPlay` connections. Kept out of debug output.
+    pub password: Option<SecretString>,
     /// `AirPlay` protocol mode: `"airplay1"` or `"airplay2"` (default). Only
     /// takes effect in builds with the `ap2` feature; other builds always speak
     /// `AirPlay` 1.
@@ -923,7 +931,7 @@ pub struct SpotifyConfig {
     /// TCP port of the Zeroconf (Spotify Connect) HTTP server. Default: 7100, above the `AirPlay` ports (7001 and up, one per zone).
     ///
     /// A fixed port keeps firewall rules and monitoring stable. Zone `n` listens on
-    /// `port + n`. `0` picks a random port at every start (not firewall-friendly).
+    /// `port + n - 1`, so zone 1 uses `port` itself. `0` picks a random port at every start (not firewall-friendly).
     #[serde(default = "default_spotify_port")]
     pub port: u16,
     /// Zeroconf announcement backend: `"libmdns"` (default), `"avahi"` or `"dns-sd"`.

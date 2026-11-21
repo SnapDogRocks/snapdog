@@ -185,7 +185,7 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
             .collect();
     }
     if !ets.airplay_pass.trim().is_empty() {
-        base.airplay.password = Some(ets.airplay_pass.trim().to_string());
+        base.airplay.password = Some(ets.airplay_pass.trim().into());
     }
 
     if !ets.subsonic_url.trim().is_empty() {
