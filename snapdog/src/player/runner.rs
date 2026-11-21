@@ -16,7 +16,7 @@ use super::context::{
     update_and_notify, update_volume_and_notify,
 };
 
-use super::helpers::{DecodeState, PlaybackCtx};
+use super::helpers::{DecodeState, PlaybackCtx, mark_zone_stopped};
 use super::helpers::{
     handle_next, handle_previous, handle_track_complete, prefetch_next_tracks, radio_track_info,
     start_radio_decode, start_subsonic_track_decode, subsonic_track_info,
@@ -192,11 +192,14 @@ async fn fade_transition(
 
 /// Check if a receiver (AirPlay/Spotify) is active and the source conflict
 /// policy blocks local playback. Returns `true` if the command should proceed.
+///
+/// A paused receiver does not hold the zone, whatever the policy.
 const fn may_start_local_playback(
     source: &ActiveSource,
     policy: crate::config::SourceConflict,
+    receiver_paused: bool,
 ) -> bool {
-    if !matches!(source, ActiveSource::AirPlay | ActiveSource::Spotify) {
+    if !matches!(source, ActiveSource::AirPlay | ActiveSource::Spotify) || receiver_paused {
         return true;
     }
     matches!(policy, crate::config::SourceConflict::LastWins)
@@ -317,6 +320,18 @@ async fn run(
         drop((airplay_audio_tx, airplay_event_tx));
         None
     };
+    #[cfg(feature = "test-harness")]
+    {
+        let injected = ctx
+            .test_airplay_rx
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&zone_index);
+        if let Some((audio, events)) = injected {
+            airplay_audio_rx = audio;
+            airplay_event_rx = events;
+        }
+    }
 
     // Spotify Connect: F32 audio channel + event channel + receiver instance
     #[cfg(feature = "spotify")]
@@ -371,7 +386,17 @@ async fn run(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&zone_index);
     let mut source = ActiveSource::Idle;
-    let mut remote_control: Option<std::sync::Arc<dyn crate::receiver::RemoteControl>> = None;
+    // Per receiver: its remote control, its resampler and its gate. A receiver whose gate is
+    // closed has its audio drained and dropped: it lost the zone to a later action (local
+    // playback, Stop, auto-off or the other receiver) and gets it back only once it reports
+    // playing again. The last action wins.
+    let mut airplay_remote: Option<std::sync::Arc<dyn crate::receiver::RemoteControl>> = None;
+    let mut spotify_remote: Option<std::sync::Arc<dyn crate::receiver::RemoteControl>> = None;
+    let mut airplay_open = true;
+    let mut spotify_open = true;
+    // The receiver that holds the zone has paused: it does not block local playback.
+    let mut receiver_paused = false;
+    let mut last_source = ActiveSource::Idle;
     let mut position_offset_ms: i64 = 0;
     let mut last_buffer_progress = std::time::Instant::now();
     let mut zone_fade: Option<ZoneFade> = None;
@@ -380,11 +405,13 @@ async fn run(
         config.audio.sample_rate,
         config.audio.channels,
     );
-    let mut receiver_resampler: Option<audio::resample::F32Resampling> = None;
-    // Channel counts of the current decode and receiver sources. Their audio is mapped to the
+    let mut airplay_resampler: Option<audio::resample::F32Resampling> = None;
+    let mut spotify_resampler: Option<audio::resample::F32Resampling> = None;
+    // Channel counts of the current decode and of each receiver. Their audio is mapped to the
     // configured count before resampling, so EQ, fade and the stream see whole output frames.
     let mut source_channels = config.audio.channels;
-    let mut receiver_channels = config.audio.channels;
+    let mut airplay_channels = config.audio.channels;
+    let mut spotify_channels = config.audio.channels;
 
     // Per-zone EQ
     let mut zone_eq = audio::eq::ZoneEq::new(config.audio.sample_rate, config.audio.channels);
@@ -404,14 +431,18 @@ async fn run(
 
     /// Handle audio samples from an external receiver (AirPlay/Spotify).
     macro_rules! handle_receiver_audio {
-        ($samples:expr, $active:path, $source_type:expr, $label:literal) => {{
+        ($samples:expr, $active:path, $source_type:expr, $label:literal, $open:ident, $resampler:ident, $channels:ident) => {{
+            if !$open {
+                continue; // drained and dropped until the receiver plays again
+            }
             if !matches!(source, $active) {
                 reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
                 source = $active;
                 update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = $source_type; }).await;
             }
-            let mapped = audio::channels::map_channels($samples, receiver_channels, config.audio.channels);
-            let mut samples = match &mut receiver_resampler {
+            receiver_paused = false;
+            let mapped = audio::channels::map_channels($samples, $channels, config.audio.channels);
+            let mut samples = match &mut $resampler {
                 Some(r) => match r.process(&mapped) { Some(resampled) => resampled, None => continue },
                 None => mapped,
             };
@@ -424,12 +455,30 @@ async fn run(
 
     /// Handle events from an external receiver (AirPlay/Spotify).
     macro_rules! handle_receiver_event {
-        ($event:expr, $active:path, $source_type:expr) => {{
+        ($event:expr, $active:path, $source_type:expr, $open:ident, $resampler:ident, $remote:ident, $channels:ident) => {{
             use crate::receiver::ReceiverEvent;
             match $event {
+                ReceiverEvent::PlaybackState { playing } => {
+                    if playing {
+                        $open = true;
+                        if matches!(source, $active) {
+                            receiver_paused = false;
+                            update_and_notify(store, zone_index, notify, |z| {
+                                z.playback = PlaybackState::Playing
+                            })
+                            .await;
+                        }
+                    } else if matches!(source, $active) {
+                        receiver_paused = true;
+                        update_and_notify(store, zone_index, notify, |z| {
+                            z.playback = PlaybackState::Paused
+                        })
+                        .await;
+                    }
+                }
                 ReceiverEvent::SessionStarted { format } => {
-                    receiver_channels = format.channels;
-                    receiver_resampler = Some(audio::resample::F32Resampling::new(
+                    $channels = format.channels;
+                    $resampler = Some(audio::resample::F32Resampling::new(
                         format.sample_rate,
                         config.audio.sample_rate,
                         config.audio.channels,
@@ -509,12 +558,12 @@ async fn run(
                     }
                 }
                 ReceiverEvent::RemoteAvailable { remote } => {
-                    remote_control = Some(remote);
+                    $remote = Some(remote);
                 }
                 ReceiverEvent::SessionEnded => {
+                    $remote = None;
                     if matches!(source, $active) {
                         source = ActiveSource::Idle;
-                        remote_control = None;
                         covers.write().await.clear(zone_index);
                         update_and_notify(store, zone_index, notify, |z| {
                             z.playback = PlaybackState::Stopped;
@@ -531,6 +580,24 @@ async fn run(
     }
 
     loop {
+        // A receiver that lost the zone since the last iteration (to local playback, Stop,
+        // auto-off, the other receiver or the end of its session) is shut out and asked to pause.
+        if std::mem::discriminant(&last_source) != std::mem::discriminant(&source) {
+            if matches!(last_source, ActiveSource::AirPlay) {
+                airplay_open = false;
+                if let Some(rc) = &airplay_remote {
+                    let _ = rc.send_command(crate::receiver::RemoteCommand::Pause);
+                }
+            }
+            if matches!(last_source, ActiveSource::Spotify) {
+                spotify_open = false;
+                if let Some(rc) = &spotify_remote {
+                    let _ = rc.send_command(crate::receiver::RemoteCommand::Pause);
+                }
+            }
+            receiver_paused = false;
+            last_source = source.clone();
+        }
         tokio::select! {
             Some(cmd) = commands.recv() => {
                 // A checked command carries a reply channel: answer whether its index exists.
@@ -546,7 +613,7 @@ async fn run(
                 match cmd {
                     ZoneCommand::Checked(..) => answer(false), // a checked command is never nested
                     ZoneCommand::PlaySubsonicPlaylist(playlist_id, track_idx) => {
-                        if !may_start_local_playback(&source, config.audio.source_conflict) {
+                        if !may_start_local_playback(&source, config.audio.source_conflict, receiver_paused) {
                             tracing::info!(zone = zone_index, "Playback blocked: receiver has priority");
                             continue;
                         }
@@ -581,12 +648,20 @@ async fn run(
                                         let lookahead = crate::config::CACHE_LOOKAHEAD;
                                         prefetch_next_tracks(sub, &playlist.entry, track_idx, cache, lookahead);
                                     }
+                                } else {
+                                    tracing::warn!(zone = zone_index, "Queue has no such track");
+                                    source = ActiveSource::Idle;
+                                    mark_zone_stopped(store, zone_index, notify).await;
                                 }
+                            } else {
+                                tracing::warn!(zone = zone_index, "Could not fetch the queue");
+                                source = ActiveSource::Idle;
+                                mark_zone_stopped(store, zone_index, notify).await;
                             }
                         }
                     }
                     ZoneCommand::PlaySubsonicTrack(track_id) => {
-                        if !may_start_local_playback(&source, config.audio.source_conflict) {
+                        if !may_start_local_playback(&source, config.audio.source_conflict, receiver_paused) {
                             tracing::info!(zone = zone_index, "Playback blocked: receiver has priority");
                             continue;
                         }
@@ -606,7 +681,7 @@ async fn run(
                         }
                     }
                     ZoneCommand::PlayUrl(url) => {
-                        if !may_start_local_playback(&source, config.audio.source_conflict) {
+                        if !may_start_local_playback(&source, config.audio.source_conflict, receiver_paused) {
                             tracing::info!(zone = zone_index, "Playback blocked: receiver has priority");
                             continue;
                         }
@@ -664,12 +739,16 @@ async fn run(
                                                 z.playlist_track_index = Some(track_idx);
                                                 z.track = Some(subsonic_track_info(track));
                                             }).await;
+                                        } else {
+                                            tracing::warn!(zone = zone_index, track = track_idx, "Could not fetch the track");
+                                            source = ActiveSource::Idle;
+                                            mark_zone_stopped(store, zone_index, notify).await;
                                         }
                             }
                     }
                     ZoneCommand::Play => {
                         if matches!(source, ActiveSource::AirPlay | ActiveSource::Spotify) {
-                            if let Some(ref rc) = remote_control
+                            if let Some(rc) = match source { ActiveSource::AirPlay => airplay_remote.as_ref(), ActiveSource::Spotify => spotify_remote.as_ref(), _ => None }
                                 && let Err(e) = rc.send_command(crate::receiver::RemoteCommand::Play) { tracing::warn!(error = %e, "Remote play failed"); }
                         } else if matches!(source, ActiveSource::SubsonicPlaylist { .. } | ActiveSource::SubsonicTrack { .. }) {
                             // Resume Subsonic from last position
@@ -755,7 +834,7 @@ async fn run(
                     }
                     ZoneCommand::Pause => {
                         if matches!(source, ActiveSource::AirPlay | ActiveSource::Spotify) {
-                            if let Some(ref rc) = remote_control
+                            if let Some(rc) = match source { ActiveSource::AirPlay => airplay_remote.as_ref(), ActiveSource::Spotify => spotify_remote.as_ref(), _ => None }
                                 && let Err(e) = rc.send_command(crate::receiver::RemoteCommand::Pause) { tracing::warn!(error = %e, "Remote pause failed"); }
                         } else {
                             reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
@@ -769,20 +848,20 @@ async fn run(
                     }
                     ZoneCommand::Next => {
                         if matches!(source, ActiveSource::AirPlay | ActiveSource::Spotify) {
-                            if let Some(ref rc) = remote_control { let _ = rc.send_command(crate::receiver::RemoteCommand::NextTrack); }
+                            if let Some(rc) = match source { ActiveSource::AirPlay => airplay_remote.as_ref(), ActiveSource::Spotify => spotify_remote.as_ref(), _ => None } { let _ = rc.send_command(crate::receiver::RemoteCommand::NextTrack); }
                         } else {
                             handle_next(&mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                         }
                     }
                     ZoneCommand::Previous => {
                         if matches!(source, ActiveSource::AirPlay | ActiveSource::Spotify) {
-                            if let Some(ref rc) = remote_control { let _ = rc.send_command(crate::receiver::RemoteCommand::PreviousTrack); }
+                            if let Some(rc) = match source { ActiveSource::AirPlay => airplay_remote.as_ref(), ActiveSource::Spotify => spotify_remote.as_ref(), _ => None } { let _ = rc.send_command(crate::receiver::RemoteCommand::PreviousTrack); }
                         } else {
                             handle_previous(&mut DecodeState { current_decode: &mut current_decode, current_cover: &mut current_cover, decode_rx: &mut decode_rx, source: &mut source }, &PlaybackCtx { config, subsonic: &subsonic, store, zone_index, notify, covers, track_cache: &track_cache }).await;
                         }
                     }
                     ZoneCommand::NextPlaylist | ZoneCommand::PreviousPlaylist | ZoneCommand::SetPlaylist(..) | ZoneCommand::PlayPlaylist(..) | ZoneCommand::SetPlaylistById(..) | ZoneCommand::PlayPlaylistById(..) => {
-                        if !may_start_local_playback(&source, config.audio.source_conflict) {
+                        if !may_start_local_playback(&source, config.audio.source_conflict, receiver_paused) {
                             tracing::info!(zone = zone_index, "Playback blocked: receiver has priority");
                             continue;
                         }
@@ -991,7 +1070,7 @@ async fn run(
                             .and_then(|z| z.track.as_ref().map(|t| (t.position_ms, t.duration_ms)))
                             .unwrap_or((0, 0));
                         if dur > 0 {
-                            let target = (pos + offset_ms).clamp(0, dur);
+                            let target = pos.saturating_add(offset_ms).clamp(0, dur);
                             let _ = self_tx.send(ZoneCommand::Seek(target)).await;
                         }
                     }
@@ -1005,7 +1084,7 @@ async fn run(
                     ZoneCommand::AdjustVolume(delta) => {
                         let new_vol = {
                             let s = store.read().await;
-                            s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| (z.volume + delta).clamp(0, 100))
+                            s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| z.volume.saturating_add(delta).clamp(0, 100))
                         };
                         update_volume_and_notify(store, zone_index, notify, |z| z.volume = new_vol).await;
                         let gid = store.read().await.zones.get(&zone_index).and_then(|z| z.snapcast_group_id.clone());
@@ -1201,18 +1280,18 @@ async fn run(
                 }
             }
             Some(samples) = airplay_audio_rx.recv() => {
-                handle_receiver_audio!(samples, ActiveSource::AirPlay, SourceType::AirPlay, "AirPlay");
+                handle_receiver_audio!(samples, ActiveSource::AirPlay, SourceType::AirPlay, "AirPlay", airplay_open, airplay_resampler, airplay_channels);
             }
             Some(event) = airplay_event_rx.recv() => {
-                handle_receiver_event!(event, ActiveSource::AirPlay, SourceType::AirPlay);
+                handle_receiver_event!(event, ActiveSource::AirPlay, SourceType::AirPlay, airplay_open, airplay_resampler, airplay_remote, airplay_channels);
             }
             // ── Spotify Connect: audio ────────────────────────────
             Some(samples) = spotify_audio_rx.recv() => {
-                handle_receiver_audio!(samples, ActiveSource::Spotify, SourceType::Spotify, "Spotify");
+                handle_receiver_audio!(samples, ActiveSource::Spotify, SourceType::Spotify, "Spotify", spotify_open, spotify_resampler, spotify_channels);
             }
             // ── Spotify Connect: events ───────────────────────────
             Some(event) = spotify_event_rx.recv() => {
-                handle_receiver_event!(event, ActiveSource::Spotify, SourceType::Spotify);
+                handle_receiver_event!(event, ActiveSource::Spotify, SourceType::Spotify, spotify_open, spotify_resampler, spotify_remote, spotify_channels);
             }
             // Auto-off timer expired
             () = &mut auto_off_timer, if auto_off_armed => {
@@ -1361,8 +1440,16 @@ mod conflict_tests {
             ActiveSource::Url,
             ActiveSource::Radio { index: 0 },
         ] {
-            assert!(may_start_local_playback(&src, SourceConflict::LastWins));
-            assert!(may_start_local_playback(&src, SourceConflict::ReceiverWins));
+            assert!(may_start_local_playback(
+                &src,
+                SourceConflict::LastWins,
+                false
+            ));
+            assert!(may_start_local_playback(
+                &src,
+                SourceConflict::ReceiverWins,
+                false
+            ));
         }
     }
 
@@ -1370,13 +1457,29 @@ mod conflict_tests {
     fn receiver_active_blocks_local_playback_only_under_receiver_wins() {
         for src in [ActiveSource::AirPlay, ActiveSource::Spotify] {
             assert!(
-                may_start_local_playback(&src, SourceConflict::LastWins),
+                may_start_local_playback(&src, SourceConflict::LastWins, false),
                 "LastWins lets local playback take over an active receiver"
             );
             assert!(
-                !may_start_local_playback(&src, SourceConflict::ReceiverWins),
+                !may_start_local_playback(&src, SourceConflict::ReceiverWins, false),
                 "ReceiverWins blocks local playback while a receiver is active"
             );
+        }
+    }
+
+    #[test]
+    fn a_paused_receiver_never_blocks_local_playback() {
+        for src in [ActiveSource::AirPlay, ActiveSource::Spotify] {
+            assert!(may_start_local_playback(
+                &src,
+                SourceConflict::ReceiverWins,
+                true
+            ));
+            assert!(may_start_local_playback(
+                &src,
+                SourceConflict::LastWins,
+                true
+            ));
         }
     }
 }

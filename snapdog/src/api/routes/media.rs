@@ -17,12 +17,6 @@ use crate::subsonic::{PlaylistEntry, SubsonicClient};
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct PlaylistInfo {
-    /// Unified playlist index.
-    ///
-    /// Deprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
-    #[schema(deprecated)]
-    #[allow(clippy::doc_markdown)]
-    id: usize,
     /// Unified playlist index (0-based). Moves when the list changes, see `playlist_id`.
     index: usize,
     /// Stable reference: `snapdog:radio` or `subsonic:<subsonic id>`.
@@ -35,12 +29,6 @@ pub struct PlaylistInfo {
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct PlaylistDetails {
-    /// Unified playlist index.
-    ///
-    /// Deprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
-    #[schema(deprecated)]
-    #[allow(clippy::doc_markdown)]
-    id: usize,
     /// Unified playlist index (0-based). Moves when the list changes, see `playlist_id`.
     index: usize,
     /// Stable reference: `snapdog:radio` or `subsonic:<subsonic id>`.
@@ -220,7 +208,6 @@ async fn all_playlists(state: &SharedState) -> Vec<PlaylistInfo> {
     // Playlist 0: Radio stations (from config)
     if !state.config.radios.is_empty() {
         result.push(PlaylistInfo {
-            id: idx,
             index: idx,
             playlist_id: RADIO_PLAYLIST_ID.into(),
             name: "Radio".into(),
@@ -238,7 +225,6 @@ async fn all_playlists(state: &SharedState) -> Vec<PlaylistInfo> {
             .as_ref()
             .map(|_| format!("{MEDIA_PATH}/{idx}/cover"));
         result.push(PlaylistInfo {
-            id: idx,
             index: idx,
             playlist_id: subsonic_playlist_id(&p.id),
             name: p.name,
@@ -879,7 +865,6 @@ async fn get_playlist(
 ) -> Result<Json<PlaylistDetails>, ApiError> {
     match resolve_playlist(&state, index).await? {
         ResolvedPlaylist::Radio => Ok(Json(PlaylistDetails {
-            id: index,
             index,
             playlist_id: RADIO_PLAYLIST_ID.into(),
             name: "Radio".into(),
@@ -890,7 +875,6 @@ async fn get_playlist(
             let sub = subsonic(&state)?;
             match sub.get_playlist(&id).await {
                 Ok(playlist) => Ok(Json(PlaylistDetails {
-                    id: index,
                     index,
                     playlist_id: subsonic_playlist_id(&playlist.id),
                     name: playlist.name,

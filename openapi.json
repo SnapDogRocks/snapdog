@@ -1111,7 +1111,7 @@
           "clients"
         ],
         "summary": "Set client volume level",
-        "description": "Updates the volume level of the specified client. Supports absolute or relative values (e.g. \"+5\", \"-5\", or \"45\").",
+        "description": "Updates the volume level of the specified client. A number or an unsigned string (\"45\") sets the level, a string with a sign (\"+5\", \"-5\") changes it by that amount.",
         "operationId": "set_volume",
         "parameters": [
           {
@@ -5859,7 +5859,7 @@
           "zones"
         ],
         "summary": "Set zone volume level",
-        "description": "Updates the volume level of the specified zone. Supports absolute or relative values (e.g. \"+5\", \"-5\", or \"45\").",
+        "description": "Updates the volume level of the specified zone. A number or an unsigned string (\"45\") sets the level, a string with a sign (\"+5\", \"-5\") changes it by that amount.",
         "operationId": "set_volume",
         "parameters": [
           {
@@ -6436,19 +6436,12 @@
       "PlaylistDetails": {
         "type": "object",
         "required": [
-          "id",
           "index",
           "playlist_id",
           "name",
           "tracks"
         ],
         "properties": {
-          "id": {
-            "type": "integer",
-            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
-            "deprecated": true,
-            "minimum": 0
-          },
           "index": {
             "type": "integer",
             "description": "Unified playlist index (0-based). Moves when the list changes, see `playlist_id`.",
@@ -6470,7 +6463,6 @@
       "PlaylistInfo": {
         "type": "object",
         "required": [
-          "id",
           "index",
           "playlist_id",
           "name",
@@ -6487,12 +6479,6 @@
           "duration": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0
-          },
-          "id": {
-            "type": "integer",
-            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
-            "deprecated": true,
             "minimum": 0
           },
           "index": {
@@ -6517,15 +6503,6 @@
       "PlaylistPayload": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
-            "deprecated": true,
-            "minimum": 0
-          },
           "index": {
             "type": [
               "integer",
@@ -7130,7 +7107,7 @@
             "type": "string"
           }
         ],
-        "description": "Volume value: absolute (e.g. `75`) or relative (e.g. `\"+5\"`, `\"-3\"`)."
+        "description": "Volume value: absolute (`75` or `\"75\"`) or relative (a string with a sign, `\"+5\"` or `\"-3\"`)."
       },
       "ZoneInfo": {
         "type": "object",

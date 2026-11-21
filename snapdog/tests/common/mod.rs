@@ -360,6 +360,8 @@ pub async fn spawn_zone_harness(config: AppConfig) -> ZoneHarness {
         start_receivers: false,
         #[cfg(feature = "test-harness")]
         test_pcm_rx: Mutex::new(HashMap::new()),
+        #[cfg(feature = "test-harness")]
+        test_airplay_rx: Mutex::new(HashMap::new()),
     };
 
     let senders = player::spawn_zone_players(ctx)
@@ -453,6 +455,15 @@ pub struct CapturingHarness {
     pub test_pcm_tx: HashMap<usize, mpsc::Sender<snapdog::audio::PcmMessage>>,
     /// Backend handle sharing the recorded calls with the running players.
     pub backend: CapturingBackend,
+    /// 1-based zone index → `AirPlay` audio and event senders (a fake `AirPlay` sender).
+    #[allow(clippy::type_complexity)]
+    pub test_airplay_tx: HashMap<
+        usize,
+        (
+            mpsc::Sender<Vec<f32>>,
+            mpsc::Sender<snapdog::receiver::ReceiverEvent>,
+        ),
+    >,
     _tmp: tempfile::TempDir,
 }
 
@@ -473,10 +484,16 @@ pub async fn spawn_zone_harness_capturing(config: AppConfig) -> CapturingHarness
 
     let mut test_pcm_rx = HashMap::new();
     let mut test_pcm_tx = HashMap::new();
+    let mut test_airplay_rx = HashMap::new();
+    let mut test_airplay_tx = HashMap::new();
     for z in &config.zones {
         let (tx, rx) = mpsc::channel::<snapdog::audio::PcmMessage>(64);
         test_pcm_rx.insert(z.index, rx);
         test_pcm_tx.insert(z.index, tx);
+        let (audio_tx, audio_rx) = mpsc::channel::<Vec<f32>>(64);
+        let (event_tx, event_rx) = mpsc::channel::<snapdog::receiver::ReceiverEvent>(64);
+        test_airplay_rx.insert(z.index, (audio_rx, event_rx));
+        test_airplay_tx.insert(z.index, (audio_tx, event_tx));
     }
 
     let ctx = ZonePlayerContext {
@@ -493,6 +510,7 @@ pub async fn spawn_zone_harness_capturing(config: AppConfig) -> CapturingHarness
         group_clients: HashMap::new(),
         start_receivers: false,
         test_pcm_rx: Mutex::new(test_pcm_rx),
+        test_airplay_rx: Mutex::new(test_airplay_rx),
     };
 
     let senders = player::spawn_zone_players(ctx)
@@ -506,6 +524,7 @@ pub async fn spawn_zone_harness_capturing(config: AppConfig) -> CapturingHarness
         snap_rx,
         test_pcm_tx,
         backend,
+        test_airplay_tx,
         _tmp: tmp,
     }
 }

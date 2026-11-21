@@ -168,7 +168,7 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
 
 /// Set client volume level
 ///
-/// Updates the volume level of the specified client. Supports absolute or relative values (e.g. "+5", "-5", or "45").
+/// Updates the volume level of the specified client. A number or an unsigned string ("45") sets the level, a string with a sign ("+5", "-5") changes it by that amount.
 #[utoipa::path(
     put,
     path = "/api/v1/clients/{client_index}/volume",
@@ -195,12 +195,18 @@ async fn set_volume(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let snap_id = client.snapcast_id.clone().ok_or(not_found())?;
     drop(store);
+    // A relative step is resolved where the volume commands are serialised, against a volume
+    // that may still be in flight, so quick steps add up.
+    let action = value
+        .relative_step()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?
+        .map_or(ClientAction::Volume(volume), ClientAction::AdjustVolume);
 
     let _ = state
         .snap_tx
         .send(SnapcastCmd::Client {
             client_id: snap_id,
-            action: ClientAction::Volume(volume),
+            action,
         })
         .await;
     // State update comes from Snapcast Client.OnVolumeChanged notification

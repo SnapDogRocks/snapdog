@@ -18,7 +18,7 @@ use snapdog_common::RepeatMode;
 /// Embedded `SnapDog` icon PNG (1024×1024) used as placeholder when no cover art is available.
 const PLACEHOLDER_COVER: &[u8] = include_bytes!("../../../../assets/snapdog-icon-placeholder.png");
 
-/// Volume value: absolute (e.g. `75`) or relative (e.g. `"+5"`, `"-3"`).
+/// Volume value: absolute (`75` or `"75"`) or relative (a string with a sign, `"+5"` or `"-3"`).
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub enum VolumeValue {
@@ -27,14 +27,40 @@ pub enum VolumeValue {
 }
 
 impl VolumeValue {
+    /// The step of a relative value (a string with a sign), `None` for an absolute one.
+    ///
+    /// # Errors
+    ///
+    /// A string that is not a number.
+    pub fn relative_step(&self) -> Result<Option<i32>, &'static str> {
+        match self {
+            Self::Absolute(_) => Ok(None),
+            Self::Relative(s) => {
+                let s = s.trim();
+                if !s.starts_with(['+', '-']) {
+                    return Ok(None);
+                }
+                s.parse()
+                    .map(Some)
+                    .map_err(|_| "Invalid volume (use e.g. 45, \"45\", \"+5\" or \"-3\")")
+            }
+        }
+    }
+
     pub fn resolve(&self, current: i32) -> Result<i32, &'static str> {
         let v = match self {
             Self::Absolute(v) => *v,
             Self::Relative(s) => {
-                let delta: i32 = s
+                let s = s.trim();
+                let n: i32 = s
                     .parse()
-                    .map_err(|_| "Invalid relative volume (use e.g. \"+5\" or \"-3\")")?;
-                current + delta
+                    .map_err(|_| "Invalid volume (use e.g. 45, \"45\", \"+5\" or \"-3\")")?;
+                // Only a leading sign makes a string relative. A bare number is absolute.
+                if s.starts_with(['+', '-']) {
+                    current.saturating_add(n)
+                } else {
+                    n
+                }
             }
         };
         Ok(v.clamp(0, 100))
@@ -324,7 +350,7 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
 
 /// Set zone volume level
 ///
-/// Updates the volume level of the specified zone. Supports absolute or relative values (e.g. "+5", "-5", or "45").
+/// Updates the volume level of the specified zone. A number or an unsigned string ("45") sets the level, a string with a sign ("+5", "-5") changes it by that amount.
 #[utoipa::path(
     put,
     path = "/api/v1/zones/{zone_index}/volume",
@@ -350,7 +376,13 @@ async fn set_volume(
     let volume = value
         .resolve(current)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    send_cmd(&state, idx, ZoneCommand::SetVolume(volume)).await?;
+    // A relative step is applied in the zone task, in order with other volume commands, so two
+    // quick steps add up instead of both resolving against the same volume.
+    let cmd = value
+        .relative_step()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?
+        .map_or(ZoneCommand::SetVolume(volume), ZoneCommand::AdjustVolume);
+    send_cmd(&state, idx, cmd).await?;
     Ok::<_, ApiError>(Json(volume))
 }
 
@@ -1260,12 +1292,6 @@ async fn play_url(
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct PlaylistPayload {
-    /// Unified playlist index.
-    ///
-    /// Deprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
-    #[schema(deprecated)]
-    #[allow(clippy::doc_markdown)]
-    id: Option<usize>,
     /// Unified playlist index (0-based).
     index: Option<usize>,
     #[serde(default)]
@@ -1273,15 +1299,11 @@ pub struct PlaylistPayload {
 }
 
 impl PlaylistPayload {
-    /// The playlist index from `index` or the deprecated `id`. Both must agree if both are set.
+    /// The playlist index. A body without `index` (for example one that still sends only the
+    /// `id` removed in 1.0) is refused with a message that names the field.
     fn index(&self) -> Result<usize, ApiError> {
-        match (self.index, self.id) {
-            (Some(i), Some(d)) if i != d => Err(ApiError::BadRequest(
-                "`index` and `id` differ, send `index` only".into(),
-            )),
-            (Some(i), _) | (None, Some(i)) => Ok(i),
-            (None, None) => Err(ApiError::BadRequest("`index` is required".into())),
-        }
+        self.index
+            .ok_or_else(|| ApiError::BadRequest("`index` is required".into()))
     }
 }
 
@@ -1851,6 +1873,30 @@ pub struct ZoneTrackMetadata {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn volume_value_unsigned_string_is_absolute_and_signed_string_is_relative() {
+        let abs = |v: VolumeValue| v.resolve(30).unwrap();
+        assert_eq!(abs(VolumeValue::Absolute(45)), 45);
+        assert_eq!(abs(VolumeValue::Relative("45".into())), 45);
+        assert_eq!(abs(VolumeValue::Relative("+5".into())), 35);
+        assert_eq!(abs(VolumeValue::Relative("-5".into())), 25);
+        assert_eq!(abs(VolumeValue::Relative("-100".into())), 0);
+    }
+
+    #[test]
+    fn volume_value_overflow_saturates_and_garbage_is_rejected() {
+        assert_eq!(
+            VolumeValue::Relative("+2147483647".into()).resolve(30),
+            Ok(100)
+        );
+        assert_eq!(
+            VolumeValue::Relative("-2147483648".into()).resolve(30),
+            Ok(0)
+        );
+        assert!(VolumeValue::Relative("loud".into()).resolve(30).is_err());
+        assert!(VolumeValue::Relative(String::new()).resolve(30).is_err());
+    }
+
     use super::*;
 
     #[test]
@@ -1891,32 +1937,27 @@ mod tests {
 
     #[test]
     fn playlist_payload_defaults_to_first_track() {
-        let req: PlaylistPayload = serde_json::from_str(r#"{"id":2}"#).unwrap();
+        let req: PlaylistPayload = serde_json::from_str(r#"{"index":2}"#).unwrap();
         assert_eq!(req.index().unwrap(), 2);
         assert_eq!(req.track, 0);
     }
 
     #[test]
     fn playlist_payload_accepts_start_track() {
-        let req: PlaylistPayload = serde_json::from_str(r#"{"id":2,"track":7}"#).unwrap();
+        let req: PlaylistPayload = serde_json::from_str(r#"{"index":2,"track":7}"#).unwrap();
         assert_eq!(req.index().unwrap(), 2);
         assert_eq!(req.track, 7);
     }
 
-    /// MED-M1-A2a: `index`, the deprecated `id`, both equal work, both different and neither fail.
+    /// Version 1.0 removed `id`: only `index` counts. A client that still sends `id` next to
+    /// `index` is not affected, one that sends only `id` gets a 400 that names `index`.
     #[test]
-    fn playlist_payload_index_and_deprecated_id() {
+    fn playlist_payload_takes_index_and_ignores_a_removed_id() {
         let parse = |s: &str| serde_json::from_str::<PlaylistPayload>(s).unwrap().index();
         assert_eq!(parse(r#"{"index":3}"#).unwrap(), 3);
-        assert_eq!(parse(r#"{"id":3}"#).unwrap(), 3);
-        assert_eq!(parse(r#"{"id":3,"index":3}"#).unwrap(), 3);
-        assert!(matches!(
-            parse(r#"{"id":3,"index":4}"#),
-            Err(ApiError::BadRequest(_))
-        ));
-        assert!(matches!(
-            parse(r#"{"track":1}"#),
-            Err(ApiError::BadRequest(_))
-        ));
+        assert_eq!(parse(r#"{"id":9,"index":3}"#).unwrap(), 3);
+        for body in [r#"{"id":3}"#, r#"{"track":1}"#] {
+            assert!(matches!(parse(body), Err(ApiError::BadRequest(m)) if m.contains("index")));
+        }
     }
 }
