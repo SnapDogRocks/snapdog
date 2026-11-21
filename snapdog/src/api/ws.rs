@@ -91,13 +91,7 @@ pub enum Notification {
         /// Total tracks in playlist.
         track_count: Option<usize>,
         // Playlist navigation
-        /// Current playlist index (0-based).
-        ///
-        /// Deprecated. Use `playlist_index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
-        #[schema(deprecated)]
-        #[allow(clippy::doc_markdown)]
-        playlist: Option<usize>,
-        /// Current unified playlist index (0-based). Same value as `playlist`.
+        /// Current unified playlist index (0-based).
         #[serde(default)]
         playlist_index: Option<usize>,
         /// Stable reference of the active playlist: `snapdog:radio` or `subsonic:<id>`.

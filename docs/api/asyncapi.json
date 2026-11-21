@@ -343,15 +343,6 @@
               "description": "Playback state: \"playing\", \"paused\", or \"stopped\".",
               "type": "string"
             },
-            "playlist": {
-              "deprecated": true,
-              "description": "Current playlist index (0-based).\n\nDeprecated. Use `playlist_index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
-              "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
-            },
             "playlist_id": {
               "description": "Stable reference of the active playlist: `snapdog:radio` or `subsonic:<id>`.",
               "type": [
@@ -360,7 +351,7 @@
               ]
             },
             "playlist_index": {
-              "description": "Current unified playlist index (0-based). Same value as `playlist`.",
+              "description": "Current unified playlist index (0-based).",
               "minimum": 0,
               "type": [
                 "integer",
