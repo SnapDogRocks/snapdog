@@ -195,12 +195,18 @@ async fn set_volume(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let snap_id = client.snapcast_id.clone().ok_or(not_found())?;
     drop(store);
+    // A relative step is resolved where the volume commands are serialised, against a volume
+    // that may still be in flight, so quick steps add up.
+    let action = value
+        .relative_step()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?
+        .map_or(ClientAction::Volume(volume), ClientAction::AdjustVolume);
 
     let _ = state
         .snap_tx
         .send(SnapcastCmd::Client {
             client_id: snap_id,
-            action: ClientAction::Volume(volume),
+            action,
         })
         .await;
     // State update comes from Snapcast Client.OnVolumeChanged notification

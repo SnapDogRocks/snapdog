@@ -27,6 +27,26 @@ pub enum VolumeValue {
 }
 
 impl VolumeValue {
+    /// The step of a relative value (a string with a sign), `None` for an absolute one.
+    ///
+    /// # Errors
+    ///
+    /// A string that is not a number.
+    pub fn relative_step(&self) -> Result<Option<i32>, &'static str> {
+        match self {
+            Self::Absolute(_) => Ok(None),
+            Self::Relative(s) => {
+                let s = s.trim();
+                if !s.starts_with(['+', '-']) {
+                    return Ok(None);
+                }
+                s.parse()
+                    .map(Some)
+                    .map_err(|_| "Invalid volume (use e.g. 45, \"45\", \"+5\" or \"-3\")")
+            }
+        }
+    }
+
     pub fn resolve(&self, current: i32) -> Result<i32, &'static str> {
         let v = match self {
             Self::Absolute(v) => *v,
@@ -341,7 +361,13 @@ async fn set_volume(
     let volume = value
         .resolve(current)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    send_cmd(&state, idx, ZoneCommand::SetVolume(volume)).await?;
+    // A relative step is applied in the zone task, in order with other volume commands, so two
+    // quick steps add up instead of both resolving against the same volume.
+    let cmd = value
+        .relative_step()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?
+        .map_or(ZoneCommand::SetVolume(volume), ZoneCommand::AdjustVolume);
+    send_cmd(&state, idx, cmd).await?;
     Ok::<_, ApiError>(Json(volume))
 }
 
