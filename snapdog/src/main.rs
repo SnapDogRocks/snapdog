@@ -738,7 +738,9 @@ pub async fn run_app() -> Result<()> {
         tokio::spawn(async move {
             let mut last_cover_hash: std::collections::HashMap<usize, String> =
                 std::collections::HashMap::new();
-            while let Ok(json) = meta_rx.recv().await {
+            while let Some(json) =
+                api::ws::recv_skipping_lag(&mut meta_rx, "metadata forwarder").await
+            {
                 let Ok(notif) = serde_json::from_str::<api::ws::Notification>(&json) else {
                     continue;
                 };
@@ -746,74 +748,80 @@ pub async fn run_app() -> Result<()> {
                     api::ws::Notification::ZoneChanged { zone, .. } => *zone,
                     _ => continue,
                 };
-                let s = meta_store.read().await;
-                let Some(zone) = s.zones.get(&zone_index) else {
-                    continue;
+                // Copy what is needed out of the store and release the guard before any
+                // await on the backend: a stalled client must not hold the store lock.
+                let (payload, targets) = {
+                    let s = meta_store.read().await;
+                    let Some(zone) = s.zones.get(&zone_index) else {
+                        continue;
+                    };
+                    let metadata = snapdog_common::TrackMetadata {
+                        playback: zone.playback.to_string(),
+                        source: zone.source.to_string(),
+                        shuffle: zone.shuffle,
+                        repeat: zone.repeat,
+                        title: zone
+                            .track
+                            .as_ref()
+                            .map_or_else(String::new, |t| t.title.clone()),
+                        artist: zone
+                            .track
+                            .as_ref()
+                            .map_or_else(String::new, |t| t.artist.clone()),
+                        album: zone
+                            .track
+                            .as_ref()
+                            .map_or_else(String::new, |t| t.album.clone()),
+                        album_artist: zone.track.as_ref().and_then(|t| t.album_artist.clone()),
+                        genre: zone.track.as_ref().and_then(|t| t.genre.clone()),
+                        year: zone.track.as_ref().and_then(|t| t.year),
+                        track_number: zone.track.as_ref().and_then(|t| t.track_number),
+                        disc_number: zone.track.as_ref().and_then(|t| t.disc_number),
+                        duration_ms: zone.track.as_ref().map_or(0, |t| t.duration_ms),
+                        position_ms: zone.track.as_ref().map_or(0, |t| t.position_ms),
+                        seekable: zone.track.as_ref().is_some_and(|t| t.seekable),
+                        cover_url: zone.cover_url.clone(),
+                        bitrate_kbps: zone.track.as_ref().and_then(|t| t.bitrate_kbps),
+                        content_type: zone.track.as_ref().and_then(|t| t.content_type.clone()),
+                        track_index: zone.playlist_track_index,
+                        track_count: zone.playlist_track_count,
+                        playlist: zone.playlist_index,
+                        playlist_name: zone.playlist_name.clone(),
+                        playlist_total: zone.playlist_total,
+                        can_playlist_next: zone
+                            .playlist_index
+                            .zip(zone.playlist_total)
+                            .is_some_and(|(p, t)| p + 1 < t),
+                        can_playlist_prev: zone.playlist_index.is_some_and(|p| p > 0),
+                        can_next: zone
+                            .playlist_track_count
+                            .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
+                        can_prev: zone.playlist_track_index.is_some_and(|i| i > 0),
+                        volume: zone.volume,
+                        muted: zone.muted,
+                    };
+                    let Ok(payload) = serde_json::to_vec(&metadata) else {
+                        continue;
+                    };
+                    let targets: Vec<String> = s
+                        .clients
+                        .values()
+                        .filter(|c| c.is_snapdog && c.zone_index == zone_index)
+                        .filter_map(|c| c.snapcast_id.clone())
+                        .collect();
+                    drop(s);
+                    (payload, targets)
                 };
-                let metadata = snapdog_common::TrackMetadata {
-                    playback: zone.playback.to_string(),
-                    source: zone.source.to_string(),
-                    shuffle: zone.shuffle,
-                    repeat: zone.repeat,
-                    title: zone
-                        .track
-                        .as_ref()
-                        .map_or_else(String::new, |t| t.title.clone()),
-                    artist: zone
-                        .track
-                        .as_ref()
-                        .map_or_else(String::new, |t| t.artist.clone()),
-                    album: zone
-                        .track
-                        .as_ref()
-                        .map_or_else(String::new, |t| t.album.clone()),
-                    album_artist: zone.track.as_ref().and_then(|t| t.album_artist.clone()),
-                    genre: zone.track.as_ref().and_then(|t| t.genre.clone()),
-                    year: zone.track.as_ref().and_then(|t| t.year),
-                    track_number: zone.track.as_ref().and_then(|t| t.track_number),
-                    disc_number: zone.track.as_ref().and_then(|t| t.disc_number),
-                    duration_ms: zone.track.as_ref().map_or(0, |t| t.duration_ms),
-                    position_ms: zone.track.as_ref().map_or(0, |t| t.position_ms),
-                    seekable: zone.track.as_ref().is_some_and(|t| t.seekable),
-                    cover_url: zone.cover_url.clone(),
-                    bitrate_kbps: zone.track.as_ref().and_then(|t| t.bitrate_kbps),
-                    content_type: zone.track.as_ref().and_then(|t| t.content_type.clone()),
-                    track_index: zone.playlist_track_index,
-                    track_count: zone.playlist_track_count,
-                    playlist: zone.playlist_index,
-                    playlist_name: zone.playlist_name.clone(),
-                    playlist_total: zone.playlist_total,
-                    can_playlist_next: zone
-                        .playlist_index
-                        .zip(zone.playlist_total)
-                        .is_some_and(|(p, t)| p + 1 < t),
-                    can_playlist_prev: zone.playlist_index.is_some_and(|p| p > 0),
-                    can_next: zone
-                        .playlist_track_count
-                        .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
-                    can_prev: zone.playlist_track_index.is_some_and(|i| i > 0),
-                    volume: zone.volume,
-                    muted: zone.muted,
-                };
-                let Ok(payload) = serde_json::to_vec(&metadata) else {
-                    continue;
-                };
-                // Send to all snapdog clients in this zone
-                for client in s.clients.values() {
-                    if client.is_snapdog
-                        && client.zone_index == zone_index
-                        && let Some(ref snap_id) = client.snapcast_id
-                    {
-                        let _ = meta_backend
-                            .execute(player::SnapcastCmd::Client {
-                                client_id: snap_id.clone(),
-                                action: player::ClientAction::SendCustom {
-                                    type_id: snapdog_common::MSG_TYPE_TRACK_METADATA,
-                                    payload: payload.clone(),
-                                },
-                            })
-                            .await;
-                    }
+                for snap_id in &targets {
+                    let _ = meta_backend
+                        .execute(player::SnapcastCmd::Client {
+                            client_id: snap_id.clone(),
+                            action: player::ClientAction::SendCustom {
+                                type_id: snapdog_common::MSG_TYPE_TRACK_METADATA,
+                                payload: payload.clone(),
+                            },
+                        })
+                        .await;
                 }
                 // Send cover art (Type 15) if changed
                 let cover_cache = meta_covers.read().await;
@@ -832,21 +840,16 @@ pub async fn run_app() -> Result<()> {
                         .map(|e| e.bytes.clone())
                         .unwrap_or_default();
                     drop(cover_cache);
-                    for client in s.clients.values() {
-                        if client.is_snapdog
-                            && client.zone_index == zone_index
-                            && let Some(ref snap_id) = client.snapcast_id
-                        {
-                            let _ = meta_backend
-                                .execute(player::SnapcastCmd::Client {
-                                    client_id: snap_id.clone(),
-                                    action: player::ClientAction::SendCustom {
-                                        type_id: snapdog_common::MSG_TYPE_COVER_ART,
-                                        payload: cover_payload.clone(),
-                                    },
-                                })
-                                .await;
-                        }
+                    for snap_id in &targets {
+                        let _ = meta_backend
+                            .execute(player::SnapcastCmd::Client {
+                                client_id: snap_id.clone(),
+                                action: player::ClientAction::SendCustom {
+                                    type_id: snapdog_common::MSG_TYPE_COVER_ART,
+                                    payload: cover_payload.clone(),
+                                },
+                            })
+                            .await;
                     }
                 }
             }
@@ -859,6 +862,16 @@ pub async fn run_app() -> Result<()> {
     // Fuse the API fatal receiver so it can be safely polled inside the loop
     // without moving out of a non-Copy type on every iteration.
     let mut api_fatal_rx = Some(api_fatal_rx);
+
+    // Signal streams live as long as the loop. Creating them inside the select arm re-registers
+    // them on every iteration, so a signal that arrives while another arm runs is lost.
+    #[cfg(unix)]
+    let mut signals = ShutdownSignals::new()?;
+    #[cfg(not(unix))]
+    let mut ctrl_c = std::pin::pin!(tokio::signal::ctrl_c());
+    // Exit status of the process: non-zero after a fatal error so that a service manager
+    // with `Restart=on-failure` starts the server again.
+    let mut exit_code = 0;
 
     loop {
         let sleep = async {
@@ -923,21 +936,21 @@ pub async fn run_app() -> Result<()> {
                 std::future::pending::<Option<anyhow::Error>>().await
             } => {
                 tracing::error!(error = %e, "API server failed — shutting down");
+                exit_code = 1;
                 break;
             }
             // Shutdown signals
             () = async {
-                let sigint = tokio::signal::ctrl_c();
                 #[cfg(unix)]
-                let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
-
-                #[cfg(unix)]
-                tokio::select! {
-                    _ = sigint => { tracing::info!("Received Ctrl-C, shutting down gracefully..."); }
-                    _ = sigterm.recv() => { tracing::info!("Received SIGTERM, shutting down gracefully..."); }
-                };
+                {
+                    let name = signals.recv().await;
+                    tracing::info!(signal = name, "Shutting down gracefully...");
+                }
                 #[cfg(not(unix))]
-                let _ = sigint.await;
+                {
+                    let _ = (&mut ctrl_c).await;
+                    tracing::info!("Received Ctrl-C, shutting down gracefully...");
+                }
             } => {
                 break;
             }
@@ -957,7 +970,7 @@ pub async fn run_app() -> Result<()> {
 
     // Spawn a dedicated thread for the forced-exit safety net.
     // This survives the tokio runtime shutdown and handles second signals.
-    std::thread::spawn(|| {
+    std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -981,7 +994,7 @@ pub async fn run_app() -> Result<()> {
                 }
                 () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
                     tracing::warn!("Graceful shutdown timed out, forcing exit");
-                    std::process::exit(0);
+                    std::process::exit(exit_code);
                 }
             };
             #[cfg(not(unix))]
@@ -992,7 +1005,7 @@ pub async fn run_app() -> Result<()> {
                 }
                 _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
                     tracing::warn!("Graceful shutdown timed out, forcing exit");
-                    std::process::exit(0);
+                    std::process::exit(exit_code);
                 }
             };
         });
@@ -1012,7 +1025,7 @@ pub async fn run_app() -> Result<()> {
     tracing::info!("SnapDog server terminated");
     // `exit` skips destructors: flush the log file explicitly.
     drop(log_guard);
-    std::process::exit(0);
+    std::process::exit(exit_code);
 }
 
 /// RAII guard for the `SnapDog` server's mDNS advertisement.
@@ -1096,6 +1109,58 @@ fn is_docker() -> bool {
     std::path::Path::new("/.dockerenv").exists()
         || std::fs::read_to_string("/proc/1/cgroup")
             .is_ok_and(|s| s.contains("docker") || s.contains("containerd"))
+}
+
+/// SIGINT and SIGTERM, registered once for the whole run.
+///
+/// Registering a listener inside a select arm drops it whenever another arm runs, and a signal
+/// that arrives in that moment is lost. These streams keep a signal until it is read.
+#[cfg(unix)]
+struct ShutdownSignals {
+    sigint: tokio::signal::unix::Signal,
+    sigterm: tokio::signal::unix::Signal,
+}
+
+#[cfg(unix)]
+impl ShutdownSignals {
+    fn new() -> std::io::Result<Self> {
+        use tokio::signal::unix::{SignalKind, signal};
+        Ok(Self {
+            sigint: signal(SignalKind::interrupt())?,
+            sigterm: signal(SignalKind::terminate())?,
+        })
+    }
+
+    /// Wait for the next shutdown signal and name it.
+    async fn recv(&mut self) -> &'static str {
+        tokio::select! {
+            _ = self.sigint.recv() => "SIGINT",
+            _ = self.sigterm.recv() => "SIGTERM",
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod signal_tests {
+    use super::ShutdownSignals;
+
+    /// #501: a SIGTERM that arrives while the main loop is busy in another arm is kept and
+    /// read once the loop waits again.
+    #[tokio::test]
+    async fn a_signal_sent_while_nobody_waits_is_not_lost() {
+        let mut signals = ShutdownSignals::new().unwrap();
+        let status = std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        // The loop is busy elsewhere for a while.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let name = tokio::time::timeout(std::time::Duration::from_secs(2), signals.recv())
+            .await
+            .expect("the signal is kept until it is read");
+        assert_eq!(name, "SIGTERM");
+    }
 }
 
 #[cfg(test)]

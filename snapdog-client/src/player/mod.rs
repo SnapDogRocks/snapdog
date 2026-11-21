@@ -640,18 +640,69 @@ pub async fn play_audio(
         while rx.recv().await.is_some() {}
     });
 
-    // Shared flag for format-change signaling from cpal thread
-    let format_changed = Arc::new(AtomicBool::new(false));
-
-    loop {
-        format_changed.store(false, Ordering::Relaxed);
-
-        // Wait for the Stream to have a valid format
-        let format = loop {
-            let f = stream
+    let format_source = Arc::clone(&stream);
+    supervise_output(
+        move || {
+            format_source
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .format();
+                .format()
+        },
+        move |format, generation| {
+            let stream = Arc::clone(&stream);
+            let time_provider = Arc::clone(&time_provider);
+            let eq = eq.clone();
+            let speaker_eq = speaker_eq.clone();
+            let mixer = Arc::clone(&mixer);
+            let fade = Arc::clone(&fade);
+            let soundcard = Arc::clone(&soundcard);
+            std::thread::spawn(move || {
+                if let Err(e) = run_cpal(
+                    &soundcard,
+                    stream,
+                    time_provider,
+                    format,
+                    eq,
+                    speaker_eq,
+                    mixer,
+                    fade,
+                    generation,
+                ) {
+                    tracing::error!(error = %e, "Audio output failed");
+                }
+            })
+        },
+    )
+    .await;
+}
+
+/// How often the supervisor checks whether the running output has to be replaced.
+const OUTPUT_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+/// Wait before the output is opened again after it ended with an error.
+const OUTPUT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// One run of the audio output, from opening the device to dropping the stream.
+///
+/// Each run has its own format flag, so the callback of an earlier run cannot restart a later
+/// one, and its own stop signal: the output thread drops its stream once the sender is gone.
+pub struct OutputGeneration {
+    /// Set by the output when the stream format no longer matches the one it was opened with.
+    pub format_changed: Arc<AtomicBool>,
+    /// Closed by the supervisor to end this run.
+    pub stop: std::sync::mpsc::Receiver<()>,
+}
+
+/// Run the audio output in generations: wait for a valid format, start one output, and replace
+/// it when the format changes or the output ended. The previous output thread has finished,
+/// and with it released its device, before the next one starts.
+async fn supervise_output<F, S>(mut current_format: F, mut start: S)
+where
+    F: FnMut() -> snapcast_proto::SampleFormat,
+    S: FnMut(snapcast_proto::SampleFormat, OutputGeneration) -> std::thread::JoinHandle<()>,
+{
+    loop {
+        let format = loop {
+            let f = current_format();
             if f.rate() > 0 && f.channels() > 0 {
                 break f;
             }
@@ -665,40 +716,33 @@ pub async fn play_audio(
             "Audio format detected"
         );
 
-        let stream_clone = Arc::clone(&stream);
-        let tp_clone = Arc::clone(&time_provider);
-        let eq_clone = eq.clone();
-        let speaker_eq_clone = speaker_eq.clone();
-        let mixer_clone = Arc::clone(&mixer);
-        let fade_clone = Arc::clone(&fade);
-        let fc_clone = Arc::clone(&format_changed);
-        let soundcard_clone = Arc::clone(&soundcard);
+        let format_changed = Arc::new(AtomicBool::new(false));
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
+        let output = start(
+            format,
+            OutputGeneration {
+                format_changed: Arc::clone(&format_changed),
+                stop: stop_rx,
+            },
+        );
 
-        // Spawn cpal thread — don't join, just let it run
-        std::thread::spawn(move || {
-            if let Err(e) = run_cpal(
-                &soundcard_clone,
-                stream_clone,
-                tp_clone,
-                format,
-                eq_clone,
-                speaker_eq_clone,
-                mixer_clone,
-                fade_clone,
-                fc_clone,
-            ) {
-                tracing::error!(error = %e, "Audio output failed");
-            }
-        });
-
-        // Poll async until format changes
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(OUTPUT_CHECK_INTERVAL).await;
             if format_changed.load(Ordering::Relaxed) {
                 tracing::info!("Audio format changed, restarting pipeline");
                 break;
             }
+            if output.is_finished() {
+                tracing::warn!(retry_in = ?OUTPUT_RETRY_DELAY, "Audio output ended, opening it again");
+                tokio::time::sleep(OUTPUT_RETRY_DELAY).await;
+                break;
+            }
         }
+
+        // End this run and wait until its stream is dropped: an exclusive device can only be
+        // opened again once the old stream has released it.
+        drop(stop_tx);
+        let _ = tokio::task::spawn_blocking(move || output.join()).await;
     }
 }
 
@@ -714,9 +758,14 @@ fn run_cpal(
     speaker_eq: SharedEq,
     mixer: Arc<Mixer>,
     fade: Arc<FadeState>,
-    format_changed: Arc<AtomicBool>,
+    generation: OutputGeneration,
 ) -> anyhow::Result<()> {
     use cpal::traits::{DeviceTrait, StreamTrait};
+
+    let OutputGeneration {
+        format_changed,
+        stop,
+    } = generation;
 
     let host = cpal::default_host();
     let device = find_output_device(&host, soundcard)?;
@@ -869,9 +918,11 @@ fn run_cpal(
     cpal_stream.play()?;
     tracing::info!("Audio output stream started");
 
-    // Park indefinitely — the cpal callback sets format_changed,
-    // and the async side will spawn a new thread when it detects it.
-    std::thread::park();
+    // Keep the stream until the supervisor ends this run (it drops the sender). Unlike
+    // `park`, this cannot wake spuriously.
+    let _ = stop.recv();
+    drop(cpal_stream);
+    tracing::info!("Audio output stream stopped");
     Ok(())
 }
 
@@ -941,6 +992,80 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A fake output that behaves like the cpal callback: it reports a format change while
+    /// the shared format differs from the one it started with, and ends when stopped.
+    fn fake_output(
+        format: snapcast_proto::SampleFormat,
+        generation: super::OutputGeneration,
+        current: Arc<Mutex<snapcast_proto::SampleFormat>>,
+        alive: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> std::thread::JoinHandle<()> {
+        use std::sync::mpsc::RecvTimeoutError;
+        alive.fetch_add(1, Ordering::SeqCst);
+        std::thread::spawn(move || {
+            loop {
+                if *current.lock().unwrap() != format {
+                    generation.format_changed.store(true, Ordering::Relaxed);
+                }
+                match generation
+                    .stop
+                    .recv_timeout(std::time::Duration::from_millis(10))
+                {
+                    Err(RecvTimeoutError::Timeout) => {}
+                    _ => break,
+                }
+            }
+            alive.fetch_sub(1, Ordering::SeqCst);
+        })
+    }
+
+    async fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
+        for _ in 0..200 {
+            if done() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("timed out waiting for {what}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn each_format_change_restarts_the_output_once_and_ends_the_previous_one() {
+        use std::sync::atomic::AtomicUsize;
+        let current = Arc::new(Mutex::new(snapcast_proto::SampleFormat::new(48_000, 16, 2)));
+        let starts = Arc::new(AtomicUsize::new(0));
+        let alive = Arc::new(AtomicUsize::new(0));
+
+        let supervisor = {
+            let (current, starts, alive) = (
+                Arc::clone(&current),
+                Arc::clone(&starts),
+                Arc::clone(&alive),
+            );
+            let reader = Arc::clone(&current);
+            tokio::spawn(super::supervise_output(
+                move || *reader.lock().unwrap(),
+                move |format, generation| {
+                    starts.fetch_add(1, Ordering::SeqCst);
+                    fake_output(format, generation, Arc::clone(&current), Arc::clone(&alive))
+                },
+            ))
+        };
+
+        wait_for("the first output", || starts.load(Ordering::SeqCst) == 1).await;
+        for (n, rate) in [(2, 44_100), (3, 96_000)] {
+            *current.lock().unwrap() = snapcast_proto::SampleFormat::new(rate, 16, 2);
+            wait_for("the restart", || starts.load(Ordering::SeqCst) == n).await;
+            wait_for("one live output", || alive.load(Ordering::SeqCst) == 1).await;
+        }
+
+        // No flag of an earlier generation may trigger a further restart.
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        assert_eq!(starts.load(Ordering::SeqCst), 3);
+        assert_eq!(alive.load(Ordering::SeqCst), 1);
+        supervisor.abort();
+    }
     // ── --soundcard selection ─────────────────────────────────
 
     fn devices(list: &[(&str, &str)]) -> Vec<OutputDevice> {
@@ -1104,7 +1229,10 @@ mod tests {
                 Arc::new(Mutex::new(ZoneEq::new(48000, 2))),
                 Arc::new(Mixer::None),
                 Arc::new(FadeState::new()),
-                Arc::new(AtomicBool::new(false)),
+                OutputGeneration {
+                    format_changed: Arc::new(AtomicBool::new(false)),
+                    stop: std::sync::mpsc::channel().1,
+                },
             );
             let _ = done.send(outcome.map_err(|e| e.to_string()));
         });
