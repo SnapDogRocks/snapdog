@@ -64,6 +64,7 @@ pub fn init(config: &AppConfig, persist_path: Option<&Path>) -> Result<SharedSta
         store.load(path)?;
         tracing::info!(path = %path.display(), "Restored persisted state");
     }
+    store.apply_zone_volume_limits(config);
 
     Ok(Arc::new(RwLock::new(store)))
 }
@@ -379,6 +380,19 @@ impl Store {
         Ok(())
     }
 
+    /// Apply the configured zone volumes at server start: `default_volume` where it is set,
+    /// and `max_volume` as the upper bound of whatever volume was restored.
+    fn apply_zone_volume_limits(&mut self, config: &AppConfig) {
+        for zone_config in &config.zones {
+            if let Some(zone) = self.zones.get_mut(&zone_config.index) {
+                if let Some(volume) = zone_config.default_volume {
+                    zone.volume = volume;
+                }
+                zone.volume = zone.volume.clamp(0, zone_config.max_volume);
+            }
+        }
+    }
+
     /// Load state from JSON file, merging with current config-derived state.
     fn load(&mut self, path: &Path) -> Result<()> {
         let json = std::fs::read_to_string(path)
@@ -544,6 +558,77 @@ mod tests {
             server_identity(&missing).id,
             "a new id at every start"
         );
+    }
+
+    fn config_with_zone(extra: &str) -> AppConfig {
+        let raw: crate::config::FileConfig = toml::from_str(&format!(
+            r#"
+            [[zone]]
+            name = "Ground Floor"
+            {extra}
+            [[client]]
+            name = "Living Room"
+            mac = "00:00:00:00:00:00"
+            zone = "Ground Floor"
+        "#
+        ))
+        .unwrap();
+        crate::config::load_raw(raw).unwrap()
+    }
+
+    /// #509: `default_volume` is applied at every start, over a restored volume.
+    #[test]
+    fn default_volume_is_set_at_start_over_the_restored_volume() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let plain = config_with_zone("");
+        let mut store = Store::from_config(&plain);
+        store.set_persist_path(path.clone());
+        store.zones.get_mut(&1).unwrap().volume = 80;
+        store.persist().unwrap();
+
+        let restored = init(&plain, Some(&path)).unwrap();
+        assert_eq!(
+            restored.try_read().unwrap().zones[&1].volume,
+            80,
+            "no default_volume: kept"
+        );
+
+        let with_default = init(&config_with_zone("default_volume = 30"), Some(&path)).unwrap();
+        assert_eq!(with_default.try_read().unwrap().zones[&1].volume, 30);
+    }
+
+    /// #509: `max_volume` bounds a restored volume and `default_volume`.
+    #[test]
+    fn max_volume_bounds_the_start_volume() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let plain = config_with_zone("");
+        let mut store = Store::from_config(&plain);
+        store.set_persist_path(path.clone());
+        store.zones.get_mut(&1).unwrap().volume = 90;
+        store.persist().unwrap();
+
+        let capped = init(&config_with_zone("max_volume = 60"), Some(&path)).unwrap();
+        assert_eq!(capped.try_read().unwrap().zones[&1].volume, 60);
+        let both = config_with_zone("max_volume = 60\n            default_volume = 75");
+        assert_eq!(
+            both.zones[0].default_volume,
+            Some(60),
+            "default_volume is clamped to max"
+        );
+    }
+
+    #[test]
+    fn zone_receivers_default_to_on_and_can_be_switched_off() {
+        let on = config_with_zone("");
+        assert!(on.zones[0].airplay && on.zones[0].spotify);
+        assert_eq!(
+            (on.zones[0].max_volume, on.zones[0].default_volume),
+            (100, None)
+        );
+        let off = config_with_zone("airplay = false\n            spotify = false");
+        assert!(!off.zones[0].airplay && !off.zones[0].spotify);
     }
 
     fn test_config() -> AppConfig {
