@@ -364,10 +364,15 @@ const SPEAKER_PROFILES = {
   ]
 };
 
-// The demo's equalizer has at most five bands (the web UI of the demo is built with the same
-// limit). Longer band lists, such as the ten-band speaker profiles, are thinned out evenly so
-// the low and the high shelf stay.
-const MAX_EQ_BANDS = 5;
+// The demo's equalizer has at most DEMO_MAX_EQ_BANDS bands, set once in Dockerfile.demo for
+// both this backend and the web UI build. Longer band lists, such as the ten-band speaker
+// profiles, are thinned out evenly so the low and the high shelf stay. Without the variable
+// (a local run), the real server's limit applies.
+const SERVER_MAX_EQ_BANDS = 10;
+const configuredMaxBands = Number.parseInt(process.env.DEMO_MAX_EQ_BANDS ?? '', 10);
+const MAX_EQ_BANDS = Number.isInteger(configuredMaxBands) && configuredMaxBands >= 2
+  ? Math.min(configuredMaxBands, SERVER_MAX_EQ_BANDS)
+  : SERVER_MAX_EQ_BANDS;
 const fitBands = (bands) => {
   if (bands.length <= MAX_EQ_BANDS) return bands;
   return Array.from({ length: MAX_EQ_BANDS }, (_, i) =>
