@@ -199,12 +199,16 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
     if !ets.psk.trim().is_empty() {
         base.snapcast.encryption_psk = Some(SecretString::new(ets.psk.trim().to_string()));
     }
-    if !ets.api_keys.is_empty() {
-        base.http.api_keys = ets
-            .api_keys
-            .iter()
-            .map(|k| SecretString::new(k.trim().to_string()))
-            .collect();
+    // A key of blanks is no key: it is dropped, not used as the empty string.
+    let api_keys: Vec<SecretString> = ets
+        .api_keys
+        .iter()
+        .map(|k| k.trim())
+        .filter(|k| !k.is_empty())
+        .map(|k| SecretString::new(k.to_string()))
+        .collect();
+    if !api_keys.is_empty() {
+        base.http.api_keys = api_keys;
     }
     if !ets.airplay_pass.trim().is_empty() {
         base.airplay.password = Some(ets.airplay_pass.trim().into());

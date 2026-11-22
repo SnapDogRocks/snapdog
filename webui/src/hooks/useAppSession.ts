@@ -100,16 +100,21 @@ export function useAppSession() {
             useAppStore.setState({ needsAuth: true });
         };
         window.addEventListener("snapdog:unauthorized", unauthorized);
+        // Share links carry the key in the fragment (`#auth=`), which never reaches a server.
+        // `?auth=` from older links is still read, and both are removed from the address bar.
         const params = new URLSearchParams(window.location.search);
-        const auth = params.get("auth");
+        const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const auth = fragment.get("auth") ?? params.get("auth");
         if (auth) {
             setApiKey(auth);
             params.delete("auth");
+            fragment.delete("auth");
             const search = params.toString();
+            const hash = fragment.toString();
             window.history.replaceState(
                 {},
                 "",
-                `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`,
+                `${window.location.pathname}${search ? `?${search}` : ""}${hash ? `#${hash}` : ""}`,
             );
         }
         void useAppStore.getState().loadAll();

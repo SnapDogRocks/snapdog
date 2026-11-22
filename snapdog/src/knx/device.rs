@@ -704,6 +704,7 @@ pub fn parse_ets_memory(data: &[u8]) -> EtsParams {
                 mem::GLOBAL_API_KEY_SIZE,
             )
         })
+        .map(|k| k.trim().to_string())
         .filter(|k| !k.is_empty())
         .collect();
     for i in 0..mem::MAX_RADIOS {

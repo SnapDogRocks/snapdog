@@ -83,3 +83,54 @@ async fn health_is_unauthenticated() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+// ── Empty keys (GHSA-q7p8-v83g-hrxr) ─────────────────────────
+
+fn toml_with_keys(keys: &str) -> String {
+    format!(
+        r#"
+[http]
+api_keys = {keys}
+
+[[zone]]
+name = "Ground Floor"
+"#
+    )
+}
+
+#[test]
+fn an_empty_or_blank_api_key_is_refused_at_load() {
+    for keys in [r#"[""]"#, r#"["   "]"#, r#"["good", ""]"#] {
+        let raw: FileConfig = toml::from_str(&toml_with_keys(keys)).unwrap();
+        let err = config::load_raw(raw).expect_err(keys).to_string();
+        assert!(err.contains("empty key"), "{keys}: {err}");
+    }
+}
+
+/// Even if an empty key reached the router (it cannot through the config), an empty token
+/// would not match it.
+#[tokio::test]
+async fn an_empty_token_never_authorizes() {
+    let mut cfg = common::test_config();
+    cfg.http.api_keys = vec![snapdog::config::SecretString::from(String::new())];
+    let app = common::build_test_app(cfg);
+    for uri in ["/ws?token=", "/ws?token"] {
+        let req = Request::get(uri)
+            .header("connection", "upgrade")
+            .header("upgrade", "websocket")
+            .header("sec-websocket-version", "13")
+            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .body(Body::empty())
+            .unwrap();
+        let status = api::build_router(&app.state)
+            .oneshot(req)
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}");
+    }
+    assert_eq!(
+        zones_status(&app.state, Some("")).await,
+        StatusCode::UNAUTHORIZED
+    );
+}

@@ -412,8 +412,18 @@ pub fn build_router(state: &SharedState) -> Router {
         app
     };
 
+    // The span records the path only: `/ws?token=` carries the API key in the query.
     app.layer(CompressionLayer::new())
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(
+            |req: &axum::http::Request<axum::body::Body>| {
+                tracing::debug_span!(
+                    "request",
+                    method = %req.method(),
+                    path = %req.uri().path(),
+                    version = ?req.version(),
+                )
+            },
+        ))
 }
 
 #[cfg(test)]

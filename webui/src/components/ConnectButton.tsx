@@ -44,7 +44,8 @@ function ConnectOverlay({ onClose }: { onClose: () => void }) {
     ? `snapdog://connect?url=${encodeURIComponent(baseUrl)}&token=${encodeURIComponent(apiKey)}`
     : `snapdog://connect?url=${encodeURIComponent(baseUrl)}`;
 
-  const shareUrl = apiKey ? `${baseUrl}/?auth=${encodeURIComponent(apiKey)}` : baseUrl;
+  // The key goes into the fragment, which the browser never sends to a server or proxy log.
+  const shareUrl = apiKey ? `${baseUrl}/#auth=${encodeURIComponent(apiKey)}` : baseUrl;
 
   const handleShare = useCallback(async () => {
     // navigator.share is feature-detected at runtime (older browsers lack the

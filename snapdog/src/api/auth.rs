@@ -20,13 +20,19 @@ pub async fn require_api_key(request: Request, next: Next) -> Response {
         .headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
+        .and_then(|v| v.strip_prefix("Bearer "))
+        // An empty token never matches, whatever keys are configured.
+        .filter(|t| !t.is_empty());
 
     let query_token = if request.uri().path() == "/ws" {
-        request.uri().query().and_then(|q| {
-            url::form_urlencoded::parse(q.as_bytes())
-                .find_map(|(key, value)| (key == "token").then(|| value.into_owned()))
-        })
+        request
+            .uri()
+            .query()
+            .and_then(|q| {
+                url::form_urlencoded::parse(q.as_bytes())
+                    .find_map(|(key, value)| (key == "token").then(|| value.into_owned()))
+            })
+            .filter(|t| !t.is_empty())
     } else {
         None
     };

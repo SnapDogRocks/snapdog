@@ -814,6 +814,16 @@ pub fn validate(config: &mut AppConfig) -> Result<()> {
     // ── Audio format constraints ──────────────────────────────
     validate_audio_format(&config.audio)?;
 
+    // An empty API key would switch authentication on and let an empty token through.
+    anyhow::ensure!(
+        config
+            .http
+            .api_keys
+            .iter()
+            .all(|k| !k.as_str().trim().is_empty()),
+        "[http].api_keys contains an empty key. Remove it, or set a non-empty key"
+    );
+
     // FLAC supports max 24-bit
     if config.snapcast.codec == AudioCodec::Flac && config.audio.bit_depth > 24 {
         config.warn(format!(
