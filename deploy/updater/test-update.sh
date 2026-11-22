@@ -10,6 +10,12 @@ export SNAPDOG_ENV_FILE="${test_directory}/.env"
 export COMPOSE_ENV_FILE="$SNAPDOG_ENV_FILE"
 export ENV_BACKUP_FILE="${test_directory}/state/snapdog.env.backup"
 export PROGRESS_FILE="${test_directory}/state/progress.json"
+# The control service passes these (control.mjs, UPDATE_SETTINGS); update.sh has no defaults.
+export RELEASE_API="https://api.github.com/repos/SnapDogRocks/snapdog/releases/latest"
+export IMAGE_REPOSITORY="ghcr.io/snapdogrocks/snapdog"
+export UPDATER_IMAGE_REPOSITORY="ghcr.io/snapdogrocks/snapdog-updater"
+export READINESS_URL="http://server:5555/health/ready"
+export COSIGN_IDENTITY_REGEXP='^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
 printf '%s\n' \
   'SNAPDOG_IMAGE=ghcr.io/snapdogrocks/snapdog:v1.8.1' \
   'UPDATER_IMAGE=ghcr.io/snapdogrocks/snapdog-updater:v1.8.1' \
@@ -31,9 +37,11 @@ assert grep -Fq -- "--project-directory $test_directory" "$COMPOSE_PROBE"
 assert grep -Fq -- "env=$SNAPDOG_ENV_FILE" "$COMPOSE_PROBE"
 unset -f docker
 
-# Server releases deliberately own GitHub's Latest badge. Keep both the control
-# API and the actual deployment path on the bounded single-release endpoint.
-assert test "$RELEASE_API" = "https://api.github.com/repos/SnapDogRocks/snapdog/releases/latest"
+# Without a setting from the control service the script refuses to run and names it,
+# instead of falling back to a default that may contradict the compose file.
+missing_output="$(env -u READINESS_URL UPDATE_ONCE=true COMPOSE_FILE="$COMPOSE_FILE" \
+  bash "$(dirname "${BASH_SOURCE[0]}")/update.sh" 2>&1 || true)"
+assert grep -Fq "required setting READINESS_URL is not set" <<<"$missing_output"
 
 # Docker materializes a missing bind source as a directory. Reject it during
 # preflight, before a backup or deployment attempt.
@@ -182,7 +190,6 @@ assert jq -e '.startedAt == "2026-08-13T00:00:00Z"' "$PROGRESS_FILE" >/dev/null
 # Failure metadata must retain the original failed step while rollback advances,
 # so the UI can render both outcomes instead of collapsing everything to failed.
 set_phase "verifying"
-set_phase "backing-up"
 set_phase "deploying"
 set_phase "rolling-back" "rollback image"
 assert jq -e '.phase == "rolling-back" and .failedPhase == "deploying" and .rollbackAttempted == true' "$PROGRESS_FILE" >/dev/null

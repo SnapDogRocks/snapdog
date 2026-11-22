@@ -137,7 +137,7 @@ fn pattern(lang: &Language, en: &str) -> Option<String> {
             }
         }
         // Units and bit depths read the same in every language.
-        if matches!(noun, "Hz" | "Bit") {
+        if matches!(noun, "Hz" | "Bit" | "%") {
             return Some(en.to_string());
         }
     }
