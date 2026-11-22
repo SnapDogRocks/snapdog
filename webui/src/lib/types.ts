@@ -256,6 +256,24 @@ export interface WsZoneEqChanged {
   preset?: string;
 }
 
+/** EQ of a client changed (the config is flattened into the event). */
+export interface WsClientEqChanged {
+  type: "client_eq_changed";
+  client: number;
+  enabled: boolean;
+  bands: EqBand[];
+  preset?: string | null;
+}
+
+/** Speaker correction of a client changed (the config is flattened into the event). */
+export interface WsClientSpeakerChanged {
+  type: "client_speaker_changed";
+  client: number;
+  enabled: boolean;
+  bands: EqBand[];
+  preset?: string | null;
+}
+
 export interface WsPlaybackError {
   type: "playback_error";
   zone: number;
@@ -278,6 +296,8 @@ export type WsNotification =
   | WsClientStateChanged
   | WsZonePresenceChanged
   | WsZoneEqChanged
+  | WsClientEqChanged
+  | WsClientSpeakerChanged
   | WsPlaybackError;
 
 // ── Volume ────────────────────────────────────────────────────
