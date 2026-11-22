@@ -124,9 +124,7 @@ async fn set_eq(
     Json(config): Json<EqConfig>,
 ) -> impl IntoResponse {
     require_snapdog(&state, idx).await?;
-    if config.bands.len() > snapdog_common::MAX_EQ_BANDS {
-        return Err(ApiError::BadRequest("Maximum 10 EQ bands".into()));
-    }
+    config.validate().map_err(ApiError::BadRequest)?;
     state
         .eq_store
         .lock()
@@ -160,6 +158,7 @@ async fn set_band(
     Path((idx, band_idx)): Path<(usize, usize)>,
     Json(band): Json<EqBand>,
 ) -> impl IntoResponse {
+    band.validate().map_err(ApiError::BadRequest)?;
     require_snapdog(&state, idx).await?;
     let mut config = state
         .eq_store

@@ -8,8 +8,22 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // Pure modules run in Node; components (`*.test.tsx`) in a DOM.
+    projects: [
+      {
+        extends: true,
+        test: { name: "unit", environment: "node", include: ["src/**/*.test.ts"] },
+      },
+      {
+        extends: true,
+        test: {
+          name: "components",
+          environment: "jsdom",
+          include: ["src/**/*.test.tsx"],
+          setupFiles: ["src/test/setup-dom.ts"],
+        },
+      },
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
@@ -21,18 +35,17 @@ export default defineConfig({
         "src/**/*.d.ts",
         "src/**/*.test.ts",
         "src/**/*.test.tsx",
+        "src/test/**",
       ],
-      // Starter floor: there is no test suite yet beyond a handful of
-      // pure src/lib/ unit tests (format-time, utils, eq-response), set
-      // just below today's actual measured coverage (~3.2% lines /
-      // ~3.0% statements / ~1.1% functions / ~0.3% branches over the
-      // whole src/ tree — see the PR description). Raise it as real
-      // coverage grows; never lower it to make room for untested code.
+      // Floor set about a point below the measured coverage with the component tests
+      // (~25.4% lines / ~24.2% statements / ~19.1% functions / ~19.0% branches over
+      // the whole src/ tree). Raise it as coverage grows; never lower it to make
+      // room for untested code.
       thresholds: {
-        lines: 3,
-        statements: 2.5,
-        functions: 1,
-        branches: 0.25,
+        lines: 24,
+        statements: 23,
+        functions: 18,
+        branches: 18,
       },
     },
   },

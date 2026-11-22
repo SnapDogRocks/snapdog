@@ -4,11 +4,15 @@
 
 set -Eeuo pipefail
 
-readonly RELEASE_API="${RELEASE_API:-https://api.github.com/repos/SnapDogRocks/snapdog/releases/latest}"
+# Endpoints, image repositories, the env file, the readiness URL and the signature identity
+# have one source: the control service (control.mjs, UPDATE_SETTINGS) passes them in the
+# environment. They have no defaults here, so a stale copy cannot silently take effect;
+# validate_config names any that is missing.
+readonly RELEASE_API="${RELEASE_API:-}"
 readonly TARGET_VERSION="${TARGET_VERSION:-}"
-readonly IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/snapdogrocks/snapdog}"
+readonly IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-}"
 readonly COMPOSE_FILE="${COMPOSE_FILE:-/stack/docker-compose.yml}"
-readonly SNAPDOG_ENV_FILE="${SNAPDOG_ENV_FILE:-/run/snapdog/snapdog.env}"
+readonly SNAPDOG_ENV_FILE="${SNAPDOG_ENV_FILE:-}"
 export COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-$SNAPDOG_ENV_FILE}"
 readonly COMPOSE_ENV_FILE
 HOST_STACK_DIR="${HOST_STACK_DIR:-}"
@@ -17,15 +21,12 @@ readonly COMPOSE_PROJECT="${COMPOSE_PROJECT:-snapdog}"
 readonly COMPOSE_SERVICE="${COMPOSE_SERVICE:-server}"
 readonly TARGET_CONTAINER="${TARGET_CONTAINER:-snapdog}"
 readonly POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-900}"
-readonly READINESS_URL="${READINESS_URL:-http://server:3000/api/v1/health}"
+readonly READINESS_URL="${READINESS_URL:-}"
 readonly READINESS_TIMEOUT_SECONDS="${READINESS_TIMEOUT_SECONDS:-120}"
 readonly COSIGN_ISSUER="https://token.actions.githubusercontent.com"
-readonly COSIGN_IDENTITY_REGEXP='^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
-# The updater image is built by a DIFFERENT workflow than the server image, so it
-# needs its own Sigstore identity — reusing the server regexp would reject every
-# legitimate updater image (or, worse, accept the wrong provenance).
-readonly UPDATER_IMAGE_REPOSITORY="${UPDATER_IMAGE_REPOSITORY:-ghcr.io/snapdogrocks/snapdog-updater}"
-readonly COSIGN_UPDATER_IDENTITY_REGEXP='^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
+# Both images are built and signed by release.yml, so one identity covers both.
+readonly COSIGN_IDENTITY_REGEXP="${COSIGN_IDENTITY_REGEXP:-}"
+readonly UPDATER_IMAGE_REPOSITORY="${UPDATER_IMAGE_REPOSITORY:-}"
 readonly UPDATER_SERVICE="${UPDATER_SERVICE:-updater}"
 # A detached helper replaces this container, verifies health, and rolls back a
 # failed candidate. Keep this enabled by default for unattended installations.
@@ -56,6 +57,11 @@ require_command() {
 }
 
 validate_config() {
+  local name
+  for name in RELEASE_API IMAGE_REPOSITORY UPDATER_IMAGE_REPOSITORY SNAPDOG_ENV_FILE \
+      READINESS_URL COSIGN_IDENTITY_REGEXP; do
+    [[ -n "${!name}" ]] || die "required setting $name is not set (the control service passes it)"
+  done
   for command in curl jq docker cosign; do
     require_command "$command"
   done
@@ -419,7 +425,7 @@ schedule_updater_swap() {
 
   # Verify here, in the known-good container, so a helper is never launched for an
   # image that failed its signature check.
-  if ! verify_image "$candidate" "$UPDATER_IMAGE_REPOSITORY" "$COSIGN_UPDATER_IDENTITY_REGEXP"; then
+  if ! verify_image "$candidate" "$UPDATER_IMAGE_REPOSITORY" "$COSIGN_IDENTITY_REGEXP"; then
     log "updater image signature verification failed; keeping ${UPDATER_VERSION:-current}"
     record_swap_result failed "signature verification failed for $candidate"
     return 1
