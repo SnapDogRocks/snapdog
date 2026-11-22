@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { api } from "@/lib/api";
 import { setApiKey } from "@/lib/auth";
 import { trackFromZoneChanged } from "@/lib/ws-zone";
+import { publishEqChange } from "@/lib/eq-events";
 import type { WsNotification } from "@/lib/types";
 /** Apply one WebSocket event to the store. */
 export function applyNotification(n: WsNotification): void {
@@ -53,6 +54,7 @@ export function applyNotification(n: WsNotification): void {
             break;
         case "zone_eq_changed":
             store.updateZoneEq(n.zone, n.enabled, n.bands, n.preset);
+            publishEqChange(`zone:${n.zone}`, { enabled: n.enabled, bands: n.bands, preset: n.preset ?? null });
             break;
         case "playback_error":
             store.setZoneError(n.zone, {
@@ -63,9 +65,11 @@ export function applyNotification(n: WsNotification): void {
             break;
         case "client_eq_changed":
             store.updateClient(n.client, { eq_enabled: n.enabled });
+            publishEqChange(`client:${n.client}`, { enabled: n.enabled, bands: n.bands, preset: n.preset ?? null });
             break;
         case "client_speaker_changed":
-            // The store keeps no speaker correction state; the EQ panel loads it when opened.
+            // The store keeps no speaker correction state; an open EQ panel follows it.
+            publishEqChange(`speaker:${n.client}`, { enabled: n.enabled, bands: n.bands, preset: n.preset ?? null });
             break;
         default: {
             // A server event without a case here fails the type check. At run time an
