@@ -52,17 +52,36 @@ pub type SharedState = Arc<RwLock<Store>>;
 
 /// Create a new state store initialized from config, optionally loading persisted state.
 ///
+/// A state file that cannot be read or parsed does not stop the server: it is moved aside as
+/// `<name>.unreadable`, logged, and the server starts from the configuration.
+///
 /// # Errors
 ///
-/// Returns an error if the persisted state file cannot be read or parsed.
+/// None at present; the `Result` is kept for the callers.
+#[allow(clippy::unnecessary_wraps)] // many callers and tests use `?`; a future check may fail again
 pub fn init(config: &AppConfig, persist_path: Option<&Path>) -> Result<SharedState> {
     let mut store = Store::from_config(config);
 
-    if let Some(path) = persist_path
-        && path.exists()
-    {
-        store.load(path)?;
-        tracing::info!(path = %path.display(), "Restored persisted state");
+    if let Some(path) = persist_path {
+        if path.exists() {
+            match store.load(path) {
+                Ok(()) => tracing::info!(path = %path.display(), "Restored persisted state"),
+                Err(e) => {
+                    let aside = path.with_extension("json.unreadable");
+                    let moved = std::fs::rename(path, &aside).is_ok();
+                    tracing::warn!(
+                        error = %format!("{e:#}"),
+                        path = %path.display(),
+                        kept_as = %aside.display(),
+                        moved,
+                        "State file unreadable, starting from the configuration"
+                    );
+                    store = Store::from_config(config);
+                }
+            }
+        }
+        // Also on a first start without a file, so the state is saved from now on.
+        store.set_persist_path(path.to_path_buf());
     }
     store.apply_zone_volume_limits(config);
 
@@ -366,18 +385,24 @@ impl Store {
     ///
     /// Returns an error if the file cannot be written or renamed.
     pub fn persist(&mut self) -> Result<()> {
-        let Some(path) = &self.persist_path else {
-            return Ok(());
-        };
-        let tmp = path.with_extension("tmp");
-        let json = serde_json::to_string_pretty(self).context("Failed to serialize state")?;
-        std::fs::write(&tmp, &json)
-            .with_context(|| format!("Failed to write {}", tmp.display()))?;
-        std::fs::rename(&tmp, path)
-            .with_context(|| format!("Failed to rename to {}", path.display()))?;
-        self.dirty = false;
-        tracing::debug!(path = %path.display(), "State persisted");
+        if let Some((path, json)) = self.snapshot()? {
+            write_state_file(&path, &json)?;
+        }
         Ok(())
+    }
+
+    /// Serialize the state for saving and clear `dirty`. `None` without a persist path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the state cannot be serialized.
+    fn snapshot(&mut self) -> Result<Option<(std::path::PathBuf, String)>> {
+        let Some(path) = self.persist_path.clone() else {
+            return Ok(None);
+        };
+        let json = serde_json::to_string_pretty(self).context("Failed to serialize state")?;
+        self.dirty = false;
+        Ok(Some((path, json)))
     }
 
     /// Apply the configured zone volumes at server start: `default_volume` where it is set,
@@ -441,6 +466,23 @@ impl Store {
     }
 }
 
+/// Write the state file: to a temporary file, synced to disk, then renamed over the old one, so a
+/// power loss leaves either the old or the new state and never an empty file.
+fn write_state_file(path: &Path, json: &str) -> Result<()> {
+    use std::io::Write;
+    let tmp = path.with_extension("tmp");
+    let mut file = std::fs::File::create(&tmp)
+        .with_context(|| format!("Failed to create {}", tmp.display()))?;
+    file.write_all(json.as_bytes())
+        .and_then(|()| file.sync_all())
+        .with_context(|| format!("Failed to write {}", tmp.display()))?;
+    drop(file);
+    std::fs::rename(&tmp, path)
+        .with_context(|| format!("Failed to rename to {}", path.display()))?;
+    tracing::debug!(path = %path.display(), "State persisted");
+    Ok(())
+}
+
 /// Periodic auto-save loop for the state store.
 /// Persists state every 5 seconds if it has been marked as dirty.
 pub fn spawn_auto_save(store: SharedState) {
@@ -451,11 +493,24 @@ pub fn spawn_auto_save(store: SharedState) {
             interval.tick().await;
             let dirty = store.read().await.dirty;
             if dirty {
-                let mut s = store.write().await;
-                if s.dirty
-                    && let Err(e) = s.persist()
-                {
+                // Serialize under the lock, write without it: readers and writers of the state
+                // do not wait for the disk.
+                let snapshot = {
+                    let mut s = store.write().await;
+                    if s.dirty { s.snapshot() } else { Ok(None) }
+                };
+                let result = match snapshot {
+                    Ok(Some((path, json))) => {
+                        tokio::task::spawn_blocking(move || write_state_file(&path, &json))
+                            .await
+                            .unwrap_or_else(|e| Err(anyhow::anyhow!("save task failed: {e}")))
+                    }
+                    Ok(None) => Ok(()),
+                    Err(e) => Err(e),
+                };
+                if let Err(e) = result {
                     tracing::error!(error = %e, "Auto-save failed");
+                    store.write().await.dirty = true; // try again on the next tick
                 }
             }
         }
@@ -700,6 +755,41 @@ mod tests {
         assert_eq!(store.zones[&1].name, "Ground Floor");
         assert_eq!(store.zones[&1].volume, DEFAULT_VOLUME);
         assert_eq!(store.clients[&1].zone_index, 1);
+    }
+
+    /// #502: an unreadable state file does not stop the start; it is kept aside.
+    #[test]
+    fn an_unreadable_state_file_is_moved_aside_and_the_server_starts() {
+        let config = test_config();
+        for content in ["", "{ not json", r#"{"zones": 5}"#] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("zones.json");
+            std::fs::write(&path, content).unwrap();
+            let store = init(&config, Some(&path)).expect("start does not fail");
+            assert_eq!(store.try_read().unwrap().zones[&1].volume, DEFAULT_VOLUME);
+            assert!(!path.exists(), "the bad file is moved away: {content:?}");
+            assert_eq!(
+                std::fs::read_to_string(path.with_extension("json.unreadable")).unwrap(),
+                content
+            );
+        }
+    }
+
+    /// #502: a first start without a state file saves the state from then on.
+    #[test]
+    fn a_first_start_without_a_file_persists_afterwards() {
+        let config = test_config();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("zones.json");
+        let store = init(&config, Some(&path)).unwrap();
+        store.try_write().unwrap().zones.get_mut(&1).unwrap().volume = 33;
+        store.try_write().unwrap().persist().unwrap();
+        let again = init(&config, Some(&path)).unwrap();
+        assert_eq!(again.try_read().unwrap().zones[&1].volume, 33);
+        assert!(
+            !path.with_extension("tmp").exists(),
+            "no temporary file is left"
+        );
     }
 
     #[test]
