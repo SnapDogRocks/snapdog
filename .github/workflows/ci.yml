@@ -488,6 +488,20 @@ jobs:
         run: |
           mkdir -p knx
           cargo run -p xtask -- knx/snapdog.xml
+      - name: Committed product XML matches the generator
+        # Non-release builds embed the committed files. The XML is compared byte for byte.
+        # The archive is not byte-identical across platforms (zip metadata), so the
+        # `xtask` test below compares the XML inside it instead.
+        run: |
+          git diff --exit-code --stat -- knx/snapdog.xml || {
+            echo "::error::knx/snapdog.xml is stale. Run 'env -u SNAPDOG_ETS_KEY cargo run -p xtask -- knxprod' and commit knx/snapdog.xml and knx/snapdog.knxprod."
+            exit 1
+          }
+          git checkout -- knx/snapdog.knxprod
+      - name: Product database tests
+        env:
+          SKIP_WEBUI_BUILD: "1"
+        run: cargo test -p xtask --locked
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: snapdog-knxprod
