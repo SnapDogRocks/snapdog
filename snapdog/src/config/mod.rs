@@ -730,7 +730,7 @@ fn duplicate_spotify_names(zones: &[ZoneConfig]) -> Option<String> {
 }
 
 /// Notices for `max_volume` and `default_volume` values outside 0 to 100, which
-/// resolving a client clamps. Same wording as the check in [`validate`].
+/// resolving a client clamps (`convention::resolve_client`).
 fn volume_range_notices(clients: &[RawClientConfig]) -> Vec<String> {
     let mut notices = Vec::new();
     for client in clients {
@@ -800,34 +800,12 @@ pub fn validate(config: &mut AppConfig) -> Result<()> {
         );
     }
 
-    // ── Client max_volume ─────────────────────────────────────
-    let mut clamped = Vec::new();
-    for client in &mut config.clients {
-        if client.max_volume > 100 {
-            clamped.push(format!(
-                "Client '{}': max_volume {} exceeds 100, using 100",
-                client.name, client.max_volume
-            ));
-            client.max_volume = 100;
-        } else if client.max_volume < 0 {
-            clamped.push(format!(
-                "Client '{}': max_volume {} is below 0, using 0",
-                client.name, client.max_volume
-            ));
-            client.max_volume = 0;
-        }
-    }
-    for message in clamped {
-        config.warn(message);
-    }
-
     notices::collect(config);
     Ok(())
 }
 
-/// Check sample rate, bit depth and channel count. Shared by file loading and the
-/// re-validation after command-line overrides, so `--sample-rate 12345` fails like
-/// `sample_rate = 12345` does.
+/// Check sample rate, bit depth and channel count. The command line is applied before,
+/// so `--sample-rate 12345` fails like `sample_rate = 12345` does.
 fn validate_audio_format(audio: &AudioConfig) -> Result<()> {
     anyhow::ensure!(
         matches!(
@@ -1048,75 +1026,21 @@ fn validate_global_knx(knx: &KnxConfig) -> Result<()> {
 }
 
 fn validate_zone_knx(knx: &RawZoneKnxConfig) -> Result<()> {
-    let gas = [
-        &knx.play,
-        &knx.pause,
-        &knx.stop,
-        &knx.track_next,
-        &knx.track_previous,
-        &knx.control_status,
-        &knx.volume,
-        &knx.volume_status,
-        &knx.volume_dim,
-        &knx.mute,
-        &knx.mute_status,
-        &knx.mute_toggle,
-        &knx.track_title_status,
-        &knx.track_artist_status,
-        &knx.track_album_status,
-        &knx.track_progress_status,
-        &knx.track_playing_status,
-        &knx.track_repeat,
-        &knx.track_repeat_status,
-        &knx.track_repeat_toggle,
-        &knx.playlist,
-        &knx.playlist_status,
-        &knx.playlist_next,
-        &knx.playlist_previous,
-        &knx.playlist_step,
-        &knx.playlist_step_updown,
-        &knx.playlist_name_status,
-        &knx.track_number,
-        &knx.track_number_status,
-        &knx.play_pause,
-        &knx.track_step,
-        &knx.track_step_updown,
-        &knx.track_position,
-        &knx.track_seek,
-        &knx.track_seek_updown,
-        &knx.shuffle,
-        &knx.shuffle_status,
-        &knx.shuffle_toggle,
-        &knx.repeat,
-        &knx.repeat_status,
-        &knx.repeat_toggle,
-        &knx.presence,
-        &knx.presence_enable,
-        &knx.presence_enable_status,
-        &knx.presence_timer_status,
-    ];
-    for ga in gas.into_iter().flatten() {
-        validate_knx_ga(ga).with_context(|| format!("Invalid Group Address: '{ga}'"))?;
-    }
-    Ok(())
+    validate_group_addresses(&knx.group_addresses())
 }
 
 fn validate_client_knx(knx: &RawClientKnxConfig) -> Result<()> {
-    let gas = [
-        &knx.volume,
-        &knx.volume_status,
-        &knx.volume_dim,
-        &knx.mute,
-        &knx.mute_status,
-        &knx.mute_toggle,
-        &knx.latency,
-        &knx.latency_status,
-        &knx.zone,
-        &knx.zone_status,
-        &knx.connected_status,
-    ];
-    for ga in gas.into_iter().flatten() {
-        validate_knx_ga(ga).with_context(|| format!("Invalid Group Address: '{ga}'"))?;
+    validate_group_addresses(&knx.group_addresses())
+}
+
+/// Check every configured group address of a zone or client. The list comes from the struct
+/// itself (`knx_group_addresses!`), so no key can be missed.
+fn validate_group_addresses(entries: &[(&'static str, Option<&str>)]) -> Result<()> {
+    for (key, ga) in entries {
+        if let Some(ga) = ga {
+            validate_knx_ga(ga)
+                .with_context(|| format!("Invalid Group Address for {key}: '{ga}'"))?;
+        }
     }
     Ok(())
 }
@@ -2789,5 +2713,51 @@ mod cli_override_tests {
                 .iter()
                 .any(|n| n.message.contains("--knx-sync-system-clock"))
         );
+    }
+}
+
+#[cfg(test)]
+mod single_source_tests {
+    //! #506: facts that are written down once.
+    use super::*;
+
+    #[test]
+    fn every_knx_key_is_validated() {
+        let zone_keys: Vec<&str> = ZoneKnxAddresses::default()
+            .group_addresses()
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        let client_keys: Vec<&str> = ClientKnxAddresses::default()
+            .group_addresses()
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        assert_eq!((zone_keys.len(), client_keys.len()), (45, 11));
+        for key in zone_keys {
+            let toml = format!("[[zone]]\nname = \"A\"\n[zone.knx]\n{key} = \"not/a/ga/x\"\n");
+            let error = format!("{:#}", load_str(&toml).unwrap_err());
+            assert!(
+                error.contains(key),
+                "zone key {key} is not validated: {error}"
+            );
+        }
+        for key in client_keys {
+            let toml = format!(
+                "[[zone]]\nname = \"A\"\n[[client]]\nname = \"C\"\nmac = \"02:42:ac:11:00:10\"\n\
+                 zone = \"A\"\n[client.knx]\n{key} = \"not/a/ga/x\"\n"
+            );
+            let error = format!("{:#}", load_str(&toml).unwrap_err());
+            assert!(
+                error.contains(key),
+                "client key {key} is not validated: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_default_volume_and_device_address_are_defined_once() {
+        assert_eq!(types::default_volume(), crate::state::DEFAULT_VOLUME);
+        assert_eq!(DEFAULT_KNX_DEVICE_ADDRESS, "15.15.255");
     }
 }
