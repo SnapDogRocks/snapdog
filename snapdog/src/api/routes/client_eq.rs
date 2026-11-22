@@ -148,7 +148,7 @@ async fn set_band(
 /// Apply client Equalizer preset
 ///
 /// Overwrites the client's Equalizer settings with a predefined preset curve.
-/// Supported values: "flat", `bass_boost`, "loudness", "vocals", `treble_boost`.
+/// The body is a preset name as listed by `GET /api/v1/eq/presets`.
 #[utoipa::path(
     post,
     path = "/api/v1/clients/{client_index}/eq/preset",

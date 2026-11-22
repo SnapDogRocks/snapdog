@@ -198,7 +198,7 @@ async fn set_band(
 /// Apply Equalizer preset
 ///
 /// Overwrites the zone's Equalizer settings with a predefined preset curve.
-/// Supported values: "flat", `bass_boost`, "loudness", "vocals", `treble_boost`.
+/// The body is a preset name as listed by `GET /api/v1/eq/presets`.
 #[utoipa::path(
     post,
     path = "/api/v1/zones/{zone_index}/eq/preset",
