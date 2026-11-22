@@ -789,3 +789,198 @@ mod resume_and_presence {
         .await;
     }
 }
+
+// ── #499: one idle transition and one radio state for every entry point ──
+
+mod single_transitions {
+    use super::*;
+    use std::time::Duration;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn until(what: &str, mut done: impl AsyncFnMut() -> bool) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !done().await {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
+    }
+
+    /// Seed a playing zone with a track, a cover URL and a buffered duration.
+    async fn seed_playing(store: &snapdog::state::SharedState) {
+        let mut s = store.write().await;
+        let z = s.zones.get_mut(&1).unwrap();
+        z.playback = PlaybackState::Playing;
+        z.source = SourceType::Url;
+        z.track = Some(snapdog::state::TrackInfo {
+            title: "Song".into(),
+            artist: String::new(),
+            album: String::new(),
+            album_artist: None,
+            genre: None,
+            track_number: None,
+            disc_number: None,
+            year: None,
+            duration_ms: 0,
+            position_ms: 0,
+            seekable: false,
+            source: SourceType::Url,
+            bitrate_kbps: None,
+            content_type: None,
+            sample_rate: None,
+        });
+        z.cover_url = Some("/api/v1/zones/1/cover?h=x".into());
+        z.buffered_ms = Some(1000);
+        drop(s);
+    }
+
+    async fn assert_idle(store: &snapdog::state::SharedState) {
+        let z = store.read().await.zones[&1].clone();
+        assert_eq!(z.playback, PlaybackState::Stopped);
+        assert_eq!(z.source, SourceType::Idle);
+        assert!(z.track.is_none(), "no track");
+        assert!(z.cover_url.is_none(), "no cover URL");
+        assert!(z.buffered_ms.is_none(), "no buffered duration");
+    }
+
+    #[cfg(feature = "test-harness")]
+    #[tokio::test]
+    async fn a_playback_error_leaves_the_zone_idle() {
+        let h = common::spawn_zone_harness_capturing(test_config()).await;
+        seed_playing(&h.store).await;
+        h.test_pcm_tx[&1]
+            .send(snapdog::audio::PcmMessage::Error {
+                message: "boom".into(),
+                details: None,
+            })
+            .await
+            .unwrap();
+        until("the error to stop the zone", async || {
+            h.store.read().await.zones[&1].playback == PlaybackState::Stopped
+        })
+        .await;
+        assert_idle(&h.store).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn auto_off_leaves_the_zone_idle() {
+        let mut h = spawn_zone_harness(test_config()).await;
+        seed_playing(&h.store).await;
+        {
+            let mut s = h.store.write().await;
+            let z = s.zones.get_mut(&1).unwrap();
+            z.presence_enabled = true;
+            z.presence_source = true;
+            z.auto_off_delay = 10;
+            drop(s);
+        }
+        h.senders[&1]
+            .send(ZoneCommand::SetPresence(true))
+            .await
+            .unwrap();
+        h.await_notification(|v| {
+            v["type"] == "zone_presence_changed" && v["zone"] == 1 && v["timer_active"] == true
+        })
+        .await;
+        tokio::time::advance(Duration::from_secs(11)).await;
+        h.await_notification(|v| {
+            v["type"] == "zone_presence_changed" && v["zone"] == 1 && v["timer_active"] == false
+        })
+        .await;
+        assert_idle(&h.store).await;
+        assert!(!h.store.read().await.zones[&1].presence_source);
+    }
+
+    #[tokio::test]
+    async fn stop_leaves_the_zone_idle() {
+        let h = spawn_zone_harness(test_config()).await;
+        seed_playing(&h.store).await;
+        h.senders[&1].send(ZoneCommand::Stop).await.unwrap();
+        until("the stop", async || {
+            h.store.read().await.zones[&1].playback == PlaybackState::Stopped
+        })
+        .await;
+        assert_idle(&h.store).await;
+    }
+
+    /// Radio playlist fields of zone 1.
+    async fn radio_fields(
+        h: &common::ZoneHarness,
+    ) -> (
+        Option<usize>,
+        Option<usize>,
+        Option<usize>,
+        Option<String>,
+        Option<usize>,
+    ) {
+        let z = h.store.read().await.zones[&1].clone();
+        (
+            z.playlist_index,
+            z.playlist_total,
+            z.playlist_track_count,
+            z.playlist_name,
+            z.playlist_track_index,
+        )
+    }
+
+    #[tokio::test]
+    async fn every_radio_entry_point_reports_the_same_playlist() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "audio/mpeg")
+                    .set_body_bytes(vec![0u8; 16])
+                    .set_delay(Duration::from_secs(60)),
+            )
+            .mount(&server)
+            .await;
+        let mut cfg = test_config();
+        for name in ["One", "Two"] {
+            cfg.radios.push(snapdog::config::RadioConfig {
+                name: name.into(),
+                url: format!("{}/{name}", server.uri()),
+                cover: None,
+            });
+        }
+        let h = spawn_zone_harness(cfg).await;
+        let tx = &h.senders[&1];
+        let expect = |track: usize| {
+            (
+                Some(0),
+                Some(1),
+                Some(2),
+                Some("Radio".to_owned()),
+                Some(track),
+            )
+        };
+
+        let steps: [(ZoneCommand, usize); 5] = [
+            (ZoneCommand::PlayPlaylist(0, 1), 1),
+            (ZoneCommand::Next, 0),
+            (ZoneCommand::Previous, 1),
+            (ZoneCommand::SetTrack(0), 0),
+            (ZoneCommand::Play, 0),
+        ];
+        for (cmd, track) in steps {
+            let label = format!("{cmd:?}");
+            if matches!(cmd, ZoneCommand::Play) {
+                // Play from a stopped zone starts the last station again.
+                tx.send(ZoneCommand::Stop).await.unwrap();
+                until("the stop", async || {
+                    h.store.read().await.zones[&1].playback == PlaybackState::Stopped
+                })
+                .await;
+            }
+            tx.send(cmd).await.unwrap();
+            until(&label, async || {
+                let z = h.store.read().await.zones[&1].clone();
+                z.source == SourceType::Radio && z.playlist_track_index == Some(track)
+            })
+            .await;
+            assert_eq!(radio_fields(&h).await, expect(track), "{label}");
+        }
+    }
+}

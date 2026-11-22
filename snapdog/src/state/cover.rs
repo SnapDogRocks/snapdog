@@ -11,6 +11,13 @@ use tokio::sync::RwLock;
 
 const MAX_COVER_ART_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_FAVICON_HTML_BYTES: u64 = 1024 * 1024;
+/// The cover URL of a zone as the store keeps it: relative to the HTTP server, with the image
+/// hash so that clients reload a changed cover. MQTT makes it absolute with `base_url`.
+#[must_use]
+pub fn zone_cover_url(zone_index: usize, hash: &str) -> String {
+    format!("/api/v1/zones/{zone_index}/cover?h={hash}")
+}
+
 /// Upper bound for fetching one cover image, body included.
 const COVER_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
@@ -350,28 +357,13 @@ async fn response_bytes_limited(
     url: &str,
     label: &str,
 ) -> Option<Vec<u8>> {
-    use futures_util::StreamExt;
-
-    if let Some(len) = response.content_length()
-        && len > limit
-    {
-        tracing::debug!(url, label, len, limit, "Remote body too large");
-        return None;
-    }
-    let mut stream = response.bytes_stream();
-    let mut body = bytes::BytesMut::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk
-            .inspect_err(|e| tracing::debug!(error = %e, url, label, "Failed to read remote body"))
-            .ok()?;
-        let next_len = body.len() as u64 + chunk.len() as u64;
-        if next_len > limit {
-            tracing::debug!(url, label, next_len, limit, "Remote body exceeded limit");
-            return None;
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Some(body.to_vec())
+    crate::audio::read_response_bytes_limited(response, limit, label)
+        .await
+        .inspect_err(
+            |e| tracing::debug!(error = %format!("{e:#}"), url, label, "Remote body not read"),
+        )
+        .ok()
+        .map(|body| body.to_vec())
 }
 
 /// Convert ICO to PNG using the `image` crate.

@@ -165,13 +165,13 @@ impl EmbeddedBackend {
                 struct MacAllowlist(Vec<String>);
                 impl snapcast_server::auth::ClientFilter for MacAllowlist {
                     fn accept(&self, hello: &snapcast_server::Hello) -> bool {
-                        self.0.iter().any(|m| m == &hello.mac.to_lowercase())
+                        self.0.contains(&crate::config::normalize_mac(&hello.mac))
                     }
                 }
                 let allowed_macs: Vec<String> = config
                     .clients
                     .iter()
-                    .map(|c| c.mac.to_lowercase())
+                    .map(|c| crate::config::normalize_mac(&c.mac))
                     .collect();
                 Some(std::sync::Arc::new(MacAllowlist(allowed_macs)))
             } else {
@@ -313,7 +313,7 @@ impl EmbeddedBackend {
                 id,
                 hello: super::backend::ClientHello {
                     client_name: hello.client_name,
-                    mac: hello.mac,
+                    mac: crate::config::normalize_mac(&hello.mac),
                     host_name: hello.host_name,
                     version: hello.version,
                 },
@@ -850,6 +850,30 @@ mod tests {
         let mapped = EmbeddedBackend::map_event(event).unwrap();
         assert!(
             matches!(mapped, SnapcastEvent::ClientConnected { id, ref hello } if id == "c1" && hello.host_name == "Kitchen")
+        );
+    }
+
+    /// #499: a MAC enters the system in one form, whatever case the client sends.
+    #[test]
+    fn map_event_normalises_the_mac() {
+        let event = ServerEvent::ClientConnected {
+            id: "c1".into(),
+            hello: snapcast_server::Hello {
+                mac: " AA:BB:CC:DD:EE:FF".into(),
+                host_name: "Kitchen".into(),
+                version: "0.1.0".into(),
+                client_name: "Snapclient".into(),
+                os: "Linux".into(),
+                arch: "x86_64".into(),
+                instance: 1,
+                id: "c1".into(),
+                snap_stream_protocol_version: 2,
+                auth: None,
+            },
+        };
+        let mapped = EmbeddedBackend::map_event(event).unwrap();
+        assert!(
+            matches!(mapped, SnapcastEvent::ClientConnected { ref hello, .. } if hello.mac == "aa:bb:cc:dd:ee:ff")
         );
     }
 

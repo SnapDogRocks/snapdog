@@ -1,0 +1,3 @@
+# `cargo xtask <command>` runs the workspace's task runner (xtask/src/main.rs).
+[alias]
+xtask = "run --locked --package xtask --"
