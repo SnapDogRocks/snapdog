@@ -692,14 +692,14 @@ A specialized Snapcast client that understands SnapDog's custom protocol extensi
 - **Per-client parametric EQ** — receives EQ curves via custom protocol, applies biquad filters before output
 - **Speaker correction** — second EQ stage for Spinorama-based speaker profiles
 - **Audio fade** — smooth fade-out/fade-in on zone switch (triggered by server)
-- **Hardware volume** — native ALSA mixer control with perceptual (quadratic) curve
-- **MIDI CC volume** — send volume as MIDI Control Change (e.g., for professional mixing consoles)
+- **Hardware volume** — native ALSA mixer control with perceptual (quadratic) curve. `--mixer hardware:<control>` sets the control on the card selected with `--soundcard` (`Master`, `Digital`, `PCM` or `Speaker` when no control is named). If that card has no such control, the client uses the software mixer instead.
+- **MIDI CC volume** — send volume as MIDI Control Change (e.g., for professional mixing consoles). The form is `midi:<interface>:<channel>[:<cc>]`: `<interface>` is matched against the MIDI output port names (ignoring case) and may contain colons, the channel is 1 to 16, the controller 0 to 127 (default 7). If the interface name itself ends in `:<number>`, write the controller out. An invalid parameter stops the client at start-up.
 
   ```bash
   # Send volume on MIDI channel 1, CC7 (default) to a USB MIDI interface
-  snapdog-client --mixer midi:hw:1:0
-  # Send volume on MIDI channel 3, CC11 (expression) to a named port
-  snapdog-client --mixer midi:"Scarlett 18i8":2:11
+  snapdog-client --mixer midi:"Scarlett 18i8":1
+  # Send volume on MIDI channel 3, CC11 (expression) to the same port
+  snapdog-client --mixer midi:"Scarlett 18i8":3:11
   ```
 - **Behringer X32 / Midas M32 volume** — move channel faders over OSC on the network, no MIDI interface needed. The volume is the fader position over the whole travel, the same scale `--mixer midi` gives on the X32: 100 % is the top (+10 dB), 75 % is 0 dB. To stop at unity, set the client's `max_volume` to 75. Mute switches the channel off, but only when SnapDog itself mutes or unmutes: a plain volume change never re-opens a channel someone muted at the desk. Every write is read back and repeated if the desk lost it, and a desk that boots later still receives the volume.
 

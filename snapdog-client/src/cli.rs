@@ -78,7 +78,7 @@ pub struct Cli {
     /// Examples:
     ///   --mixer software (default, PCM amplitude scaling)
     ///   --mixer hardware:Master (ALSA control, Linux only)
-    ///   --mixer midi:interface:ch[:cc] (MIDI CC, default CC7)
+    ///   --mixer midi:<interface>:<channel 1-16>[:<cc 0-127>] (MIDI CC, default CC7)
     ///   --mixer x32:host:ch[,ch][:port] (Behringer X32 channel fader over OSC, same scale as midi)
     ///   --mixer none
     // verbatim: clap would otherwise join the examples into one line.
@@ -262,8 +262,15 @@ impl Cli {
             "software" => MixerMode::Software,
             "hardware" => MixerMode::Hardware,
             "script" => MixerMode::Script,
-            // midi and x32 are handled by snapdog-client's own Mixer.
-            "none" | "midi" | "x32" => MixerMode::None,
+            "midi" => {
+                // Refuse a malformed parameter at start-up instead of falling back to the
+                // software mixer later. The port itself is looked up when the mixer starts.
+                crate::player::parse_midi_spec(&mixer_param)
+                    .with_context(|| format!("invalid --mixer {}", self.mixer))?;
+                MixerMode::None
+            }
+            // x32 is handled by snapdog-client's own Mixer.
+            "none" | "x32" => MixerMode::None,
             other => bail!("unknown mixer mode: {other}"),
         };
 
