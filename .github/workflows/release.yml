@@ -83,7 +83,7 @@ jobs:
     steps:
       - name: Homebrew — App token issuance and reach
         id: homebrew
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.HOMEBREW_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
@@ -116,7 +116,7 @@ jobs:
 
       - name: Archive dispatch — App token issuance and reach
         id: archive
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.ARCHIVE_DISPATCH_CLIENT_ID }}
           private-key: ${{ secrets.ARCHIVE_DISPATCH_PRIVATE_KEY }}
@@ -1216,7 +1216,7 @@ jobs:
       # the merge mints a second one rather than stretching this one.
       - name: Mint a tap token for the pull request
         id: token-open
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.HOMEBREW_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
@@ -1394,7 +1394,7 @@ jobs:
       # origin only a reader can resolve is not a demonstrated origin.
       - name: Mint a tap token for the merge
         id: token-merge
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.HOMEBREW_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
@@ -1784,7 +1784,7 @@ jobs:
     steps:
       - name: Mint a token for the archive alone
         id: token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.ARCHIVE_DISPATCH_CLIENT_ID }}
           private-key: ${{ secrets.ARCHIVE_DISPATCH_PRIVATE_KEY }}
