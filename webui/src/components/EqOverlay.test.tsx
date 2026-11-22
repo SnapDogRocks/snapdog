@@ -63,10 +63,10 @@ describe("EqOverlay, presets", () => {
     mocks.eqGet.mockResolvedValue({ enabled: true, bands: [BAND], preset: null });
     renderWithIntl(<EqOverlay zoneId={1} label="Kitchen" onClose={vi.fn()} />);
 
-    const group = await screen.findByRole("radiogroup", { name: "EQ presets" });
-    await waitFor(() => { expect(group.querySelectorAll("[role=radio]")).toHaveLength(3); });
-    expect(screen.getByRole("radio", { name: "Bass Boost" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "studio_monitor" })).toBeTruthy();
+    const group = await screen.findByRole("group", { name: "EQ presets" });
+    await waitFor(() => { expect(group.querySelectorAll("button")).toHaveLength(3); });
+    expect(screen.getByRole("button", { name: "Bass boost" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "studio_monitor" })).toBeTruthy();
   });
 });
 
@@ -139,7 +139,7 @@ describe("EqOverlay, sending edits", () => {
     renderWithIntl(<EqOverlay zoneId={1} label="Kitchen" onClose={vi.fn()} />);
     await screen.findByText("+3.0");
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove band" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove band 1" }));
     expect(screen.queryByText("+3.0")).toBeNull();
     await screen.findByText("-2.0");
     expect(mocks.eqGet).toHaveBeenCalledTimes(2);
@@ -163,7 +163,7 @@ describe("EqOverlay, speaker tab", () => {
     const { unmount } = renderWithIntl(<EqOverlay clientId={2} label="Desk" onClose={vi.fn()} />);
     fireEvent.click(await screen.findByRole("tab", { name: "Speaker" }));
     fireEvent.click(await screen.findByRole("radio", { name: "Custom" }));
-    fireEvent.click(await screen.findByRole("button", { name: "+ + Add Band" }));
+    fireEvent.click(await screen.findByRole("button", { name: "+ Add Band" }));
     await waitFor(() => { expect(lastCall(mocks.applyCustom)[1]).toMatchObject({ enabled: true }); });
 
     fireEvent.click(abButton());

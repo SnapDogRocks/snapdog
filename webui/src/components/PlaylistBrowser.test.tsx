@@ -4,7 +4,12 @@ import type { ZoneState } from "@/stores/useAppStore";
 import { PlaylistBrowser } from "./PlaylistBrowser";
 import { renderWithIntl } from "@/test/render";
 
-const mocks = vi.hoisted(() => ({ scroll: vi.fn(() => true) }));
+const mocks = vi.hoisted(() => ({
+  scroll: vi.fn(() => true),
+  tracksById: vi.fn((): Promise<unknown[]> => Promise.resolve(
+    ["a", "b", "c"].map((id) => ({ id, title: id, artist: "X", duration: 200, cover_art: null })),
+  )),
+}));
 
 vi.mock("@/lib/scroll-into-list", () => ({ scrollRowIntoList: mocks.scroll }));
 vi.mock("@/lib/api", () => ({
@@ -15,11 +20,7 @@ vi.mock("@/lib/api", () => ({
           { index: 0, playlist_id: "subsonic:1", name: "Mix", song_count: 3, duration: 600, cover_art: null },
         ]),
       ),
-      tracksById: vi.fn(() =>
-        Promise.resolve(
-          ["a", "b", "c"].map((id) => ({ id, title: id, artist: "X", duration: 200, cover_art: null })),
-        ),
-      ),
+      tracksById: mocks.tracksById,
     },
     zones: { playPlaylistById: vi.fn(() => Promise.resolve()) },
   },
@@ -63,5 +64,27 @@ describe("PlaylistBrowser, current track", () => {
     expect(mocks.scroll).toHaveBeenCalledTimes(1);
     const [, row] = mocks.scroll.mock.calls[0] as unknown as [HTMLElement, HTMLElement];
     expect(row.getAttribute("data-track-index")).toBe("1");
+  });
+});
+
+describe("PlaylistBrowser, accessibility and keys", () => {
+  it("names the search field", async () => {
+    renderWithIntl(<PlaylistBrowser zone={zone(0)} />);
+    expect(await screen.findByRole("textbox", { name: "Search playlists…" })).toBeTruthy();
+  });
+
+  it("renders a playlist that holds the same track twice without a key warning", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.tracksById.mockResolvedValueOnce(
+      ["a", "a", "c"].map((id, i) => ({ id, title: `${id}${i}`, artist: "X", duration: 200, cover_art: null })),
+    );
+    renderWithIntl(<PlaylistBrowser zone={zone(0)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Mix" }));
+    await screen.findByText("c2");
+    expect(screen.getByText("a0")).toBeTruthy();
+    expect(screen.getByText("a1")).toBeTruthy();
+    const keyWarnings = errors.mock.calls.filter((call) => String(call[0]).includes("same key"));
+    errors.mockRestore();
+    expect(keyWarnings).toEqual([]);
   });
 });

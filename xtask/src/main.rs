@@ -1975,49 +1975,72 @@ mod tests {
         assert!(xml.contains("<KNX"), "generation produced no XML");
     }
 
-    /// Freshness guard: the committed `knx/snapdog.knxprod` — embedded verbatim by the
-    /// server via `include_bytes!` and served for ETS import — must carry the current
-    /// `KNXPROD_APP_VERSION`. The layout guard forces a version bump on any layout/DPT
-    /// change; this ensures that bump actually reached the shipped bytes, catching a
-    /// "bumped the version but forgot to regenerate the artifact" mistake. Fix by running
-    /// `cargo xtask knxprod` and committing the regenerated `.knxprod`.
-    #[test]
-    fn committed_knxprod_matches_app_version() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../knx/snapdog.knxprod");
-        let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("cannot open {path}: {e}"));
-        let mut zip =
-            zip::ZipArchive::new(file).expect("committed .knxprod is not a valid ZIP archive");
-
-        let mut shipped: Option<u32> = None;
+    /// The text entries of a `.knxprod` archive by name. Entries that are not text (a
+    /// signature blob in a signed archive) are left out.
+    fn knxprod_entries(path: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+        let file = std::fs::File::open(path)
+            .unwrap_or_else(|e| panic!("cannot open {}: {e}", path.display()));
+        let mut zip = zip::ZipArchive::new(file)
+            .unwrap_or_else(|e| panic!("{} is not a valid ZIP archive: {e}", path.display()));
+        let mut entries = std::collections::BTreeMap::new();
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i).expect("read zip entry");
-            let mut xml = String::new();
-            // Skip non-text entries (e.g. a signature blob in a signed archive).
-            if entry.read_to_string(&mut xml).is_err() {
-                continue;
-            }
-            // Pin to the ApplicationProgram element's own attribute.
-            if let Some(v) = xml
-                .split("<ApplicationProgram ")
-                .nth(1)
-                .and_then(|tag| tag.split("ApplicationVersion=\"").nth(1))
-                .and_then(|rest| rest.split('"').next())
-                .and_then(|s| s.parse::<u32>().ok())
-            {
-                shipped = Some(v);
-                break;
+            let name = entry.name().expect("zip entry name").into_owned();
+            let mut text = String::new();
+            let is_xml = std::path::Path::new(&name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"));
+            if is_xml && entry.read_to_string(&mut text).is_ok() {
+                entries.insert(name, text);
             }
         }
-        let shipped =
-            shipped.expect("no ApplicationProgram/ApplicationVersion in committed .knxprod");
-        assert_eq!(
-            shipped,
-            super::KNXPROD_APP_VERSION,
-            "\n\n  STALE ARTIFACT: committed knx/snapdog.knxprod ships \
-             ApplicationVersion={shipped} but KNXPROD_APP_VERSION={}.\n  \
-             Run `cargo xtask knxprod` and commit the regenerated knx/snapdog.knxprod.\n",
-            super::KNXPROD_APP_VERSION,
+        entries
+    }
+
+    /// Freshness guard: the committed `knx/snapdog.xml` and `knx/snapdog.knxprod`, which the
+    /// server embeds via `include_bytes!` and serves for ETS import in every non-release
+    /// build, must be exactly what the generator produces now. Comparing only the
+    /// `ApplicationVersion` or the layout fingerprint lets a changed parameter default or enum
+    /// table through, and a release would then ship a different product under the same
+    /// version. The archive is compared entry by entry on its XML: a signed archive is not
+    /// byte-reproducible, the XML inside it is.
+    #[test]
+    fn committed_knxprod_matches_the_generator() {
+        const FIX: &str = "Run `env -u SNAPDOG_ETS_KEY cargo run -p xtask -- knxprod` and commit \
+                           knx/snapdog.xml and knx/snapdog.knxprod.";
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let generated = knx_rs_prod::normalize_ids(&super::generate_xml()).expect("normalize ids");
+
+        let committed_xml =
+            std::fs::read_to_string(root.join("knx/snapdog.xml")).expect("read knx/snapdog.xml");
+        assert!(
+            committed_xml == generated,
+            "\n\n  STALE ARTIFACT: knx/snapdog.xml differs from the generator output.\n  {FIX}\n"
         );
+
+        let dir = std::env::temp_dir().join(format!("snapdog-knxprod-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let xml_file = dir.join("snapdog.xml");
+        let knxprod_file = dir.join("snapdog.knxprod");
+        std::fs::write(&xml_file, &generated).expect("write generated XML");
+        knx_rs_prod::generate_knxprod(&xml_file, &knxprod_file).expect("package .knxprod");
+        let expected = knxprod_entries(&knxprod_file);
+        let committed = knxprod_entries(&root.join("knx/snapdog.knxprod"));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(
+            committed.keys().collect::<Vec<_>>(),
+            expected.keys().collect::<Vec<_>>(),
+            "\n\n  STALE ARTIFACT: knx/snapdog.knxprod has other entries than the generator \
+             output.\n  {FIX}\n"
+        );
+        for (name, text) in &expected {
+            assert!(
+                committed[name] == *text,
+                "\n\n  STALE ARTIFACT: {name} in knx/snapdog.knxprod differs from the generator \
+                 output.\n  {FIX}\n"
+            );
+        }
     }
 
     /// Byte-exact snapshot of `generate_xml()`. The `knx-rs-prod::author` migration

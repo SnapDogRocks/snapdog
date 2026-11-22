@@ -21,6 +21,14 @@ state reads `zones/<n>/position` (whole seconds, not retained) instead. The Home
 entities created by discovery are not affected. Steady playback also no longer rewrites the
 state file every five seconds.
 
+## Legacy web interface deprecated
+
+The legacy interface (`/legacy`, `webui = "legacy"`, `--webui legacy`) is deprecated as of
+0.37.0 and will be removed in the release after the next one. It shows a notice, and the server
+logs a warning at start when it is served at `/`. Use the current interface; it covers every
+function of the legacy one. After the removal, `webui = "legacy"` and `--webui legacy` serve the
+current interface.
+
 ## `base_url` follows the HTTP port when it is not set
 
 Without `[http].base_url` the server used `http://localhost:5555` whatever the port was. With a
