@@ -405,6 +405,10 @@ icon = "🏠"
 # spotify = true
 
 # Optional: presence-triggered playback
+# A presence trigger starts playback in a stopped zone, and auto-off stops it after the delay
+# without a trigger. Playback the user starts or changes is the user's: auto-off leaves it
+# alone. A user Stop ends presence playback until the room was empty once (a "no presence"
+# telegram, or no trigger for the whole auto-off delay); triggers before that start nothing.
 # [zone.presence]
 # auto_off_delay = 900              # Seconds without presence before auto-off (default: 900)
 # default_source = "radio:0"        # Fallback source when no schedule matches

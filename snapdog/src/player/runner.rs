@@ -77,6 +77,28 @@ pub async fn spawn_zone_players(
     Ok(senders)
 }
 
+/// Commands that start, change or stop playback. Sent by the user, they end a presence session.
+const fn is_user_playback_command(cmd: &ZoneCommand) -> bool {
+    matches!(
+        cmd,
+        ZoneCommand::Play
+            | ZoneCommand::Pause
+            | ZoneCommand::Stop
+            | ZoneCommand::PlayUrl(_)
+            | ZoneCommand::PlaySubsonicTrack(_)
+            | ZoneCommand::PlaySubsonicPlaylist(..)
+            | ZoneCommand::PlayPlaylist(..)
+            | ZoneCommand::PlayPlaylistById(..)
+            | ZoneCommand::SetPlaylist(..)
+            | ZoneCommand::SetPlaylistById(..)
+            | ZoneCommand::SetTrack(_)
+            | ZoneCommand::Next
+            | ZoneCommand::Previous
+            | ZoneCommand::NextPlaylist
+            | ZoneCommand::PreviousPlaylist
+    )
+}
+
 /// The next command for the zone: a pending follow-up first, then the channel.
 async fn next_command(
     follow_ups: &mut std::collections::VecDeque<ZoneCommand>,
@@ -596,6 +618,11 @@ async fn run(
     // handled before the next command from the channel instead of being sent back into it:
     // awaiting a send on its own bounded channel could block this task forever (#494).
     let mut follow_ups: std::collections::VecDeque<ZoneCommand> = std::collections::VecDeque::new();
+    // The next playback command was queued by a presence trigger, not by the user.
+    let mut presence_derived = false;
+    // A user Stop ends presence playback until the room was empty once: a `false` telegram,
+    // or no trigger for the auto-off delay (pulse-only detectors never send `false`).
+    let mut presence_blocked = false;
 
     loop {
         // A receiver that lost the zone since the last iteration (to local playback, Stop,
@@ -618,6 +645,27 @@ async fn run(
         }
         tokio::select! {
             Some(cmd) = next_command(&mut follow_ups, commands) => {
+                if is_user_playback_command(&cmd) && !std::mem::take(&mut presence_derived) {
+                    // The user takes over: presence no longer owns this playback, so its
+                    // auto-off timer must not stop what the user starts now.
+                    let (owned, enabled) = store.read().await.zones.get(&zone_index)
+                        .map_or((false, false), |z| (z.presence_source, z.presence_enabled));
+                    if owned || auto_off_armed {
+                        auto_off_armed = false;
+                        update_and_notify(store, zone_index, notify, |z| { z.presence_source = false; z.auto_off_active = false; }).await;
+                        notify_presence(store, zone_index, notify).await;
+                        tracing::info!(zone = zone_index, "Presence: playback handed over to the user");
+                    }
+                    if matches!(cmd, ZoneCommand::Stop) && enabled {
+                        presence_blocked = true;
+                        let delay = store.read().await.zones.get(&zone_index).map_or(crate::config::DEFAULT_AUTO_OFF_DELAY, |z| z.auto_off_delay);
+                        auto_off_timer.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(u64::from(delay)));
+                        auto_off_armed = true;
+                        tracing::info!(zone = zone_index, "Presence: starts suspended until the room was empty");
+                    } else {
+                        presence_blocked = false;
+                    }
+                }
                 match cmd {
                     ZoneCommand::PlaySubsonicPlaylist(playlist_id, track_idx) => {
                         if !may_start_local_playback(&source, config.audio.source_conflict, receiver_paused) {
@@ -683,8 +731,22 @@ async fn run(
                                     tracing::error!(error = %e, "Subsonic track decode failed");
                                 }
                             }));
+                            // The zone needs a track entry for position updates and for resuming
+                            // at the paused position; without metadata it still gets one.
+                            let info = match sub.get_song(&track_id).await {
+                                Ok(song) => subsonic_track_info(&song),
+                                Err(e) => {
+                                    tracing::warn!(zone = zone_index, error = %e, "Could not read the track metadata");
+                                    subsonic_track_info(&crate::subsonic::Track::untitled(&track_id))
+                                }
+                            };
                             source = ActiveSource::SubsonicTrack { track_id };
-                            update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::SubsonicTrack; }).await;
+                            update_and_notify(store, zone_index, notify, |z| {
+                                z.playback = PlaybackState::Playing;
+                                z.source = SourceType::SubsonicTrack;
+                                z.track = Some(info.clone());
+                                if let Some(t) = z.track.as_mut() { t.position_ms = 0; t.source = SourceType::SubsonicTrack; }
+                            }).await;
                         }
                     }
                     ZoneCommand::PlayUrl(url) => {
@@ -700,7 +762,7 @@ async fn run(
                         current_decode = Some(tokio::spawn(async move {
                             if let Err(e) = audio::decode_http_stream(u, tx, ac, None).await { tracing::error!(error = %e, "URL decode failed"); }
                         }));
-                        source = ActiveSource::Url;
+                        source = ActiveSource::Url { url };
                         update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::Url; }).await;
                     }
                     ZoneCommand::SetTrack(track_idx) => {
@@ -803,6 +865,17 @@ async fn run(
                                     update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; }).await;
                                 }
                             }
+                        } else if let ActiveSource::Url { url } = &source {
+                            // A URL stream has no position to resume at: start it again.
+                            let u = url.clone();
+                            reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
+                            let (tx, rx) = audio::pcm_channel(PCM_DECODE_CHANNEL_SIZE);
+                            decode_rx = Some(rx);
+                            let ac = audio_config.clone();
+                            current_decode = Some(tokio::spawn(async move {
+                                if let Err(e) = audio::decode_http_stream(u, tx, ac, None).await { tracing::error!(error = %e, "URL decode failed"); }
+                            }));
+                            update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::Url; }).await;
                         } else if matches!(source, ActiveSource::Radio { .. } | ActiveSource::Idle) {
                             // Resume or start radio
                             let z_state = store.read().await;
@@ -1131,6 +1204,12 @@ async fn run(
                         let enabled = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_enabled);
                         if !enabled {
                             update_and_notify(store, zone_index, notify, |z| z.presence = present).await;
+                        } else if present && presence_blocked {
+                            // After a user Stop: keep the room "occupied" (re-arm), start nothing.
+                            let delay = store.read().await.zones.get(&zone_index).map_or(crate::config::DEFAULT_AUTO_OFF_DELAY, |z| z.auto_off_delay);
+                            auto_off_timer.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(u64::from(delay)));
+                            auto_off_armed = true;
+                            update_and_notify(store, zone_index, notify, |z| z.presence = true).await;
                         } else if present {
                             let is_idle = store.read().await.zones.get(&zone_index).is_some_and(|z| z.playback == crate::state::PlaybackState::Stopped);
                             if is_idle {
@@ -1141,11 +1220,13 @@ async fn run(
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
                                         // Unified index 0 = radio, idx = station within radio
                                         follow_ups.push_back(ZoneCommand::PlayPlaylist(0, idx));
+                                        presence_derived = true;
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                     Some(crate::config::PresenceSource::Playlist(ref id)) => {
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
                                         follow_ups.push_back(ZoneCommand::PlaySubsonicPlaylist(id.clone(), 0));
+                                        presence_derived = true;
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                     Some(crate::config::PresenceSource::None) => {
@@ -1154,6 +1235,7 @@ async fn run(
                                     None => {
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
                                         follow_ups.push_back(ZoneCommand::Play);
+                                        presence_derived = true;
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                 }
@@ -1172,7 +1254,12 @@ async fn run(
                                 update_and_notify(store, zone_index, notify, |z| z.presence = true).await;
                             }
                         } else {
-                            // No-motion telegram: display only. The timer from the last trigger runs on.
+                            // No-motion telegram: display only. The timer from the last trigger
+                            // runs on. It does mean the room is empty, which lifts a user Stop.
+                            if presence_blocked {
+                                presence_blocked = false;
+                                auto_off_armed = false;
+                            }
                             update_and_notify(store, zone_index, notify, |z| z.presence = false).await;
                         }
                         notify_presence(store, zone_index, notify).await;
@@ -1285,6 +1372,11 @@ async fn run(
             // Auto-off timer expired
             () = &mut auto_off_timer, if auto_off_armed => {
                 auto_off_armed = false;
+                if std::mem::take(&mut presence_blocked) {
+                    // No trigger for the whole delay after a user Stop: the room was empty,
+                    // presence may start playback again. Nothing to stop.
+                    continue;
+                }
                 // Retrigger model: the timer only fires when no trigger arrived for the whole
                 // delay, so presence-initiated playback stops regardless of the last display flag.
                 let should_stop = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_source);
@@ -1426,7 +1518,9 @@ mod conflict_tests {
     fn non_receiver_sources_always_allow_local_playback() {
         for src in [
             ActiveSource::Idle,
-            ActiveSource::Url,
+            ActiveSource::Url {
+                url: String::new(),
+            },
             ActiveSource::Radio { index: 0 },
         ] {
             assert!(may_start_local_playback(
