@@ -4,14 +4,19 @@ on:
   push:
     branches: [main]
 
+# Never cancel a running instance: the `rp` step creates the tag and the draft release and
+# the last step dispatches the build. A cancellation between the two would leave a tag and a
+# draft without a build, and the next run would not dispatch it (see the comment at the
+# dispatch step). With `false`, GitHub keeps at most one pending run per group and replaces
+# older pending ones, which is fine because release-please works from repository state.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
+# Every step authenticates with the GitHub App token below; the default GITHUB_TOKEN needs
+# no write access.
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+  contents: read
 
 jobs:
   release-please:
@@ -72,6 +77,12 @@ jobs:
             git commit -m "chore: sync Cargo.lock to the release version" -- Cargo.lock
             git push origin "HEAD:$branch"
           fi
+      # `release_created` is true only for a release created in this very run. For a tag or
+      # release that already exists, release-please (src/manifest.ts,
+      # createReleasesForPullRequest) catches a DuplicateReleaseError, relabels the pull
+      # request as tagged and rethrows, so the `rp` step fails and nothing is dispatched. If
+      # the pull request was already relabelled, the next run finds no candidate at all. In
+      # both cases a draft is left without a build; the next step reports it.
       - name: Start the one release build for the new draft
         if: ${{ steps.rp.outputs.release_created == 'true' }}
         env:
@@ -87,3 +98,25 @@ jobs:
           # tag/release trigger: this is the single automatic dispatch point.
           gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" \
             -f scope="$RELEASE_SCOPE"
+      # Safety net for a draft left without a build (an interrupted earlier run): fail
+      # loudly instead of staying silent. It does not dispatch by itself, a release build
+      # is started deliberately: `gh workflow run release.yml --ref <tag>`.
+      - name: Check that every draft release has a release build
+        if: ${{ always() && steps.app-token.outcome == 'success' && steps.rp.outputs.release_created != 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          drafts=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 \
+            --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName')
+          [ -n "$drafts" ] || exit 0
+          built=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml \
+            --limit 100 --json headBranch --jq '.[].headBranch')
+          missing=0
+          for tag in $drafts; do
+            if ! grep -qxF -- "$tag" <<<"$built"; then
+              echo "::error::Draft release $tag has no release.yml run. Start it with: gh workflow run release.yml --ref $tag"
+              missing=1
+            fi
+          done
+          exit "$missing"

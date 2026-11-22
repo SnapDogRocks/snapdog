@@ -617,6 +617,7 @@ pub async fn run_state_publisher(feed: &mut StateFeed) {
                     | Notification::ZoneProgress { zone, .. } => {
                         if let Some(z) = store.zones.get(&zone) {
                             let _ = publisher.zone_state(zone, z);
+                            let _ = publisher.zone_position(zone, z);
                         }
                     }
                     Notification::ClientStateChanged { client, .. } => {
@@ -686,6 +687,7 @@ mod tests {
             cmds,
             test_state_with_client(),
             snap_tx,
+            tokio::sync::broadcast::channel(16).0,
         );
         let (stop, shutdown) = watch::channel(false);
         let task = tokio::spawn(supervised_backlog_flusher(handler.clone(), shutdown));
@@ -822,6 +824,7 @@ mod tests {
                 runtime.zone_commands,
                 runtime.state.clone(),
                 runtime.snap_tx,
+                runtime.notify,
             ),
             store: runtime.state,
             connected,

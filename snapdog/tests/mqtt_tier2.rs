@@ -191,6 +191,7 @@ async fn try_start_bridge(cfg: &config::AppConfig) -> anyhow::Result<Rig> {
             state: store.clone(),
             snap_tx,
             notifications: notify_tx.subscribe(),
+            notify: notify_tx.clone(),
             server: snapdog::mqtt::ServerInfo {
                 id: "it-server-id".into(),
                 stable_id: true,

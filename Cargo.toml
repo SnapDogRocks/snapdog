@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.35.0"
+version = "0.36.0"
 edition = "2024"
 license = "GPL-3.0-only"
 repository = "https://github.com/SnapDogRocks/snapdog"
@@ -20,10 +20,13 @@ authors = ["Fabian Schmieder"]
 tokio = { version = "1", features = ["full"] }
 
 # mDNS discovery
-mdns-sd = "0.21"
+mdns-sd = "0.22"
 
 # Interface names in bind settings
 if-addrs = "0.15"
+
+# Dual-stack listeners on `::`
+socket2 = "0.6"
 
 # Web framework
 axum = { version = "0.8", features = ["ws"] }

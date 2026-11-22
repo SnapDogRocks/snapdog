@@ -90,6 +90,7 @@ pub fn test_runtime() -> (MqttRuntime, RuntimeEnds) {
             state: store.clone(),
             snap_tx,
             notifications,
+            notify: notify_tx.clone(),
             server: test_server(),
         },
         RuntimeEnds {

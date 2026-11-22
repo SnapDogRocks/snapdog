@@ -57,6 +57,19 @@ pub struct ZonePlayerContext {
     /// Compiled out of the production binary entirely.
     #[cfg(feature = "test-harness")]
     pub test_pcm_rx: std::sync::Mutex<HashMap<usize, mpsc::Receiver<audio::PcmMessage>>>,
+    /// Test-only injection (feature `test-harness`): per-zone `AirPlay` audio and event
+    /// receivers, so a test can play the part of an `AirPlay` sender.
+    #[cfg(feature = "test-harness")]
+    #[allow(clippy::type_complexity)]
+    pub test_airplay_rx: std::sync::Mutex<
+        HashMap<
+            usize,
+            (
+                crate::receiver::AudioReceiver,
+                mpsc::Receiver<crate::receiver::ReceiverEvent>,
+            ),
+        >,
+    >,
 }
 
 /// Command sent to the main loop for Snapcast JSON-RPC execution.
@@ -136,6 +149,29 @@ pub async fn update_and_notify(
     notify: &NotifySender,
     f: impl FnOnce(&mut state::ZoneState),
 ) {
+    change_and_notify(store, zone_index, notify, f, true).await;
+}
+
+/// Like [`update_and_notify`], without marking the state file dirty.
+///
+/// For changes not worth saving: the playback position and the download progress.
+/// Steady playback then does not rewrite the state file every few seconds.
+pub async fn update_progress_and_notify(
+    store: &state::SharedState,
+    zone_index: usize,
+    notify: &NotifySender,
+    f: impl FnOnce(&mut state::ZoneState),
+) {
+    change_and_notify(store, zone_index, notify, f, false).await;
+}
+
+async fn change_and_notify(
+    store: &state::SharedState,
+    zone_index: usize,
+    notify: &NotifySender,
+    f: impl FnOnce(&mut state::ZoneState),
+    persist: bool,
+) {
     let notification = {
         let mut s = store.write().await;
         let Some(zone) = s.zones.get_mut(&zone_index) else {
@@ -166,7 +202,6 @@ pub async fn update_and_notify(
             content_type: track.and_then(|t| t.content_type.clone()),
             track_index: zone.playlist_track_index,
             track_count: zone.playlist_track_count,
-            playlist: zone.playlist_index,
             playlist_index: zone.playlist_index,
             playlist_id: zone.playlist_id.clone(),
             playlist_name: zone.playlist_name.clone(),
@@ -183,7 +218,9 @@ pub async fn update_and_notify(
             volume: zone.volume,
             muted: zone.muted,
         };
-        s.dirty = true;
+        if persist {
+            s.dirty = true;
+        }
         drop(s);
         n
     };
@@ -316,5 +353,32 @@ mod tests {
         let event: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(event["type"], "zone_changed");
         assert_eq!(event["sample_rate"], 44_100);
+    }
+
+    /// #514: a position tick reaches the clients but does not mark the state file dirty;
+    /// any other change still does.
+    #[tokio::test]
+    async fn a_position_tick_is_announced_but_not_saved() {
+        let raw: crate::config::FileConfig = toml::from_str(
+            r#"
+            [[zone]]
+            name = "Ground Floor"
+        "#,
+        )
+        .unwrap();
+        let config = crate::config::load_raw(raw).unwrap();
+        let store = state::init(&config, None).unwrap();
+        let (notify, mut rx) = tokio::sync::broadcast::channel(4);
+        store.write().await.dirty = false;
+
+        update_progress_and_notify(&store, 1, &notify, |zone| {
+            zone.track = Some(crate::player::helpers::radio_track_info("Station"));
+        })
+        .await;
+        assert!(rx.recv().await.is_ok(), "clients still see the position");
+        assert!(!store.read().await.dirty);
+
+        update_and_notify(&store, 1, &notify, |zone| zone.volume = 70).await;
+        assert!(store.read().await.dirty);
     }
 }

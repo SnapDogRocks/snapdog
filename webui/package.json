@@ -16,7 +16,11 @@
     "lint": "eslint --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
-    "i18n:check": "node scripts/check-i18n.mjs"
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "eq-limits:generate": "node scripts/gen-eq-limits.mjs",
+    "eq-limits:check": "node scripts/gen-eq-limits.mjs --check",
+    "ws:generate": "node scripts/gen-ws-events.mjs",
+    "ws:check": "node scripts/gen-ws-events.mjs --check"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
@@ -40,12 +44,16 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.13",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^10.14.0",
     "eslint-config-next": "^16.4.6",
+    "jsdom": "^31.0.1",
     "tailwindcss": "^4.3.5",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.2",

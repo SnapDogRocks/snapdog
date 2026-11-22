@@ -78,6 +78,7 @@ impl ReceiverProvider for SpotifyReceiver {
         let task = tokio::spawn(async move {
             if let Err(e) = run_spotify(config, zone_index, audio_tx, event_tx).await {
                 tracing::error!(zone = zone_index, error = %e, "Spotify receiver failed");
+                crate::health::report(crate::health::FaultSource::Spotify(zone_index), false);
             }
         });
         self.task = Some(task);
@@ -291,9 +292,27 @@ async fn handle_player_event(
             }
         }
 
-        PlayerEvent::Playing { position_ms, .. }
-        | PlayerEvent::Paused { position_ms, .. }
-        | PlayerEvent::Seeked { position_ms, .. }
+        PlayerEvent::Playing { position_ms, .. } => {
+            let _ = event_tx.try_send(ReceiverEvent::PlaybackState { playing: true });
+            let _ = event_tx.try_send(ReceiverEvent::Progress {
+                position_ms: u64::from(position_ms),
+                duration_ms: *last_duration_ms,
+            });
+        }
+
+        PlayerEvent::Paused { position_ms, .. } => {
+            let _ = event_tx.try_send(ReceiverEvent::PlaybackState { playing: false });
+            let _ = event_tx.try_send(ReceiverEvent::Progress {
+                position_ms: u64::from(position_ms),
+                duration_ms: *last_duration_ms,
+            });
+        }
+
+        PlayerEvent::Stopped { .. } => {
+            let _ = event_tx.try_send(ReceiverEvent::PlaybackState { playing: false });
+        }
+
+        PlayerEvent::Seeked { position_ms, .. }
         | PlayerEvent::PositionCorrection { position_ms, .. } => {
             let _ = event_tx.try_send(ReceiverEvent::Progress {
                 position_ms: u64::from(position_ms),
@@ -328,10 +347,32 @@ impl Sink for ChannelSink {
             AudioPacket::Samples(samples) => samples.iter().map(|&s| s as f32).collect(),
             AudioPacket::Raw(_) => return Ok(()),
         };
-        self.tx
-            .try_send(f32_samples)
-            .map_err(|e| SinkError::OnWrite(format!("Channel send failed: {e}")))?;
-        Ok(())
+        send_waiting(&self.tx, f32_samples)
+    }
+}
+
+/// How long the sink sleeps before it retries a full channel.
+const SINK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2);
+
+/// Hand a packet to the zone, waiting while the channel is full.
+///
+/// librespot calls `write` once per decoded packet without pacing and expects the sink to
+/// block until the audio is taken; an error makes it pause playback. So a full channel is
+/// waited out here. tokio's `blocking_send` cannot be used: the librespot player runs inside
+/// `block_on` on its own thread, where `blocking_send` panics. Only a closed channel (zone
+/// restart, shutdown) is an error, so the player thread ends instead of spinning.
+fn send_waiting(tx: &AudioSender, mut samples: Vec<f32>) -> SinkResult<()> {
+    loop {
+        match tx.try_send(samples) {
+            Ok(()) => return Ok(()),
+            Err(tokio::sync::mpsc::error::TrySendError::Full(back)) => {
+                samples = back;
+                std::thread::sleep(SINK_RETRY_INTERVAL);
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                return Err(SinkError::OnWrite("Zone audio channel closed".into()));
+            }
+        }
     }
 }
 
@@ -370,6 +411,49 @@ mod tests {
             rx.try_recv().expect("samples forwarded"),
             vec![0.5_f32, -0.25, 1.0, 0.0]
         );
+    }
+
+    /// #493: a full channel makes `write` wait until the zone takes a packet, instead of
+    /// failing (which librespot answers by pausing).
+    #[test]
+    fn channel_sink_waits_on_a_full_channel() {
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut sink = ChannelSink::new(tx);
+        let mut conv = Converter::new(None);
+        sink.write(AudioPacket::Samples(vec![0.1]), &mut conv)
+            .expect("first packet fits");
+        let writer = std::thread::spawn(move || {
+            let mut conv = Converter::new(None);
+            sink.write(AudioPacket::Samples(vec![0.2]), &mut conv)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(
+            !writer.is_finished(),
+            "the write waits while the channel is full"
+        );
+        assert_eq!(rx.blocking_recv(), Some(vec![0.1_f32]));
+        writer
+            .join()
+            .unwrap()
+            .expect("the write succeeds once there is room");
+        assert_eq!(rx.blocking_recv(), Some(vec![0.2_f32]));
+    }
+
+    /// #493: a closed channel ends the write with an error, also while waiting for room.
+    #[test]
+    fn channel_sink_fails_once_the_zone_is_gone() {
+        let (tx, rx) = mpsc::channel(1);
+        let mut sink = ChannelSink::new(tx);
+        let mut conv = Converter::new(None);
+        sink.write(AudioPacket::Samples(vec![0.1]), &mut conv)
+            .expect("first packet fits");
+        let writer = std::thread::spawn(move || {
+            let mut conv = Converter::new(None);
+            sink.write(AudioPacket::Samples(vec![0.2]), &mut conv)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        drop(rx);
+        assert!(writer.join().unwrap().is_err());
     }
 
     // ── IT-T72: PlayerEvent → ReceiverEvent mapper goldens ────────────
@@ -458,8 +542,12 @@ mod tests {
             let (tx, mut rx) = mpsc::channel(4);
             let mut dur = 240_000u64;
             handle_player_event(make(track_uri()), &tx, &mut dur).await;
+            // Playing and Paused also report the playback state; the progress follows it.
+            let progress = std::iter::from_fn(|| rx.try_recv().ok())
+                .find(|e| matches!(e, ReceiverEvent::Progress { .. }))
+                .expect("progress emitted");
             assert!(matches!(
-                rx.try_recv().expect("progress emitted"),
+                progress,
                 ReceiverEvent::Progress {
                     position_ms: 5000,
                     duration_ms: 240_000
@@ -526,19 +614,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unhandled_events_emit_nothing() {
-        let (tx, mut rx) = mpsc::channel(4);
-        let mut dur = 7u64;
-        handle_player_event(
-            PlayerEvent::Stopped {
-                play_request_id: 0,
-                track_id: track_uri(),
-            },
-            &tx,
-            &mut dur,
-        )
-        .await;
-        assert!(rx.try_recv().is_err(), "Stopped emits no ReceiverEvent");
-        assert_eq!(dur, 7, "duration unchanged");
+    async fn playing_paused_and_stopped_report_the_playback_state() {
+        let state = |e: &ReceiverEvent| match e {
+            ReceiverEvent::PlaybackState { playing } => Some(*playing),
+            _ => None,
+        };
+        for (event, expected) in [
+            (
+                PlayerEvent::Playing {
+                    play_request_id: 1,
+                    track_id: track_uri(),
+                    position_ms: 0,
+                },
+                true,
+            ),
+            (
+                PlayerEvent::Paused {
+                    play_request_id: 1,
+                    track_id: track_uri(),
+                    position_ms: 0,
+                },
+                false,
+            ),
+            (
+                PlayerEvent::Stopped {
+                    play_request_id: 0,
+                    track_id: track_uri(),
+                },
+                false,
+            ),
+        ] {
+            let (tx, mut rx) = mpsc::channel(4);
+            let mut dur = 7u64;
+            handle_player_event(event, &tx, &mut dur).await;
+            let first = rx.try_recv().expect("an event");
+            assert_eq!(state(&first), Some(expected));
+            assert_eq!(dur, 7, "duration unchanged");
+        }
     }
 }

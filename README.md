@@ -117,7 +117,7 @@ Sigstore. Verify an immutable release before deployment:
 
 ```bash
 cosign verify ghcr.io/snapdogrocks/snapdog:v0.25.1 \
-  --certificate-identity-regexp '^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9].*$' \
+  --certificate-identity-regexp '^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -294,7 +294,7 @@ Single file: [`snapdog.example.toml`](snapdog.example.toml)
 
 [http]
 port = 5555
-webui = "current"                     # current | legacy (default: current)
+webui = "current"                     # current | legacy (deprecated; default: current)
 bind = "::"                            # default; 0.0.0.0 for IPv4 only; a list listens on each address
 base_url = "http://192.168.1.10:5555"  # Required for MQTT cover art URLs; REST API uses relative URLs
 # tls_cert = "/etc/snapdog/tls/fullchain.pem"  # Enables HTTPS
@@ -370,7 +370,7 @@ name = "Deutschlandfunk"
 url = "https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac"
 ```
 
-`http.webui` selects the interface served at `/`; `--webui current` or `--webui legacy` overrides it for that run. `/legacy` and `/legacy/` always open the legacy interface. `/index.html` follows the selected mode.
+`http.webui` selects the interface served at `/`; `--webui current` or `--webui legacy` overrides it for that run. `/legacy` and `/legacy/` always open the legacy interface, which is deprecated and will be removed in a later release (see [upgrading](docs/upgrading.md)). `/index.html` follows the selected mode.
 
 Snapcast sink paths, stream names, and AirPlay names are auto-generated from zone/client definitions. KNX addresses are explicit in client mode (fits into existing installations). In device mode, ETS assigns group addresses via the `.knxprod` product database.
 
@@ -453,8 +453,9 @@ alternative is named.
 Topics, all below `base_topic` (`{n}` is the 1-based position of the `[[zone]]` or `[[client]]`):
 
 - `status`: `online` / `offline`, retained. `offline` is the last will, and is also published on a clean shutdown.
-- `zones/{n}/state`, `clients/{n}/state`: retained JSON.
-- `zones/{n}/{volume,mute,control,shuffle,repeat,position,track,playlist}/set`, `zones/{n}/presence/{,enable/,timeout/}set`, `clients/{n}/{volume,mute,latency,zone}/set`: commands. `volume` takes `0.0..1.0` or `0..100` (so `1` is 100 %); booleans take `true`/`false`, `on`/`off`, `1`/`0`. A retained command is ignored.
+- `zones/{n}/state`, `clients/{n}/state`: retained JSON, published when it changes.
+- `zones/{n}/position`: playback position in whole seconds, not retained, once per second while a track is loaded.
+- `zones/{n}/…/set` and `clients/{n}/…/set`: commands. The full list of command topics and their payloads is in [docs/mqtt.md](docs/mqtt.md#topics). A retained command is ignored.
 
 After a reconnect SnapDog subscribes again and republishes availability and state. Commands are rate limited per zone and client.
 
@@ -622,8 +623,8 @@ SnapDog advertises `_snapdog._tcp` via the OS DNS-SD daemon (Avahi on Linux, mDN
 **`base_url` resolution:** The `base_url` TXT record is included when the server is not reachable on all interfaces. Clients should prefer `base_url` over the mDNS hostname when present:
 
 - `base_url` explicitly configured → use configured value (reverse proxy, custom domain)
-- `[http].bind` set to a specific IP (not `::` or `0.0.0.0`) → auto-derived as `http://{bind}:{port}`
-- Otherwise → `base_url` omitted; clients use the mDNS hostname + port directly
+- `[http].bind` set to a specific IP (not `::` or `0.0.0.0`) → auto-derived as `http://{bind}:{port}` (`https` with TLS, IPv6 in brackets), with the port after all overrides
+- Otherwise → `base_url` omitted; clients use the mDNS hostname + port directly (and HTTPS when TXT `tls` is present)
 
 Optionally, `_snapcast._tcp` can be advertised on the streaming port for standard Snapcast client compatibility:
 
@@ -691,14 +692,14 @@ A specialized Snapcast client that understands SnapDog's custom protocol extensi
 - **Per-client parametric EQ** — receives EQ curves via custom protocol, applies biquad filters before output
 - **Speaker correction** — second EQ stage for Spinorama-based speaker profiles
 - **Audio fade** — smooth fade-out/fade-in on zone switch (triggered by server)
-- **Hardware volume** — native ALSA mixer control with perceptual (quadratic) curve
-- **MIDI CC volume** — send volume as MIDI Control Change (e.g., for professional mixing consoles)
+- **Hardware volume** — native ALSA mixer control with perceptual (quadratic) curve. `--mixer hardware:<control>` sets the control on the card selected with `--soundcard` (`Master`, `Digital`, `PCM` or `Speaker` when no control is named). If that card has no such control, the client uses the software mixer instead.
+- **MIDI CC volume** — send volume as MIDI Control Change (e.g., for professional mixing consoles). The form is `midi:<interface>:<channel>[:<cc>]`: `<interface>` is matched against the MIDI output port names (ignoring case) and may contain colons, the channel is 1 to 16, the controller 0 to 127 (default 7). If the interface name itself ends in `:<number>`, write the controller out. An invalid parameter stops the client at start-up.
 
   ```bash
   # Send volume on MIDI channel 1, CC7 (default) to a USB MIDI interface
-  snapdog-client --mixer midi:hw:1:0
-  # Send volume on MIDI channel 3, CC11 (expression) to a named port
-  snapdog-client --mixer midi:"Scarlett 18i8":2:11
+  snapdog-client --mixer midi:"Scarlett 18i8":1
+  # Send volume on MIDI channel 3, CC11 (expression) to the same port
+  snapdog-client --mixer midi:"Scarlett 18i8":3:11
   ```
 - **Behringer X32 / Midas M32 volume** — move channel faders over OSC on the network, no MIDI interface needed. The volume is the fader position over the whole travel, the same scale `--mixer midi` gives on the X32: 100 % is the top (+10 dB), 75 % is 0 dB. To stop at unity, set the client's `max_volume` to 75. Mute switches the channel off, but only when SnapDog itself mutes or unmutes: a plain volume change never re-opens a channel someone muted at the desk. Every write is read back and repeated if the desk lost it, and a desk that boots later still receives the volume.
 
@@ -780,11 +781,12 @@ See [Architecture Decision Records](docs/architecture/decisions.md) for design r
 ```bash
 make setup                                    # Git hooks
 docker compose -f docker-compose.dev.yml up -d  # Dev infrastructure
-cargo run -- --config snapdog.dev.toml        # Run
-cargo xtask ci                                # Run all CI checks locally
-cargo test                                    # Test
-cargo clippy -- -D warnings                   # Lint
-cargo run --package xtask -- gen-api-spec openapi.json  # Refresh API contract
+cp snapdog.example.toml snapdog.dev.toml       # Local config (gitignored), then edit
+cargo run -p snapdog -- --config snapdog.dev.toml  # Run
+cargo xtask ci                                # Run the CI checks locally (same steps as ci.yml)
+cargo nextest run --workspace                 # Test
+cargo clippy --all-targets -- -D warnings     # Lint
+cargo xtask gen-api-spec openapi.json         # Refresh API contract
 ```
 
 `openapi.json` is the committed REST contract. The OpenAPI contract test rejects

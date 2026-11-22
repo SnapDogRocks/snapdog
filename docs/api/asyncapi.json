@@ -343,15 +343,6 @@
               "description": "Playback state: \"playing\", \"paused\", or \"stopped\".",
               "type": "string"
             },
-            "playlist": {
-              "deprecated": true,
-              "description": "Current playlist index (0-based).\n\nDeprecated. Use `playlist_index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
-              "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
-            },
             "playlist_id": {
               "description": "Stable reference of the active playlist: `snapdog:radio` or `subsonic:<id>`.",
               "type": [
@@ -360,7 +351,7 @@
               ]
             },
             "playlist_index": {
-              "description": "Current unified playlist index (0-based). Same value as `playlist`.",
+              "description": "Current unified playlist index (0-based).",
               "minimum": 0,
               "type": [
                 "integer",
@@ -676,16 +667,22 @@
           "freq": {
             "description": "Center frequency in Hz.",
             "format": "float",
+            "maximum": 20000,
+            "minimum": 10,
             "type": "number"
           },
           "gain": {
             "description": "Gain in dB (positive = boost, negative = cut). Ignored for low/high pass.",
             "format": "float",
+            "maximum": 24,
+            "minimum": -24,
             "type": "number"
           },
           "q": {
-            "description": "Q factor controlling bandwidth. Higher values = narrower band.",
+            "description": "Q factor controlling bandwidth. Higher values = narrower band. 0 selects the\nButterworth default.",
             "format": "float",
+            "maximum": 20,
+            "minimum": 0,
             "type": "number"
           },
           "type": {
@@ -705,15 +702,21 @@
         "description": "Full EQ configuration for a zone.",
         "properties": {
           "bands": {
-            "description": "Ordered list of biquad filter bands applied in series.",
+            "description": "Ordered list of biquad filter bands applied in series, at most `MAX_EQ_BANDS`.",
             "items": {
               "$ref": "#/components/schemas/EqBand"
             },
+            "maxItems": 10,
             "type": "array"
           },
           "enabled": {
             "description": "Whether the EQ is active. When `false`, audio passes through unmodified.",
             "type": "boolean"
+          },
+          "preamp_db": {
+            "description": "Gain in dB applied before the bands while the EQ is enabled. Speaker corrections use\na negative preamp to leave headroom for boosted bands. 0 when absent.",
+            "format": "float",
+            "type": "number"
           },
           "preset": {
             "description": "Name of the preset this config was loaded from, if any.",

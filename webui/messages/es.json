@@ -4,7 +4,9 @@
     "skipToContent": "Ir al contenido",
     "connected": "Conectado",
     "disconnected": "Desconectado",
-    "language": "Idioma"
+    "language": "Idioma",
+    "legacyDeprecated": "Esta interfaz está obsoleta y se eliminará en una versión futura.",
+    "legacySwitch": "Abrir la interfaz actual"
   },
   "transport": {
     "play": "Reproducir",
@@ -41,7 +43,8 @@
     "error": "Algo salió mal",
     "retry": "Intentar de nuevo",
     "presenceDetected": "Presencia detectada",
-    "presenceTimerActive": "Temporizador de apagado automático activo"
+    "presenceTimerActive": "Temporizador de apagado automático activo",
+    "coverAlt": "Portada de {title}"
   },
   "client": {
     "clients": "{count, plural, one {# cliente} other {# clientes}}",
@@ -59,16 +62,45 @@
     "close": "Cerrar ecualizador",
     "toggle": "EQ activado/desactivado",
     "presets": "Presets de EQ",
-    "preset": "Presets",
-    "enabled": "Activado",
     "addBand": "+ Añadir banda",
-    "removeBand": "Eliminar banda",
     "filterType": "Tipo de filtro banda {n}",
-    "frequency": "Frecuencia",
-    "gain": "Ganancia",
-    "qFactor": "Factor Q",
     "curve": "Curva de respuesta en frecuencia",
-    "loading": "Cargando el ecualizador…"
+    "loading": "Cargando el ecualizador…",
+    "off": "Apagado",
+    "on": "Encendido",
+    "spinorama": "Base de datos de altavoces",
+    "custom": "Personalizado",
+    "speakerToggle": "Corrección de altavoz",
+    "tabEq": "Ecualizador",
+    "tabSpeaker": "Altavoz",
+    "speakerCurve": "Curva de corrección del altavoz",
+    "speakersLoading": "Cargando altavoces…",
+    "clearSpeaker": "Quitar",
+    "searchSpeakers": "Buscar altavoces…",
+    "noSpeakers": "No se encontraron altavoces",
+    "bandFrequency": "Frecuencia de la banda {n}",
+    "bandGain": "Ganancia de la banda {n}",
+    "bandQ": "Factor Q de la banda {n}",
+    "removeBandN": "Quitar la banda {n}",
+    "filter": {
+      "low_shelf": "Estante de graves",
+      "high_shelf": "Estante de agudos",
+      "peaking": "Pico",
+      "low_pass": "Paso bajo",
+      "high_pass": "Paso alto"
+    },
+    "presetName": {
+      "flat": "Plano",
+      "bass_boost": "Realce de graves",
+      "treble_boost": "Realce de agudos",
+      "vocal": "Voz",
+      "rock": "Rock",
+      "jazz": "Jazz",
+      "classical": "Clásica",
+      "electronic": "Electrónica",
+      "loudness": "Sonoridad",
+      "late_night": "Nocturno"
+    }
   },
   "playlist": {
     "title": "Listas de reproducción",
@@ -137,15 +169,30 @@
     "dialogLabel": "Acerca de SnapDog",
     "closeLabel": "Cerrar diálogo",
     "description": "Controlador de audio multi-zona con integración de AirPlay, Spotify, Subsonic, MQTT y KNX",
-    "modelLabel": "MODELO",
     "modelValue": "SNAPDOG-CORE",
-    "versionLabel": "VERSIÓN",
-    "sourceLabel": "FUENTE",
-    "sourceValue": "SnapDogRocks/snapdog ↗",
-    "licenseLabel": "LICENCIA",
-    "licenseValue": "GPL-3.0 ↗",
-    "done": "Hecho",
-    "knxprodTitle": "Descargar .knxprod (base de datos de ETS)"
+    "sourceValue": "SnapDogRocks/snapdog",
+    "licenseValue": "GPL-3.0",
+    "knxprodTitle": "Descargar .knxprod (base de datos de ETS)",
+    "updateTitle": "Actualización del contenedor",
+    "updateCheck": "Comprobar",
+    "updateApply": "Actualizar",
+    "knxTitle": "KNX",
+    "programmingMode": "Modo de programación",
+    "updateState": {
+      "current": "Actualizado",
+      "idle": "Actualizado",
+      "available": "Actualización disponible",
+      "checking": "Comprobando…",
+      "preparing": "Preparando la versión",
+      "updating": "Actualizando…",
+      "verifying": "Verificando…",
+      "deploying": "Instalando…",
+      "waiting_for_health": "Esperando al servidor…",
+      "rolling_back": "Revirtiendo…",
+      "rolled_back": "Revertido",
+      "failed": "La actualización falló",
+      "error": "Error"
+    }
   },
   "connect": {
     "title": "Conectar",

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.36.0](https://github.com/SnapDogRocks/snapdog/compare/v0.35.0...v0.36.0) (2026-11-16)
+
+
+### Features
+
+* **api:** announce a changed presence timeout on the WebSocket ([#473](https://github.com/SnapDogRocks/snapdog/issues/473)) ([0c34264](https://github.com/SnapDogRocks/snapdog/commit/0c34264e19f43cffcc463ddd8bc0028d2c9cf44e))
+* **demo:** limit the demo equalizer to five bands ([#475](https://github.com/SnapDogRocks/snapdog/issues/475)) ([cbe144f](https://github.com/SnapDogRocks/snapdog/commit/cbe144f7d2dadb57d3fac8f13a154b6d011a24d5))
+* **webui:** add svg and ico favicon, apple-touch-icon and web manifest ([#470](https://github.com/SnapDogRocks/snapdog/issues/470)) ([adc085d](https://github.com/SnapDogRocks/snapdog/commit/adc085daa6d8d6905c998929e0641498dbd48b77))
+* **webui:** compact About dialog ([#480](https://github.com/SnapDogRocks/snapdog/issues/480)) ([2fb588c](https://github.com/SnapDogRocks/snapdog/commit/2fb588c8f9cf8ae6938149388b50eea511fdd444))
+
+
+### Bug Fixes
+
+* **demo:** do not ship the legacy Web UI in the demo image ([#471](https://github.com/SnapDogRocks/snapdog/issues/471)) ([798f713](https://github.com/SnapDogRocks/snapdog/commit/798f7138475a06b5de45686f40616318c33e68df))
+* **webui:** scale the player controls with the width of the card ([#474](https://github.com/SnapDogRocks/snapdog/issues/474)) ([bc63585](https://github.com/SnapDogRocks/snapdog/commit/bc63585450bf5febf7f81346e7282edbc0e3b1f1))
+
 ## [0.35.0](https://github.com/SnapDogRocks/snapdog/compare/v0.34.1...v0.35.0) (2026-11-15)
 
 

@@ -140,6 +140,8 @@ pub enum Mixer {
     /// ALSA hardware mixer control (Linux only).
     #[cfg(target_os = "linux")]
     Hardware {
+        /// ALSA mixer device of the card that plays, e.g. `hw:CARD=DAC`.
+        card: String,
         control: String,
         volume: Arc<VolumeState>,
     },
@@ -156,22 +158,29 @@ pub enum Mixer {
 }
 
 impl Mixer {
-    /// Build the mixer from `--mixer`. Mixers that can read their own state back use
-    /// `report` as the reverse channel; the others ignore it.
-    pub fn from_cli(raw: &str, volume: Arc<VolumeState>, report: Option<VolumeReport>) -> Self {
+    /// Build the mixer from `--mixer`. The hardware mixer controls the card selected with
+    /// `soundcard`. Mixers that can read their own state back use `report` as the reverse
+    /// channel; the others ignore it.
+    pub fn from_cli(
+        raw: &str,
+        soundcard: &str,
+        volume: Arc<VolumeState>,
+        report: Option<VolumeReport>,
+    ) -> Self {
         let (mode, param) = raw.split_once(':').unwrap_or((raw, ""));
         match mode {
             "software" | "" => Self::Software(volume),
             #[cfg(target_os = "linux")]
-            "hardware" => Self::alsa(param, volume),
+            "hardware" => Self::alsa(param, soundcard, volume),
             #[cfg(not(target_os = "linux"))]
             "hardware" => {
+                let _ = soundcard;
                 tracing::warn!(
                     "Hardware mixer not supported on this platform, falling back to software"
                 );
                 Self::Software(volume)
             }
-            "midi" => match parse_midi_param(param) {
+            "midi" => match connect_midi(param) {
                 Ok((conn, channel, cc)) => {
                     tracing::info!(channel = channel + 1, cc, "MIDI mixer connected");
                     Self::Midi {
@@ -203,27 +212,30 @@ impl Mixer {
         }
     }
 
-    /// ALSA control `param`, or an auto-detected one when empty (Linux only).
+    /// ALSA control `param` (or an auto-detected one when empty) on the card that plays
+    /// (Linux only). Without such a control the software mixer takes over, so the device
+    /// never plays at full level without any volume control.
     #[cfg(target_os = "linux")]
-    fn alsa(param: &str, volume: Arc<VolumeState>) -> Self {
-        let control = if param.is_empty() {
-            // Auto-detect: try Master, then first available control
-            detect_alsa_control().unwrap_or_else(|| "Master".to_string())
-        } else {
-            param.to_string()
-        };
-        // Validate the control exists at startup
-        if validate_alsa_control(&control) {
-            tracing::info!(control, "Hardware mixer initialized");
+    fn alsa(param: &str, soundcard: &str, volume: Arc<VolumeState>) -> Self {
+        let card = alsa_mixer_card_for(soundcard);
+        let available = alsa_volume_controls(&card);
+        let requested = (!param.is_empty()).then_some(param);
+        if let Some(control) = select_hardware_control(requested, &available) {
+            tracing::info!(card, control, "Hardware mixer initialized");
+            Self::Hardware {
+                card,
+                control,
+                volume,
+            }
         } else {
             tracing::warn!(
-                control,
-                "ALSA mixer control not found — volume changes will fail. \
-                 Available controls: {}",
-                list_alsa_controls().unwrap_or_else(|| "none".into())
+                card,
+                control = requested.unwrap_or("(auto)"),
+                available = %available.join(", "),
+                "ALSA mixer control not found on the selected card, using the software mixer"
             );
+            Self::Software(volume)
         }
-        Self::Hardware { control, volume }
     }
 
     /// Apply a volume change.
@@ -235,11 +247,13 @@ impl Mixer {
             }
             #[cfg(target_os = "linux")]
             Self::Hardware {
-                control, volume, ..
+                card,
+                control,
+                volume,
             } => {
                 volume.percent.store(percent, Ordering::Relaxed);
                 volume.muted.store(muted, Ordering::Relaxed);
-                set_alsa_volume(control, percent, muted);
+                set_alsa_volume(card, control, percent, muted);
             }
             Self::Midi { conn, channel, cc } => {
                 let value = midi_cc_value(percent, muted);
@@ -287,22 +301,70 @@ fn midi_cc_value(percent: u8, muted: bool) -> u8 {
     (u16::from(percent) * u16::from(MIDI_CC_MAX) / 100).min(u16::from(MIDI_CC_MAX)) as u8
 }
 
-/// Parse `interface:ch[:cc]` → (`MidiOutputConnection`, `channel_0based`, cc)
-fn parse_midi_param(param: &str) -> anyhow::Result<(midir::MidiOutputConnection, u8, u8)> {
-    let parts: Vec<&str> = param.rsplitn(3, ':').collect();
-    // rsplitn reverses: "IAC Driver:1:7" → ["7", "1", "IAC Driver"]
-    let (interface, channel_1, cc) = match parts.len() {
-        3 => (parts[2], parts[1], parts[0].parse::<u8>().unwrap_or(7)),
-        2 => (parts[1], parts[0], 7u8),
-        _ => anyhow::bail!("expected midi:interface:ch[:cc]"),
+/// A parsed `--mixer midi:` parameter.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MidiSpec {
+    /// Text matched against the MIDI output port names, ignoring case.
+    pub interface: String,
+    /// MIDI channel, 0-based (the parameter is 1-based).
+    pub channel: u8,
+    /// Controller number, 0 to 127.
+    pub cc: u8,
+}
+
+/// Default controller: CC 7, channel volume.
+const MIDI_DEFAULT_CC: u8 = 7;
+
+/// Parse `<interface>:<channel>[:<cc>]`: the channel is 1 to 16, the controller 0 to 127
+/// (default 7). The interface is everything before the numbers, so it may contain colons.
+/// When the last two fields are both numbers they are read as channel and controller: an
+/// interface that itself ends in `:<number>` therefore needs the controller written out.
+///
+/// # Errors
+///
+/// Returns an error for an empty interface, a channel outside 1 to 16 or a controller that is
+/// not a number from 0 to 127.
+pub fn parse_midi_spec(param: &str) -> anyhow::Result<MidiSpec> {
+    let fields: Vec<&str> = param.split(':').collect();
+    let numeric = |f: &str| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit());
+    let (interface, channel, cc) = match fields.as_slice() {
+        [head @ .., ch, cc] if !head.is_empty() && numeric(ch) => (head.join(":"), *ch, Some(*cc)),
+        [head @ .., ch] if !head.is_empty() => (head.join(":"), *ch, None),
+        _ => anyhow::bail!("expected midi:<interface>:<channel>[:<cc>], got 'midi:{param}'"),
     };
-    let channel: u8 = channel_1
+    let interface = interface.trim_matches('"').trim().to_owned();
+    anyhow::ensure!(
+        !interface.is_empty(),
+        "midi: the interface name is empty in 'midi:{param}'"
+    );
+    let channel = channel
         .parse::<u8>()
         .ok()
-        .filter(|&c| (1..=16).contains(&c))
-        .map(|c| c - 1)
-        .ok_or_else(|| anyhow::anyhow!("MIDI channel must be 1-16, got '{channel_1}'"))?;
+        .filter(|c| (1..=16).contains(c))
+        .ok_or_else(|| anyhow::anyhow!("midi: the channel must be 1 to 16, got '{channel}'"))?
+        - 1;
+    let cc = match cc {
+        None => MIDI_DEFAULT_CC,
+        Some(raw) => raw
+            .parse::<u8>()
+            .ok()
+            .filter(|&c| c <= MIDI_CC_MAX)
+            .ok_or_else(|| anyhow::anyhow!("midi: the controller must be 0 to 127, got '{raw}'"))?,
+    };
+    Ok(MidiSpec {
+        interface,
+        channel,
+        cc,
+    })
+}
 
+/// Connect to the port named by a `--mixer midi:` parameter → (connection, 0-based channel, cc).
+fn connect_midi(param: &str) -> anyhow::Result<(midir::MidiOutputConnection, u8, u8)> {
+    let MidiSpec {
+        interface,
+        channel,
+        cc,
+    } = parse_midi_spec(param)?;
     let midi_out = midir::MidiOutput::new("snapdog-client").map_err(|e| anyhow::anyhow!("{e}"))?;
     let port = midi_out
         .ports()
@@ -330,24 +392,81 @@ fn parse_midi_param(param: &str) -> anyhow::Result<(midir::MidiOutputConnection,
     Ok((conn, channel, cc))
 }
 
+/// The ALSA mixer device for an ALSA PCM id: `hw:CARD=DAC,DEV=0`, `plughw:1,0` or
+/// `front:CARD=DAC,DEV=0` all belong to the card `hw:CARD=DAC` / `hw:1`. Anything without a
+/// card (`default`, `pipewire`, `pulse`) uses the `default` mixer.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn alsa_mixer_card(pcm_id: &str) -> String {
+    let Some((_, args)) = pcm_id.split_once(':') else {
+        return "default".to_owned();
+    };
+    let card = args
+        .split(',')
+        .find_map(|a| a.trim().strip_prefix("CARD="))
+        .or_else(|| {
+            args.split(',')
+                .next()
+                .map(str::trim)
+                .filter(|a| !a.is_empty() && !a.contains('='))
+        });
+    match card {
+        Some(c) if c.bytes().all(|b| b.is_ascii_digit()) => format!("hw:{c}"),
+        Some(c) => format!("hw:CARD={c}"),
+        None => "default".to_owned(),
+    }
+}
+
+/// The ALSA mixer device of the output `--soundcard` selects.
 #[cfg(target_os = "linux")]
-fn set_alsa_volume(control: &str, percent: u8, muted: bool) {
+fn alsa_mixer_card_for(soundcard: &str) -> String {
+    use cpal::traits::DeviceTrait;
+    if DeviceSelector::parse(soundcard) == DeviceSelector::Default {
+        return "default".to_owned();
+    }
+    match find_output_device(&cpal::default_host(), soundcard)
+        .and_then(|d| d.id().map_err(Into::into))
+    {
+        Ok(id) => alsa_mixer_card(id.id()),
+        Err(e) => {
+            tracing::warn!(soundcard, error = %e, "Cannot resolve the sound card for the hardware mixer");
+            "default".to_owned()
+        }
+    }
+}
+
+/// The control the hardware mixer uses: the requested one if the card has it, otherwise
+/// (nothing requested) the first of Master, Digital, PCM and Speaker, then any control with a
+/// playback volume. `None` means the card has no usable control.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn select_hardware_control(requested: Option<&str>, available: &[String]) -> Option<String> {
+    if let Some(name) = requested {
+        return available.iter().find(|a| *a == name).cloned();
+    }
+    ["Master", "Digital", "PCM", "Speaker"]
+        .iter()
+        .find_map(|c| available.iter().find(|a| a == c))
+        .or_else(|| available.first())
+        .cloned()
+}
+
+#[cfg(target_os = "linux")]
+fn set_alsa_volume(card: &str, control: &str, percent: u8, muted: bool) {
     let vol = if muted { 0 } else { percent };
-    if let Err(e) = set_alsa_volume_inner(control, vol) {
-        tracing::warn!(control, error = %e, "Failed to set ALSA volume");
+    if let Err(e) = set_alsa_volume_inner(card, control, vol) {
+        tracing::warn!(card, control, error = %e, "Failed to set ALSA volume");
     } else {
-        tracing::debug!(control, percent, muted, "Hardware volume set");
+        tracing::debug!(card, control, percent, muted, "Hardware volume set");
     }
 }
 
 #[cfg(target_os = "linux")]
-fn set_alsa_volume_inner(control: &str, percent: u8) -> anyhow::Result<()> {
+fn set_alsa_volume_inner(card: &str, control: &str, percent: u8) -> anyhow::Result<()> {
     use alsa::mixer::{Mixer, SelemId};
-    let mixer = Mixer::new("default", false)?;
+    let mixer = Mixer::new(card, false)?;
     let selem_id = SelemId::new(control, 0);
     let selem = mixer
         .find_selem(&selem_id)
-        .ok_or_else(|| anyhow::anyhow!("ALSA control '{control}' not found"))?;
+        .ok_or_else(|| anyhow::anyhow!("ALSA control '{control}' not found on {card}"))?;
     let (min, max) = selem.get_playback_volume_range();
     // Perceptual volume curve (quadratic) — balances between linear (too quiet
     // at low values on DACs) and cubic (too quiet on amplifiers).
@@ -362,50 +481,23 @@ fn set_alsa_volume_inner(control: &str, percent: u8) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Names of the controls with a playback volume on an ALSA mixer device.
 #[cfg(target_os = "linux")]
-fn validate_alsa_control(control: &str) -> bool {
-    use alsa::mixer::{Mixer, SelemId};
-    let Ok(mixer) = Mixer::new("default", false) else {
-        return false;
+fn alsa_volume_controls(card: &str) -> Vec<String> {
+    use alsa::mixer::{Mixer, Selem};
+    let Ok(mixer) = Mixer::new(card, false) else {
+        return Vec::new();
     };
-    let selem_id = SelemId::new(control, 0);
-    mixer.find_selem(&selem_id).is_some()
-}
-
-#[cfg(target_os = "linux")]
-fn list_alsa_controls() -> Option<String> {
-    use alsa::mixer::Mixer;
-    let mixer = Mixer::new("default", false).ok()?;
-    let names: Vec<String> = mixer
+    mixer
         .iter()
         .filter_map(|elem| {
-            use alsa::mixer::Selem;
             let selem = Selem::new(elem)?;
-            let id = selem.get_id();
-            Some(id.get_name().ok()?.to_string())
+            if !selem.has_playback_volume() {
+                return None;
+            }
+            selem.get_id().get_name().ok().map(str::to_owned)
         })
-        .collect();
-    Some(names.join(", "))
-}
-
-#[cfg(target_os = "linux")]
-fn detect_alsa_control() -> Option<String> {
-    use alsa::mixer::{Mixer, Selem};
-    for candidate in ["Master", "Digital", "PCM", "Speaker"] {
-        if validate_alsa_control(candidate) {
-            return Some(candidate.to_string());
-        }
-    }
-    // Fall back to first available playback control
-    let mixer = Mixer::new("default", false).ok()?;
-    mixer.iter().find_map(|elem| {
-        let selem = Selem::new(elem)?;
-        if selem.has_playback_volume() {
-            Some(selem.get_id().get_name().ok()?.to_string())
-        } else {
-            None
-        }
-    })
+        .collect()
 }
 
 /// Which output device `--soundcard` names.
@@ -640,18 +732,69 @@ pub async fn play_audio(
         while rx.recv().await.is_some() {}
     });
 
-    // Shared flag for format-change signaling from cpal thread
-    let format_changed = Arc::new(AtomicBool::new(false));
-
-    loop {
-        format_changed.store(false, Ordering::Relaxed);
-
-        // Wait for the Stream to have a valid format
-        let format = loop {
-            let f = stream
+    let format_source = Arc::clone(&stream);
+    supervise_output(
+        move || {
+            format_source
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .format();
+                .format()
+        },
+        move |format, generation| {
+            let stream = Arc::clone(&stream);
+            let time_provider = Arc::clone(&time_provider);
+            let eq = eq.clone();
+            let speaker_eq = speaker_eq.clone();
+            let mixer = Arc::clone(&mixer);
+            let fade = Arc::clone(&fade);
+            let soundcard = Arc::clone(&soundcard);
+            std::thread::spawn(move || {
+                if let Err(e) = run_cpal(
+                    &soundcard,
+                    stream,
+                    time_provider,
+                    format,
+                    eq,
+                    speaker_eq,
+                    mixer,
+                    fade,
+                    generation,
+                ) {
+                    tracing::error!(error = %e, "Audio output failed");
+                }
+            })
+        },
+    )
+    .await;
+}
+
+/// How often the supervisor checks whether the running output has to be replaced.
+const OUTPUT_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+/// Wait before the output is opened again after it ended with an error.
+const OUTPUT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// One run of the audio output, from opening the device to dropping the stream.
+///
+/// Each run has its own format flag, so the callback of an earlier run cannot restart a later
+/// one, and its own stop signal: the output thread drops its stream once the sender is gone.
+pub struct OutputGeneration {
+    /// Set by the output when the stream format no longer matches the one it was opened with.
+    pub format_changed: Arc<AtomicBool>,
+    /// Closed by the supervisor to end this run.
+    pub stop: std::sync::mpsc::Receiver<()>,
+}
+
+/// Run the audio output in generations: wait for a valid format, start one output, and replace
+/// it when the format changes or the output ended. The previous output thread has finished,
+/// and with it released its device, before the next one starts.
+async fn supervise_output<F, S>(mut current_format: F, mut start: S)
+where
+    F: FnMut() -> snapcast_proto::SampleFormat,
+    S: FnMut(snapcast_proto::SampleFormat, OutputGeneration) -> std::thread::JoinHandle<()>,
+{
+    loop {
+        let format = loop {
+            let f = current_format();
             if f.rate() > 0 && f.channels() > 0 {
                 break f;
             }
@@ -665,41 +808,76 @@ pub async fn play_audio(
             "Audio format detected"
         );
 
-        let stream_clone = Arc::clone(&stream);
-        let tp_clone = Arc::clone(&time_provider);
-        let eq_clone = eq.clone();
-        let speaker_eq_clone = speaker_eq.clone();
-        let mixer_clone = Arc::clone(&mixer);
-        let fade_clone = Arc::clone(&fade);
-        let fc_clone = Arc::clone(&format_changed);
-        let soundcard_clone = Arc::clone(&soundcard);
+        let format_changed = Arc::new(AtomicBool::new(false));
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
+        let output = start(
+            format,
+            OutputGeneration {
+                format_changed: Arc::clone(&format_changed),
+                stop: stop_rx,
+            },
+        );
 
-        // Spawn cpal thread — don't join, just let it run
-        std::thread::spawn(move || {
-            if let Err(e) = run_cpal(
-                &soundcard_clone,
-                stream_clone,
-                tp_clone,
-                format,
-                eq_clone,
-                speaker_eq_clone,
-                mixer_clone,
-                fade_clone,
-                fc_clone,
-            ) {
-                tracing::error!(error = %e, "Audio output failed");
-            }
-        });
-
-        // Poll async until format changes
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(OUTPUT_CHECK_INTERVAL).await;
             if format_changed.load(Ordering::Relaxed) {
                 tracing::info!("Audio format changed, restarting pipeline");
                 break;
             }
+            if output.is_finished() {
+                tracing::warn!(retry_in = ?OUTPUT_RETRY_DELAY, "Audio output ended, opening it again");
+                tokio::time::sleep(OUTPUT_RETRY_DELAY).await;
+                break;
+            }
         }
+
+        // End this run and wait until its stream is dropped: an exclusive device can only be
+        // opened again once the old stream has released it.
+        drop(stop_tx);
+        let _ = tokio::task::spawn_blocking(move || output.join()).await;
     }
+}
+
+/// One supported output configuration of a device: a channel count and a rate range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OutputRange {
+    channels: u16,
+    min_rate: u32,
+    max_rate: u32,
+}
+
+/// Choose the output layout `(channels, rate)` for a stream.
+///
+/// `supported` is `None` when the device could not be probed: the stream format is then used
+/// as is and the device decides. Otherwise the device must offer the stream's channel count
+/// at the stream's rate, either among its supported ranges or as its default. The output
+/// path copies frames without remapping or resampling, so any other layout is refused with a
+/// message that names a remedy.
+fn choose_output_config(
+    supported: Option<&[OutputRange]>,
+    default: Option<(u16, u32)>,
+    channels: u16,
+    rate: u32,
+) -> anyhow::Result<(u16, u32)> {
+    let Some(supported) = supported else {
+        return Ok((channels, rate));
+    };
+    if supported
+        .iter()
+        .any(|r| r.channels == channels && r.min_rate <= rate && r.max_rate >= rate)
+        || default == Some((channels, rate))
+    {
+        return Ok((channels, rate));
+    }
+    let offered = default.map_or_else(
+        || "no default configuration".to_owned(),
+        |(c, r)| format!("a default of {c} channels at {r} Hz"),
+    );
+    anyhow::bail!(
+        "The output device cannot play {channels} channels at {rate} Hz ({offered}). \
+         Set the server's sample format to a layout the device supports, or select an ALSA \
+         `plug` device (for example `--soundcard plughw:CARD=...`) that converts it."
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -714,52 +892,50 @@ fn run_cpal(
     speaker_eq: SharedEq,
     mixer: Arc<Mixer>,
     fade: Arc<FadeState>,
-    format_changed: Arc<AtomicBool>,
+    generation: OutputGeneration,
 ) -> anyhow::Result<()> {
     use cpal::traits::{DeviceTrait, StreamTrait};
+
+    let OutputGeneration {
+        format_changed,
+        stop,
+    } = generation;
 
     let host = cpal::default_host();
     let device = find_output_device(&host, soundcard)?;
 
     tracing::info!(device = %device.description().map(|d| format!("{d}")).unwrap_or_default(), "Using audio device");
 
-    // Probe device capabilities — try native format, fallback to default
+    // Probe device capabilities: the stream's own layout, or the device default if it is the
+    // same layout. Samples are copied frame by frame without remapping, so a different
+    // channel count or rate would play at the wrong speed with garbled channels.
     let target_rate = format.rate();
     let target_channels = format.channels();
-    let config = match device.supported_output_configs() {
-        Ok(supported) => {
-            let native = supported.into_iter().find(|cfg| {
-                cfg.channels() == target_channels
-                    && cfg.min_sample_rate() <= target_rate
-                    && cfg.max_sample_rate() >= target_rate
-            });
-            if let Some(cfg) = native {
-                cfg.with_sample_rate(target_rate).into()
-            } else {
-                tracing::warn!(
-                    target_rate,
-                    target_channels,
-                    "Stream format not natively supported, using device default"
-                );
-                let default: cpal::StreamConfig = device.default_output_config()?.into();
-                if default.sample_rate != target_rate {
-                    anyhow::bail!(
-                        "Device default rate ({} Hz) differs from stream ({target_rate} Hz). \
-                         Configure the server to match or enable the 'resampler' feature.",
-                        default.sample_rate
-                    );
-                }
-                default
-            }
-        }
+    let supported: Option<Vec<OutputRange>> = match device.supported_output_configs() {
+        Ok(ranges) => Some(
+            ranges
+                .map(|cfg| OutputRange {
+                    channels: cfg.channels(),
+                    min_rate: cfg.min_sample_rate(),
+                    max_rate: cfg.max_sample_rate(),
+                })
+                .collect(),
+        ),
         Err(e) => {
             tracing::warn!(error = %e, "Cannot probe device, using stream format directly");
-            cpal::StreamConfig {
-                channels: target_channels,
-                sample_rate: target_rate,
-                buffer_size: cpal::BufferSize::Default,
-            }
+            None
         }
+    };
+    let default = device
+        .default_output_config()
+        .ok()
+        .map(|d| (d.channels(), d.sample_rate()));
+    let (out_channels, out_rate) =
+        choose_output_config(supported.as_deref(), default, target_channels, target_rate)?;
+    let config = cpal::StreamConfig {
+        channels: out_channels,
+        sample_rate: out_rate,
+        buffer_size: cpal::BufferSize::Default,
     };
 
     let channels = config.channels as usize;
@@ -869,9 +1045,11 @@ fn run_cpal(
     cpal_stream.play()?;
     tracing::info!("Audio output stream started");
 
-    // Park indefinitely — the cpal callback sets format_changed,
-    // and the async side will spawn a new thread when it detects it.
-    std::thread::park();
+    // Keep the stream until the supervisor ends this run (it drops the sender). Unlike
+    // `park`, this cannot wake spuriously.
+    let _ = stop.recv();
+    drop(cpal_stream);
+    tracing::info!("Audio output stream stopped");
     Ok(())
 }
 
@@ -941,6 +1119,224 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::{MidiSpec, alsa_mixer_card, parse_midi_spec, select_hardware_control};
+
+    fn midi(param: &str) -> MidiSpec {
+        parse_midi_spec(param).unwrap_or_else(|e| panic!("{param}: {e}"))
+    }
+
+    #[test]
+    fn the_readme_midi_examples_mean_what_they_say() {
+        // "channel 1, CC7 (default)"
+        assert_eq!(
+            midi("Scarlett 18i8:1"),
+            MidiSpec {
+                interface: "Scarlett 18i8".into(),
+                channel: 0,
+                cc: 7
+            }
+        );
+        // "channel 3, CC11": status byte 0xB2
+        let s = midi("\"Scarlett 18i8\":3:11");
+        assert_eq!(
+            (s.interface.as_str(), s.channel, s.cc),
+            ("Scarlett 18i8", 2, 11)
+        );
+        assert_eq!(0xB0 | s.channel, 0xB2);
+    }
+
+    #[test]
+    fn a_midi_interface_name_may_contain_colons() {
+        let s = midi("UM-ONE:UM-ONE MIDI 1:1");
+        assert_eq!(
+            (s.interface.as_str(), s.channel, s.cc),
+            ("UM-ONE:UM-ONE MIDI 1", 0, 7)
+        );
+        // An interface ending in a number needs the controller written out.
+        let s = midi("Port 20:0:16:7");
+        assert_eq!(
+            (s.interface.as_str(), s.channel, s.cc),
+            ("Port 20:0", 15, 7)
+        );
+    }
+
+    #[test]
+    fn invalid_midi_parameters_are_refused() {
+        for bad in [
+            "Scarlett:0",
+            "Scarlett:17",
+            "Scarlett:x",
+            "Scarlett:1:x",
+            "Scarlett:1:128",
+            "Scarlett:1:255",
+            "Scarlett",
+            ":1",
+            "\"\":1",
+            "",
+        ] {
+            assert!(parse_midi_spec(bad).is_err(), "{bad} must be refused");
+        }
+        assert_eq!(midi("Scarlett:16:127").cc, 127);
+    }
+
+    #[test]
+    fn the_hardware_mixer_card_follows_the_selected_device() {
+        assert_eq!(alsa_mixer_card("hw:CARD=DAC,DEV=0"), "hw:CARD=DAC");
+        assert_eq!(alsa_mixer_card("plughw:CARD=1,DEV=0"), "hw:1");
+        assert_eq!(alsa_mixer_card("front:CARD=Device,DEV=0"), "hw:CARD=Device");
+        assert_eq!(alsa_mixer_card("sysdefault:CARD=Device"), "hw:CARD=Device");
+        assert_eq!(alsa_mixer_card("plughw:1,0"), "hw:1");
+        assert_eq!(alsa_mixer_card("hw:2"), "hw:2");
+        assert_eq!(alsa_mixer_card("default"), "default");
+        assert_eq!(alsa_mixer_card("pipewire"), "default");
+        assert_eq!(alsa_mixer_card("dmix:DEV=0"), "default");
+    }
+
+    #[test]
+    fn a_missing_hardware_control_falls_back_to_the_software_mixer() {
+        let controls = ["Headphone".to_owned(), "PCM".to_owned()];
+        assert_eq!(
+            select_hardware_control(Some("PCM"), &controls).as_deref(),
+            Some("PCM")
+        );
+        assert_eq!(select_hardware_control(Some("Master"), &controls), None);
+        assert_eq!(
+            select_hardware_control(None, &controls).as_deref(),
+            Some("PCM")
+        );
+        assert_eq!(
+            select_hardware_control(None, &["Headphone".to_owned()]).as_deref(),
+            Some("Headphone")
+        );
+        assert_eq!(select_hardware_control(None, &[]), None);
+    }
+
+    use super::{OutputRange, choose_output_config};
+
+    const STEREO_48K: OutputRange = OutputRange {
+        channels: 2,
+        min_rate: 44_100,
+        max_rate: 48_000,
+    };
+
+    #[test]
+    fn the_stream_layout_is_used_when_the_device_supports_it() {
+        let six = OutputRange {
+            channels: 6,
+            ..STEREO_48K
+        };
+        assert_eq!(
+            choose_output_config(Some(&[six, STEREO_48K]), Some((6, 48_000)), 2, 48_000).unwrap(),
+            (2, 48_000)
+        );
+    }
+
+    #[test]
+    fn a_matching_device_default_is_accepted() {
+        assert_eq!(
+            choose_output_config(Some(&[]), Some((2, 48_000)), 2, 48_000).unwrap(),
+            (2, 48_000)
+        );
+    }
+
+    #[test]
+    fn a_different_channel_count_at_the_same_rate_is_refused() {
+        // Used to be accepted: a mono stream on a stereo device played at double speed.
+        let err = choose_output_config(Some(&[STEREO_48K]), Some((2, 48_000)), 1, 48_000)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("1 channels at 48000 Hz"), "{err}");
+        assert!(err.contains("plug"), "{err}");
+        assert!(!err.contains("resampler"), "{err}");
+        assert!(choose_output_config(Some(&[]), Some((6, 48_000)), 2, 48_000).is_err());
+    }
+
+    #[test]
+    fn nothing_matching_is_refused() {
+        assert!(choose_output_config(Some(&[STEREO_48K]), None, 2, 96_000).is_err());
+    }
+
+    #[test]
+    fn an_unprobed_device_gets_the_stream_format() {
+        assert_eq!(
+            choose_output_config(None, None, 2, 96_000).unwrap(),
+            (2, 96_000)
+        );
+    }
+
+    /// A fake output that behaves like the cpal callback: it reports a format change while
+    /// the shared format differs from the one it started with, and ends when stopped.
+    fn fake_output(
+        format: snapcast_proto::SampleFormat,
+        generation: super::OutputGeneration,
+        current: Arc<Mutex<snapcast_proto::SampleFormat>>,
+        alive: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> std::thread::JoinHandle<()> {
+        use std::sync::mpsc::RecvTimeoutError;
+        alive.fetch_add(1, Ordering::SeqCst);
+        std::thread::spawn(move || {
+            loop {
+                if *current.lock().unwrap() != format {
+                    generation.format_changed.store(true, Ordering::Relaxed);
+                }
+                match generation
+                    .stop
+                    .recv_timeout(std::time::Duration::from_millis(10))
+                {
+                    Err(RecvTimeoutError::Timeout) => {}
+                    _ => break,
+                }
+            }
+            alive.fetch_sub(1, Ordering::SeqCst);
+        })
+    }
+
+    async fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
+        for _ in 0..200 {
+            if done() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("timed out waiting for {what}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn each_format_change_restarts_the_output_once_and_ends_the_previous_one() {
+        use std::sync::atomic::AtomicUsize;
+        let current = Arc::new(Mutex::new(snapcast_proto::SampleFormat::new(48_000, 16, 2)));
+        let starts = Arc::new(AtomicUsize::new(0));
+        let alive = Arc::new(AtomicUsize::new(0));
+
+        let supervisor = {
+            let (current, starts, alive) = (
+                Arc::clone(&current),
+                Arc::clone(&starts),
+                Arc::clone(&alive),
+            );
+            let reader = Arc::clone(&current);
+            tokio::spawn(super::supervise_output(
+                move || *reader.lock().unwrap(),
+                move |format, generation| {
+                    starts.fetch_add(1, Ordering::SeqCst);
+                    fake_output(format, generation, Arc::clone(&current), Arc::clone(&alive))
+                },
+            ))
+        };
+
+        wait_for("the first output", || starts.load(Ordering::SeqCst) == 1).await;
+        for (n, rate) in [(2, 44_100), (3, 96_000)] {
+            *current.lock().unwrap() = snapcast_proto::SampleFormat::new(rate, 16, 2);
+            wait_for("the restart", || starts.load(Ordering::SeqCst) == n).await;
+            wait_for("one live output", || alive.load(Ordering::SeqCst) == 1).await;
+        }
+
+        // No flag of an earlier generation may trigger a further restart.
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        assert_eq!(starts.load(Ordering::SeqCst), 3);
+        assert_eq!(alive.load(Ordering::SeqCst), 1);
+        supervisor.abort();
+    }
     // ── --soundcard selection ─────────────────────────────────
 
     fn devices(list: &[(&str, &str)]) -> Vec<OutputDevice> {
@@ -1104,7 +1500,10 @@ mod tests {
                 Arc::new(Mutex::new(ZoneEq::new(48000, 2))),
                 Arc::new(Mixer::None),
                 Arc::new(FadeState::new()),
-                Arc::new(AtomicBool::new(false)),
+                OutputGeneration {
+                    format_changed: Arc::new(AtomicBool::new(false)),
+                    stop: std::sync::mpsc::channel().1,
+                },
             );
             let _ = done.send(outcome.map_err(|e| e.to_string()));
         });

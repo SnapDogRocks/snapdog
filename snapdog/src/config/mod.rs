@@ -100,6 +100,13 @@ fn resolve(
     mqtt_problem: Option<String>,
 ) -> Result<AppConfig> {
     let mut config = load_raw(raw)?;
+    finish(&mut config, unknown, mqtt_problem);
+    Ok(config)
+}
+
+/// Record what parsing found besides the configuration: the `[mqtt]` problem and the keys
+/// no struct knows.
+fn finish(config: &mut AppConfig, unknown: Vec<String>, mqtt_problem: Option<String>) {
     if mqtt_problem.is_some() {
         config.mqtt_problem = mqtt_problem;
     }
@@ -109,7 +116,6 @@ fn resolve(
             display_key_path(&key)
         ));
     }
-    Ok(config)
 }
 
 pub use crate::net::listener::address_is_not_local;
@@ -210,10 +216,19 @@ fn expand_paths(raw: &mut FileConfig, exists: &dyn Fn(&str) -> bool) -> Vec<Stri
     if let Some(subsonic) = raw.subsonic.as_mut() {
         subsonic.cache.path = expand("subsonic.cache].path", &subsonic.cache.path.clone());
     }
-    for (key, slot) in [
+    let mut slots = vec![
         ("http].tls_cert", &mut raw.http.tls_cert),
         ("http].tls_key", &mut raw.http.tls_key),
-    ] {
+    ];
+    if let Some(mqtt) = raw.mqtt.as_mut() {
+        slots.extend([
+            ("mqtt].password_file", &mut mqtt.password_file),
+            ("mqtt].ca_file", &mut mqtt.ca_file),
+            ("mqtt].client_cert", &mut mqtt.client_cert),
+            ("mqtt].client_key", &mut mqtt.client_key),
+        ]);
+    }
+    for (key, slot) in slots {
         if let Some(path) = slot.as_ref().and_then(|p| p.to_str()) {
             *slot = Some(std::path::PathBuf::from(expand(key, path)));
         }
@@ -258,7 +273,7 @@ fn without_values(message: &str) -> String {
 ///
 /// Returns an error if the configuration is invalid.
 pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
-    load_raw_inner(raw, false)
+    load_raw_inner(raw, false, &Overrides::default())
 }
 
 /// Like `load_raw` but skips zone/client validation (for KNX device mode).
@@ -267,7 +282,147 @@ pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
 ///
 /// Returns an error if the configuration is invalid.
 pub fn load_raw_no_validate(raw: FileConfig) -> Result<AppConfig> {
-    load_raw_inner(raw, true)
+    load_raw_inner(raw, true, &Overrides::default())
+}
+
+/// Settings given on the command line. They are applied to the raw configuration before
+/// role validation and bind resolution, so a flag behaves like the same key in the file.
+#[derive(Debug, Clone, Default)]
+pub struct Overrides {
+    /// `--knx-device`: run as a KNX device with this individual address (`--knx-address`,
+    /// else [`DEFAULT_KNX_DEVICE_ADDRESS`]).
+    pub knx_device: Option<String>,
+    /// `--knx-prog-mode`: start with programming mode active.
+    pub knx_prog_mode: bool,
+    /// `--knx-sync-system-clock`: let the KNX Time object set the system clock.
+    pub knx_sync_system_clock: bool,
+    /// `--webui`.
+    pub webui: Option<WebUi>,
+    /// `--port`. Takes precedence over `SNAPDOG_HTTP_PORT`.
+    pub port: Option<u16>,
+    /// `--bind`: addresses, `loopback` or interface names, like `[http].bind`.
+    pub bind: Vec<String>,
+    /// `--tls-cert`.
+    pub tls_cert: Option<std::path::PathBuf>,
+    /// `--tls-key`.
+    pub tls_key: Option<std::path::PathBuf>,
+    /// `--codec`.
+    pub codec: Option<AudioCodec>,
+    /// `--sample-rate`.
+    pub sample_rate: Option<u32>,
+    /// `--bit-depth`.
+    pub bit_depth: Option<u16>,
+    /// `--streaming-port`.
+    pub streaming_port: Option<u16>,
+    /// `--name`.
+    pub name: Option<String>,
+    /// `--log-level`.
+    pub log_level: Option<LogLevel>,
+}
+
+/// Individual address of a KNX device started with `--knx-device` and no `--knx-address`.
+pub const DEFAULT_KNX_DEVICE_ADDRESS: &str = "15.15.255";
+
+/// Load the configuration the way `snapdog` starts, with the command line applied.
+///
+/// Reads `path`, or for `--knx-device` without a file the parameters an ETS download left
+/// (else built-in defaults). The `overrides` are applied before validation.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read, or the configuration with the overrides is
+/// invalid.
+pub fn load_with_overrides(path: Option<&Path>, overrides: &Overrides) -> Result<AppConfig> {
+    if let Some(path) = path {
+        let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
+            .with_context(|| format!("Failed to read {}", path.display()))?;
+        load_str_with_overrides(&content, overrides)
+            .with_context(|| format!("Failed to load {}", path.display()))
+    } else {
+        let raw = crate::knx::ets_device_config(overrides.knx_device.as_deref());
+        load_raw_inner(raw, true, overrides)
+    }
+}
+
+/// Like [`load_with_overrides`], but takes the TOML text.
+///
+/// # Errors
+///
+/// Returns an error if the text is not valid TOML or the configuration is invalid.
+pub fn load_str_with_overrides(content: &str, overrides: &Overrides) -> Result<AppConfig> {
+    let (raw, unknown, mqtt_problem) = parse(content)?;
+    let mut config = load_raw_inner(raw, false, overrides)?;
+    finish(&mut config, unknown, mqtt_problem);
+    Ok(config)
+}
+
+/// Apply the command line to the raw configuration. Returns the warnings to report.
+fn apply_overrides(raw: &mut FileConfig, o: &Overrides) -> Result<Vec<String>> {
+    let mut notices = Vec::new();
+    if let Some(address) = &o.knx_device {
+        let knx = raw.knx.get_or_insert_default();
+        knx.role = KnxRole::Device;
+        if let Some(configured) = knx.individual_address.as_ref()
+            && configured != address
+        {
+            notices.push(format!(
+                "--knx-device replaces [knx].individual_address = {configured} from the \
+                 configuration file with {address}. Pass --knx-address {configured} to keep the \
+                 file's address."
+            ));
+        }
+        knx.individual_address = Some(address.clone());
+    }
+    if o.knx_prog_mode
+        && let Some(knx) = raw.knx.as_mut()
+    {
+        knx.start_prog_mode = true;
+    }
+    if o.knx_sync_system_clock {
+        if let Some(knx) = raw.knx.as_mut() {
+            knx.sync_system_clock = true;
+        } else {
+            notices.push(
+                "--knx-sync-system-clock has no effect: KNX is not configured. Add a [knx] \
+                 section or pass --knx-device."
+                    .to_owned(),
+            );
+        }
+    }
+    if let Some(webui) = o.webui {
+        raw.http.webui = webui;
+    }
+    if let Some(port) = o.port {
+        raw.http.port = port;
+    }
+    if !o.bind.is_empty() {
+        raw.http.bind = resolve_http_bind(&o.bind).map_err(|e| anyhow::anyhow!("--bind: {e}"))?;
+    }
+    if let Some(cert) = &o.tls_cert {
+        raw.http.tls_cert = Some(cert.clone());
+    }
+    if let Some(key) = &o.tls_key {
+        raw.http.tls_key = Some(key.clone());
+    }
+    if let Some(codec) = o.codec {
+        raw.snapcast.codec = codec;
+    }
+    if let Some(rate) = o.sample_rate {
+        raw.audio.sample_rate = rate;
+    }
+    if let Some(bits) = o.bit_depth {
+        raw.audio.bit_depth = bits;
+    }
+    if let Some(port) = o.streaming_port {
+        raw.snapcast.streaming_port = port;
+    }
+    if let Some(name) = &o.name {
+        raw.name.clone_from(name);
+    }
+    if let Some(level) = o.log_level {
+        raw.system.log_level = level;
+    }
+    Ok(notices)
 }
 
 /// What each KNX role needs: a gateway URL for a client, an individual address (and an IPv4
@@ -296,7 +451,60 @@ fn validate_knx_role(knx: &KnxConfig) -> Result<()> {
     Ok(())
 }
 
-fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<AppConfig> {
+/// Values the file sets that the server ignores: an unsupported Spotify bitrate, and a
+/// `[snapcast].default_zone` that names no zone.
+fn ignored_value_notices(raw: &FileConfig) -> (Option<String>, Option<String>) {
+    let bitrate = raw
+        .spotify
+        .as_ref()
+        .filter(|sp| !matches!(sp.bitrate, 96 | 160 | 320))
+        .map(|sp| {
+            format!(
+                "[spotify].bitrate = {} is not supported (96, 160 or 320), using 320",
+                sp.bitrate
+            )
+        });
+    let default_zone = raw
+        .snapcast
+        .default_zone
+        .as_ref()
+        .filter(|name| !raw.zone.iter().any(|z| z.name == **name))
+        .map(|name| {
+            format!(
+                "[snapcast].default_zone = {name:?} names no zone (names are case-sensitive), so \
+                 unknown clients join the first zone"
+            )
+        });
+    (bitrate, default_zone)
+}
+
+/// The `[spotify]` and `[subsonic]` keys that are refused at load.
+fn validate_spotify_and_subsonic(raw: &FileConfig) -> Result<()> {
+    if let Some(sp) = raw.spotify.as_ref().filter(|sp| sp.bind.is_some()) {
+        anyhow::bail!(
+            "[spotify].bind is not supported: Spotify Connect's discovery server listens on all \
+             interfaces (TCP port {}) and cannot be bound to an address. Limit that port in the \
+             firewall instead, and remove the key.",
+            sp.port
+        );
+    }
+
+    if let Some(ref subsonic) = raw.subsonic {
+        let url = url::Url::parse(&subsonic.url).context("Invalid Subsonic URL")?;
+        anyhow::ensure!(
+            matches!(url.scheme(), "http" | "https"),
+            "Subsonic URL must use http or https"
+        );
+    }
+    Ok(())
+}
+
+fn load_raw_inner(
+    mut raw: FileConfig,
+    skip_zone_validation: bool,
+    overrides: &Overrides,
+) -> Result<AppConfig> {
+    let override_notices = apply_overrides(&mut raw, overrides)?;
     let path_notices = expand_paths(&mut raw, &|p| Path::new(p).exists());
     if !skip_zone_validation {
         anyhow::ensure!(
@@ -315,9 +523,12 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
     validate_raw_inputs(&raw)?;
 
     validate_knx_addresses(&raw)?;
+    validate_spotify_and_subsonic(&raw)?;
 
     // Resolving clamps the volume limits, so what the file said has to be reported first.
     let volume_notices = volume_range_notices(&raw.client);
+    let fade_notices = raw.audio.clamp_fades();
+    let (bitrate_notices, default_zone_notices) = ignored_value_notices(&raw);
 
     // `[spotify].name` names the Spotify device of a zone that sets no spotify_name.
     let spotify_naming = convention::SpotifyNaming::new(raw.spotify.as_ref(), raw.zone.len());
@@ -344,23 +555,6 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
     if let Some(ref knx) = raw.knx {
         validate_knx_role(knx)?;
     }
-    if let Some(sp) = raw.spotify.as_ref().filter(|sp| sp.bind.is_some()) {
-        anyhow::bail!(
-            "[spotify].bind is not supported: Spotify Connect's discovery server listens on all \
-             interfaces (TCP port {}) and cannot be bound to an address. Limit that port in the \
-             firewall instead, and remove the key.",
-            sp.port
-        );
-    }
-
-    if let Some(ref subsonic) = raw.subsonic {
-        let url = url::Url::parse(&subsonic.url).context("Invalid Subsonic URL")?;
-        anyhow::ensure!(
-            matches!(url.scheme(), "http" | "https"),
-            "Subsonic URL must use http or https"
-        );
-    }
-
     // ── Presence validation ───────────────────────────────────
     for zone in &zones {
         validate_presence(zone, radios.len())?;
@@ -391,8 +585,12 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
     };
 
     let duplicates = duplicate_spotify_names(&config.zones).map(|m| (NoticeLevel::Warn, m));
-    let load_notices = volume_notices
+    let load_notices = override_notices
         .into_iter()
+        .chain(fade_notices)
+        .chain(bitrate_notices)
+        .chain(default_zone_notices)
+        .chain(volume_notices)
         .chain(path_notices)
         .map(|m| (NoticeLevel::Warn, m))
         .chain(spotify_notices)
@@ -404,6 +602,10 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         }
     }
     apply_env_overrides(&mut config);
+    if let Some(port) = overrides.port {
+        // The command line wins over SNAPDOG_HTTP_PORT, as it always did.
+        config.http.port = port;
+    }
     resolve_binds(&mut config);
     resolve_mqtt(&mut config);
     validate(&mut config)?;
@@ -574,7 +776,7 @@ fn duplicate_spotify_names(zones: &[ZoneConfig]) -> Option<String> {
 }
 
 /// Notices for `max_volume` and `default_volume` values outside 0 to 100, which
-/// resolving a client clamps. Same wording as the check in [`validate`].
+/// resolving a client clamps (`convention::resolve_client`).
 fn volume_range_notices(clients: &[RawClientConfig]) -> Vec<String> {
     let mut notices = Vec::new();
     for client in clients {
@@ -635,43 +837,15 @@ pub fn validate(config: &mut AppConfig) -> Result<()> {
          built-in key, which is public and protects nothing"
     );
 
-    // ── Port collision ────────────────────────────────────────
-    if config.http.port == config.snapcast.streaming_port {
-        anyhow::bail!(
-            "http.port ({}) and snapcast.streaming_port ({}) must not be the same",
-            config.http.port,
-            config.snapcast.streaming_port
-        );
-    }
-
-    // ── Client max_volume ─────────────────────────────────────
-    let mut clamped = Vec::new();
-    for client in &mut config.clients {
-        if client.max_volume > 100 {
-            clamped.push(format!(
-                "Client '{}': max_volume {} exceeds 100, using 100",
-                client.name, client.max_volume
-            ));
-            client.max_volume = 100;
-        } else if client.max_volume < 0 {
-            clamped.push(format!(
-                "Client '{}': max_volume {} is below 0, using 0",
-                client.name, client.max_volume
-            ));
-            client.max_volume = 0;
-        }
-    }
-    for message in clamped {
-        config.warn(message);
-    }
+    // Two services on one port are checked in one place, with their addresses:
+    // `net::listener::check_unique`, at start and in `--check-config`.
 
     notices::collect(config);
     Ok(())
 }
 
-/// Check sample rate, bit depth and channel count. Shared by file loading and the
-/// re-validation after command-line overrides, so `--sample-rate 12345` fails like
-/// `sample_rate = 12345` does.
+/// Check sample rate, bit depth and channel count. The command line is applied before,
+/// so `--sample-rate 12345` fails like `sample_rate = 12345` does.
 fn validate_audio_format(audio: &AudioConfig) -> Result<()> {
     anyhow::ensure!(
         matches!(
@@ -742,7 +916,7 @@ fn validate_presence(zone: &ZoneConfig, num_radios: usize) -> Result<()> {
         })?;
         anyhow::ensure!(
             from < to,
-            "Zone '{}' presence schedule[{i}]: 'from' ({}) must be before 'to' ({}). For overnight, use two entries.",
+            "Zone '{}' presence schedule[{i}]: 'from' ({}) must be before 'to' ({}). For overnight, use two entries, e.g. 22:00-24:00 and 00:00-06:00.",
             zone.name,
             entry.from,
             entry.to
@@ -874,15 +1048,7 @@ fn validate_knx_ia(ia: &str) -> Result<()> {
 
 /// The device-level group addresses in `[knx]`.
 fn validate_global_knx(knx: &KnxConfig) -> Result<()> {
-    let gas = [
-        ("server_online", &knx.server_online),
-        ("all_stop", &knx.all_stop),
-        ("all_mute", &knx.all_mute),
-        ("all_mute_status", &knx.all_mute_status),
-        ("system_fault", &knx.system_fault),
-        ("knx_time", &knx.knx_time),
-    ];
-    for (key, ga) in gas {
+    for (key, ga) in knx.group_addresses() {
         if let Some(ga) = ga {
             validate_knx_ga(ga)
                 .with_context(|| format!("Invalid Group Address '{ga}' for [knx] {key}"))?;
@@ -892,75 +1058,21 @@ fn validate_global_knx(knx: &KnxConfig) -> Result<()> {
 }
 
 fn validate_zone_knx(knx: &RawZoneKnxConfig) -> Result<()> {
-    let gas = [
-        &knx.play,
-        &knx.pause,
-        &knx.stop,
-        &knx.track_next,
-        &knx.track_previous,
-        &knx.control_status,
-        &knx.volume,
-        &knx.volume_status,
-        &knx.volume_dim,
-        &knx.mute,
-        &knx.mute_status,
-        &knx.mute_toggle,
-        &knx.track_title_status,
-        &knx.track_artist_status,
-        &knx.track_album_status,
-        &knx.track_progress_status,
-        &knx.track_playing_status,
-        &knx.track_repeat,
-        &knx.track_repeat_status,
-        &knx.track_repeat_toggle,
-        &knx.playlist,
-        &knx.playlist_status,
-        &knx.playlist_next,
-        &knx.playlist_previous,
-        &knx.playlist_step,
-        &knx.playlist_step_updown,
-        &knx.playlist_name_status,
-        &knx.track_number,
-        &knx.track_number_status,
-        &knx.play_pause,
-        &knx.track_step,
-        &knx.track_step_updown,
-        &knx.track_position,
-        &knx.track_seek,
-        &knx.track_seek_updown,
-        &knx.shuffle,
-        &knx.shuffle_status,
-        &knx.shuffle_toggle,
-        &knx.repeat,
-        &knx.repeat_status,
-        &knx.repeat_toggle,
-        &knx.presence,
-        &knx.presence_enable,
-        &knx.presence_enable_status,
-        &knx.presence_timer_status,
-    ];
-    for ga in gas.into_iter().flatten() {
-        validate_knx_ga(ga).with_context(|| format!("Invalid Group Address: '{ga}'"))?;
-    }
-    Ok(())
+    validate_group_addresses(&knx.group_addresses())
 }
 
 fn validate_client_knx(knx: &RawClientKnxConfig) -> Result<()> {
-    let gas = [
-        &knx.volume,
-        &knx.volume_status,
-        &knx.volume_dim,
-        &knx.mute,
-        &knx.mute_status,
-        &knx.mute_toggle,
-        &knx.latency,
-        &knx.latency_status,
-        &knx.zone,
-        &knx.zone_status,
-        &knx.connected_status,
-    ];
-    for ga in gas.into_iter().flatten() {
-        validate_knx_ga(ga).with_context(|| format!("Invalid Group Address: '{ga}'"))?;
+    validate_group_addresses(&knx.group_addresses())
+}
+
+/// Check every configured group address of a zone or client. The list comes from the struct
+/// itself (`knx_group_addresses!`), so no key can be missed.
+fn validate_group_addresses(entries: &[(&'static str, Option<&str>)]) -> Result<()> {
+    for (key, ga) in entries {
+        if let Some(ga) = ga {
+            validate_knx_ga(ga)
+                .with_context(|| format!("Invalid Group Address for {key}: '{ga}'"))?;
+        }
     }
     Ok(())
 }
@@ -1846,9 +1958,12 @@ mod tests {
         let error = validate(&mut config).unwrap_err().to_string();
         assert!(error.contains("Unsupported sample rate"), "{error}");
 
+        // A port collision set after loading is caught where every start checks it: by the
+        // planned listeners (#505), not by `validate`.
         let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
         config.http.port = config.snapcast.streaming_port;
-        assert!(validate(&mut config).is_err());
+        let planned = crate::net::listener::planned(&config);
+        assert!(crate::net::listener::check_unique(&planned).is_err());
     }
 
     #[test]
@@ -2541,5 +2656,265 @@ mod interface_bind_tests {
         let http: Vec<_> = rows.iter().filter(|r| r.service == "HTTP API").collect();
         assert_eq!(http.len(), 2);
         assert!(http.iter().all(|r| r.via.as_deref() == Some("loopback")));
+    }
+}
+
+#[cfg(test)]
+mod gap_tests {
+    //! #505: values the configuration used to accept and then ignore or misreport.
+    use super::*;
+
+    const ZONES: &str = "[[zone]]\nname = \"Ground Floor\"\n[[zone]]\nname = \"Garden\"\n";
+
+    fn load(toml: &str) -> AppConfig {
+        load_str(&format!("{toml}\n{ZONES}")).unwrap()
+    }
+
+    fn has_notice(config: &AppConfig, needle: &str) -> bool {
+        config.notices.iter().any(|n| n.message.contains(needle))
+    }
+
+    #[test]
+    fn an_unknown_default_zone_is_reported() {
+        let wrong_case = load("[snapcast]\ndefault_zone = \"garden\"\n");
+        assert!(has_notice(
+            &wrong_case,
+            "default_zone = \"garden\" names no zone"
+        ));
+        let known = load("[snapcast]\ndefault_zone = \"Garden\"\n");
+        assert!(!has_notice(&known, "default_zone"));
+    }
+
+    #[test]
+    fn an_unsupported_spotify_bitrate_is_reported() {
+        let c = load("[spotify]\nbitrate = 128\n");
+        assert!(has_notice(&c, "[spotify].bitrate = 128 is not supported"));
+        assert!(!has_notice(&load("[spotify]\nbitrate = 160\n"), "bitrate"));
+    }
+
+    #[test]
+    fn a_fade_above_the_maximum_is_clamped_with_a_notice() {
+        let c = load("[audio]\nzone_switch_fade_ms = 5000\n");
+        assert_eq!(c.audio.zone_switch_fade_ms, MAX_FADE_MS);
+        assert!(has_notice(&c, "[audio].zone_switch_fade_ms = 5000"));
+        assert!(!has_notice(
+            &load("[audio]\nsource_switch_fade_ms = 1000\n"),
+            "fade"
+        ));
+    }
+
+    #[test]
+    fn a_schedule_ending_at_24_00_covers_23_59() {
+        assert_eq!(parse_time("24:00").unwrap(), 1440);
+        assert!(parse_time("24:01").is_err());
+        assert!(parse_time("25:00").is_err());
+        let c = load(
+            "[[zone]]\nname = \"Night\"\n[zone.presence]\n\
+             [[zone.presence.schedule]]\nfrom = \"22:00\"\nto = \"24:00\"\nsource = \"none\"\n\
+             [[zone.presence.schedule]]\nfrom = \"00:00\"\nto = \"06:00\"\nsource = \"none\"\n",
+        );
+        let schedule = &c.zones[0].presence.as_ref().unwrap().schedule;
+        let covers = |minute: u16| {
+            schedule.iter().any(|e| {
+                (parse_time(&e.from).unwrap()..parse_time(&e.to).unwrap()).contains(&minute)
+            })
+        };
+        assert!(covers(23 * 60 + 59));
+        assert!(covers(0));
+        // 24:00 is the end of the day, never a start.
+        assert!(
+            load_str(&format!(
+                "[[zone]]\nname = \"N\"\n[zone.presence]\n[[zone.presence.schedule]]\n\
+                 from = \"24:00\"\nto = \"24:00\"\nsource = \"none\"\n{ZONES}"
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn equal_ports_on_different_addresses_are_allowed() {
+        let c = load(
+            "[http]\nbind = \"127.0.0.1\"\nport = 1780\n\
+             [snapcast]\nstreaming_bind = \"127.0.0.2\"\nstreaming_port = 1780\n",
+        );
+        let planned = crate::net::listener::planned(&c);
+        crate::net::listener::check_unique(&planned).expect("different addresses");
+        let overlapping = load("[http]\nport = 1780\n[snapcast]\nstreaming_port = 1780\n");
+        let planned = crate::net::listener::planned(&overlapping);
+        assert!(crate::net::listener::check_unique(&planned).is_err());
+    }
+
+    #[test]
+    fn tilde_is_expanded_in_the_mqtt_file_keys() {
+        let Some(home) = std::env::var("HOME").ok().filter(|h| !h.is_empty()) else {
+            return;
+        };
+        let mut raw: FileConfig = toml::from_str(
+            "[mqtt]\nbroker = \"mqtts://broker:8883\"\npassword_file = \"~/pw\"\n\
+             ca_file = \"~/ca.pem\"\nclient_cert = \"~/c.pem\"\nclient_key = \"~/k.pem\"\n",
+        )
+        .unwrap();
+        expand_paths(&mut raw, &|_| false);
+        let mqtt = raw.mqtt.unwrap();
+        let home = home.trim_end_matches('/');
+        for (path, name) in [
+            (mqtt.password_file, "pw"),
+            (mqtt.ca_file, "ca.pem"),
+            (mqtt.client_cert, "c.pem"),
+            (mqtt.client_key, "k.pem"),
+        ] {
+            assert_eq!(
+                path.unwrap(),
+                std::path::PathBuf::from(format!("{home}/{name}"))
+            );
+        }
+    }
+
+    #[test]
+    fn the_airplay_password_is_kept_out_of_debug_output() {
+        let c = load("[airplay]\npassword = \"hunter2-airplay\"\n");
+        assert_eq!(
+            c.airplay.password.as_ref().map(SecretString::as_str),
+            Some("hunter2-airplay")
+        );
+        assert!(!format!("{c:?}").contains("hunter2-airplay"));
+    }
+}
+
+#[cfg(test)]
+mod cli_override_tests {
+    //! The command line goes through [`load_with_overrides`], the entry point `main` uses.
+    use super::interfaces::{Interface, InterfaceTable, with_table};
+    use super::*;
+    use std::io::Write;
+
+    const ZONE: &str = "[[zone]]\nname = \"A\"\n";
+
+    fn host() -> InterfaceTable {
+        InterfaceTable::new(vec![Interface {
+            name: "eth0".into(),
+            addrs: vec!["192.168.1.10".parse().unwrap()],
+        }])
+    }
+
+    fn load(toml: &str, overrides: &Overrides) -> Result<AppConfig> {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write!(file, "{ZONE}{toml}").unwrap();
+        with_table(host(), || load_with_overrides(Some(file.path()), overrides))
+    }
+
+    fn device() -> Overrides {
+        Overrides {
+            knx_device: Some(DEFAULT_KNX_DEVICE_ADDRESS.into()),
+            ..Overrides::default()
+        }
+    }
+
+    #[test]
+    fn knx_device_from_the_command_line_inherits_the_network_bind() {
+        let config = load("[network]\nbind = \"eth0\"\n", &device()).unwrap();
+        let knx = config.knx.unwrap();
+        assert_eq!(knx.role, KnxRole::Device);
+        assert_eq!(knx.bind, Some("192.168.1.10".parse().unwrap()));
+    }
+
+    #[test]
+    fn knx_device_switches_a_section_without_url_to_device_mode() {
+        // Group addresses only, no gateway URL: client mode refuses it without the flag.
+        let file = "[knx]\n[zone.knx]\nvolume = \"1/1/1\"\n";
+        let without_flag = load(file, &Overrides::default()).unwrap_err();
+        assert!(format!("{without_flag:#}").contains("requires 'url'"));
+        let config = load(file, &device()).unwrap();
+        assert_eq!(config.knx.unwrap().role, KnxRole::Device);
+    }
+
+    #[test]
+    fn bind_from_the_command_line_resolves_names_like_the_file_key() {
+        let by_name = Overrides {
+            bind: vec!["eth0".into()],
+            ..Overrides::default()
+        };
+        assert_eq!(load("", &by_name).unwrap().http.bind, ["192.168.1.10"]);
+        let loopback = Overrides {
+            bind: vec!["loopback".into()],
+            ..Overrides::default()
+        };
+        let config = load("", &loopback).unwrap();
+        assert_ne!(config.http.bind, Vec::<String>::new());
+        assert!(config.http.bind.iter().all(|a| {
+            a.parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+        }));
+    }
+
+    #[test]
+    fn the_command_line_port_wins_over_the_file() {
+        let o = Overrides {
+            port: Some(8080),
+            ..Overrides::default()
+        };
+        assert_eq!(load("[http]\nport = 7000\n", &o).unwrap().http.port, 8080);
+    }
+
+    #[test]
+    fn sync_clock_without_knx_is_reported_instead_of_creating_a_client_section() {
+        let o = Overrides {
+            knx_sync_system_clock: true,
+            ..Overrides::default()
+        };
+        let config = load("", &o).unwrap();
+        assert!(config.knx.is_none());
+        assert!(
+            config
+                .notices
+                .iter()
+                .any(|n| n.message.contains("--knx-sync-system-clock"))
+        );
+    }
+}
+
+#[cfg(test)]
+mod single_source_tests {
+    //! #506: facts that are written down once.
+    use super::*;
+
+    #[test]
+    fn every_knx_key_is_validated() {
+        let zone_keys: Vec<&str> = ZoneKnxAddresses::default()
+            .group_addresses()
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        let client_keys: Vec<&str> = ClientKnxAddresses::default()
+            .group_addresses()
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        assert_eq!((zone_keys.len(), client_keys.len()), (45, 11));
+        for key in zone_keys {
+            let toml = format!("[[zone]]\nname = \"A\"\n[zone.knx]\n{key} = \"not/a/ga/x\"\n");
+            let error = format!("{:#}", load_str(&toml).unwrap_err());
+            assert!(
+                error.contains(key),
+                "zone key {key} is not validated: {error}"
+            );
+        }
+        for key in client_keys {
+            let toml = format!(
+                "[[zone]]\nname = \"A\"\n[[client]]\nname = \"C\"\nmac = \"02:42:ac:11:00:10\"\n\
+                 zone = \"A\"\n[client.knx]\n{key} = \"not/a/ga/x\"\n"
+            );
+            let error = format!("{:#}", load_str(&toml).unwrap_err());
+            assert!(
+                error.contains(key),
+                "client key {key} is not validated: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_default_volume_and_device_address_are_defined_once() {
+        assert_eq!(types::default_volume(), crate::state::DEFAULT_VOLUME);
+        assert_eq!(DEFAULT_KNX_DEVICE_ADDRESS, "15.15.255");
     }
 }

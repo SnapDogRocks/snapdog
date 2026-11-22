@@ -113,6 +113,111 @@
                   <Enumeration Text="Zone 16" Value="16" Id="M-00FA_A-FF01-01-0000_PT-ZoneSelect_EN-15" />
                 </TypeRestriction>
               </ParameterType>
+              <ParameterType Id="M-00FA_A-FF01-01-0000_PT-StartVolume" Name="StartVolume">
+                <TypeRestriction Base="Value" SizeInBit="8">
+                  <Enumeration Text="Last value" Value="0" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-0" />
+                  <Enumeration Text="1 %" Value="1" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-1" />
+                  <Enumeration Text="2 %" Value="2" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-2" />
+                  <Enumeration Text="3 %" Value="3" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-3" />
+                  <Enumeration Text="4 %" Value="4" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-4" />
+                  <Enumeration Text="5 %" Value="5" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-5" />
+                  <Enumeration Text="6 %" Value="6" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-6" />
+                  <Enumeration Text="7 %" Value="7" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-7" />
+                  <Enumeration Text="8 %" Value="8" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-8" />
+                  <Enumeration Text="9 %" Value="9" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-9" />
+                  <Enumeration Text="10 %" Value="10" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-10" />
+                  <Enumeration Text="11 %" Value="11" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-11" />
+                  <Enumeration Text="12 %" Value="12" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-12" />
+                  <Enumeration Text="13 %" Value="13" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-13" />
+                  <Enumeration Text="14 %" Value="14" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-14" />
+                  <Enumeration Text="15 %" Value="15" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-15" />
+                  <Enumeration Text="16 %" Value="16" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-16" />
+                  <Enumeration Text="17 %" Value="17" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-17" />
+                  <Enumeration Text="18 %" Value="18" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-18" />
+                  <Enumeration Text="19 %" Value="19" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-19" />
+                  <Enumeration Text="20 %" Value="20" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-20" />
+                  <Enumeration Text="21 %" Value="21" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-21" />
+                  <Enumeration Text="22 %" Value="22" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-22" />
+                  <Enumeration Text="23 %" Value="23" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-23" />
+                  <Enumeration Text="24 %" Value="24" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-24" />
+                  <Enumeration Text="25 %" Value="25" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-25" />
+                  <Enumeration Text="26 %" Value="26" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-26" />
+                  <Enumeration Text="27 %" Value="27" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-27" />
+                  <Enumeration Text="28 %" Value="28" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-28" />
+                  <Enumeration Text="29 %" Value="29" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-29" />
+                  <Enumeration Text="30 %" Value="30" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-30" />
+                  <Enumeration Text="31 %" Value="31" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-31" />
+                  <Enumeration Text="32 %" Value="32" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-32" />
+                  <Enumeration Text="33 %" Value="33" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-33" />
+                  <Enumeration Text="34 %" Value="34" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-34" />
+                  <Enumeration Text="35 %" Value="35" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-35" />
+                  <Enumeration Text="36 %" Value="36" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-36" />
+                  <Enumeration Text="37 %" Value="37" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-37" />
+                  <Enumeration Text="38 %" Value="38" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-38" />
+                  <Enumeration Text="39 %" Value="39" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-39" />
+                  <Enumeration Text="40 %" Value="40" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-40" />
+                  <Enumeration Text="41 %" Value="41" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-41" />
+                  <Enumeration Text="42 %" Value="42" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-42" />
+                  <Enumeration Text="43 %" Value="43" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-43" />
+                  <Enumeration Text="44 %" Value="44" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-44" />
+                  <Enumeration Text="45 %" Value="45" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-45" />
+                  <Enumeration Text="46 %" Value="46" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-46" />
+                  <Enumeration Text="47 %" Value="47" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-47" />
+                  <Enumeration Text="48 %" Value="48" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-48" />
+                  <Enumeration Text="49 %" Value="49" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-49" />
+                  <Enumeration Text="50 %" Value="50" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-50" />
+                  <Enumeration Text="51 %" Value="51" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-51" />
+                  <Enumeration Text="52 %" Value="52" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-52" />
+                  <Enumeration Text="53 %" Value="53" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-53" />
+                  <Enumeration Text="54 %" Value="54" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-54" />
+                  <Enumeration Text="55 %" Value="55" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-55" />
+                  <Enumeration Text="56 %" Value="56" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-56" />
+                  <Enumeration Text="57 %" Value="57" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-57" />
+                  <Enumeration Text="58 %" Value="58" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-58" />
+                  <Enumeration Text="59 %" Value="59" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-59" />
+                  <Enumeration Text="60 %" Value="60" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-60" />
+                  <Enumeration Text="61 %" Value="61" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-61" />
+                  <Enumeration Text="62 %" Value="62" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-62" />
+                  <Enumeration Text="63 %" Value="63" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-63" />
+                  <Enumeration Text="64 %" Value="64" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-64" />
+                  <Enumeration Text="65 %" Value="65" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-65" />
+                  <Enumeration Text="66 %" Value="66" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-66" />
+                  <Enumeration Text="67 %" Value="67" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-67" />
+                  <Enumeration Text="68 %" Value="68" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-68" />
+                  <Enumeration Text="69 %" Value="69" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-69" />
+                  <Enumeration Text="70 %" Value="70" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-70" />
+                  <Enumeration Text="71 %" Value="71" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-71" />
+                  <Enumeration Text="72 %" Value="72" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-72" />
+                  <Enumeration Text="73 %" Value="73" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-73" />
+                  <Enumeration Text="74 %" Value="74" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-74" />
+                  <Enumeration Text="75 %" Value="75" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-75" />
+                  <Enumeration Text="76 %" Value="76" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-76" />
+                  <Enumeration Text="77 %" Value="77" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-77" />
+                  <Enumeration Text="78 %" Value="78" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-78" />
+                  <Enumeration Text="79 %" Value="79" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-79" />
+                  <Enumeration Text="80 %" Value="80" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-80" />
+                  <Enumeration Text="81 %" Value="81" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-81" />
+                  <Enumeration Text="82 %" Value="82" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-82" />
+                  <Enumeration Text="83 %" Value="83" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-83" />
+                  <Enumeration Text="84 %" Value="84" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-84" />
+                  <Enumeration Text="85 %" Value="85" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-85" />
+                  <Enumeration Text="86 %" Value="86" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-86" />
+                  <Enumeration Text="87 %" Value="87" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-87" />
+                  <Enumeration Text="88 %" Value="88" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-88" />
+                  <Enumeration Text="89 %" Value="89" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-89" />
+                  <Enumeration Text="90 %" Value="90" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-90" />
+                  <Enumeration Text="91 %" Value="91" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-91" />
+                  <Enumeration Text="92 %" Value="92" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-92" />
+                  <Enumeration Text="93 %" Value="93" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-93" />
+                  <Enumeration Text="94 %" Value="94" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-94" />
+                  <Enumeration Text="95 %" Value="95" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-95" />
+                  <Enumeration Text="96 %" Value="96" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-96" />
+                  <Enumeration Text="97 %" Value="97" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-97" />
+                  <Enumeration Text="98 %" Value="98" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-98" />
+                  <Enumeration Text="99 %" Value="99" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-99" />
+                  <Enumeration Text="100 %" Value="100" Id="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-100" />
+                </TypeRestriction>
+              </ParameterType>
               <ParameterType Id="M-00FA_A-FF01-01-0000_PT-NumZones" Name="NumZones">
                 <TypeRestriction Base="Value" SizeInBit="8">
                   <Enumeration Text="1 zone" Value="1" Id="M-00FA_A-FF01-01-0000_PT-NumZones_EN-0" />
@@ -289,67 +394,67 @@
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="1" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-2" Name="Z01_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-2" Name="Z01_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="2" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-3" Name="Z02_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-3" Name="Z02_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="3" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-4" Name="Z03_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-4" Name="Z03_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="4" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-5" Name="Z04_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-5" Name="Z04_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="5" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-6" Name="Z05_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-6" Name="Z05_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="6" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-7" Name="Z06_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-7" Name="Z06_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="7" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-8" Name="Z07_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-8" Name="Z07_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="8" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-9" Name="Z08_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-9" Name="Z08_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="9" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-10" Name="Z09_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-10" Name="Z09_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="10" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-11" Name="Z10_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-11" Name="Z10_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="11" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-12" Name="Z11_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-12" Name="Z11_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="12" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-13" Name="Z12_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-13" Name="Z12_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="13" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-14" Name="Z13_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-14" Name="Z13_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="14" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-15" Name="Z14_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-15" Name="Z14_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="15" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-16" Name="Z15_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-16" Name="Z15_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="16" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-17" Name="Z16_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-Percent" Text="Default volume" Value="50" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-17" Name="Z16_DefVol" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-StartVolume" Text="Volume at start" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="17" BitOffset="0" />
@@ -673,67 +778,67 @@
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="113" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-98" Name="Z01_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-98" Name="Z01_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="114" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-99" Name="Z02_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-99" Name="Z02_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="115" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-100" Name="Z03_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-100" Name="Z03_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="116" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-101" Name="Z04_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-101" Name="Z04_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="117" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-102" Name="Z05_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-102" Name="Z05_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="118" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-103" Name="Z06_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-103" Name="Z06_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="119" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-104" Name="Z07_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-104" Name="Z07_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="120" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-105" Name="Z08_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-105" Name="Z08_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="121" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-106" Name="Z09_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-106" Name="Z09_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="122" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-107" Name="Z10_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-107" Name="Z10_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="123" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-108" Name="Z11_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-108" Name="Z11_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="124" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-109" Name="Z12_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-109" Name="Z12_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="125" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-110" Name="Z13_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-110" Name="Z13_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="126" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-111" Name="Z14_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-111" Name="Z14_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="127" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-112" Name="Z15_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-112" Name="Z15_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="128" BitOffset="0" />
-                <Parameter Id="M-00FA_A-FF01-01-0000_UP-113" Name="Z16_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..20=radio)" Value="0" />
+                <Parameter Id="M-00FA_A-FF01-01-0000_UP-113" Name="Z16_PresSrc" Offset="0" BitOffset="0" ParameterType="M-00FA_A-FF01-01-0000_PT-UInt8" Text="Presence source (0=none, 1..50=radio)" Value="0" />
               </Union>
               <Union SizeInBit="8">
                 <Memory CodeSegment="M-00FA_A-FF01-01-0000_RS-04-00000" Offset="129" BitOffset="0" />
@@ -10583,6 +10688,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-SourceConflict_EN-1">
               <Translation AttributeName="Text" Text="Empfänger hat Vorrang" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-0">
+              <Translation AttributeName="Text" Text="Letzter Wert" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-NumZones_EN-0">
               <Translation AttributeName="Text" Text="1 Zone" />
             </TranslationElement>
@@ -11031,52 +11139,52 @@
               <Translation AttributeName="Text" Text="Anzahl Zonen" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-2">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-3">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-4">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-5">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-6">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-7">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-8">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-9">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-10">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-11">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-12">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-13">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-14">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-15">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-16">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-17">
-              <Translation AttributeName="Text" Text="Standard-Lautstärke" />
+              <Translation AttributeName="Text" Text="Lautstärke beim Start" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-18">
               <Translation AttributeName="Text" Text="Max. Lautstärke" />
@@ -11319,52 +11427,52 @@
               <Translation AttributeName="Text" Text="Präsenz Auto-Off (s)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-98">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-99">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-100">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-101">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-102">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-103">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-104">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-105">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-106">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-107">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-108">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-109">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-110">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-111">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-112">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-113">
-              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..20=Radio)" />
+              <Translation AttributeName="Text" Text="Präsenz-Quelle (0=keine, 1..50=Radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-114">
               <Translation AttributeName="Text" Text="Spulintervall (s)" />
@@ -19368,6 +19476,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-SourceConflict_EN-1">
               <Translation AttributeName="Text" Text="Ontvanger heeft voorrang" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-0">
+              <Translation AttributeName="Text" Text="Laatste waarde" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-NumRadios_EN-0">
               <Translation AttributeName="Text" Text="1 zender" />
             </TranslationElement>
@@ -19576,52 +19687,52 @@
               <Translation AttributeName="Text" Text="Aantal zones" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-2">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-3">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-4">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-5">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-6">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-7">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-8">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-9">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-10">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-11">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-12">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-13">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-14">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-15">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-16">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-17">
-              <Translation AttributeName="Text" Text="Standaardvolume" />
+              <Translation AttributeName="Text" Text="Volume bij opstarten" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-34">
               <Translation AttributeName="Text" Text="AirPlay ingeschakeld" />
@@ -19816,52 +19927,52 @@
               <Translation AttributeName="Text" Text="Aanwezigheid auto-uit (s)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-98">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-99">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-100">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-101">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-102">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-103">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-104">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-105">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-106">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-107">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-108">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-109">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-110">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-111">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-112">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-113">
-              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Aanwezigheidsbron (0=geen, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-114">
               <Translation AttributeName="Text" Text="Spoelinterval (s)" />
@@ -27813,6 +27924,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-ZoneSelect_EN-15">
               <Translation AttributeName="Text" Text="Zona 16" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-0">
+              <Translation AttributeName="Text" Text="Último valor" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-NumZones_EN-0">
               <Translation AttributeName="Text" Text="1 zona" />
             </TranslationElement>
@@ -28261,52 +28375,52 @@
               <Translation AttributeName="Text" Text="Número de zonas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-2">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-3">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-4">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-5">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-6">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-7">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-8">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-9">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-10">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-11">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-12">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-13">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-14">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-15">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-16">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-17">
-              <Translation AttributeName="Text" Text="Volumen predeterminado" />
+              <Translation AttributeName="Text" Text="Volumen al inicio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-18">
               <Translation AttributeName="Text" Text="Volumen máx." />
@@ -28549,52 +28663,52 @@
               <Translation AttributeName="Text" Text="Apagado automático por presencia (s)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-98">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-99">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-100">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-101">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-102">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-103">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-104">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-105">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-106">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-107">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-108">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-109">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-110">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-111">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-112">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-113">
-              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Fuente de presencia (0=ninguna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-114">
               <Translation AttributeName="Text" Text="Intervalo de salto (s)" />
@@ -37864,6 +37978,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-SourceConflict_EN-1">
               <Translation AttributeName="Text" Text="Le récepteur est prioritaire" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-0">
+              <Translation AttributeName="Text" Text="Dernière valeur" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-NumApiKeys_EN-0">
               <Translation AttributeName="Text" Text="1 clé API" />
             </TranslationElement>
@@ -37898,52 +38015,52 @@
               <Translation AttributeName="Text" Text="Nombre de zones" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-2">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-3">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-4">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-5">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-6">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-7">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-8">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-9">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-10">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-11">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-12">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-13">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-14">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-15">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-16">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-17">
-              <Translation AttributeName="Text" Text="Volume par défaut" />
+              <Translation AttributeName="Text" Text="Volume au démarrage" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-18">
               <Translation AttributeName="Text" Text="Volume max." />
@@ -38186,52 +38303,52 @@
               <Translation AttributeName="Text" Text="Arrêt automatique présence (s)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-98">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-99">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-100">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-101">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-102">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-103">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-104">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-105">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-106">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-107">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-108">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-109">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-110">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-111">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-112">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-113">
-              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Source de présence (0=aucune, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-114">
               <Translation AttributeName="Text" Text="Intervalle de saut (s)" />
@@ -46420,6 +46537,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-ZoneSelect_EN-15">
               <Translation AttributeName="Text" Text="Zona 16" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-0">
+              <Translation AttributeName="Text" Text="Ultimo valore" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-NumZones_EN-0">
               <Translation AttributeName="Text" Text="1 zona" />
             </TranslationElement>
@@ -46865,52 +46985,52 @@
               <Translation AttributeName="Text" Text="Numero di zone" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-2">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-3">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-4">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-5">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-6">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-7">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-8">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-9">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-10">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-11">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-12">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-13">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-14">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-15">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-16">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-17">
-              <Translation AttributeName="Text" Text="Volume predefinito" />
+              <Translation AttributeName="Text" Text="Volume all'avvio" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-18">
               <Translation AttributeName="Text" Text="Volume max." />
@@ -47153,52 +47273,52 @@
               <Translation AttributeName="Text" Text="Spegnimento automatico per presenza (s)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-98">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-99">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-100">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-101">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-102">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-103">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-104">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-105">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-106">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-107">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-108">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-109">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-110">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-111">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-112">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-113">
-              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Sorgente di presenza (0=nessuna, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-114">
               <Translation AttributeName="Text" Text="Intervallo di salto (s)" />
@@ -55649,6 +55769,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-ZoneSelect_EN-15">
               <Translation AttributeName="Text" Text="Strefa 16" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-0">
+              <Translation AttributeName="Text" Text="Ostatnia wartość" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-NumZones_EN-0">
               <Translation AttributeName="Text" Text="1 strefa" />
             </TranslationElement>
@@ -56097,52 +56220,52 @@
               <Translation AttributeName="Text" Text="Liczba stref" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-2">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-3">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-4">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-5">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-6">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-7">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-8">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-9">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-10">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-11">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-12">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-13">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-14">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-15">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-16">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-17">
-              <Translation AttributeName="Text" Text="Domyślna głośność" />
+              <Translation AttributeName="Text" Text="Głośność przy starcie" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-18">
               <Translation AttributeName="Text" Text="Maks. głośność" />
@@ -56385,52 +56508,52 @@
               <Translation AttributeName="Text" Text="Automatyczne wyłączenie przy obecności (s)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-98">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-99">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-100">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-101">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-102">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-103">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-104">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-105">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-106">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-107">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-108">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-109">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-110">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-111">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-112">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-113">
-              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..20=radio)" />
+              <Translation AttributeName="Text" Text="Źródło obecności (0=brak, 1..50=radio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-114">
               <Translation AttributeName="Text" Text="Interwał przewijania (s)" />
@@ -65556,6 +65679,9 @@
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-ZoneSelect_EN-15">
               <Translation AttributeName="Text" Text="Zona 16" />
             </TranslationElement>
+            <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-StartVolume_EN-0">
+              <Translation AttributeName="Text" Text="Último valor" />
+            </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_PT-NumZones_EN-0">
               <Translation AttributeName="Text" Text="1 zona" />
             </TranslationElement>
@@ -66004,52 +66130,52 @@
               <Translation AttributeName="Text" Text="Número de zonas" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-2">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-3">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-4">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-5">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-6">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-7">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-8">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-9">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-10">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-11">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-12">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-13">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-14">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-15">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-16">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-17">
-              <Translation AttributeName="Text" Text="Volume predefinido" />
+              <Translation AttributeName="Text" Text="Volume no arranque" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-18">
               <Translation AttributeName="Text" Text="Volume máx." />
@@ -66292,52 +66418,52 @@
               <Translation AttributeName="Text" Text="Desativação automática por presença (s)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-98">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-99">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-100">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-101">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-102">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-103">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-104">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-105">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-106">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-107">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-108">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-109">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-110">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-111">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-112">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-113">
-              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..20=rádio)" />
+              <Translation AttributeName="Text" Text="Fonte de presença (0=nenhuma, 1..50=rádio)" />
             </TranslationElement>
             <TranslationElement RefId="M-00FA_A-FF01-01-0000_UP-114">
               <Translation AttributeName="Text" Text="Intervalo de salto (s)" />

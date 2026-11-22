@@ -93,46 +93,172 @@ fn gen_asyncapi() {
     eprintln!("✅ Generated AsyncAPI document at: {out_path}");
 }
 
-/// Run all CI checks locally (mirrors .github/workflows/ci.yml).
-fn ci() {
-    let checks: &[(&str, &[&str])] = &[
-        ("Formatting", &["cargo", "fmt", "--all", "--check"]),
-        (
-            "Clippy",
-            &["cargo", "clippy", "--all-targets", "--", "-D", "warnings"],
-        ),
-        ("Unit tests", &["cargo", "test", "--workspace"]),
-        (
-            "Integration tests",
-            &[
-                "cargo",
-                "test",
-                "-p",
-                "snapdog",
-                "--no-default-features",
-                "--features",
-                "snapcast-process",
-                "--test",
-                "integration",
-                "--",
-                "--test-threads=1",
-            ],
-        ),
-        ("WebUI build", &["npm", "run", "build"]),
-    ];
+/// The jobs of `.github/workflows/ci.yml` that `xtask ci` runs locally.
+const LOCAL_CI_JOBS: &[&str] = &["rust-core", "webui"];
 
+/// One `run:` step of a CI job.
+#[derive(Debug, PartialEq, Eq)]
+struct CiStep {
+    job: String,
+    name: String,
+    working_directory: Option<String>,
+    script: String,
+}
+
+/// Indentation of a line, in spaces.
+fn indent(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// The `run:` steps of `jobs` in a GitHub workflow, in order. A deliberately small reader
+/// for the shape ci.yml uses (`- name:`, `run:` inline or as a `|` block,
+/// `working-directory:`), so the local run cannot drift from CI: there is one definition.
+fn ci_steps(workflow: &str, jobs: &[&str]) -> Vec<CiStep> {
+    let lines: Vec<&str> = workflow.lines().collect();
+    let mut steps = Vec::new();
+    let mut i = 0;
+    let mut job: Option<String> = None;
+    let mut current: Option<CiStep> = None;
+    let mut step_indent = 0;
+    let flush = |current: &mut Option<CiStep>, steps: &mut Vec<CiStep>| {
+        if let Some(step) = current.take()
+            && !step.script.is_empty()
+        {
+            steps.push(step);
+        }
+    };
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let ind = indent(line);
+        if ind == 2 && trimmed.ends_with(':') && !trimmed.starts_with('#') {
+            flush(&mut current, &mut steps);
+            let name = trimmed.trim_end_matches(':');
+            job = jobs.contains(&name).then(|| name.to_string());
+        } else if let Some(job_name) = &job {
+            if let Some(rest) = trimmed.strip_prefix("- ") {
+                flush(&mut current, &mut steps);
+                step_indent = ind + 2;
+                current = Some(CiStep {
+                    job: job_name.clone(),
+                    name: String::new(),
+                    working_directory: None,
+                    script: String::new(),
+                });
+                // The first key of the step sits on the dash line.
+                i = read_step_key(&lines, i, rest, step_indent, current.as_mut());
+                continue;
+            } else if ind == step_indent && current.is_some() {
+                i = read_step_key(&lines, i, trimmed, step_indent, current.as_mut());
+                continue;
+            }
+        }
+        i += 1;
+    }
+    flush(&mut current, &mut steps);
+    steps
+}
+
+/// Read one `key: value` of a step starting at line `i`; returns the next line to read.
+fn read_step_key(
+    lines: &[&str],
+    i: usize,
+    key_value: &str,
+    step_indent: usize,
+    step: Option<&mut CiStep>,
+) -> usize {
+    let Some(step) = step else { return i + 1 };
+    let Some((key, value)) = key_value.split_once(':') else {
+        return i + 1;
+    };
+    let value = value.trim();
+    match key.trim() {
+        "name" => step.name = value.trim_matches('"').to_string(),
+        "working-directory" => step.working_directory = Some(value.to_string()),
+        "run" if value == "|" => {
+            let mut j = i + 1;
+            let mut block = Vec::new();
+            while j < lines.len() && (lines[j].trim().is_empty() || indent(lines[j]) > step_indent)
+            {
+                block.push(lines[j]);
+                j += 1;
+            }
+            let base = block
+                .iter()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| indent(l))
+                .min()
+                .unwrap_or(0);
+            step.script = block
+                .iter()
+                .map(|l| l.get(base..).unwrap_or("").trim_end())
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim_end()
+                .to_string();
+            return j;
+        }
+        "run" => step.script = value.to_string(),
+        _ => {}
+    }
+    i + 1
+}
+
+/// A step that only prepares a CI runner (system packages, toolchain installation) and has
+/// no local counterpart: the developer's machine is already set up.
+fn is_runner_setup(script: &str) -> bool {
+    script.starts_with("sudo ") || script.starts_with("rustup ")
+}
+
+/// `echo "NAME=value" >> "$GITHUB_ENV"`: an environment variable for the following steps.
+fn github_env_assignment(script: &str) -> Option<(String, String)> {
+    let rest = script.strip_prefix("echo ")?;
+    let (assignment, target) = rest.split_once(">>")?;
+    if target.trim() != "\"$GITHUB_ENV\"" {
+        return None;
+    }
+    let (name, value) = assignment.trim().trim_matches('"').split_once('=')?;
+    Some((name.to_string(), value.to_string()))
+}
+
+/// Run the CI checks locally: the `run:` steps of the `rust-core` and `webui` jobs of
+/// `.github/workflows/ci.yml`, read from that file, so this is the same list CI runs.
+fn ci() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask sits in the workspace");
+    let workflow = std::fs::read_to_string(root.join(".github/workflows/ci.yml"))
+        .expect("failed to read .github/workflows/ci.yml");
+    let mut env: Vec<(String, String)> = Vec::new();
     let mut failed = Vec::new();
-    for (name, args) in checks {
-        eprintln!("\n\x1b[1;34m▶ {name}\x1b[0m");
-        let status = std::process::Command::new(args[0])
-            .args(&args[1..])
-            .current_dir(if *name == "WebUI build" { "webui" } else { "." })
+    for step in ci_steps(&workflow, LOCAL_CI_JOBS) {
+        if is_runner_setup(&step.script) {
+            continue;
+        }
+        if let Some(assignment) = github_env_assignment(&step.script) {
+            env.push(assignment);
+            continue;
+        }
+        let label = if step.name.is_empty() {
+            format!("{}: {}", step.job, step.script)
+        } else {
+            format!("{}: {}", step.job, step.name)
+        };
+        eprintln!("\n\x1b[1;34m▶ {label}\x1b[0m");
+        let dir = step
+            .working_directory
+            .as_deref()
+            .map_or_else(|| root.to_path_buf(), |d| root.join(d));
+        let status = std::process::Command::new("bash")
+            .args(["-euo", "pipefail", "-c", &step.script])
+            .current_dir(dir)
+            .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
             .status();
         match status {
-            Ok(s) if s.success() => eprintln!("\x1b[32m  ✓ {name}\x1b[0m"),
+            Ok(s) if s.success() => eprintln!("\x1b[32m  ✓ {label}\x1b[0m"),
             _ => {
-                eprintln!("\x1b[31m  ✗ {name}\x1b[0m");
-                failed.push(*name);
+                eprintln!("\x1b[31m  ✗ {label}\x1b[0m");
+                failed.push(label);
             }
         }
     }
@@ -141,7 +267,10 @@ fn ci() {
     if failed.is_empty() {
         eprintln!("\x1b[1;32m✓ All CI checks passed\x1b[0m");
     } else {
-        eprintln!("\x1b[1;31m✗ Failed: {}\x1b[0m", failed.join(", "));
+        eprintln!("\x1b[1;31m✗ Failed:\x1b[0m");
+        for label in &failed {
+            eprintln!("  {label}");
+        }
         std::process::exit(1);
     }
 }
@@ -497,6 +626,17 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
         .map(|(i, s)| (s.as_str(), (i + 1) as u16))
         .collect();
     pt_enum(x, "ZoneSelect", 8, &zone_choice_pairs);
+    // Volume of a zone at server start: "Last value" (0) keeps the volume from before the restart,
+    // 1..=100 sets it. Same byte and value range as the earlier plain percent parameter.
+    let start_volume: Vec<String> = (1..=100).map(|n| format!("{n} %")).collect();
+    let mut start_volume_pairs: Vec<(&str, u16)> = vec![("Last value", 0)];
+    start_volume_pairs.extend(
+        start_volume
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.as_str(), (i + 1) as u16)),
+    );
+    pt_enum(x, "StartVolume", 8, &start_volume_pairs);
     let zone_counts: Vec<String> = (1..=MAX_ZONES)
         .map(|n| {
             if n == 1 {
@@ -579,6 +719,12 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     );
 }
 
+/// ETS text of the zone presence source parameter. The highest radio number comes from
+/// `mem::MAX_RADIOS`; the translations in `xtask/i18n` are keyed by the resulting text.
+fn presence_source_label() -> String {
+    format!("Presence source (0=none, 1..{}=radio)", mem::MAX_RADIOS)
+}
+
 fn pt_enum(x: &mut knx_rs_prod::author::AppProgram, name: &str, bits: u16, values: &[(&str, u16)]) {
     x.add_parameter_type(knx_rs_prod::author::ParameterType::enumeration(
         name,
@@ -646,9 +792,9 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             &p,
             "002",
             "DefVol",
-            "Percent",
-            "Default volume",
-            "50",
+            "StartVolume",
+            "Volume at start",
+            "0",
             mem::ZONE_DEF_VOL + i,
             8,
             &mut spans,
@@ -734,6 +880,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             &mut spans,
         );
     }
+    let presence_source_label = presence_source_label();
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
         let i = z - 1;
@@ -743,7 +890,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "008",
             "PresSrc",
             "UInt8",
-            "Presence source (0=none, 1..20=radio)",
+            &presence_source_label,
             "0",
             mem::ZONE_PRES_SRC + i,
             8,
@@ -1950,6 +2097,43 @@ fn build_channel_block(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn xtask_ci_runs_the_steps_of_the_ci_jobs() {
+        use super::{LOCAL_CI_JOBS, ci_steps, github_env_assignment, is_runner_setup};
+        let workflow = include_str!("../../.github/workflows/ci.yml");
+        let steps = ci_steps(workflow, LOCAL_CI_JOBS);
+        let scripts: Vec<&str> = steps.iter().map(|s| s.script.as_str()).collect();
+        for expected in [
+            "cargo fmt --all -- --check",
+            "cargo nextest run --workspace --locked",
+            "pnpm install --frozen-lockfile",
+            "pnpm run lint",
+            "pnpm run build",
+        ] {
+            assert!(
+                scripts.contains(&expected),
+                "missing `{expected}` in {scripts:#?}"
+            );
+        }
+        assert!(
+            scripts
+                .iter()
+                .any(|s| s.contains("--test api_docs") && s.contains('\n')),
+            "a multi-line `run: |` block is read as one script"
+        );
+        let lint = steps.iter().find(|s| s.script == "pnpm run lint").unwrap();
+        assert_eq!(lint.working_directory.as_deref(), Some("webui"));
+        assert!(
+            steps
+                .iter()
+                .all(|s| s.job == "rust-core" || s.job == "webui")
+        );
+        // Runner preparation is skipped, environment lines become variables.
+        assert!(steps.iter().any(|s| is_runner_setup(&s.script)));
+        assert!(steps.iter().any(|s| github_env_assignment(&s.script)
+            == Some(("SKIP_WEBUI_BUILD".to_string(), "1".to_string()))));
+    }
     use std::io::Read as _;
 
     /// Runs the same generation the release job does (`generate_xml` →
@@ -1964,49 +2148,72 @@ mod tests {
         assert!(xml.contains("<KNX"), "generation produced no XML");
     }
 
-    /// Freshness guard: the committed `knx/snapdog.knxprod` — embedded verbatim by the
-    /// server via `include_bytes!` and served for ETS import — must carry the current
-    /// `KNXPROD_APP_VERSION`. The layout guard forces a version bump on any layout/DPT
-    /// change; this ensures that bump actually reached the shipped bytes, catching a
-    /// "bumped the version but forgot to regenerate the artifact" mistake. Fix by running
-    /// `cargo xtask knxprod` and committing the regenerated `.knxprod`.
-    #[test]
-    fn committed_knxprod_matches_app_version() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../knx/snapdog.knxprod");
-        let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("cannot open {path}: {e}"));
-        let mut zip =
-            zip::ZipArchive::new(file).expect("committed .knxprod is not a valid ZIP archive");
-
-        let mut shipped: Option<u32> = None;
+    /// The text entries of a `.knxprod` archive by name. Entries that are not text (a
+    /// signature blob in a signed archive) are left out.
+    fn knxprod_entries(path: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+        let file = std::fs::File::open(path)
+            .unwrap_or_else(|e| panic!("cannot open {}: {e}", path.display()));
+        let mut zip = zip::ZipArchive::new(file)
+            .unwrap_or_else(|e| panic!("{} is not a valid ZIP archive: {e}", path.display()));
+        let mut entries = std::collections::BTreeMap::new();
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i).expect("read zip entry");
-            let mut xml = String::new();
-            // Skip non-text entries (e.g. a signature blob in a signed archive).
-            if entry.read_to_string(&mut xml).is_err() {
-                continue;
-            }
-            // Pin to the ApplicationProgram element's own attribute.
-            if let Some(v) = xml
-                .split("<ApplicationProgram ")
-                .nth(1)
-                .and_then(|tag| tag.split("ApplicationVersion=\"").nth(1))
-                .and_then(|rest| rest.split('"').next())
-                .and_then(|s| s.parse::<u32>().ok())
-            {
-                shipped = Some(v);
-                break;
+            let name = entry.name().expect("zip entry name").into_owned();
+            let mut text = String::new();
+            let is_xml = std::path::Path::new(&name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"));
+            if is_xml && entry.read_to_string(&mut text).is_ok() {
+                entries.insert(name, text);
             }
         }
-        let shipped =
-            shipped.expect("no ApplicationProgram/ApplicationVersion in committed .knxprod");
-        assert_eq!(
-            shipped,
-            super::KNXPROD_APP_VERSION,
-            "\n\n  STALE ARTIFACT: committed knx/snapdog.knxprod ships \
-             ApplicationVersion={shipped} but KNXPROD_APP_VERSION={}.\n  \
-             Run `cargo xtask knxprod` and commit the regenerated knx/snapdog.knxprod.\n",
-            super::KNXPROD_APP_VERSION,
+        entries
+    }
+
+    /// Freshness guard: the committed `knx/snapdog.xml` and `knx/snapdog.knxprod`, which the
+    /// server embeds via `include_bytes!` and serves for ETS import in every non-release
+    /// build, must be exactly what the generator produces now. Comparing only the
+    /// `ApplicationVersion` or the layout fingerprint lets a changed parameter default or enum
+    /// table through, and a release would then ship a different product under the same
+    /// version. The archive is compared entry by entry on its XML: a signed archive is not
+    /// byte-reproducible, the XML inside it is.
+    #[test]
+    fn committed_knxprod_matches_the_generator() {
+        const FIX: &str = "Run `env -u SNAPDOG_ETS_KEY cargo run -p xtask -- knxprod` and commit \
+                           knx/snapdog.xml and knx/snapdog.knxprod.";
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let generated = knx_rs_prod::normalize_ids(&super::generate_xml()).expect("normalize ids");
+
+        let committed_xml =
+            std::fs::read_to_string(root.join("knx/snapdog.xml")).expect("read knx/snapdog.xml");
+        assert!(
+            committed_xml == generated,
+            "\n\n  STALE ARTIFACT: knx/snapdog.xml differs from the generator output.\n  {FIX}\n"
         );
+
+        let dir = std::env::temp_dir().join(format!("snapdog-knxprod-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let xml_file = dir.join("snapdog.xml");
+        let knxprod_file = dir.join("snapdog.knxprod");
+        std::fs::write(&xml_file, &generated).expect("write generated XML");
+        knx_rs_prod::generate_knxprod(&xml_file, &knxprod_file).expect("package .knxprod");
+        let expected = knxprod_entries(&knxprod_file);
+        let committed = knxprod_entries(&root.join("knx/snapdog.knxprod"));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(
+            committed.keys().collect::<Vec<_>>(),
+            expected.keys().collect::<Vec<_>>(),
+            "\n\n  STALE ARTIFACT: knx/snapdog.knxprod has other entries than the generator \
+             output.\n  {FIX}\n"
+        );
+        for (name, text) in &expected {
+            assert!(
+                committed[name] == *text,
+                "\n\n  STALE ARTIFACT: {name} in knx/snapdog.knxprod differs from the generator \
+                 output.\n  {FIX}\n"
+            );
+        }
     }
 
     /// Byte-exact snapshot of `generate_xml()`. The `knx-rs-prod::author` migration

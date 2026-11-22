@@ -117,7 +117,7 @@ async fn health_liveness_readiness() {
     assert_eq!(app.get("/health/live").await.0, StatusCode::OK);
 }
 
-/// MED-M1-A1: every playlist has a `playlist_id` and an `index` equal to the deprecated `id`.
+/// MED-M1-A1: every playlist has a `playlist_id` and an `index`; the `id` removed in 1.0 is gone.
 #[tokio::test]
 async fn media_playlists_carry_playlist_id_and_index() {
     let app = common::app_with_radio();
@@ -125,7 +125,10 @@ async fn media_playlists_carry_playlist_id_and_index() {
     assert_eq!(s, StatusCode::OK);
     assert_eq!(b[0]["playlist_id"], "snapdog:radio");
     assert_eq!(b[0]["index"], 0);
-    assert_eq!(b[0]["id"], b[0]["index"]);
+    assert!(
+        b[0].get("id").is_none(),
+        "the deprecated id was removed in 1.0"
+    );
 
     let (s, b) = app.get("/api/v1/media/playlists/0").await;
     assert_eq!(s, StatusCode::OK);
@@ -226,14 +229,14 @@ async fn zone_by_id_endpoints_send_one_command_and_404_for_unknown_ids() {
 
 /// MED-M1-A2a: the play body accepts `index` and the deprecated `id`.
 #[tokio::test]
-async fn play_playlist_body_accepts_index_and_id() {
+async fn play_playlist_body_takes_index_and_ignores_a_removed_id() {
     use snapdog::player::ZoneCommand;
     let mut app = common::app_with_radio();
     for (body, want) in [
         (serde_json::json!({"index": 1, "track": 2}), Some(1)),
-        (serde_json::json!({"id": 1, "track": 2}), Some(1)),
-        (serde_json::json!({"id": 1, "index": 1}), Some(1)),
-        (serde_json::json!({"id": 1, "index": 2}), None),
+        // `id` was removed in 1.0: it is ignored next to `index` and not enough on its own.
+        (serde_json::json!({"id": 9, "index": 1}), Some(1)),
+        (serde_json::json!({"id": 1, "track": 2}), None),
         (serde_json::json!({"track": 2}), None),
     ] {
         let (s, _) = app

@@ -63,15 +63,32 @@ async fn set_volume_clamps_above_max() {
 }
 
 #[tokio::test]
-async fn set_volume_relative_string_resolves() {
+async fn set_volume_relative_string_is_a_step_for_the_zone_task() {
     let mut app = common::test_app();
-    let (s, _b) = app
-        .request("PUT", "/api/v1/zones/1/volume", Some(json!("+5")))
+    for (body, step) in [(json!("+5"), 5), (json!("-3"), -3)] {
+        let (s, _b) = app
+            .request("PUT", "/api/v1/zones/1/volume", Some(body))
+            .await;
+        assert_eq!(s, StatusCode::OK);
+        let cmds = app.drain_zone(1);
+        assert_eq!(cmds.len(), 1);
+        // The zone task applies the step in order, so two quick steps add up.
+        assert!(matches!(cmds[0], ZoneCommand::AdjustVolume(d) if d == step));
+    }
+}
+
+#[tokio::test]
+async fn set_volume_unsigned_string_is_absolute() {
+    let mut app = common::test_app();
+    let (s, b) = app
+        .request("PUT", "/api/v1/zones/1/volume", Some(json!("45")))
         .await;
     assert_eq!(s, StatusCode::OK);
-    let cmds = app.drain_zone(1);
-    assert_eq!(cmds.len(), 1);
-    assert!(matches!(cmds[0], ZoneCommand::SetVolume(_)));
+    assert_eq!(b, json!(45));
+    assert!(matches!(
+        app.drain_zone(1).as_slice(),
+        [ZoneCommand::SetVolume(45)]
+    ));
 }
 
 #[tokio::test]

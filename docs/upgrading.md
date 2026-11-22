@@ -3,6 +3,86 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## KNX: System Fault reports failures, Playlist Status no longer wraps
+
+- **System Fault** is now set when the Snapcast server stops, when the connection to an external
+  Snapcast server is lost, when an AirPlay or Spotify receiver fails to start (Spotify also when it
+  stops with an error), and when the Subsonic server cannot be reached. It is sent at once and
+  cleared when everything works again. Before, it only changed with an external Snapcast server and
+  only at the next heartbeat. A visualisation that shows the object will now show real faults.
+- **Playlist Status** sends 255 for playlist index 255 and above. Before, index 256 was sent as 0,
+  which means radio.
+- **Client "Zone"** (device mode) now follows the zone of the client, so a read returns the current
+  zone and devices linked to the object see changes from the web interface or the API. Linking both
+  "Zone" and "Zone Status" to one address sends two telegrams per change.
+- In client mode a read of a zone's **Playlist Name** address is answered.
+
+## REST: a client that is not connected answers 409
+
+`PUT /clients/{n}/volume`, `PUT /clients/{n}/mute`, `POST /clients/{n}/mute/toggle` and
+`PUT /clients/{n}/latency` answered 404 for a client that is configured but has not connected
+since the server started. They now answer **409 Conflict** (`"error": "conflict"`); 404 means
+an unknown client index only. EQ and speaker correction of such a client are stored and
+answered with 200, and reach the client when it connects (before, they were stored and then
+answered with 404). `PUT /clients/99/name` for an unknown client answers 404 instead of 200.
+A mutating route whose command cannot be handed to the server answers 500 instead of 200.
+
+## MQTT: the zone position has its own topic
+
+`zones/<n>/state` no longer contains `media_position` and is only published when it changes,
+instead of once per second during playback. An automation that read the position from the
+state reads `zones/<n>/position` (whole seconds, not retained) instead. The Home Assistant
+entities created by discovery are not affected. Steady playback also no longer rewrites the
+state file every five seconds.
+
+## Legacy web interface deprecated
+
+The legacy interface (`/legacy`, `webui = "legacy"`, `--webui legacy`) is deprecated as of
+0.37.0 and will be removed in the release after the next one. It shows a notice, and the server
+logs a warning at start when it is served at `/`. Use the current interface; it covers every
+function of the legacy one. After the removal, `webui = "legacy"` and `--webui legacy` serve the
+current interface.
+
+## `base_url` follows the HTTP port when it is not set
+
+Without `[http].base_url` the server used `http://localhost:5555` whatever the port was. With a
+changed port (in the file, `--port` or `SNAPDOG_HTTP_PORT`) that value was taken for a configured
+one, and the mDNS record `base_url` pointed clients at port 5555. Now an unset `base_url` is derived
+from the final port, a single bind address and TLS. MQTT cover URLs use the right port as well.
+
+The mDNS record `base_url` is only sent when it is a URL another host can use: a configured
+`base_url`, or one built from a single specific bind address. A server with TLS on all interfaces
+no longer advertises `https://localhost:<port>`; the `tls` record tells clients to use HTTPS with
+the mDNS host name. An explicit `base_url` is advertised unchanged, also when it names `localhost`.
+
+## Zones: start volume, volume limit, AirPlay and Spotify per zone
+
+New optional keys under `[[zone]]`: `default_volume` (0 to 100, set at every server start),
+`max_volume` (0 to 100, default 100, a hard limit for every source of a zone volume) and `airplay` /
+`spotify` (default `true`). Without them nothing changes for a TOML setup.
+
+**KNX device mode:** the zone parameters "Max. volume", "AirPlay enabled" and "Spotify enabled" now
+take effect; before they were read and ignored. "Default volume" is now "Volume at start", a list
+with "Last value" (the default: the zone keeps the volume it had) and 1 % to 100 %. A device that
+was programmed with the older product file keeps working: a value of 0 % there means "Last value",
+every other value is the start volume. Import the new product file to get the list.
+
+## SnapDog 1.0: the deprecated playlist `id` and `zone_changed.playlist` are removed (breaks `/api/v1`)
+
+This change **breaks compatibility of `/api/v1`** for clients that still use the names deprecated in
+0.31.0 (see "Media API: `playlist_id` and `index`" below).
+
+- `PlaylistInfo` and `PlaylistDetails` (`GET /media/playlists`, `GET /media/playlists/{index}` and
+  the `by-id` paths) no longer carry `id`. Read `index`, and `playlist_id` to address a playlist.
+- The body of `POST /zones/{zone_index}/play/playlist` takes `index` only. A body with only `id`
+  answers 400 `` `index` is required ``. A client that sends `id` next to `index` is not affected,
+  `id` is ignored.
+- The WebSocket event `zone_changed` no longer carries `playlist`. Read `playlist_index`.
+
+The Home Assistant integration, `pysnapdog`, the web interface and the Apple and Android clients
+moved to the new names before this release. Older TestFlight builds of the Apple app and Android
+builds from before 0.31.0 send only `id` and cannot start a playlist on a 1.0 server.
+
 ## WebUI: current interface is now the default
 
 The current interface is served at `/` by default. To keep the legacy interface at `/`, pass
@@ -75,12 +155,12 @@ or MQTT.
 
 ### Deprecated, and removed with 1.0
 
-`id` in `PlaylistInfo`, `PlaylistDetails` and the play body, and `playlist` in `ZoneChanged`, are
-deprecated. They are removed with SnapDog 1.0, which **breaks compatibility of `/api/v1`** for
+`id` in `PlaylistInfo`, `PlaylistDetails` and the play body, and `playlist` in `ZoneChanged`, were
+deprecated. They are removed in SnapDog 1.0 (see the section at the top), which **breaks compatibility of `/api/v1`** for
 clients that still read them. `/api/v1` is the path version of the API and not a stability
-promise, and the index paths keep working. The OpenAPI and AsyncAPI documents mark each of them
-`deprecated`, and a check in the release pipeline refuses every 1.x version (also pre-releases)
-while one is left.
+promise, and the index paths keep working. Until then the OpenAPI and AsyncAPI documents marked each
+of them `deprecated`, and a check in the release pipeline refused every 1.x version (also
+pre-releases) while one was left.
 
 ### What to do
 
