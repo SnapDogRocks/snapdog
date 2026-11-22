@@ -1,12 +1,10 @@
 import type { TrackMetadata, WsZoneChanged } from "./types";
 
 /**
- * Track part of a `zone_changed` notification. The deprecated `playlist`
- * field is never read, `playlist_index` and `playlist_id` carry the identity.
+ * Track part of a `zone_changed` notification, every field set, so that no value of the
+ * previous track survives the merge in `updateZone`.
  */
-export function trackFromZoneChanged(
-  n: WsZoneChanged,
-): Omit<TrackMetadata, "sample_rate" | "source"> {
+export function trackFromZoneChanged(n: WsZoneChanged): TrackMetadata {
   return {
     title: n.title,
     artist: n.artist,
@@ -22,6 +20,9 @@ export function trackFromZoneChanged(
     cover_url: n.cover_url,
     bitrate_kbps: n.bitrate_kbps,
     content_type: n.content_type,
+    // Absent in events of older servers: the previous track's rate must not survive.
+    sample_rate: n.sample_rate ?? null,
+    source: n.source,
     playlist_index: n.playlist_index,
     playlist_id: n.playlist_id,
     playlist_name: n.playlist_name,
