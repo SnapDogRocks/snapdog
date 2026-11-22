@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { api } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";
@@ -24,6 +24,10 @@ function ClientCard({ client }: { client: ClientInfo }) {
   const otherZones = Array.from(zones.values()).filter((z) => z.index !== client.zone_index);
   const [showEq, setShowEq] = useState(false);
   const [eqEnabled, setEqEnabled] = useEqEnabled(client.is_snapdog ? { clientId: client.index } : {});
+  // A change from another controller arrives as `client_eq_changed`.
+  useEffect(() => {
+    if (client.eq_enabled !== undefined) setEqEnabled(client.eq_enabled);
+  }, [client.eq_enabled, setEqEnabled]);
 
   return (
     <div

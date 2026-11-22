@@ -1702,63 +1702,70 @@ mod tests {
     use super::*;
 
     // ── #511: setting the OS clock never blocks the session task ──
+    // The stand-in for `date` is a shell script, so these run where `date -s` is used.
+    #[cfg(unix)]
+    mod clock {
+        use super::*;
 
-    /// A stand-in for `date`: a shell script with the given body, leaked for `&'static`.
-    fn clock_stand_in(name: &str, body: &str) -> &'static ClockCommand {
-        use std::os::unix::fs::PermissionsExt as _;
-        let dir = std::env::temp_dir().join(format!("snapdog-clock-{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("date");
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        Box::leak(Box::new(ClockCommand {
-            program: Box::leak(path.to_string_lossy().into_owned().into_boxed_str()),
-            timeout: std::time::Duration::from_millis(300),
-        }))
+        /// A stand-in for `date`: a shell script with the given body, leaked for `&'static`.
+        fn clock_stand_in(name: &str, body: &str) -> &'static ClockCommand {
+            use std::os::unix::fs::PermissionsExt as _;
+            let dir =
+                std::env::temp_dir().join(format!("snapdog-clock-{}-{name}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("date");
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            Box::leak(Box::new(ClockCommand {
+                program: Box::leak(path.to_string_lossy().into_owned().into_boxed_str()),
+                timeout: std::time::Duration::from_millis(300),
+            }))
+        }
+
+        #[tokio::test]
+        async fn a_hanging_date_is_killed_after_the_timeout() {
+            let slow = clock_stand_in("slow", "sleep 30");
+            let started = std::time::Instant::now();
+            assert_eq!(
+                set_os_clock("12:00:00", slow).await,
+                ClockSyncOutcome::TimedOut
+            );
+            assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        }
+
+        #[tokio::test]
+        async fn the_outcome_of_date_is_reported() {
+            let ok = clock_stand_in("ok", "exit 0");
+            assert_eq!(set_os_clock("12:00:00", ok).await, ClockSyncOutcome::Set);
+            let denied = clock_stand_in("denied", "exit 3");
+            assert_eq!(
+                set_os_clock("12:00:00", denied).await,
+                ClockSyncOutcome::Failed(Some(3))
+            );
+            let missing = &ClockCommand {
+                program: "/nonexistent/snapdog-date",
+                timeout: std::time::Duration::from_secs(1),
+            };
+            assert!(matches!(
+                set_os_clock("12:00:00", missing).await,
+                ClockSyncOutcome::NotStarted(_)
+            ));
+        }
+
+        #[tokio::test]
+        async fn a_slow_clock_update_does_not_hold_up_the_caller() {
+            // The session task calls this inline; it must return while the process still runs, so
+            // status telegrams and group reads are served meanwhile.
+            let slow = clock_stand_in("caller", "sleep 2");
+            let started = std::time::Instant::now();
+            spawn_os_clock_sync("12:00:00".to_owned(), slow);
+            assert!(started.elapsed() < std::time::Duration::from_millis(100));
+            // A second telegram while the first update runs does not start another process.
+            spawn_os_clock_sync("12:00:01".to_owned(), slow);
+            assert!(CLOCK_SYNC_RUNNING.load(std::sync::atomic::Ordering::Acquire));
+        }
     }
 
-    #[tokio::test]
-    async fn a_hanging_date_is_killed_after_the_timeout() {
-        let slow = clock_stand_in("slow", "sleep 30");
-        let started = std::time::Instant::now();
-        assert_eq!(
-            set_os_clock("12:00:00", slow).await,
-            ClockSyncOutcome::TimedOut
-        );
-        assert!(started.elapsed() < std::time::Duration::from_secs(5));
-    }
-
-    #[tokio::test]
-    async fn the_outcome_of_date_is_reported() {
-        let ok = clock_stand_in("ok", "exit 0");
-        assert_eq!(set_os_clock("12:00:00", ok).await, ClockSyncOutcome::Set);
-        let denied = clock_stand_in("denied", "exit 3");
-        assert_eq!(
-            set_os_clock("12:00:00", denied).await,
-            ClockSyncOutcome::Failed(Some(3))
-        );
-        let missing = &ClockCommand {
-            program: "/nonexistent/snapdog-date",
-            timeout: std::time::Duration::from_secs(1),
-        };
-        assert!(matches!(
-            set_os_clock("12:00:00", missing).await,
-            ClockSyncOutcome::NotStarted(_)
-        ));
-    }
-
-    #[tokio::test]
-    async fn a_slow_clock_update_does_not_hold_up_the_caller() {
-        // The session task calls this inline; it must return while the process still runs, so
-        // status telegrams and group reads are served meanwhile.
-        let slow = clock_stand_in("caller", "sleep 2");
-        let started = std::time::Instant::now();
-        spawn_os_clock_sync("12:00:00".to_owned(), slow);
-        assert!(started.elapsed() < std::time::Duration::from_millis(100));
-        // A second telegram while the first update runs does not start another process.
-        spawn_os_clock_sync("12:00:01".to_owned(), slow);
-        assert!(CLOCK_SYNC_RUNNING.load(std::sync::atomic::Ordering::Acquire));
-    }
     use crate::player::ZoneCommand;
     use group_objects::{MAX_CLIENTS, MAX_ZONES};
     use group_objects::{client_asap, global_asap, zone_asap};
