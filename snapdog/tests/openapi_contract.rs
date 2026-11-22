@@ -128,7 +128,12 @@ fn scalar_bodies_are_documented_as_json() {
                 assert!(content.get("text/plain").is_none(), "{verb} {path} request");
             }
             for (status, response) in op["responses"].as_object().expect("responses") {
-                if status == "401" {
+                // The 401 of the middleware and axum's extractor rejections are plain text,
+                // and say so in their description.
+                let plain = response["description"]
+                    .as_str()
+                    .is_some_and(|d| d.ends_with("(plain-text body)"));
+                if status == "401" || plain {
                     continue;
                 }
                 if let Some(content) = response["content"].as_object() {
@@ -608,4 +613,123 @@ fn the_scanner_refuses_a_route_it_cannot_classify() {
         registered_in("mod.rs", commented),
         Vec::<(String, String)>::new()
     );
+}
+
+/// The status codes a handler body can produce without calling into another module: an
+/// `ApiError` variant written in it, or a route helper whose errors are known. Helpers that
+/// are not listed here are not followed, see `the_error_codes_of_each_handler_are_documented`.
+const ERROR_SOURCES: &[(&str, &[&str])] = &[
+    ("ApiError::NotFound", &["404"]),
+    ("ApiError::BadRequest", &["400"]),
+    ("ApiError::Conflict", &["409"]),
+    ("ApiError::Unprocessable", &["422"]),
+    ("ApiError::ServiceUnavailable", &["503"]),
+    ("ApiError::ReadOnly", &["403"]),
+    ("ApiError::BadGateway", &["502"]),
+    ("ApiError::Internal", &["500"]),
+    ("send_cmd(", &["404", "500"]),
+    ("send_checked(", &["404", "500"]),
+    ("send_snapcast(", &["500"]),
+    ("zone_task_gone(", &["500"]),
+    ("not_connected(", &["409"]),
+    ("connected_snapcast_id(", &["404", "409"]),
+    ("require_snapdog(", &["404", "422"]),
+    ("profile_error(", &["404", "502"]),
+    ("playlist_at(", &["404"]),
+    ("writable(", &["403"]),
+];
+
+/// The documented codes and the handler body of every `#[utoipa::path]` in `source`.
+fn annotated_handlers(source: &str) -> Vec<(String, Vec<String>, String)> {
+    let source = without_comments(source);
+    let mut out = Vec::new();
+    let mut rest = source.as_str();
+    while let Some(start) = rest.find("#[utoipa::path(") {
+        rest = &rest[start..];
+        let fn_at = rest
+            .find("async fn ")
+            .expect("a handler after the annotation");
+        let annotation = &rest[..fn_at];
+        let name = rest[fn_at + "async fn ".len()..]
+            .split('(')
+            .next()
+            .unwrap()
+            .to_owned();
+        let body_end = rest[fn_at..]
+            .find("\n}\n")
+            .map_or(rest.len(), |e| fn_at + e);
+        let body = rest[fn_at..body_end].to_owned();
+        let codes = annotation
+            .split("status = ")
+            .skip(1)
+            .map(|s| s.chars().take_while(char::is_ascii_digit).collect())
+            .collect();
+        out.push((name, codes, body));
+        rest = &rest[body_end..];
+    }
+    out
+}
+
+/// A handler that can answer with a code its annotation does not list fails this test. The
+/// check is textual: it sees the error variants and route helpers written in the handler
+/// (`ERROR_SOURCES`) and does not follow other calls. What escapes it are errors returned
+/// by helpers outside that list; those are checked by hand when a helper is added.
+#[test]
+fn the_error_codes_of_each_handler_are_documented() {
+    let mut missing = Vec::new();
+    for (file, source) in ROUTE_SOURCES {
+        for (name, documented, body) in annotated_handlers(source) {
+            for (needle, codes) in ERROR_SOURCES {
+                if !body.contains(needle) {
+                    continue;
+                }
+                for code in *codes {
+                    if !documented.iter().any(|d| d == code) {
+                        missing.push(format!("{file} {name}: {code} (from `{needle}`)"));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "undocumented status codes:\n{}",
+        missing.join("\n")
+    );
+}
+
+/// The preset names live in `GET /api/v1/eq/presets`; a copy in a description goes stale.
+#[test]
+fn no_eq_preset_name_is_written_into_a_description() {
+    let spec = serde_json::to_value(ApiDoc::openapi()).unwrap();
+    let mut texts = Vec::new();
+    collect_descriptions(&spec, &mut texts);
+    for name in snapdog::audio::eq::preset_names() {
+        if *name == "flat" {
+            continue; // an ordinary word
+        }
+        for text in &texts {
+            assert!(
+                !text.contains(&format!("`{name}`")) && !text.contains(&format!("\"{name}\"")),
+                "preset `{name}` is written into: {text}"
+            );
+        }
+    }
+}
+
+fn collect_descriptions(value: &serde_json::Value, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, v) in map {
+                if (key == "description" || key == "summary")
+                    && let Some(s) = v.as_str()
+                {
+                    out.push(s.to_owned());
+                }
+                collect_descriptions(v, out);
+            }
+        }
+        serde_json::Value::Array(items) => items.iter().for_each(|v| collect_descriptions(v, out)),
+        _ => {}
+    }
 }

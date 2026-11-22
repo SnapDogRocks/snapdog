@@ -275,6 +275,7 @@ fn document_operation(op: &mut Operation) {
                 .build()
                 .into()
         });
+    document_rejections(op);
     for param in op.parameters.iter_mut().flatten() {
         let RefOr::T(param) = param else { continue };
         if !matches!(param.name.as_str(), "zone_index" | "client_index") {
@@ -284,6 +285,53 @@ fn document_operation(op: &mut Operation) {
             // `usize` is documented as 0-based; these indexes start at 1.
             schema.minimum = Some(1.into());
         }
+    }
+}
+
+/// The answers axum gives before a handler runs, with a plain-text body: 400 for a path
+/// parameter that is not a number or a body that is not JSON, 415 for a body without the
+/// JSON content type, 422 for JSON that does not fit the body type. A code an operation
+/// already documents for its own reasons is kept as it is.
+fn document_rejections(op: &mut Operation) {
+    let mut add = |code: &str, description: &str| {
+        op.responses
+            .responses
+            .entry(code.into())
+            .or_insert_with(|| {
+                ResponseBuilder::new()
+                    .description(description)
+                    .content("text/plain", ContentBuilder::new().build())
+                    .build()
+                    .into()
+            });
+    };
+    let has_number_in_path = op.parameters.iter().flatten().any(|p| {
+        matches!(p, RefOr::T(p)
+        if p.parameter_in == utoipa::openapi::path::ParameterIn::Path
+            && matches!(&p.schema, Some(RefOr::T(Schema::Object(o)))
+                if o.schema_type == utoipa::openapi::schema::SchemaType::Type(
+                    utoipa::openapi::schema::Type::Integer,
+                )))
+    });
+    let has_json_body = matches!(
+        &op.request_body,
+        Some(RefOr::T(body)) if body.content.contains_key("application/json")
+    );
+    if has_number_in_path || has_json_body {
+        add(
+            "400",
+            "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+        );
+    }
+    if has_json_body {
+        add(
+            "415",
+            "The body is not sent as `application/json` (plain-text body)",
+        );
+        add(
+            "422",
+            "The JSON body does not match the expected type (plain-text body)",
+        );
     }
 }
 

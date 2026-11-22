@@ -1090,7 +1090,8 @@ async fn get_playlist_track(
     ),
     responses(
         (status = 200, description = "Track cover image", content_type = "image/*"),
-        (status = 404, description = "Track or cover not found", body = ErrorBody)
+        (status = 404, description = "Track or cover not found", body = ErrorBody),
+        (status = 502, description = "Upstream request failed", body = ErrorBody)
     ),
     tag = "media"
 )]
