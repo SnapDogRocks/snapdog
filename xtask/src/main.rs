@@ -1987,7 +1987,10 @@ mod tests {
             let mut entry = zip.by_index(i).expect("read zip entry");
             let name = entry.name().expect("zip entry name").into_owned();
             let mut text = String::new();
-            if name.ends_with(".xml") && entry.read_to_string(&mut text).is_ok() {
+            let is_xml = std::path::Path::new(&name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"));
+            if is_xml && entry.read_to_string(&mut text).is_ok() {
                 entries.insert(name, text);
             }
         }
