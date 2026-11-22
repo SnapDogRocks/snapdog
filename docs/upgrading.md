@@ -3,6 +3,14 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## MQTT: the zone position has its own topic
+
+`zones/<n>/state` no longer contains `media_position` and is only published when it changes,
+instead of once per second during playback. An automation that read the position from the
+state reads `zones/<n>/position` (whole seconds, not retained) instead. The Home Assistant
+entities created by discovery are not affected. Steady playback also no longer rewrites the
+state file every five seconds.
+
 ## `base_url` follows the HTTP port when it is not set
 
 Without `[http].base_url` the server used `http://localhost:5555` whatever the port was. With a
@@ -14,6 +22,7 @@ The mDNS record `base_url` is only sent when it is a URL another host can use: a
 `base_url`, or one built from a single specific bind address. A server with TLS on all interfaces
 no longer advertises `https://localhost:<port>`; the `tls` record tells clients to use HTTPS with
 the mDNS host name. An explicit `base_url` is advertised unchanged, also when it names `localhost`.
+
 ## Zones: start volume, volume limit, AirPlay and Spotify per zone
 
 New optional keys under `[[zone]]`: `default_volume` (0 to 100, set at every server start),

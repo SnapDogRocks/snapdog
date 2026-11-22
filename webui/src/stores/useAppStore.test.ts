@@ -116,6 +116,25 @@ describe("app store loading", () => {
     expect(useAppStore.getState().hasLoaded).toBe(true);
   });
 
+  it("loads again after a pending load when the socket opens during it", async () => {
+    const zones = deferred<ZoneInfo[]>();
+    apiMocks.zonesList.mockReturnValueOnce(zones.promise).mockResolvedValue([zone(55)]);
+
+    const first = useAppStore.getState().loadAll();
+    // The socket opens while the first snapshot is still being read.
+    const fresh = useAppStore.getState().loadAll({ fresh: true });
+    const freshAgain = useAppStore.getState().loadAll({ fresh: true });
+    expect(freshAgain).toBe(fresh);
+    expect(apiMocks.zonesList).toHaveBeenCalledTimes(1);
+
+    zones.resolve([zone(30)]);
+    await first;
+    await fresh;
+
+    expect(apiMocks.zonesList).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().zones.get(1)?.volume).toBe(55);
+  });
+
   it("uses the stored zone on the initial load", async () => {
     vi.stubGlobal("window", new EventTarget());
     vi.stubGlobal("sessionStorage", { getItem: vi.fn(() => "2") });
