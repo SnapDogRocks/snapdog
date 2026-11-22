@@ -53,6 +53,22 @@ const fn not_found() -> ApiError {
     ApiError::NotFound("client")
 }
 
+/// A configured client that has not connected since the server started: it exists, but
+/// there is nothing to send a change to.
+const fn not_connected() -> ApiError {
+    ApiError::Conflict("client is not connected")
+}
+
+/// Hand a command to the Snapcast task. A closed channel (the task is gone) is a server
+/// error, not a success.
+async fn send_snapcast(state: &SharedState, cmd: SnapcastCmd) -> Result<(), ApiError> {
+    state
+        .snap_tx
+        .send(cmd)
+        .await
+        .map_err(|_| ApiError::Internal("the Snapcast task is not running".into()))
+}
+
 /// Get total number of clients
 ///
 /// Returns the number of configured clients in the system.
@@ -179,7 +195,9 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     responses(
         (status = 200, description = "Updated client volume", body = i32),
         (status = 400, description = "Invalid volume value", body = ErrorBody),
-        (status = 404, description = "Client not found", body = ErrorBody)
+        (status = 404, description = "Client not found", body = ErrorBody),
+        (status = 409, description = "Client is configured but not connected", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "clients"
 )]
@@ -193,7 +211,7 @@ async fn set_volume(
     let volume = value
         .resolve(client.base_volume)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    let snap_id = client.snapcast_id.clone().ok_or(not_found())?;
+    let snap_id = client.snapcast_id.clone().ok_or(not_connected())?;
     drop(store);
     // A relative step is resolved where the volume commands are serialised, against a volume
     // that may still be in flight, so quick steps add up.
@@ -202,13 +220,14 @@ async fn set_volume(
         .map_err(|e| ApiError::BadRequest(e.to_string()))?
         .map_or(ClientAction::Volume(volume), ClientAction::AdjustVolume);
 
-    let _ = state
-        .snap_tx
-        .send(SnapcastCmd::Client {
+    send_snapcast(
+        &state,
+        SnapcastCmd::Client {
             client_id: snap_id,
             action,
-        })
-        .await;
+        },
+    )
+    .await?;
     // State update comes from Snapcast Client.OnVolumeChanged notification
     tracing::debug!(client = idx, volume, "Volume set");
     Ok::<_, ApiError>(Json(volume))
@@ -248,7 +267,9 @@ async fn get_mute(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
     request_body = bool,
     responses(
         (status = 200, description = "Updated client mute status", body = bool),
-        (status = 404, description = "Client not found", body = ErrorBody)
+        (status = 404, description = "Client not found", body = ErrorBody),
+        (status = 409, description = "Client is configured but not connected", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "clients"
 )]
@@ -259,15 +280,17 @@ async fn set_mute(
 ) -> impl IntoResponse {
     let snap_id = read_client(&state, idx)
         .await
-        .and_then(|c| c.snapcast_id)
-        .ok_or(not_found())?;
-    let _ = state
-        .snap_tx
-        .send(SnapcastCmd::Client {
+        .ok_or(not_found())?
+        .snapcast_id
+        .ok_or(not_connected())?;
+    send_snapcast(
+        &state,
+        SnapcastCmd::Client {
             client_id: snap_id,
             action: ClientAction::Mute(v),
-        })
-        .await;
+        },
+    )
+    .await?;
     tracing::debug!(client = idx, muted = v, "Mute set");
     Ok::<_, ApiError>(Json(v))
 }
@@ -283,7 +306,9 @@ async fn set_mute(
     ),
     responses(
         (status = 200, description = "New client mute status after toggling", body = bool),
-        (status = 404, description = "Client not found", body = ErrorBody)
+        (status = 404, description = "Client not found", body = ErrorBody),
+        (status = 409, description = "Client is configured but not connected", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "clients"
 )]
@@ -293,14 +318,15 @@ async fn toggle_mute(
 ) -> impl IntoResponse {
     let client = read_client(&state, idx).await.ok_or(not_found())?;
     let muted = !client.muted;
-    let snap_id = client.snapcast_id.clone().ok_or(not_found())?;
-    let _ = state
-        .snap_tx
-        .send(SnapcastCmd::Client {
+    let snap_id = client.snapcast_id.clone().ok_or(not_connected())?;
+    send_snapcast(
+        &state,
+        SnapcastCmd::Client {
             client_id: snap_id,
             action: ClientAction::Mute(muted),
-        })
-        .await;
+        },
+    )
+    .await?;
     // State update comes from Snapcast Client.OnVolumeChanged notification
     tracing::debug!(client = %client.name, muted, "Mute toggled");
     Ok::<_, ApiError>(Json(muted))
@@ -344,7 +370,9 @@ async fn get_latency(
     responses(
         (status = 200, description = "Updated client latency in milliseconds", body = i32),
         (status = 400, description = "Latency out of range", body = ErrorBody),
-        (status = 404, description = "Client not found", body = ErrorBody)
+        (status = 404, description = "Client not found", body = ErrorBody),
+        (status = 409, description = "Client is configured but not connected", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "clients"
 )]
@@ -361,15 +389,17 @@ async fn set_latency(
     }
     let snap_id = read_client(&state, idx)
         .await
-        .and_then(|c| c.snapcast_id)
-        .ok_or(not_found())?;
-    let _ = state
-        .snap_tx
-        .send(SnapcastCmd::Client {
+        .ok_or(not_found())?
+        .snapcast_id
+        .ok_or(not_connected())?;
+    send_snapcast(
+        &state,
+        SnapcastCmd::Client {
             client_id: snap_id,
             action: ClientAction::Latency(v),
-        })
-        .await;
+        },
+    )
+    .await?;
     tracing::debug!(client = idx, latency = v, "Latency set");
     Ok::<_, ApiError>(Json(v))
 }
@@ -408,7 +438,8 @@ async fn get_zone(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
     request_body = usize,
     responses(
         (status = 200, description = "Assigned zone index", body = usize),
-        (status = 404, description = "Client or Zone not found", body = ErrorBody)
+        (status = 404, description = "Client or Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "clients"
 )]
@@ -434,16 +465,17 @@ async fn set_zone(
                 .map_or((false, None), |c| (c.is_snapdog, c.snapcast_id.clone()))
         };
         if is_sd && let Some(snap_id) = snap_id {
-            let _ = state
-                .snap_tx
-                .send(SnapcastCmd::Client {
+            send_snapcast(
+                &state,
+                SnapcastCmd::Client {
                     client_id: snap_id,
                     action: ClientAction::SendCustom {
                         type_id: snapdog_common::MSG_TYPE_FADE_OUT,
                         payload: fade_ms.to_le_bytes().to_vec(),
                     },
-                })
-                .await;
+                },
+            )
+            .await?;
         }
         is_sd
     } else {
@@ -463,7 +495,7 @@ async fn set_zone(
     }
 
     // Tell main loop to reconcile Snapcast groups
-    let _ = state.snap_tx.send(SnapcastCmd::ReconcileZones).await;
+    send_snapcast(&state, SnapcastCmd::ReconcileZones).await?;
 
     tracing::info!(client = idx, zone = target_zone, "Client zone changed");
     Ok::<_, ApiError>(Json(target_zone))
@@ -513,8 +545,13 @@ async fn set_name(
     Json(v): Json<String>,
 ) -> impl IntoResponse {
     let name = v.clone();
-    crate::state::update_client_and_notify(&state.store, idx, &state.notifications, |c| c.name = v)
-        .await;
+    if !crate::state::update_client_and_notify(&state.store, idx, &state.notifications, |c| {
+        c.name = v;
+    })
+    .await
+    {
+        return Err(not_found());
+    }
     tracing::debug!(client = idx, name = %name, "Name set");
     Ok::<_, ApiError>(Json(name))
 }

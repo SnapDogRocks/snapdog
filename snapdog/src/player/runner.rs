@@ -1138,6 +1138,24 @@ async fn run(
                         });
                         tracing::debug!(zone = zone_index, "EQ updated");
                     }
+                    ZoneCommand::SetEqBand { band_index, band } => {
+                        let current = ctx.eq_store.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(zone_index);
+                        let merged = (band_index < current.bands.len()).then(|| {
+                            let mut config = current;
+                            config.bands[band_index] = band;
+                            config.preset = None;
+                            config
+                        });
+                        if let Some(ref config) = merged {
+                            zone_eq.set_config(config);
+                            ctx.eq_store.lock().unwrap_or_else(std::sync::PoisonError::into_inner).set(zone_index, config.clone());
+                            crate::api::ws::broadcast_notification(notify, &crate::api::ws::Notification::ZoneEqChanged {
+                                zone: zone_index,
+                                config: config.clone(),
+                            });
+                            tracing::debug!(zone = zone_index, band = band_index, "EQ band updated");
+                        }
+                    }
                     ZoneCommand::SetPresence(present) => {
                         // Retriggerable model: every presence trigger (`true`) starts playback
                         // if idle and (re)arms the auto-off timer to `now + delay`. Playback runs

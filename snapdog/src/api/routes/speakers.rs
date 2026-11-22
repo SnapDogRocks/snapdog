@@ -100,7 +100,8 @@ async fn get_profile(
         (status = 200, description = "Applied speaker correction configuration", body = EqConfig),
         (status = 400, description = "Invalid request payload (e.g., mutually exclusive options, validation failed)", body = ErrorBody),
         (status = 404, description = "Client or speaker profile not found", body = ErrorBody),
-        (status = 422, description = "Client does not support speaker correction (not a SnapDog client)", body = ErrorBody)
+        (status = 422, description = "Client does not support speaker correction (not a SnapDog client)", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "speakers"
 )]
@@ -201,8 +202,8 @@ async fn send_speaker_eq(
     idx: usize,
     config: &EqConfig,
 ) -> Result<(), ApiError> {
-    // The store is already written, so the event tells what is stored even when the client
-    // is not connected and cannot be sent to.
+    // The store is already written: the event tells what is stored, and a client that is not
+    // connected gets it when it connects, so the change succeeded either way.
     crate::api::ws::broadcast_notification(
         &state.notifications,
         &crate::api::ws::Notification::ClientSpeakerChanged {
@@ -216,10 +217,12 @@ async fn send_speaker_eq(
         .await
         .clients
         .get(&idx)
-        .and_then(|c| c.snapcast_id.clone())
-        .ok_or(ApiError::NotFound("client"))?;
+        .and_then(|c| c.snapcast_id.clone());
+    let Some(client_id) = client_id else {
+        return Ok(());
+    };
     let payload = serde_json::to_vec(config).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let _ = state
+    state
         .snap_tx
         .send(SnapcastCmd::Client {
             client_id,
@@ -228,6 +231,6 @@ async fn send_speaker_eq(
                 payload,
             },
         })
-        .await;
-    Ok(())
+        .await
+        .map_err(|_| ApiError::Internal("the Snapcast task is not running".into()))
 }

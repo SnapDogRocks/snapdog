@@ -121,7 +121,8 @@ async fn get_eq(State(state): State<SharedState>, Path(zone): Path<usize>) -> im
     responses(
         (status = 200, description = "Updated equalizer configuration", body = EqConfig),
         (status = 400, description = "Too many bands or validation error", body = ErrorBody),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "equalizer"
 )]
@@ -136,8 +137,15 @@ async fn set_eq(
         .zone_commands
         .get(&zone)
         .ok_or(ApiError::NotFound("zone"))?;
-    let _ = tx.send(ZoneCommand::SetEq(config.clone())).await;
+    tx.send(ZoneCommand::SetEq(config.clone()))
+        .await
+        .map_err(|_| zone_task_gone())?;
     Ok::<_, ApiError>(Json(config))
+}
+
+/// The zone task is gone (the server is shutting down): a server error, not a success.
+fn zone_task_gone() -> ApiError {
+    ApiError::Internal("the zone task is not running".into())
 }
 
 /// Update specific Equalizer band
@@ -154,7 +162,8 @@ async fn set_eq(
     responses(
         (status = 200, description = "Updated full equalizer configuration", body = EqConfig),
         (status = 400, description = "Validation error", body = ErrorBody),
-        (status = 404, description = "Zone or band not found", body = ErrorBody)
+        (status = 404, description = "Zone or band not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "equalizer"
 )]
@@ -165,6 +174,10 @@ async fn set_band(
 ) -> impl IntoResponse {
     require_zone(zone, &state.config)?;
     band.validate().map_err(ApiError::BadRequest)?;
+    let tx = state
+        .zone_commands
+        .get(&zone)
+        .ok_or(ApiError::NotFound("zone"))?;
     let mut config = state
         .eq_store
         .lock()
@@ -173,13 +186,16 @@ async fn set_band(
     if band_idx >= config.bands.len() {
         return Err(ApiError::NotFound("band"));
     }
+    // Only the band goes to the zone task, which merges it into the configuration it holds:
+    // two quick changes of different bands both survive. The answer is the expected result.
+    tx.send(ZoneCommand::SetEqBand {
+        band_index: band_idx,
+        band: band.clone(),
+    })
+    .await
+    .map_err(|_| zone_task_gone())?;
     config.bands[band_idx] = band;
     config.preset = None;
-    let tx = state
-        .zone_commands
-        .get(&zone)
-        .ok_or(ApiError::NotFound("zone"))?;
-    let _ = tx.send(ZoneCommand::SetEq(config.clone())).await;
     Ok::<_, ApiError>(Json(config))
 }
 
@@ -197,7 +213,8 @@ async fn set_band(
     responses(
         (status = 200, description = "Updated full equalizer configuration from preset", body = EqConfig),
         (status = 400, description = "Unknown preset name", body = ErrorBody),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "equalizer"
 )]
@@ -212,6 +229,8 @@ async fn apply_preset(
         .zone_commands
         .get(&zone)
         .ok_or(ApiError::NotFound("zone"))?;
-    let _ = tx.send(ZoneCommand::SetEq(config.clone())).await;
+    tx.send(ZoneCommand::SetEq(config.clone()))
+        .await
+        .map_err(|_| zone_task_gone())?;
     Ok::<_, ApiError>(Json(config))
 }

@@ -91,6 +91,15 @@ pub enum ZoneCommand {
     // ── DSP ───────────────────────────────────────────────────
     /// Apply a new parametric EQ configuration to the zone.
     SetEq(crate::audio::eq::EqConfig),
+    /// Replace one band of the zone's EQ. The zone task merges it into the configuration it
+    /// holds, so quick changes of different bands do not overwrite each other. A band index
+    /// out of range is ignored.
+    SetEqBand {
+        /// 0-based band index.
+        band_index: usize,
+        /// The new band.
+        band: crate::audio::eq::EqBand,
+    },
 }
 
 impl ZoneCommand {

@@ -431,6 +431,47 @@ async fn a_mono_source_reaches_the_backend_as_stereo_frames() {
     assert_eq!(call.len, 960, "480 mono frames become 480 stereo frames");
 }
 
+/// #519: two band changes sent without waiting are merged in the zone task, so neither is lost.
+#[tokio::test]
+async fn two_quick_band_changes_of_a_zone_both_survive() {
+    let mut h = spawn_zone_harness(test_config()).await;
+    let band = |gain: f64| -> snapdog::audio::eq::EqBand {
+        serde_json::from_value(serde_json::json!(
+            {"freq": 1000.0, "gain": gain, "q": 1.0, "type": "peaking"}
+        ))
+        .unwrap()
+    };
+    let config: snapdog::audio::eq::EqConfig = serde_json::from_value(serde_json::json!({
+        "enabled": true,
+        "bands": [
+            {"freq": 1000.0, "gain": 0.0, "q": 1.0, "type": "peaking"},
+            {"freq": 1000.0, "gain": 0.0, "q": 1.0, "type": "peaking"}
+        ]
+    }))
+    .unwrap();
+    let tx = h.senders[&1].clone();
+    tx.send(ZoneCommand::SetEq(config)).await.unwrap();
+    tx.send(ZoneCommand::SetEqBand {
+        band_index: 0,
+        band: band(3.0),
+    })
+    .await
+    .unwrap();
+    tx.send(ZoneCommand::SetEqBand {
+        band_index: 1,
+        band: band(-4.0),
+    })
+    .await
+    .unwrap();
+    let event = h
+        .await_notification(|v| v["type"] == "zone_eq_changed" && v["bands"][1]["gain"] == -4.0)
+        .await;
+    assert_eq!(
+        event["bands"][0]["gain"], 3.0,
+        "the first change is still there"
+    );
+}
+
 /// #509: `max_volume` is a hard limit for every volume command the zone takes.
 #[tokio::test]
 async fn zone_volume_never_exceeds_max_volume() {
