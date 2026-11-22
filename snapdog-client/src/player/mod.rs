@@ -220,24 +220,21 @@ impl Mixer {
         let card = alsa_mixer_card_for(soundcard);
         let available = alsa_volume_controls(&card);
         let requested = (!param.is_empty()).then_some(param);
-        match select_hardware_control(requested, &available) {
-            Some(control) => {
-                tracing::info!(card, control, "Hardware mixer initialized");
-                Self::Hardware {
-                    card,
-                    control,
-                    volume,
-                }
+        if let Some(control) = select_hardware_control(requested, &available) {
+            tracing::info!(card, control, "Hardware mixer initialized");
+            Self::Hardware {
+                card,
+                control,
+                volume,
             }
-            None => {
-                tracing::warn!(
-                    card,
-                    control = requested.unwrap_or("(auto)"),
-                    available = %available.join(", "),
-                    "ALSA mixer control not found on the selected card, using the software mixer"
-                );
-                Self::Software(volume)
-            }
+        } else {
+            tracing::warn!(
+                card,
+                control = requested.unwrap_or("(auto)"),
+                available = %available.join(", "),
+                "ALSA mixer control not found on the selected card, using the software mixer"
+            );
+            Self::Software(volume)
         }
     }
 
