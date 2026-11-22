@@ -3,6 +3,20 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## KNX: System Fault reports failures, Playlist Status no longer wraps
+
+- **System Fault** is now set when the Snapcast server stops, when the connection to an external
+  Snapcast server is lost, when an AirPlay or Spotify receiver fails to start (Spotify also when it
+  stops with an error), and when the Subsonic server cannot be reached. It is sent at once and
+  cleared when everything works again. Before, it only changed with an external Snapcast server and
+  only at the next heartbeat. A visualisation that shows the object will now show real faults.
+- **Playlist Status** sends 255 for playlist index 255 and above. Before, index 256 was sent as 0,
+  which means radio.
+- **Client "Zone"** (device mode) now follows the zone of the client, so a read returns the current
+  zone and devices linked to the object see changes from the web interface or the API. Linking both
+  "Zone" and "Zone Status" to one address sends two telegrams per change.
+- In client mode a read of a zone's **Playlist Name** address is answered.
+
 ## REST: a client that is not connected answers 409
 
 `PUT /clients/{n}/volume`, `PUT /clients/{n}/mute`, `POST /clients/{n}/mute/toggle` and

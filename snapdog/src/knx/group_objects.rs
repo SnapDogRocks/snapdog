@@ -319,7 +319,9 @@ pub const GLOBAL_GOS: &[GoDefinition] = &[
     // Cyclic heartbeat — sent every `heartbeat` interval (an ETS parameter) so the bus can
     // detect the server going offline.
     go_send("Server Online", DPT_STATE, "DPST-1-11", "1 Bit"),
-    // Set when the server enters a fault state, cleared when it recovers.
+    // Set while a part of the server has failed (Snapcast server, an AirPlay or Spotify receiver,
+    // the Subsonic connection; see `crate::health`), cleared when all have recovered. Sent at
+    // once on a change, and with every heartbeat that finds it changed.
     go_send("System Fault", DPT_ALARM, "DPST-1-5", "1 Bit"),
     // KNX clock input — syncs the local time that drives presence schedules.
     go_recv("KNX Time", DPT_TIME_OF_DAY, "DPST-10-1", "3 Bytes"),

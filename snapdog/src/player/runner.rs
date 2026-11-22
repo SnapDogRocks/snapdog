@@ -379,7 +379,12 @@ async fn run(
             #[cfg(feature = "ap2")]
             config.system.state_dir.clone(),
         );
-        match receiver.start(airplay_audio_tx, airplay_event_tx).await {
+        let started = receiver.start(airplay_audio_tx, airplay_event_tx).await;
+        crate::health::report(
+            crate::health::FaultSource::AirPlay(zone_index),
+            started.is_ok(),
+        );
+        match started {
             Ok(()) => Some(receiver),
             Err(e) => {
                 tracing::warn!(zone = zone_index, error = %e, "AirPlay receiver failed to start");
@@ -426,7 +431,12 @@ async fn run(
                 },
                 zone_index,
             );
-            match sp.start(audio_tx, event_tx).await {
+            let started = sp.start(audio_tx, event_tx).await;
+            crate::health::report(
+                crate::health::FaultSource::Spotify(zone_index),
+                started.is_ok(),
+            );
+            match started {
                 Ok(()) => Some(sp),
                 Err(e) => {
                     tracing::warn!(zone = zone_index, error = %e, "Spotify receiver failed to start");

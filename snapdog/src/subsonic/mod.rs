@@ -101,6 +101,9 @@ fn refreshed_cache(
     fetched: Result<Option<Vec<PlaylistEntry>>>,
     now: std::time::Instant,
 ) -> (std::time::Instant, Vec<PlaylistEntry>) {
+    // The periodic playlist refresh is the Subsonic health check: a failed fetch raises the
+    // fault, the next successful one clears it.
+    crate::health::report(crate::health::FaultSource::Subsonic, fetched.is_ok());
     match fetched {
         Ok(entries) => (now, entries.unwrap_or_default()),
         Err(e) => {

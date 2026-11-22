@@ -216,9 +216,13 @@ impl EmbeddedBackend {
             .context("adopt embedded Snapcast listener into the tokio reactor")?;
 
         tokio::spawn(async move {
+            // The server task does not come back: its end is a fault until the next start.
             if let Err(e) = server.serve(listener).await {
                 tracing::error!(error = %e, "Embedded Snapcast server error");
+            } else {
+                tracing::error!("Embedded Snapcast server stopped");
             }
+            crate::health::report(crate::health::FaultSource::Snapcast, false);
         });
 
         tracing::info!(
