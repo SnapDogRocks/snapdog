@@ -297,4 +297,6 @@ export interface EqConfig {
   enabled: boolean;
   bands: EqBand[];
   preset?: string | null;
+  /** Gain in dB before the bands (speaker corrections); absent means 0. */
+  preamp_db?: number;
 }

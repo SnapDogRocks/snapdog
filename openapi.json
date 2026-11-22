@@ -6081,6 +6081,11 @@
             "type": "boolean",
             "description": "Whether the EQ is active. When `false`, audio passes through unmodified."
           },
+          "preamp_db": {
+            "type": "number",
+            "format": "float",
+            "description": "Gain in dB applied before the bands while the EQ is enabled. Speaker corrections use\na negative preamp to leave headroom for boosted bands. 0 when absent."
+          },
           "preset": {
             "type": [
               "string",

@@ -38,6 +38,7 @@ pub(super) fn resolve_preset(name: &str) -> Result<EqConfig, ApiError> {
         enabled: true,
         bands,
         preset: Some(name.to_string()),
+        preamp_db: 0.0,
     })
 }
 
