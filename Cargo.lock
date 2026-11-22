@@ -5364,6 +5364,7 @@ dependencies = [
  "snapcast-server",
  "snapdog-common",
  "snapdog-testkit",
+ "socket2 0.6.5",
  "subtle",
  "symphonia 0.6.1",
  "tempfile",

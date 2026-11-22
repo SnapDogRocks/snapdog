@@ -38,6 +38,7 @@ knx-rs-device = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
 url = { workspace = true }
+socket2 = { workspace = true }
 futures-util = { workspace = true }
 anyhow = { workspace = true }
 md5 = { workspace = true }

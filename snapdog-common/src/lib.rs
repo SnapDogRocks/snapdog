@@ -264,15 +264,26 @@ impl EqBand {
 }
 
 impl EqConfig {
+    /// Check only the number of bands, for configurations whose band values are taken as
+    /// they come (speaker database profiles).
+    ///
+    /// # Errors
+    ///
+    /// A message when there are more than [`MAX_EQ_BANDS`] bands.
+    pub fn validate_band_count(&self) -> Result<(), String> {
+        if self.bands.len() > MAX_EQ_BANDS {
+            return Err(format!("at most {MAX_EQ_BANDS} EQ bands"));
+        }
+        Ok(())
+    }
+
     /// Check the band count and every band.
     ///
     /// # Errors
     ///
     /// A message naming the band and the value that is out of range.
     pub fn validate(&self) -> Result<(), String> {
-        if self.bands.len() > MAX_EQ_BANDS {
-            return Err(format!("at most {MAX_EQ_BANDS} EQ bands"));
-        }
+        self.validate_band_count()?;
         for (i, band) in self.bands.iter().enumerate() {
             band.validate().map_err(|e| format!("band {i}: {e}"))?;
         }
