@@ -69,6 +69,7 @@ let authListenerWindow: Window | null = null;
 let nextLoadId = 0;
 let activeLoadId = 0;
 let pendingLoad: { id: number; authEpoch: number; promise: Promise<void> } | null = null;
+let queuedLoad: Promise<void> | null = null;
 
 function ensureAuthChangeListener() {
   if (typeof window === "undefined" || authListenerWindow === window) return;
@@ -119,7 +120,12 @@ interface AppState {
   bumpPlaylists: () => void;
 
   // Init
-  loadAll: () => Promise<void>;
+  /**
+   * Load zones and clients. A call during a pending load joins it; with `fresh`, it
+   * instead loads once more after the pending one, so that a state read before the
+   * caller's point in time (e.g. before the WebSocket subscribed) is not the last word.
+   */
+  loadAll: (options?: { fresh?: boolean }) => Promise<void>;
 
   // Zone updates
   setZones: (zones: ZoneInfo[]) => void;
@@ -137,7 +143,7 @@ interface AppState {
   setClients: (clients: ClientInfo[]) => void;
   updateClient: (
     id: number,
-    patch: Partial<Pick<ClientInfo, "volume" | "muted" | "connected" | "zone_index" | "is_snapdog">>,
+    patch: Partial<Pick<ClientInfo, "name" | "volume" | "muted" | "connected" | "zone_index" | "is_snapdog" | "latency_ms" | "eq_enabled">>,
   ) => void;
 
   // UI
@@ -160,10 +166,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   bumpPlaylists: () => { set((s) => ({ playlistsVersion: s.playlistsVersion + 1 })); },
 
-  loadAll: () => {
+  loadAll: (options) => {
     ensureAuthChangeListener();
     const requestAuthEpoch = authEpoch;
-    if (pendingLoad?.authEpoch === requestAuthEpoch) return pendingLoad.promise;
+    if (pendingLoad?.authEpoch === requestAuthEpoch) {
+      if (!options?.fresh) return pendingLoad.promise;
+      queuedLoad ??= pendingLoad.promise.then(() => {
+        queuedLoad = null;
+        return get().loadAll();
+      });
+      return queuedLoad;
+    }
 
     const request: LoadRequest = {
       id: ++nextLoadId,
@@ -372,10 +385,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setConnected: (v, goingAway) => {
     const was = get().isConnected;
     set({ isConnected: v, serverGoingAway: goingAway ?? false });
-    // On reconnect, re-fetch all state
+    // On (re)connect, re-fetch all state. Fresh: a load already running read its state
+    // before the socket subscribed, and a change in between would be missed.
     if (v && !was) {
       get().bumpPlaylists();
-      void get().loadAll();
+      void get().loadAll({ fresh: true });
     }
   },
 }));

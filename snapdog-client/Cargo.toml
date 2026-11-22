@@ -37,6 +37,8 @@ zbus = { version = "6", optional = true, default-features = false, features = ["
 [dev-dependencies]
 # Peer-to-peer connections let the D-Bus interface tests run without a bus daemon.
 zbus = { version = "6", default-features = false, features = ["tokio", "p2p"] }
+# Reads the signals a test expects from a zbus message stream.
+futures-util = { workspace = true }
 
 [features]
 default = ["mdns", "f32lz4", "encryption", "custom-protocol", "dbus"]
