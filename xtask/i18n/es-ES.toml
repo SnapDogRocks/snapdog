@@ -85,6 +85,8 @@
 "Spotify name (empty = zone name)" = "Nombre de Spotify (vacío = nombre de la zona)"
 "Default latency (ms)" = "Latencia predeterminada (ms)"
 "Default volume" = "Volumen predeterminado"
+"Last value" = "Último valor"
+"Volume at start" = "Volumen al inicio"
 "Default zone" = "Zona predeterminada"
 "Station name" = "Nombre de la emisora"
 "Stream URL" = "URL del stream"

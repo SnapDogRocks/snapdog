@@ -20,7 +20,7 @@ gets the next free number after those in the file.
 | `zones/<n>/control/set` | command | `play`, `pause`, `stop`, `next`, `previous` |
 | `zones/<n>/repeat/set` | command | `off`, `one`/`track`, `all`/`playlist` |
 | `zones/<n>/position/set`, `track/position/set` | command | seconds, `0` to one week, fractions allowed |
-| `zones/<n>/track/set`, `playlist/set` | command | a non-negative integer (`playlist/set` takes the playlist index, which moves when the list changes) |
+| `zones/<n>/track/set`, `playlist/set` | command | a non-negative integer (`playlist/set` takes the playlist index, `0..999`, which moves when the list changes). An index the zone does not have is ignored |
 | `zones/<n>/playlist/by-id/set` | command | a `playlist_id` as plain text, `snapdog:radio` or `subsonic:<subsonic id>`. An unknown id is logged and ignored |
 | `zones/<n>/presence/timeout/set` | command | seconds, `0..65535` |
 | `clients/<n>/volume/set` | command | integer `0..100` |

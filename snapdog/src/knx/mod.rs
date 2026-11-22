@@ -1420,20 +1420,96 @@ fn apply_knx_time(data: &[u8], sync_system_clock: bool) {
 
     if sync_system_clock {
         let time = format!("{hour:02}:{minute:02}:{second:02}");
-        match std::process::Command::new("date")
-            .arg("-s")
-            .arg(&time)
-            .status()
-        {
-            Ok(st) if st.success() => {
+        spawn_os_clock_sync(time, &DATE_COMMAND);
+    }
+}
+
+/// How the OS clock is set from a KNX time telegram.
+struct ClockCommand {
+    /// The program, called as `<program> -s HH:MM:SS` (GNU and `BusyBox` `date`).
+    program: &'static str,
+    /// Upper bound for one run; the process is killed when it is exceeded.
+    timeout: std::time::Duration,
+}
+
+const DATE_COMMAND: ClockCommand = ClockCommand {
+    program: "date",
+    timeout: std::time::Duration::from_secs(5),
+};
+
+/// Set while a clock update runs, so time telegrams that arrive meanwhile do not pile up
+/// processes behind a slow or hanging one.
+static CLOCK_SYNC_RUNNING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Outcome of one attempt to set the OS clock.
+#[derive(Debug, PartialEq, Eq)]
+enum ClockSyncOutcome {
+    Set,
+    Failed(Option<i32>),
+    NotStarted(String),
+    TimedOut,
+    /// `date -s HH:MM:SS` is GNU and `BusyBox` syntax; other platforms are not supported.
+    Unsupported,
+}
+
+/// Start the OS clock update in its own task and return at once: the KNX session task never
+/// waits for the external process, so telegram dispatch, status publishing and group reads go
+/// on while it runs.
+fn spawn_os_clock_sync(time: String, command: &'static ClockCommand) {
+    use std::sync::atomic::Ordering;
+    if CLOCK_SYNC_RUNNING.swap(true, Ordering::AcqRel) {
+        tracing::debug!(%time, "OS clock update still running, skipping this KNX time telegram");
+        return;
+    }
+    tokio::spawn(async move {
+        let outcome = set_os_clock(&time, command).await;
+        CLOCK_SYNC_RUNNING.store(false, Ordering::Release);
+        match outcome {
+            ClockSyncOutcome::Set => {
                 KNX_TIME_OFFSET_SECS.store(0, Ordering::Relaxed);
                 tracing::info!(%time, "OS clock set from KNX time");
             }
-            Ok(st) => {
-                tracing::warn!(%time, code = ?st.code(), "date failed to set OS clock (privilege?)");
+            ClockSyncOutcome::Failed(code) => {
+                tracing::warn!(%time, ?code, "date failed to set the OS clock (privilege?)");
             }
-            Err(e) => tracing::warn!(%time, error = %e, "could not run date to set OS clock"),
+            ClockSyncOutcome::NotStarted(e) => {
+                tracing::warn!(%time, error = %e, "could not run date to set the OS clock");
+            }
+            ClockSyncOutcome::TimedOut => tracing::warn!(
+                %time,
+                timeout = ?command.timeout,
+                "date did not finish setting the OS clock in time and was killed"
+            ),
+            ClockSyncOutcome::Unsupported => {
+                static WARNED: std::sync::Once = std::sync::Once::new();
+                WARNED.call_once(|| {
+                    tracing::warn!(
+                        "knx.sync_system_clock needs Linux (GNU or BusyBox date); the OS clock \
+                         is not set on this platform, KNX time is used for schedules only"
+                    );
+                });
+            }
         }
+    });
+}
+
+async fn set_os_clock(time: &str, command: &ClockCommand) -> ClockSyncOutcome {
+    if !cfg!(target_os = "linux") && command.program == DATE_COMMAND.program {
+        return ClockSyncOutcome::Unsupported;
+    }
+    let child = tokio::process::Command::new(command.program)
+        .arg("-s")
+        .arg(time)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .status();
+    match tokio::time::timeout(command.timeout, child).await {
+        Err(_) => ClockSyncOutcome::TimedOut,
+        Ok(Err(e)) => ClockSyncOutcome::NotStarted(e.to_string()),
+        Ok(Ok(st)) if st.success() => ClockSyncOutcome::Set,
+        Ok(Ok(st)) => ClockSyncOutcome::Failed(st.code()),
     }
 }
 
@@ -1506,6 +1582,65 @@ const fn repeat_switch(on: bool, mode: snapdog_common::RepeatMode) -> ZoneComman
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── #511: setting the OS clock never blocks the session task ──
+
+    /// A stand-in for `date`: a shell script with the given body, leaked for `&'static`.
+    fn clock_stand_in(name: &str, body: &str) -> &'static ClockCommand {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = std::env::temp_dir().join(format!("snapdog-clock-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("date");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        Box::leak(Box::new(ClockCommand {
+            program: Box::leak(path.to_string_lossy().into_owned().into_boxed_str()),
+            timeout: std::time::Duration::from_millis(300),
+        }))
+    }
+
+    #[tokio::test]
+    async fn a_hanging_date_is_killed_after_the_timeout() {
+        let slow = clock_stand_in("slow", "sleep 30");
+        let started = std::time::Instant::now();
+        assert_eq!(
+            set_os_clock("12:00:00", slow).await,
+            ClockSyncOutcome::TimedOut
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[tokio::test]
+    async fn the_outcome_of_date_is_reported() {
+        let ok = clock_stand_in("ok", "exit 0");
+        assert_eq!(set_os_clock("12:00:00", ok).await, ClockSyncOutcome::Set);
+        let denied = clock_stand_in("denied", "exit 3");
+        assert_eq!(
+            set_os_clock("12:00:00", denied).await,
+            ClockSyncOutcome::Failed(Some(3))
+        );
+        let missing = &ClockCommand {
+            program: "/nonexistent/snapdog-date",
+            timeout: std::time::Duration::from_secs(1),
+        };
+        assert!(matches!(
+            set_os_clock("12:00:00", missing).await,
+            ClockSyncOutcome::NotStarted(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_slow_clock_update_does_not_hold_up_the_caller() {
+        // The session task calls this inline; it must return while the process still runs, so
+        // status telegrams and group reads are served meanwhile.
+        let slow = clock_stand_in("caller", "sleep 2");
+        let started = std::time::Instant::now();
+        spawn_os_clock_sync("12:00:00".to_owned(), slow);
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+        // A second telegram while the first update runs does not start another process.
+        spawn_os_clock_sync("12:00:01".to_owned(), slow);
+        assert!(CLOCK_SYNC_RUNNING.load(std::sync::atomic::Ordering::Acquire));
+    }
     use crate::player::ZoneCommand;
     use group_objects::{MAX_CLIENTS, MAX_ZONES};
     use group_objects::{client_asap, global_asap, zone_asap};
