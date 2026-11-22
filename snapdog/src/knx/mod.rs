@@ -21,6 +21,7 @@ mod client;
 mod device;
 mod ets_config;
 pub mod group_objects;
+mod objects;
 mod outbound;
 mod sink;
 mod supervisor;
@@ -48,19 +49,12 @@ use crate::state;
 
 use group_objects::GoLocation;
 use group_objects::{
-    CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS, CGO_MUTE_TOGGLE,
-    CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS, DPT_CONTROL_DIMMING,
-    GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE, GGO_SYSTEM_FAULT,
-    ZGO_CONTROL_STATUS, ZGO_MUTE, ZGO_MUTE_STATUS, ZGO_MUTE_TOGGLE, ZGO_PAUSE, ZGO_PLAY,
-    ZGO_PLAY_PAUSE, ZGO_PLAYLIST, ZGO_PLAYLIST_NAME, ZGO_PLAYLIST_NEXT, ZGO_PLAYLIST_PREVIOUS,
-    ZGO_PLAYLIST_STATUS, ZGO_PLAYLIST_STEP, ZGO_PLAYLIST_STEP_UPDOWN, ZGO_PRESENCE,
-    ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT, ZGO_REPEAT_STATUS,
-    ZGO_REPEAT_TOGGLE, ZGO_SHUFFLE, ZGO_SHUFFLE_STATUS, ZGO_SHUFFLE_TOGGLE, ZGO_STOP,
-    ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NEXT, ZGO_TRACK_NUMBER, ZGO_TRACK_NUMBER_STATUS,
-    ZGO_TRACK_PLAYING, ZGO_TRACK_POSITION, ZGO_TRACK_PREVIOUS, ZGO_TRACK_PROGRESS,
-    ZGO_TRACK_REPEAT, ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_REPEAT_TOGGLE, ZGO_TRACK_SEEK,
-    ZGO_TRACK_SEEK_UPDOWN, ZGO_TRACK_STEP, ZGO_TRACK_STEP_UPDOWN, ZGO_TRACK_TITLE, ZGO_VOLUME,
-    ZGO_VOLUME_DIM, ZGO_VOLUME_STATUS,
+    CGO_CONNECTED, CGO_LATENCY_STATUS, CGO_MUTE_STATUS, CGO_VOLUME_STATUS, CGO_ZONE,
+    CGO_ZONE_STATUS, DPT_CONTROL_DIMMING, GGO_ALL_MUTE, GGO_SERVER_ONLINE, GGO_SYSTEM_FAULT,
+    ZGO_CONTROL_STATUS, ZGO_MUTE_STATUS, ZGO_PLAYLIST_NAME, ZGO_PLAYLIST_STATUS,
+    ZGO_PRESENCE_ENABLE, ZGO_PRESENCE_TIMER_ACTIVE, ZGO_REPEAT_STATUS, ZGO_SHUFFLE_STATUS,
+    ZGO_TRACK_ALBUM, ZGO_TRACK_ARTIST, ZGO_TRACK_NUMBER_STATUS, ZGO_TRACK_PLAYING,
+    ZGO_TRACK_PROGRESS, ZGO_TRACK_REPEAT_STATUS, ZGO_TRACK_TITLE, ZGO_VOLUME_STATUS,
 };
 use sink::{ObjectKey, StatusSink};
 use transport::{Incoming, KnxListener, KnxPublisher};
@@ -329,7 +323,7 @@ async fn publish_heartbeat<P: KnxPublisher>(
     sink.write_always(
         ObjectKey::Global(GGO_SERVER_ONLINE),
         knx.server_online.as_deref(),
-        DPT_SWITCH,
+        group_objects::DPT_STATE,
         &true.into(),
     )
     .await;
@@ -348,7 +342,7 @@ async fn publish_fault<P: KnxPublisher>(
         sink.write(
             ObjectKey::Global(GGO_SYSTEM_FAULT),
             knx.system_fault.as_deref(),
-            DPT_SWITCH,
+            group_objects::DPT_ALARM,
             &(!healthy).into(),
         )
         .await;
@@ -862,42 +856,10 @@ fn zone_ga_map(
     let mut map = HashMap::new();
     for zone_cfg in &config.zones {
         let idx = zone_cfg.index;
-        let knx = &zone_cfg.knx;
-        let pairs: &[(&Option<String>, &'static str)] = &[
-            (&knx.play, "play"),
-            (&knx.pause, "pause"),
-            (&knx.stop, "stop"),
-            (&knx.track_next, "next"),
-            (&knx.track_previous, "previous"),
-            (&knx.mute, "mute"),
-            (&knx.mute_toggle, "mute_toggle"),
-            (&knx.shuffle, "shuffle"),
-            (&knx.shuffle_toggle, "shuffle_toggle"),
-            (&knx.repeat, "repeat"),
-            (&knx.repeat_toggle, "repeat_toggle"),
-            (&knx.track_repeat, "track_repeat"),
-            (&knx.track_repeat_toggle, "track_repeat_toggle"),
-            (&knx.volume, "volume"),
-            (&knx.volume_dim, "volume_dim"),
-            (&knx.playlist, "playlist"),
-            (&knx.playlist_next, "playlist_next"),
-            (&knx.playlist_previous, "playlist_previous"),
-            (&knx.playlist_step, "playlist_step"),
-            (&knx.playlist_step_updown, "playlist_step_updown"),
-            (&knx.track_number, "track_number"),
-            (&knx.play_pause, "play_pause"),
-            (&knx.track_step, "track_step"),
-            (&knx.track_step_updown, "track_step_updown"),
-            (&knx.track_position, "track_position"),
-            (&knx.track_seek, "track_seek"),
-            (&knx.track_seek_updown, "track_seek_updown"),
-            (&knx.presence, "presence"),
-            (&knx.presence_enable, "presence_enable"),
-        ];
-        for (ga_opt, action) in pairs {
-            if let Some(ga) = ga_opt
-                && let Some((z, a)) = map.insert(canonical_ga(ga), (idx, *action))
-            {
+        let keys = zone_cfg.knx.group_addresses();
+        for (row, ga) in objects::configured(objects::ZONE_OBJECTS, &keys) {
+            let Some(action) = row.action else { continue };
+            if let Some((z, a)) = map.insert(canonical_ga(ga), (idx, action)) {
                 duplicates.push(format!(
                     "{ga} is the address of zone {z} {a} and of zone {idx} {action}: the later one wins"
                 ));
@@ -919,19 +881,10 @@ fn client_ga_map(
     let mut map = HashMap::new();
     for client_cfg in &config.clients {
         let idx = client_cfg.index;
-        let knx = &client_cfg.knx;
-        let pairs: &[(&Option<String>, &'static str)] = &[
-            (&knx.mute, "mute"),
-            (&knx.mute_toggle, "mute_toggle"),
-            (&knx.volume, "volume"),
-            (&knx.volume_dim, "volume_dim"),
-            (&knx.latency, "latency"),
-            (&knx.zone, "zone"),
-        ];
-        for (ga_opt, action) in pairs {
-            if let Some(ga) = ga_opt
-                && let Some((c, a)) = map.insert(canonical_ga(ga), (idx, *action))
-            {
+        let keys = client_cfg.knx.group_addresses();
+        for (row, ga) in objects::configured(objects::CLIENT_OBJECTS, &keys) {
+            let Some(action) = row.action else { continue };
+            if let Some((c, a)) = map.insert(canonical_ga(ga), (idx, action)) {
                 duplicates.push(format!(
                     "{ga} is the address of client {c} {a} and of client {idx} {action}: the later one wins"
                 ));
@@ -965,151 +918,32 @@ pub(crate) fn duplicate_addresses(config: &AppConfig) -> Vec<String> {
     duplicates
 }
 
-/// Every zone address key of the configuration with the object it is linked to and its key
-/// name. One list for client mode (status reads), device mode (association table) and tests,
-/// so a key cannot be linked in one place and forgotten in another. Keys ending in `_status`
-/// are the addresses a zone sends on.
-pub(crate) fn zone_object_addresses(
-    k: &crate::config::ZoneKnxAddresses,
-) -> Vec<(&Option<String>, usize, &'static str)> {
-    vec![
-        (&k.play, ZGO_PLAY, "play"),
-        (&k.pause, ZGO_PAUSE, "pause"),
-        (&k.stop, ZGO_STOP, "stop"),
-        (&k.track_next, ZGO_TRACK_NEXT, "track_next"),
-        (&k.track_previous, ZGO_TRACK_PREVIOUS, "track_previous"),
-        (&k.volume, ZGO_VOLUME, "volume"),
-        (&k.volume_status, ZGO_VOLUME_STATUS, "volume_status"),
-        (&k.volume_dim, ZGO_VOLUME_DIM, "volume_dim"),
-        (&k.mute, ZGO_MUTE, "mute"),
-        (&k.mute_status, ZGO_MUTE_STATUS, "mute_status"),
-        (&k.mute_toggle, ZGO_MUTE_TOGGLE, "mute_toggle"),
-        (&k.control_status, ZGO_CONTROL_STATUS, "control_status"),
-        (
-            &k.track_playing_status,
-            ZGO_TRACK_PLAYING,
-            "track_playing_status",
-        ),
-        (&k.shuffle, ZGO_SHUFFLE, "shuffle"),
-        (&k.shuffle_status, ZGO_SHUFFLE_STATUS, "shuffle_status"),
-        (&k.shuffle_toggle, ZGO_SHUFFLE_TOGGLE, "shuffle_toggle"),
-        (&k.repeat, ZGO_REPEAT, "repeat"),
-        (&k.repeat_status, ZGO_REPEAT_STATUS, "repeat_status"),
-        (&k.repeat_toggle, ZGO_REPEAT_TOGGLE, "repeat_toggle"),
-        (&k.track_repeat, ZGO_TRACK_REPEAT, "track_repeat"),
-        (
-            &k.track_repeat_status,
-            ZGO_TRACK_REPEAT_STATUS,
-            "track_repeat_status",
-        ),
-        (
-            &k.track_repeat_toggle,
-            ZGO_TRACK_REPEAT_TOGGLE,
-            "track_repeat_toggle",
-        ),
-        (&k.playlist, ZGO_PLAYLIST, "playlist"),
-        (&k.playlist_status, ZGO_PLAYLIST_STATUS, "playlist_status"),
-        (&k.playlist_next, ZGO_PLAYLIST_NEXT, "playlist_next"),
-        (
-            &k.playlist_previous,
-            ZGO_PLAYLIST_PREVIOUS,
-            "playlist_previous",
-        ),
-        (&k.playlist_step, ZGO_PLAYLIST_STEP, "playlist_step"),
-        (
-            &k.playlist_step_updown,
-            ZGO_PLAYLIST_STEP_UPDOWN,
-            "playlist_step_updown",
-        ),
-        (&k.track_number, ZGO_TRACK_NUMBER, "track_number"),
-        (
-            &k.track_number_status,
-            ZGO_TRACK_NUMBER_STATUS,
-            "track_number_status",
-        ),
-        (
-            &k.playlist_name_status,
-            ZGO_PLAYLIST_NAME,
-            "playlist_name_status",
-        ),
-        (&k.play_pause, ZGO_PLAY_PAUSE, "play_pause"),
-        (&k.track_step, ZGO_TRACK_STEP, "track_step"),
-        (
-            &k.track_step_updown,
-            ZGO_TRACK_STEP_UPDOWN,
-            "track_step_updown",
-        ),
-        (&k.track_position, ZGO_TRACK_POSITION, "track_position"),
-        (&k.track_seek, ZGO_TRACK_SEEK, "track_seek"),
-        (
-            &k.track_seek_updown,
-            ZGO_TRACK_SEEK_UPDOWN,
-            "track_seek_updown",
-        ),
-        (&k.track_title_status, ZGO_TRACK_TITLE, "track_title_status"),
-        (
-            &k.track_artist_status,
-            ZGO_TRACK_ARTIST,
-            "track_artist_status",
-        ),
-        (&k.track_album_status, ZGO_TRACK_ALBUM, "track_album_status"),
-        (
-            &k.track_progress_status,
-            ZGO_TRACK_PROGRESS,
-            "track_progress_status",
-        ),
-        (&k.presence, ZGO_PRESENCE, "presence"),
-        (
-            &k.presence_enable_status,
-            ZGO_PRESENCE_ENABLE,
-            "presence_enable_status",
-        ),
-        (&k.presence_enable, ZGO_PRESENCE_ENABLE, "presence_enable"),
-        (
-            &k.presence_timer_status,
-            ZGO_PRESENCE_TIMER_ACTIVE,
-            "presence_timer_status",
-        ),
-    ]
-}
-
 /// Every configured status object with its group address: a label for messages and the
 /// canonical address. Zones come first, then clients, then the global objects.
 fn status_addresses(config: &AppConfig) -> Vec<(String, String)> {
     let mut list = Vec::new();
     for zone in &config.zones {
-        for (ga, _, name) in zone_object_addresses(&zone.knx) {
-            if let Some(ga) = ga
-                && name.ends_with("_status")
-            {
-                list.push((format!("zone {} {name}", zone.index), canonical_ga(ga)));
+        for (row, ga) in objects::configured(objects::ZONE_OBJECTS, &zone.knx.group_addresses()) {
+            if row.is_status() {
+                list.push((format!("zone {} {}", zone.index, row.key), canonical_ga(ga)));
             }
         }
     }
     for client in &config.clients {
-        let k = &client.knx;
-        let fields = [
-            (&k.volume_status, "volume_status"),
-            (&k.mute_status, "mute_status"),
-            (&k.latency_status, "latency_status"),
-            (&k.zone_status, "zone_status"),
-            (&k.connected_status, "connected_status"),
-        ];
-        for (ga, name) in fields {
-            if let Some(ga) = ga {
-                list.push((format!("client {} {name}", client.index), canonical_ga(ga)));
+        let keys = client.knx.group_addresses();
+        for (row, ga) in objects::configured(objects::CLIENT_OBJECTS, &keys) {
+            if row.is_status() {
+                list.push((
+                    format!("client {} {}", client.index, row.key),
+                    canonical_ga(ga),
+                ));
             }
         }
     }
-    if let Some(k) = config.knx.as_ref() {
-        let fields = [
-            (&k.server_online, "server_online"),
-            (&k.all_mute_status, "all_mute_status"),
-            (&k.system_fault, "system_fault"),
-        ];
-        for (ga, name) in fields {
-            if let Some(ga) = ga {
-                list.push((format!("global {name}"), canonical_ga(ga)));
+    if let Some(knx) = config.knx.as_ref() {
+        for (row, ga) in objects::configured(objects::GLOBAL_OBJECTS, &knx.group_addresses()) {
+            if row.is_status() {
+                list.push((format!("global {}", row.key), canonical_ga(ga)));
             }
         }
     }
@@ -1157,20 +991,13 @@ pub static KNX_TIME_OFFSET_SECS: std::sync::atomic::AtomicI64 =
 /// Only receive-capable globals appear here; send-only globals (Server Online, System
 /// Fault) and the All-Mute status are published, not dispatched.
 pub(crate) fn build_global_ga_map(config: &AppConfig) -> HashMap<String, &'static str> {
-    let mut map = HashMap::new();
-    if let Some(knx) = config.knx.as_ref() {
-        let pairs: &[(&Option<String>, &'static str)] = &[
-            (&knx.all_stop, "all_stop"),
-            (&knx.all_mute, "all_mute"),
-            (&knx.knx_time, "knx_time"),
-        ];
-        for (ga_opt, action) in pairs {
-            if let Some(ga) = ga_opt {
-                map.insert(canonical_ga(ga), *action);
-            }
-        }
-    }
-    map
+    let Some(knx) = config.knx.as_ref() else {
+        return HashMap::new();
+    };
+    objects::configured(objects::GLOBAL_OBJECTS, &knx.group_addresses())
+        .into_iter()
+        .filter_map(|(row, ga)| row.action.map(|action| (canonical_ga(ga), action)))
+        .collect()
 }
 
 /// A command a group telegram or group object stands for.
@@ -1184,68 +1011,22 @@ enum Command<'a> {
     Client(usize, &'a str),
 }
 
-/// Zone objects the bus can write, and the action each one triggers.
-const ZONE_ACTIONS: &[(usize, &str)] = &[
-    (ZGO_PLAY, "play"),
-    (ZGO_PAUSE, "pause"),
-    (ZGO_STOP, "stop"),
-    (ZGO_TRACK_NEXT, "next"),
-    (ZGO_TRACK_PREVIOUS, "previous"),
-    (ZGO_VOLUME, "volume"),
-    (ZGO_VOLUME_DIM, "volume_dim"),
-    (ZGO_MUTE, "mute"),
-    (ZGO_MUTE_TOGGLE, "mute_toggle"),
-    (ZGO_SHUFFLE, "shuffle"),
-    (ZGO_SHUFFLE_TOGGLE, "shuffle_toggle"),
-    (ZGO_REPEAT, "repeat"),
-    (ZGO_REPEAT_TOGGLE, "repeat_toggle"),
-    (ZGO_TRACK_REPEAT, "track_repeat"),
-    (ZGO_TRACK_REPEAT_TOGGLE, "track_repeat_toggle"),
-    (ZGO_PLAYLIST, "playlist"),
-    (ZGO_PLAYLIST_NEXT, "playlist_next"),
-    (ZGO_PLAYLIST_PREVIOUS, "playlist_previous"),
-    (ZGO_PLAYLIST_STEP, "playlist_step"),
-    (ZGO_PLAYLIST_STEP_UPDOWN, "playlist_step_updown"),
-    (ZGO_TRACK_NUMBER, "track_number"),
-    (ZGO_PLAY_PAUSE, "play_pause"),
-    (ZGO_TRACK_STEP, "track_step"),
-    (ZGO_TRACK_STEP_UPDOWN, "track_step_updown"),
-    (ZGO_TRACK_POSITION, "track_position"),
-    (ZGO_TRACK_SEEK, "track_seek"),
-    (ZGO_TRACK_SEEK_UPDOWN, "track_seek_updown"),
-    (ZGO_PRESENCE, "presence"),
-    (ZGO_PRESENCE_ENABLE, "presence_enable"),
-];
-
-/// Client objects the bus can write, and the action each one triggers.
-const CLIENT_ACTIONS: &[(usize, &str)] = &[
-    (CGO_VOLUME, "volume"),
-    (CGO_VOLUME_DIM, "volume_dim"),
-    (CGO_MUTE, "mute"),
-    (CGO_MUTE_TOGGLE, "mute_toggle"),
-    (CGO_LATENCY, "latency"),
-    (CGO_ZONE, "zone"),
-];
-
-/// Device-level objects the bus can write, and the action each one triggers.
-const GLOBAL_ACTIONS: &[(usize, &str)] = &[
-    (GGO_ALL_STOP, "all_stop"),
-    (GGO_ALL_MUTE, "all_mute"),
-    (GGO_KNX_TIME, "knx_time"),
-];
-
 /// What a group object (by ASAP) commands when ETS-programmed addresses write it, or `None`
 /// for objects that only carry status.
 fn object_command(asap: u16) -> Option<Command<'static>> {
-    let find = |table: &'static [(usize, &'static str)], go: usize| {
-        table.iter().find(|(i, _)| *i == go).map(|(_, a)| *a)
-    };
     match group_objects::locate(asap)? {
-        GoLocation::Zone { zone, go } => Some(Command::Zone(zone, find(ZONE_ACTIONS, go)?)),
-        GoLocation::Client { client, go } => {
-            Some(Command::Client(client, find(CLIENT_ACTIONS, go)?))
-        }
-        GoLocation::Global(go) => Some(Command::Global(find(GLOBAL_ACTIONS, go)?)),
+        GoLocation::Zone { zone, go } => Some(Command::Zone(
+            zone,
+            objects::action_of(objects::ZONE_OBJECTS, go)?,
+        )),
+        GoLocation::Client { client, go } => Some(Command::Client(
+            client,
+            objects::action_of(objects::CLIENT_OBJECTS, go)?,
+        )),
+        GoLocation::Global(go) => Some(Command::Global(objects::action_of(
+            objects::GLOBAL_OBJECTS,
+            go,
+        )?)),
     }
 }
 
@@ -1699,6 +1480,7 @@ const fn repeat_switch(on: bool, mode: snapdog_common::RepeatMode) -> ZoneComman
 
 #[cfg(test)]
 mod tests {
+    use super::group_objects::*;
     use super::*;
 
     // ── #511: setting the OS clock never blocks the session task ──
@@ -2938,11 +2720,9 @@ zone = "Z1"
     fn every_status_address_is_in_the_read_set() {
         // Every zone key, each with an address of its own; the expectation comes from the send
         // flag of the objects in `ZONE_GOS`, not from a hand list.
-        let blank =
-            crate::config::load_raw(toml::from_str("[[zone]]\nname = \"Z1\"\n").unwrap()).unwrap();
-        let keys: Vec<(&str, usize)> = zone_object_addresses(&blank.zones[0].knx)
-            .into_iter()
-            .map(|(_, go, name)| (name, go))
+        let keys: Vec<(&str, usize)> = objects::ZONE_OBJECTS
+            .iter()
+            .map(|row| (row.key, row.go))
             .collect();
         let zone_keys = keys
             .iter()

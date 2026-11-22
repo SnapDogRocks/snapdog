@@ -322,10 +322,7 @@ fn crc32(data: &[u8]) -> u32 {
 }
 
 use super::group_objects::{
-    self, CGO_CONNECTED, CGO_LATENCY, CGO_LATENCY_STATUS, CGO_MUTE, CGO_MUTE_STATUS,
-    CGO_MUTE_TOGGLE, CGO_VOLUME, CGO_VOLUME_DIM, CGO_VOLUME_STATUS, CGO_ZONE, CGO_ZONE_STATUS,
-    CLIENT_GOS, GGO_ALL_MUTE, GGO_ALL_STOP, GGO_KNX_TIME, GGO_SERVER_ONLINE, GGO_SYSTEM_FAULT,
-    MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZONE_GOS,
+    self, CLIENT_GOS, MAX_API_KEYS, MAX_CLIENTS, MAX_ZONES, TOTAL_GO_COUNT, ZONE_GOS,
 };
 
 /// Fixed-size array of `N` values. A newtype because Rust only derives `Default` for arrays up to
@@ -1617,7 +1614,6 @@ fn build_bau(ia: IndividualAddress) -> Bau {
 /// For an object with two addresses (a command and its status), the sending address comes
 /// first: the device stack sends to the first association and treats the others as listening
 /// addresses.
-#[allow(clippy::too_many_lines)] // Table construction from config — linear data flow
 fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) -> bool {
     // Collect all (GA string, ASAP) pairs
     let mut ga_asap_pairs: Vec<(u16, u16)> = Vec::new();
@@ -1632,15 +1628,10 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) ->
             );
             continue;
         }
-        let knx = &zone_cfg.knx;
-        // Map each configured GA to its zone GO ASAP
-        let zone_gas = super::zone_object_addresses(knx);
-        for (ga_opt, go_idx, _) in zone_gas {
-            if let Some(ga_str) = ga_opt
-                && let Ok(ga) = GroupAddress::from_str(ga_str)
-            {
-                let asap = group_objects::zone_asap(idx, go_idx);
-                ga_asap_pairs.push((ga.raw(), asap));
+        let keys = zone_cfg.knx.group_addresses();
+        for (row, ga) in super::objects::configured(super::objects::ZONE_OBJECTS, &keys) {
+            if let Ok(ga) = GroupAddress::from_str(ga) {
+                ga_asap_pairs.push((ga.raw(), group_objects::zone_asap(idx, row.go)));
             }
         }
     }
@@ -1655,44 +1646,19 @@ fn build_tables_from_config(bau: &mut Bau, config: &crate::config::AppConfig) ->
             );
             continue;
         }
-        let knx = &client_cfg.knx;
-        let client_gas: &[(&Option<String>, usize)] = &[
-            (&knx.volume, CGO_VOLUME),
-            (&knx.volume_status, CGO_VOLUME_STATUS),
-            (&knx.volume_dim, CGO_VOLUME_DIM),
-            (&knx.mute, CGO_MUTE),
-            (&knx.mute_status, CGO_MUTE_STATUS),
-            (&knx.mute_toggle, CGO_MUTE_TOGGLE),
-            (&knx.latency, CGO_LATENCY),
-            (&knx.latency_status, CGO_LATENCY_STATUS),
-            (&knx.zone, CGO_ZONE),
-            (&knx.zone_status, CGO_ZONE_STATUS),
-            (&knx.connected_status, CGO_CONNECTED),
-        ];
-        for (ga_opt, go_idx) in client_gas {
-            if let Some(ga_str) = ga_opt
-                && let Ok(ga) = GroupAddress::from_str(ga_str)
-            {
-                let asap = group_objects::client_asap(idx, *go_idx);
-                ga_asap_pairs.push((ga.raw(), asap));
+        let keys = client_cfg.knx.group_addresses();
+        for (row, ga) in super::objects::configured(super::objects::CLIENT_OBJECTS, &keys) {
+            if let Ok(ga) = GroupAddress::from_str(ga) {
+                ga_asap_pairs.push((ga.raw(), group_objects::client_asap(idx, row.go)));
             }
         }
     }
 
     if let Some(knx) = config.knx.as_ref() {
-        let global_gas: &[(&Option<String>, usize)] = &[
-            (&knx.server_online, GGO_SERVER_ONLINE),
-            (&knx.all_stop, GGO_ALL_STOP),
-            (&knx.all_mute_status, GGO_ALL_MUTE),
-            (&knx.all_mute, GGO_ALL_MUTE),
-            (&knx.system_fault, GGO_SYSTEM_FAULT),
-            (&knx.knx_time, GGO_KNX_TIME),
-        ];
-        for (ga_opt, go_idx) in global_gas {
-            if let Some(ga_str) = ga_opt
-                && let Ok(ga) = GroupAddress::from_str(ga_str)
-            {
-                ga_asap_pairs.push((ga.raw(), group_objects::global_asap(*go_idx)));
+        let keys = knx.group_addresses();
+        for (row, ga) in super::objects::configured(super::objects::GLOBAL_OBJECTS, &keys) {
+            if let Ok(ga) = GroupAddress::from_str(ga) {
+                ga_asap_pairs.push((ga.raw(), group_objects::global_asap(row.go)));
             }
         }
     }
@@ -1963,9 +1929,7 @@ fn classify_group_frame(bau: &Bau, frame: &CemiFrame) -> GroupPolicy {
     reason = "a test binds an ephemeral loopback port for a fake peer, not a SnapDog listener"
 )]
 mod tests {
-    use super::group_objects::{
-        ZGO_MUTE_STATUS, ZGO_PLAY, ZGO_PRESENCE_ENABLE, ZGO_VOLUME_STATUS, zone_asap,
-    };
+    use super::group_objects::*;
     use super::*;
 
     #[test]

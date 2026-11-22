@@ -376,7 +376,7 @@ impl GroupVolumeMode {
 // ── Presence ───────────────────────────────────────────────────
 
 /// Presence-triggered playback source.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresenceSource {
     /// Play a radio station by index (0-based).
     Radio(usize),
@@ -1165,6 +1165,37 @@ pub struct KnxConfig {
     /// (set via the `--knx-sync-system-clock` CLI flag).
     #[serde(default)]
     pub sync_system_clock: bool,
+}
+
+impl KnxConfig {
+    /// The device-level group address keys, in declaration order.
+    pub const GROUP_ADDRESS_KEYS: [&'static str; 6] = [
+        "server_online",
+        "all_stop",
+        "all_mute",
+        "all_mute_status",
+        "system_fault",
+        "knx_time",
+    ];
+
+    /// Every device-level key with its configured group address, like
+    /// `ZoneKnxAddresses::group_addresses`.
+    #[must_use]
+    pub fn group_addresses(&self) -> Vec<(&'static str, Option<&str>)> {
+        let values = [
+            &self.server_online,
+            &self.all_stop,
+            &self.all_mute,
+            &self.all_mute_status,
+            &self.system_fault,
+            &self.knx_time,
+        ];
+        Self::GROUP_ADDRESS_KEYS
+            .into_iter()
+            .zip(values)
+            .map(|(key, ga)| (key, ga.as_deref()))
+            .collect()
+    }
 }
 
 /// Default heartbeat interval (minutes) for the global "server online" send.
