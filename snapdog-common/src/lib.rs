@@ -372,6 +372,7 @@ mod tests {
             enabled: true,
             bands: vec![band(1000.0, 0.0, 1.0), band(1000.0, 99.0, 1.0)],
             preset: None,
+            preamp_db: 0.0,
         };
         assert!(config.validate().unwrap_err().starts_with("band 1:"));
         config.bands = vec![band(1000.0, 0.0, 1.0); MAX_EQ_BANDS + 1];
