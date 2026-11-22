@@ -4,6 +4,7 @@
 //! Cover art cache — in-memory store for zone cover images.
 //! Served via GET /api/v1/zones/{id}/cover with correct MIME type.
 
+use crate::subsonic::redact_url;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -152,14 +153,14 @@ pub async fn fetch_cover(url: &str) -> Option<(Vec<u8>, String)> {
             .to_string();
         let bytes = percent_decode_bytes(data);
         if bytes.len() as u64 > MAX_COVER_ART_BYTES {
-            tracing::debug!(url, size = bytes.len(), "Data URI cover art too large");
+            tracing::debug!(url = %redact_url(url), size = bytes.len(), "Data URI cover art too large");
             return None;
         }
         return Some((bytes, mime));
     }
 
     if !is_http_url(url) {
-        tracing::debug!(url, "Ignoring non-HTTP cover art URL");
+        tracing::debug!(url = %redact_url(url), "Ignoring non-HTTP cover art URL");
         return None;
     }
 
@@ -169,17 +170,23 @@ pub async fn fetch_cover(url: &str) -> Option<(Vec<u8>, String)> {
         .timeout(COVER_FETCH_TIMEOUT)
         .build()
         .inspect_err(
-            |e| tracing::debug!(error = %e, url, "Failed to build HTTP client for cover fetch"),
+            |e| tracing::debug!(error = %e, url = %redact_url(url), "Failed to build HTTP client for cover fetch"),
         )
         .ok()?;
     let resp = client
         .get(url)
         .send()
         .await
-        .inspect_err(|e| tracing::debug!(error = %e, url, "Cover art request failed"))
+        .map_err(reqwest::Error::without_url)
+        .inspect_err(
+            |e| tracing::debug!(error = %e, url = %redact_url(url), "Cover art request failed"),
+        )
         .ok()?
         .error_for_status()
-        .inspect_err(|e| tracing::debug!(error = %e, url, "Cover art HTTP error"))
+        .map_err(reqwest::Error::without_url)
+        .inspect_err(
+            |e| tracing::debug!(error = %e, url = %redact_url(url), "Cover art HTTP error"),
+        )
         .ok()?;
     let mime = resp
         .headers()
@@ -207,10 +214,10 @@ pub async fn fetch_cover_with_favicon_fallback(
             return Some(converted);
         }
         if mime.starts_with("image/") {
-            tracing::debug!(url, %mime, "Found cover via config URL");
+            tracing::debug!(url = %redact_url(url), %mime, "Found cover via config URL");
             return Some((bytes, mime.to_string()));
         }
-        tracing::debug!(url, %mime, "Config cover URL returned non-image content");
+        tracing::debug!(url = %redact_url(url), %mime, "Config cover URL returned non-image content");
     }
     let base = url::Url::parse(stream_url).ok().and_then(|u| {
         let scheme = u.scheme();
@@ -360,7 +367,7 @@ async fn response_bytes_limited(
     crate::audio::read_response_bytes_limited(response, limit, label)
         .await
         .inspect_err(
-            |e| tracing::debug!(error = %format!("{e:#}"), url, label, "Remote body not read"),
+            |e| tracing::debug!(error = %format!("{e:#}"), url = %redact_url(url), label, "Remote body not read"),
         )
         .ok()
         .map(|body| body.to_vec())

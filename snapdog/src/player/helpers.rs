@@ -789,7 +789,13 @@ async fn prefetch_one(
         "Only http and https URLs can be prefetched"
     );
     let client = audio::streaming_client()?;
-    let response = client.get(url).send().await?.error_for_status()?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(reqwest::Error::without_url)?
+        .error_for_status()
+        .map_err(reqwest::Error::without_url)?;
 
     let content_type = response
         .headers()
@@ -806,7 +812,7 @@ async fn prefetch_one(
 
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let bytes = chunk?;
+        let bytes = chunk.map_err(reqwest::Error::without_url)?;
         writer.write(&bytes)?;
     }
     writer.complete()?;

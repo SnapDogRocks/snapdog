@@ -1149,10 +1149,11 @@ async fn get_track_cover_art(
                 .cover_art
                 .as_ref()
                 .ok_or(ApiError::NotFound("resource"))?;
-            let bytes = sub
-                .get_cover_art(cover_id)
-                .await
-                .map_err(|e| ApiError::BadGateway(e.to_string()))?;
+            let bytes = sub.get_cover_art(cover_id).await.map_err(|e| {
+                // The details stay in the log: the answer carries a fixed text.
+                tracing::warn!(error = %format!("{e:#}"), "Subsonic cover art request failed");
+                ApiError::BadGateway("upstream request failed".into())
+            })?;
             let mime = crate::state::cover::detect_mime(&bytes);
             Ok(cover_response(mime, bytes, CACHE_CONTROL_BY_INDEX))
         }

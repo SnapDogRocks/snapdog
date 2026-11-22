@@ -12,6 +12,7 @@ pub mod eq;
 pub mod icy;
 pub mod resample;
 
+use crate::subsonic::redact_url;
 use std::io::{Read, Seek};
 
 use anyhow::{Context, Result};
@@ -192,7 +193,9 @@ pub(crate) async fn read_response_bytes_limited(
     let mut stream = response.bytes_stream();
     let mut body = bytes::BytesMut::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.with_context(|| format!("Failed to read {label} body"))?;
+        let chunk = chunk
+            .map_err(reqwest::Error::without_url)
+            .with_context(|| format!("Failed to read {label} body"))?;
         let next_len = body.len() as u64 + chunk.len() as u64;
         if next_len > limit {
             anyhow::bail!("{label} body exceeded {limit} bytes");
@@ -281,9 +284,11 @@ async fn decode_http_stream_impl(
         .get(&url)
         .send()
         .await
-        .with_context(|| format!("Failed to fetch {url}"))?
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("Failed to fetch {}", redact_url(&url)))?
         .error_for_status()
-        .with_context(|| format!("HTTP error for {url}"))?;
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("HTTP error for {}", redact_url(&url)))?;
 
     let content_type = response
         .headers()
@@ -329,7 +334,9 @@ async fn decode_http_stream_impl(
         use tokio::io::AsyncWriteExt;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            let bytes = chunk.with_context(|| format!("Stream read error for {url_clone}"))?;
+            let bytes = chunk
+                .map_err(reqwest::Error::without_url)
+                .with_context(|| format!("Stream read error for {}", redact_url(&url_clone)))?;
             let audio = if let Some(ref mut proc) = icy_processor {
                 proc.process(bytes)
             } else {
@@ -414,9 +421,11 @@ async fn decode_http_stream_cached_impl(
         .get(&url)
         .send()
         .await
-        .with_context(|| format!("Failed to fetch {url}"))?
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("Failed to fetch {}", redact_url(&url)))?
         .error_for_status()
-        .with_context(|| format!("HTTP error for {url}"))?;
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("HTTP error for {}", redact_url(&url)))?;
 
     let content_type = response
         .headers()
@@ -464,7 +473,9 @@ async fn decode_http_stream_cached_impl(
         let mut stream = response.bytes_stream();
         let mut downloaded = 0u64;
         while let Some(chunk) = stream.next().await {
-            let bytes = chunk.with_context(|| format!("Stream read error for {url_clone}"))?;
+            let bytes = chunk
+                .map_err(reqwest::Error::without_url)
+                .with_context(|| format!("Stream read error for {}", redact_url(&url_clone)))?;
             downloaded += bytes.len() as u64;
             // Tee to cache; the first failure drops the writer, which removes its file.
             if let Some(writer) = cache_writer.as_mut()
@@ -587,7 +598,13 @@ async fn decode_hls_stream(
                     let c = c.clone();
                     let u = u.clone();
                     async move {
-                        let resp = c.get(&u).send().await?.error_for_status()?;
+                        let resp = c
+                            .get(&u)
+                            .send()
+                            .await
+                            .map_err(reqwest::Error::without_url)?
+                            .error_for_status()
+                            .map_err(reqwest::Error::without_url)?;
                         read_response_text_limited(resp, MAX_PLAYLIST_BYTES, "HLS playlist").await
                     }
                 })
@@ -664,7 +681,13 @@ async fn decode_hls_stream(
                     let c = c.clone();
                     let u = u.clone();
                     async move {
-                        let resp = c.get(&u).send().await?.error_for_status()?;
+                        let resp = c
+                            .get(&u)
+                            .send()
+                            .await
+                            .map_err(reqwest::Error::without_url)?
+                            .error_for_status()
+                            .map_err(reqwest::Error::without_url)?;
                         read_response_bytes_limited(resp, MAX_HLS_SEGMENT_BYTES, "HLS segment")
                             .await
                     }
@@ -1012,11 +1035,11 @@ const MAX_PLAYLIST_DEPTH: u8 = 3;
 #[allow(clippy::case_sensitive_file_extension_comparisons)] // URLs are already lowercased
 async fn resolve_playlist_recursive(url: &str, depth: u8) -> Option<ResolvedUrl> {
     if !is_http_url(url) {
-        tracing::warn!(url, "Rejecting non-HTTP playlist URL");
+        tracing::warn!(url = %redact_url(url), "Rejecting non-HTTP playlist URL");
         return None;
     }
     if depth == 0 {
-        tracing::warn!(url, "Nested playlist resolution exceeded max depth");
+        tracing::warn!(url = %redact_url(url), "Nested playlist resolution exceeded max depth");
         return None;
     }
     let lower = url.to_lowercase();
@@ -1059,7 +1082,7 @@ async fn resolve_playlist_recursive(url: &str, depth: u8) -> Option<ResolvedUrl>
         || content_type.contains("scpls")
         || final_lower.ends_with(".pls");
 
-    tracing::debug!(url, final_url, content_type, "Resolving playlist");
+    tracing::debug!(url = %redact_url(url), final_url = %redact_url(&final_url), content_type, "Resolving playlist");
     let body = read_response_text_limited(response, MAX_PLAYLIST_BYTES, "playlist")
         .await
         .ok()?;
@@ -1090,7 +1113,7 @@ async fn resolve_playlist_recursive(url: &str, depth: u8) -> Option<ResolvedUrl>
         return None;
     } else if body.contains("#EXT-X-TARGETDURATION") || body.contains("#EXT-X-MEDIA-SEQUENCE") {
         // HLS media playlist — route to HLS segment streaming
-        tracing::info!(url, "HLS media playlist detected — using segment streaming");
+        tracing::info!(url = %redact_url(url), "HLS media playlist detected — using segment streaming");
         return Some(ResolvedUrl::HlsMedia(url.to_string()));
     } else {
         // M3U: first non-empty, non-comment line
@@ -1110,7 +1133,7 @@ async fn resolve_playlist_recursive(url: &str, depth: u8) -> Option<ResolvedUrl>
         }
     }
 
-    tracing::warn!(url, "Playlist contained no stream URLs");
+    tracing::warn!(url = %redact_url(url), "Playlist contained no stream URLs");
     None
 }
 

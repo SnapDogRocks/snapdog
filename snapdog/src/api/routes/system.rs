@@ -121,21 +121,20 @@ async fn updater_request(
         },
         |value| client.post(format!("{base}{path}")).json(&value),
     );
-    let response = builder
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|error| ApiError::BadGateway(error.to_string()))?;
+    let response = builder.bearer_auth(token).send().await.map_err(|error| {
+        tracing::warn!(error = %error.without_url(), "Container updater request failed");
+        ApiError::BadGateway("container updater request failed".into())
+    })?;
     if !response.status().is_success() {
         return Err(ApiError::BadGateway(format!(
             "container updater returned {}",
             response.status()
         )));
     }
-    let value = response
-        .json::<Value>()
-        .await
-        .map_err(|error| ApiError::BadGateway(error.to_string()))?;
+    let value = response.json::<Value>().await.map_err(|error| {
+        tracing::warn!(error = %error.without_url(), "Container updater request failed");
+        ApiError::BadGateway("container updater request failed".into())
+    })?;
     Ok(Json(value))
 }
 

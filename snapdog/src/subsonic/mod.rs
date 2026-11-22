@@ -134,6 +134,46 @@ fn refreshed_cache(
 /// Prefix of the queue id the player uses for an album. It cannot be a Subsonic playlist id.
 const ALBUM_QUEUE_PREFIX: &str = "\u{1f}album:";
 
+/// Query parameters that carry a credential: the Subsonic user, token, salt and password, and
+/// the API key and token names other services use.
+const SECRET_QUERY_KEYS: &[&str] = &[
+    "u", "t", "s", "p", "apikey", "api_key", "token", "key", "password",
+];
+
+/// A URL for an error message or a log line, with every credential value replaced.
+///
+/// Subsonic authenticates with `u`, `t` and `s` in the query, and `t` is an MD5 over the password
+/// and `s`, so the URL itself must never leave the process.
+#[must_use]
+pub fn redact_url(url: &str) -> String {
+    let Ok(mut parsed) = url::Url::parse(url) else {
+        // Not a URL: keep what comes before a query, drop the rest.
+        return url.split('?').next().unwrap_or_default().to_string();
+    };
+    if parsed.query().is_some() {
+        let pairs: Vec<(String, String)> = parsed
+            .query_pairs()
+            .map(|(k, v)| {
+                let secret = SECRET_QUERY_KEYS.iter().any(|s| k.eq_ignore_ascii_case(s));
+                (
+                    k.into_owned(),
+                    if secret {
+                        "REDACTED".into()
+                    } else {
+                        v.into_owned()
+                    },
+                )
+            })
+            .collect();
+        parsed.query_pairs_mut().clear().extend_pairs(pairs);
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        let _ = parsed.set_username("");
+        let _ = parsed.set_password(None);
+    }
+    parsed.into()
+}
+
 /// The queue id under which the player holds an album, see [`SubsonicClient::get_queue`].
 #[must_use]
 pub fn album_queue_id(album_id: &str) -> String {
@@ -421,7 +461,15 @@ impl SubsonicClient {
     /// Returns an error if the HTTP request fails or the response is too large.
     pub async fn get_cover_art(&self, cover_id: &str) -> Result<Vec<u8>> {
         let url = self.cover_art_fetch_url(cover_id);
-        let resp = self.http.get(&url).send().await?.error_for_status()?;
+        // `without_url`: reqwest adds the request URL, with the credentials, to its errors.
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await
+            .map_err(reqwest::Error::without_url)?
+            .error_for_status()
+            .map_err(reqwest::Error::without_url)?;
         // Some servers answer an unknown id with 200 and an XML or JSON error body.
         let is_error_body = resp
             .headers()
@@ -456,11 +504,14 @@ impl SubsonicClient {
             .get(url.clone())
             .send()
             .await
+            .map_err(reqwest::Error::without_url)
             .with_context(|| format!("GET {method}"))?;
         resp.error_for_status_ref()
+            .map_err(reqwest::Error::without_url)
             .with_context(|| format!("GET {method}"))?;
         resp.json()
             .await
+            .map_err(reqwest::Error::without_url)
             .with_context(|| format!("Parse {method} response"))
     }
 
@@ -766,5 +817,23 @@ mod playlist_cache_tests {
         let (stamp, _) = refreshed_cache(None, Err(anyhow::anyhow!("down")), now);
         let age = now.duration_since(stamp);
         assert_eq!(age, PLAYLIST_CACHE_TTL.checked_sub(PLAYLIST_RETRY).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod redact_tests {
+    use super::redact_url;
+
+    #[test]
+    fn redact_url_hides_every_credential_and_keeps_the_rest() {
+        let url = "https://music.example/rest/stream?u=alice&t=abc&s=salt&v=1.16.1&c=snapdog&id=42";
+        let red = redact_url(url);
+        for secret in ["alice", "abc", "salt"] {
+            assert!(!red.contains(secret), "{red}");
+        }
+        assert!(red.contains("id=42") && red.contains("v=1.16.1"), "{red}");
+        assert!(!redact_url("https://bob:pw@radio.example/live?apikey=k").contains("pw"));
+        assert!(!redact_url("https://radio.example/live?apikey=k").contains("=k"));
+        assert_eq!(redact_url("not a url?u=x"), "not a url");
     }
 }
