@@ -212,7 +212,7 @@ pub enum FilterType {
 }
 
 /// Single EQ band configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EqBand {
     // The schema bounds repeat `EQ_FREQ_RANGE_HZ`, `EQ_GAIN_RANGE_DB` and `EQ_Q_RANGE`
@@ -244,6 +244,26 @@ pub struct EqConfig {
     /// Name of the preset this config was loaded from, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
+    /// Gain in dB applied before the bands while the EQ is enabled. Speaker corrections use
+    /// a negative preamp to leave headroom for boosted bands. 0 when absent.
+    #[serde(default, skip_serializing_if = "is_zero_db")]
+    pub preamp_db: f32,
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if signature"
+)]
+fn is_zero_db(db: &f32) -> bool {
+    *db == 0.0
+}
+
+impl EqConfig {
+    /// The preamp as a linear gain factor.
+    #[must_use]
+    pub fn preamp_gain(&self) -> f32 {
+        10f32.powf(self.preamp_db / 20.0)
+    }
 }
 
 impl EqBand {
@@ -304,6 +324,7 @@ impl Default for EqConfig {
             enabled: false,
             bands: vec![],
             preset: Some("flat".into()),
+            preamp_db: 0.0,
         }
     }
 }
@@ -369,6 +390,7 @@ mod tests {
             enabled: true,
             bands: vec![band(1000.0, 0.0, 1.0), band(1000.0, 99.0, 1.0)],
             preset: None,
+            preamp_db: 0.0,
         };
         assert!(config.validate().unwrap_err().starts_with("band 1:"));
         config.bands = vec![band(1000.0, 0.0, 1.0); MAX_EQ_BANDS + 1];
@@ -393,7 +415,7 @@ mod tests {
     fn eq_config_default() {
         let config = EqConfig::default();
         assert!(!config.enabled);
-        assert!(config.bands.is_empty());
+        assert_eq!(config.bands, Vec::<EqBand>::new());
         assert_eq!(config.preset, Some("flat".into()));
     }
 

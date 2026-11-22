@@ -107,6 +107,7 @@ fn zone_eq_changed_flattens_config() {
                 filter_type: snapdog::audio::eq::FilterType::Peaking,
             }],
             preset: None,
+            preamp_db: 0.0,
         },
     };
     let v = serde_json::to_value(&n).expect("serialize");
@@ -171,6 +172,7 @@ fn peaking_config() -> snapdog::audio::eq::EqConfig {
             filter_type: snapdog::audio::eq::FilterType::Peaking,
         }],
         preset: Some("flat".into()),
+        preamp_db: 0.0,
     }
 }
 
