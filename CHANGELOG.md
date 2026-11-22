@@ -1,5 +1,63 @@
 # Changelog
 
+## [0.37.0](https://github.com/SnapDogRocks/snapdog/compare/v0.36.0...v0.37.0) (2026-11-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** remove the deprecated playlist id and zone_changed.playlist ([#565](https://github.com/SnapDogRocks/snapdog/issues/565))
+
+### Features
+
+* **api:** remove the deprecated playlist id and zone_changed.playlist ([#565](https://github.com/SnapDogRocks/snapdog/issues/565)) ([21a160a](https://github.com/SnapDogRocks/snapdog/commit/21a160a46d29cc4d31846a8b5a0781abdabbf00e))
+* **zones:** start volume, volume limit and AirPlay and Spotify switches per zone ([#567](https://github.com/SnapDogRocks/snapdog/issues/567)) ([c470a0b](https://github.com/SnapDogRocks/snapdog/commit/c470a0b24ee501d2278abc43d86938615a41dc13))
+
+
+### Bug Fixes
+
+* **api:** treat an unsigned volume string as absolute and saturate the additions ([#551](https://github.com/SnapDogRocks/snapdog/issues/551)) ([773d6de](https://github.com/SnapDogRocks/snapdog/commit/773d6de66dec39bc1d5b0cab1c5a7c322c19ede4))
+* **api:** validate EQ, latency, seek and playlist indexes against the zone and shared bounds ([#559](https://github.com/SnapDogRocks/snapdog/issues/559)) ([2984458](https://github.com/SnapDogRocks/snapdog/commit/29844584e55163a7ff8c34845897b7c6f5962f48))
+* **audio:** finish fade-outs cleanly, pick the best HLS variant and apply the preamp ([#596](https://github.com/SnapDogRocks/snapdog/issues/596)) ([953577f](https://github.com/SnapDogRocks/snapdog/commit/953577f4a00b3a4b4464b8c2bd05678533b0ddc9))
+* **audio:** map the source channel count to the configured output ([#556](https://github.com/SnapDogRocks/snapdog/issues/556)) ([4e2181b](https://github.com/SnapDogRocks/snapdog/commit/4e2181bccaaa503aaad7d31c43482c096fddf8cd))
+* **audio:** time out stalled downloads and reconnect radio with backoff ([#569](https://github.com/SnapDogRocks/snapdog/issues/569)) ([2bcf677](https://github.com/SnapDogRocks/snapdog/commit/2bcf677ae5bd71bb49d4b44cddee8dd060e53a46))
+* **cache:** share one track cache across zones and never index a short download ([#589](https://github.com/SnapDogRocks/snapdog/issues/589)) ([264d591](https://github.com/SnapDogRocks/snapdog/commit/264d59105be3f2ec31bd7a7bdc788c6984986b3b))
+* **client:** end the old audio output on a format change instead of restarting forever ([#557](https://github.com/SnapDogRocks/snapdog/issues/557)) ([5e71fad](https://github.com/SnapDogRocks/snapdog/commit/5e71fad87b5195f2fbe1dad8404e3d26391e2239))
+* **client:** follow the documented midi grammar and the selected card ([#582](https://github.com/SnapDogRocks/snapdog/issues/582)) ([536075b](https://github.com/SnapDogRocks/snapdog/commit/536075b4dfdd664f30e59dabcbdc2dd2aa5d0eb1))
+* **client:** refuse an output layout the device cannot play ([#571](https://github.com/SnapDogRocks/snapdog/issues/571)) ([d03ba89](https://github.com/SnapDogRocks/snapdog/commit/d03ba896046e9a81269fa6f587e53b3b25048485))
+* **clients:** announce a client zone move from KNX and MQTT through one shared function ([#558](https://github.com/SnapDogRocks/snapdog/issues/558)) ([9bf00fb](https://github.com/SnapDogRocks/snapdog/commit/9bf00fbf1e19971633248c8b5cd895c929df8785))
+* **client:** signal mpris changes, keep the client volume, one cover file ([#584](https://github.com/SnapDogRocks/snapdog/issues/584)) ([2565104](https://github.com/SnapDogRocks/snapdog/commit/2565104299daf402d4c75fdd6af1fefeac2dd2df))
+* **config:** apply command line overrides before validation ([#583](https://github.com/SnapDogRocks/snapdog/issues/583)) ([fc833c7](https://github.com/SnapDogRocks/snapdog/commit/fc833c7f3d92f7c275d428b38e2ff655028d4242))
+* **config:** derive the base URL from the final port when it is not set ([#572](https://github.com/SnapDogRocks/snapdog/issues/572)) ([9ebf1f1](https://github.com/SnapDogRocks/snapdog/commit/9ebf1f18732d86dba1eab736abbb5f90bcc9f837))
+* **config:** report ignored values and close small validation gaps ([#591](https://github.com/SnapDogRocks/snapdog/issues/591)) ([95020a5](https://github.com/SnapDogRocks/snapdog/commit/95020a52ec091f3574554c35c2da2260ee140247))
+* **demo:** match the real API and check it with a contract test ([#602](https://github.com/SnapDogRocks/snapdog/issues/602)) ([0b78a2d](https://github.com/SnapDogRocks/snapdog/commit/0b78a2d6b0b65b32f5bd07f740f1b6a9ebcc5dab))
+* **knx:** build the OS clock tests only on Unix ([#593](https://github.com/SnapDogRocks/snapdog/issues/593)) ([a67bb1b](https://github.com/SnapDogRocks/snapdog/commit/a67bb1b284962c431b60b8ba18baf5401d61a214))
+* **knx:** let each repeat object switch only its own mode ([#554](https://github.com/SnapDogRocks/snapdog/issues/554)) ([2355c71](https://github.com/SnapDogRocks/snapdog/commit/2355c7125fecbfbbecb2fa5aa0086d62b428e04f))
+* **knx:** read the ETS default zone of a client as 1-based ([#550](https://github.com/SnapDogRocks/snapdog/issues/550)) ([846af65](https://github.com/SnapDogRocks/snapdog/commit/846af652f1c17212098b8731d511a7928d7fd8eb))
+* **knx:** report real faults, answer playlist name reads and saturate Playlist Status ([#594](https://github.com/SnapDogRocks/snapdog/issues/594)) ([7458c2a](https://github.com/SnapDogRocks/snapdog/commit/7458c2a63476e9c51c6486231ca29da50249fa4b))
+* **knx:** set the OS clock from KNX time without blocking the session ([#573](https://github.com/SnapDogRocks/snapdog/issues/573)) ([d0f1827](https://github.com/SnapDogRocks/snapdog/commit/d0f18279b9f7105cbcb17dd930385b6edfa82c00))
+* **macos:** update Sparkle to 2.9.6 ([#588](https://github.com/SnapDogRocks/snapdog/issues/588)) ([0d473b2](https://github.com/SnapDogRocks/snapdog/commit/0d473b2840fe3e42a196515e6d4c7583a5b86f2d))
+* **mpris:** honour the specification for seeks, track ids and properties ([#595](https://github.com/SnapDogRocks/snapdog/issues/595)) ([04a9e29](https://github.com/SnapDogRocks/snapdog/commit/04a9e298e18315c515bd4a25237c09ce877c8549))
+* **mqtt:** publish the zone position on its own topic, state only on change ([#579](https://github.com/SnapDogRocks/snapdog/issues/579)) ([d286080](https://github.com/SnapDogRocks/snapdog/commit/d28608032374e328807e4696383f1e977dfacbe7))
+* **player:** advance an album queue with get_queue and stop cleanly when a fetch fails ([#552](https://github.com/SnapDogRocks/snapdog/issues/552)) ([95ed7a0](https://github.com/SnapDogRocks/snapdog/commit/95ed7a0128c615e5504287d394b08159037b7da6))
+* **player:** handle derived zone commands without sending to the own channel ([#577](https://github.com/SnapDogRocks/snapdog/issues/577)) ([f146aa0](https://github.com/SnapDogRocks/snapdog/commit/f146aa007e02322aa9686e2bb6b3004d1ea54e2c))
+* **player:** let the last action win between a receiver and local control ([#563](https://github.com/SnapDogRocks/snapdog/issues/563)) ([c36b5c7](https://github.com/SnapDogRocks/snapdog/commit/c36b5c7a6f2eb327b3d9668815ebaec14e4616a7))
+* **player:** resume URLs and single tracks, hand presence playback to the user ([#597](https://github.com/SnapDogRocks/snapdog/issues/597)) ([64ce4a5](https://github.com/SnapDogRocks/snapdog/commit/64ce4a5740b50f4b5c9cefc1c9ec8ceefdf7e387))
+* **radio:** keep ICY metadata in step across chunks and end its task with the decode ([#555](https://github.com/SnapDogRocks/snapdog/issues/555)) ([450b517](https://github.com/SnapDogRocks/snapdog/commit/450b5176ec22973da02bf32f51fce376b70d62d5))
+* **server:** exit non-zero on fatal errors and keep signal handlers and forwarder alive ([#553](https://github.com/SnapDogRocks/snapdog/issues/553)) ([14850c4](https://github.com/SnapDogRocks/snapdog/commit/14850c4fadf9751173cb0b36953d4dcbf36a45f5))
+* **spotify:** wait for room in the zone channel instead of failing the sink ([#581](https://github.com/SnapDogRocks/snapdog/issues/581)) ([37c21eb](https://github.com/SnapDogRocks/snapdog/commit/37c21eb40d4fec463f1546d67bf8cdbe1b4e866d))
+* **state:** restore the base volume of a client after a restart ([#549](https://github.com/SnapDogRocks/snapdog/issues/549)) ([c571d92](https://github.com/SnapDogRocks/snapdog/commit/c571d92409571d71885a28427492f94903bac1a6))
+* **state:** start with an unreadable zones.json, sync it to disk and create it on a first start ([#568](https://github.com/SnapDogRocks/snapdog/issues/568)) ([5a1434e](https://github.com/SnapDogRocks/snapdog/commit/5a1434e452d54646cf0149b7c9a95e149317fee4))
+* **updater:** keep endpoints, paths and signature identity in one place ([#576](https://github.com/SnapDogRocks/snapdog/issues/576)) ([e9da275](https://github.com/SnapDogRocks/snapdog/commit/e9da275f58c162ab4ddb400fcaedd91c2c4cd495))
+* **webui:** add component tests and confirm a commit at the server value ([#575](https://github.com/SnapDogRocks/snapdog/issues/575)) ([8ef3b97](https://github.com/SnapDogRocks/snapdog/commit/8ef3b97efbf2068d9c2382e84b3b45cdce2ca80e))
+* **webui:** apply every WebSocket event and reload after a load the socket raced ([#590](https://github.com/SnapDogRocks/snapdog/issues/590)) ([ee923f9](https://github.com/SnapDogRocks/snapdog/commit/ee923f9f2694ac0e867c9c741bda1c48e3280ab4))
+* **webui:** deprecate the legacy interface, share the EQ editor, translate and label it ([#606](https://github.com/SnapDogRocks/snapdog/issues/606)) ([4270812](https://github.com/SnapDogRocks/snapdog/commit/42708122eee4e0751228df2caeb2b4c48f4db7a5))
+* **webui:** keep the volume slider and seek bar following the server after a drag ([#561](https://github.com/SnapDogRocks/snapdog/issues/561)) ([0ccf2a0](https://github.com/SnapDogRocks/snapdog/commit/0ccf2a0f994eafdfaf3c9bd051d4775eb08bacfb))
+* **webui:** make the EQ and speaker A/B comparison reversible and non-destructive ([#560](https://github.com/SnapDogRocks/snapdog/issues/560)) ([0573ba2](https://github.com/SnapDogRocks/snapdog/commit/0573ba2ca20d256ff6047cc68fbade54ca7c099c))
+* **webui:** read EQ presets and limits from the server, show its error messages ([#600](https://github.com/SnapDogRocks/snapdog/issues/600)) ([6de4fa1](https://github.com/SnapDogRocks/snapdog/commit/6de4fa1e0160444f56d1fbd82ccd9b52bdd24268))
+* **webui:** scroll the track list only on open and on a track change ([#580](https://github.com/SnapDogRocks/snapdog/issues/580)) ([d305189](https://github.com/SnapDogRocks/snapdog/commit/d3051890c57bbabb218b10dd0ece4d80149d4013))
+* **webui:** send EQ edits one at a time and restore the server state on failure ([#585](https://github.com/SnapDogRocks/snapdog/issues/585)) ([44277c9](https://github.com/SnapDogRocks/snapdog/commit/44277c919394a45f4ec47520402231d58a1d6e1c))
+* **ws:** close peers that stop reading and count connection slots atomically ([#603](https://github.com/SnapDogRocks/snapdog/issues/603)) ([5d53564](https://github.com/SnapDogRocks/snapdog/commit/5d5356444e2f8f006220a395a21489e05a0d2b0a))
+
 ## [0.36.0](https://github.com/SnapDogRocks/snapdog/compare/v0.35.0...v0.36.0) (2026-11-16)
 
 
