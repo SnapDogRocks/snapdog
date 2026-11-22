@@ -719,6 +719,12 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
     );
 }
 
+/// ETS text of the zone presence source parameter. The highest radio number comes from
+/// `mem::MAX_RADIOS`; the translations in `xtask/i18n` are keyed by the resulting text.
+fn presence_source_label() -> String {
+    format!("Presence source (0=none, 1..{}=radio)", mem::MAX_RADIOS)
+}
+
 fn pt_enum(x: &mut knx_rs_prod::author::AppProgram, name: &str, bits: u16, values: &[(&str, u16)]) {
     x.add_parameter_type(knx_rs_prod::author::ParameterType::enumeration(
         name,
@@ -874,6 +880,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             &mut spans,
         );
     }
+    let presence_source_label = presence_source_label();
     for z in 1..=MAX_ZONES {
         let p = format!("Z{z:02}");
         let i = z - 1;
@@ -883,7 +890,7 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             "008",
             "PresSrc",
             "UInt8",
-            "Presence source (0=none, 1..20=radio)",
+            &presence_source_label,
             "0",
             mem::ZONE_PRES_SRC + i,
             8,

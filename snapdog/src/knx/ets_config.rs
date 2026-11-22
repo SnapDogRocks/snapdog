@@ -111,6 +111,28 @@ fn client_zone_name(ets: &EtsParams, client: usize) -> String {
     )
 }
 
+/// The presence source of zone `zone` (0-based). ETS stores 0 for none or the number of a radio
+/// slot (1 to `MAX_RADIOS`); the radio list only holds the active slots, so the slot is mapped to
+/// its position among them. A slot beyond `MAX_RADIOS` or an inactive one is ignored with a
+/// warning instead of pointing at another station or failing the start.
+fn presence_source(ets: &EtsParams, zone: usize) -> Option<PresenceSource> {
+    let slot = usize::from(ets.zone_presence_source[zone]);
+    if slot == 0 {
+        return None;
+    }
+    let position = (slot <= MAX_RADIOS && ets.radio_active[slot - 1])
+        .then(|| ets.radio_active[..slot - 1].iter().filter(|a| **a).count());
+    if position.is_none() {
+        tracing::warn!(
+            zone = zone + 1,
+            source = slot,
+            max = MAX_RADIOS,
+            "ETS presence source names no active radio, presence starts nothing by default"
+        );
+    }
+    position.map(PresenceSource::Radio)
+}
+
 /// The `[mqtt]` section for the ETS-programmed broker.
 ///
 /// ETS has no fields for a username or for TLS files: those come from the
@@ -221,9 +243,7 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
             seek_interval_secs: Some(ets.zone_seek_interval[i]).filter(|&s| s > 0),
             presence: ets.zone_presence_enabled[i].then(|| PresenceConfig {
                 auto_off_delay: ets.zone_presence_timeout[i],
-                // ETS presence source: 0 = none, 1..=MAX_RADIOS = radio index (1-based).
-                default_source: (ets.zone_presence_source[i] > 0)
-                    .then(|| PresenceSource::Radio(usize::from(ets.zone_presence_source[i]) - 1)),
+                default_source: presence_source(ets, i),
                 schedule: Vec::new(),
             }),
             // 0 is "Last value" (also the 0 % of the older plain percent parameter).
@@ -307,6 +327,26 @@ mod tests {
         assert_eq!(log_level_from_u8(3), LogLevel::Debug);
         assert_eq!(log_level_from_u8(4), LogLevel::Trace);
         assert_eq!(log_level_from_u8(99), LogLevel::Info); // default
+    }
+
+    #[test]
+    fn a_presence_source_maps_to_its_active_radio_and_an_invalid_one_is_ignored() {
+        let mut ets = EtsParams::default();
+        ets.radio_active[1] = true; // slot 2
+        ets.radio_active[4] = true; // slot 5
+        let source = |ets: &mut EtsParams, slot: u8| {
+            ets.zone_presence_source[0] = slot;
+            presence_source(ets, 0)
+        };
+        assert_eq!(source(&mut ets, 0), None);
+        // Slot 5 is the second active radio, so index 1 of the radio list.
+        assert_eq!(source(&mut ets, 5), Some(PresenceSource::Radio(1)));
+        assert_eq!(source(&mut ets, 2), Some(PresenceSource::Radio(0)));
+        // An inactive slot and one beyond MAX_RADIOS start nothing.
+        assert_eq!(source(&mut ets, 3), None);
+        let beyond = u8::try_from(MAX_RADIOS + 1).unwrap();
+        assert_eq!(source(&mut ets, beyond), None);
+        assert_eq!(source(&mut ets, u8::MAX), None);
     }
 
     #[test]

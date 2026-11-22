@@ -1048,15 +1048,7 @@ fn validate_knx_ia(ia: &str) -> Result<()> {
 
 /// The device-level group addresses in `[knx]`.
 fn validate_global_knx(knx: &KnxConfig) -> Result<()> {
-    let gas = [
-        ("server_online", &knx.server_online),
-        ("all_stop", &knx.all_stop),
-        ("all_mute", &knx.all_mute),
-        ("all_mute_status", &knx.all_mute_status),
-        ("system_fault", &knx.system_fault),
-        ("knx_time", &knx.knx_time),
-    ];
-    for (key, ga) in gas {
+    for (key, ga) in knx.group_addresses() {
         if let Some(ga) = ga {
             validate_knx_ga(ga)
                 .with_context(|| format!("Invalid Group Address '{ga}' for [knx] {key}"))?;

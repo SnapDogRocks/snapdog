@@ -76,7 +76,7 @@
 "Max. volume" = "Max. volume"
 "Presence auto-off (s)" = "Aanwezigheid auto-uit (s)"
 "Presence enabled" = "Aanwezigheid ingeschakeld"
-"Presence source (0=none, 1..20=radio)" = "Aanwezigheidsbron (0=geen, 1..20=radio)"
+"Presence source (0=none, 1..50=radio)" = "Aanwezigheidsbron (0=geen, 1..50=radio)"
 "Source conflict" = "Bronconflict"
 "Source switch fade (ms)" = "Fade bij bronwissel (ms)"
 "Sample rate" = "Samplefrequentie"
