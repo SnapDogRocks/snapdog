@@ -96,7 +96,6 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
         payload["media_album_name"] =
             serde_json::json!(truncate_json(&track.album, MAX_TEXT_BYTES));
         payload["media_duration"] = serde_json::json!(track.duration_ms / 1000);
-        payload["media_position"] = serde_json::json!(track.position_ms / 1000);
         payload["media_content_type"] = serde_json::json!("music");
     }
 
@@ -108,6 +107,13 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
     }
 
     payload
+}
+
+/// The position message: whole seconds as plain text, `None` without a track.
+pub fn zone_position_payload(zone: &state::ZoneState) -> Option<String> {
+    zone.track
+        .as_ref()
+        .map(|t| (t.position_ms.max(0) / 1000).to_string())
 }
 
 /// The retained zone-state message: [`zone_state_payload`] as JSON text, at most
@@ -220,7 +226,9 @@ mod tests {
         assert_eq!(p["source"], "subsonic_playlist");
         assert_eq!(p["media_title"], "T");
         assert_eq!(p["media_duration"], 200); // ms -> s
-        assert_eq!(p["media_position"], 5);
+        // The position has a topic of its own, so steady playback leaves the state alone.
+        assert!(p.get("media_position").is_none());
+        assert_eq!(zone_position_payload(&z).as_deref(), Some("5"));
         assert_eq!(p["media_content_type"], "music");
         // Relative cover URL is absolutized against base_url.
         assert_eq!(p["media_image_url"], "http://host:8000/cover/1.jpg");

@@ -168,6 +168,11 @@ impl Topics {
         self.join(&format!("zones/{index}/state"))
     }
 
+    /// Playback position of a zone in whole seconds (not retained).
+    pub fn zone_position(&self, index: usize) -> String {
+        self.join(&format!("zones/{index}/position"))
+    }
+
     /// Retained client state (JSON).
     pub fn client_state(&self, index: usize) -> String {
         self.join(&format!("clients/{index}/state"))
