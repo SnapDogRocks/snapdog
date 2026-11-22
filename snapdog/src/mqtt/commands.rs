@@ -36,8 +36,8 @@ use tokio::sync::{Notify, mpsc};
 use super::limits::RateLimiter;
 use super::parse::{
     MAX_PAYLOAD_BYTES, PayloadError, Transport, parse_bool, parse_client_volume, parse_count,
-    parse_latency_ms, parse_playlist_id, parse_repeat, parse_seconds, parse_seek_ms,
-    parse_transport, parse_zone_volume,
+    parse_latency_ms, parse_playlist_id, parse_playlist_index, parse_repeat, parse_seconds,
+    parse_seek_ms, parse_transport, parse_zone_volume,
 };
 use super::topics::{ParsedCommand, Route, Scope, TopicError, Topics};
 use crate::player::{ClientAction, SnapcastCmd, ZoneCommand, ZoneCommandSender};
@@ -488,7 +488,9 @@ fn plan(route: Route, payload: &str) -> Result<Delivery, Rejected> {
             Transport::Next => ZoneCommand::Next,
             Transport::Previous => ZoneCommand::Previous,
         }),
-        Route::ZonePlaylist => Delivery::Zone(ZoneCommand::SetPlaylist(parse_count(payload)?, 0)),
+        Route::ZonePlaylist => {
+            Delivery::Zone(ZoneCommand::SetPlaylist(parse_playlist_index(payload)?, 0))
+        }
         Route::ZonePlaylistById => {
             Delivery::Zone(ZoneCommand::SetPlaylistById(parse_playlist_id(payload)?, 0))
         }

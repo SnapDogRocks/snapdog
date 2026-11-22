@@ -4,3 +4,5 @@ allowBuilds:
   unrs-resolver: true
 overrides:
   postcss: ^8.5.23
+  # GHSA-g3hv-75wg-m249 (ReDoS in minimatch < 11.0.1), pulled in through eslint.
+  'minimatch@>=7.0.0 <11.0.1': ^11.0.9

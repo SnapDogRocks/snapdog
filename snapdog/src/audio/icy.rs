@@ -127,10 +127,15 @@ pub fn parse_metaint(response: &reqwest::Response) -> Option<usize> {
         .and_then(|v| v.parse().ok())
 }
 
-/// Build a reqwest client that requests ICY metadata.
-#[must_use]
-pub fn icy_client() -> reqwest::Client {
-    reqwest::Client::builder()
+/// Build a reqwest client that requests ICY metadata, with the connect and read timeouts of
+/// [`super::streaming_client_builder`]: a stream that stalls fails instead of hanging.
+///
+/// # Errors
+///
+/// Returns an error if the TLS backend cannot be initialised.
+pub fn icy_client() -> anyhow::Result<reqwest::Client> {
+    use anyhow::Context;
+    super::streaming_client_builder()
         .default_headers({
             let mut h = reqwest::header::HeaderMap::new();
             h.insert(
@@ -140,7 +145,7 @@ pub fn icy_client() -> reqwest::Client {
             h
         })
         .build()
-        .unwrap_or_default()
+        .context("Failed to build HTTP client")
 }
 
 #[cfg(test)]
