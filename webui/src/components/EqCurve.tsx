@@ -30,9 +30,75 @@ export const CURVE_COLOR = "oklch(0.65 0.18 40)";
 export const GRID_FREQS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000] as const;
 export const GRID_DBS = [-12, -6, 0, 6, 12] as const;
 
+interface ResponsePoint { freq: number; db: number }
+
+/** Coordinates of the curve plot: one mapping for the interactive and the static curve. */
+function curveGeometry() {
+  const width = CURVE_WIDTH;
+  const height = CURVE_HEIGHT;
+  const pad = { top: 10, right: 10, bottom: 20, left: 35 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const logMin = Math.log10(FREQ_MIN_HZ);
+  const logSpan = Math.log10(FREQ_MAX_HZ) - logMin;
+  return {
+    width,
+    height,
+    pad,
+    plotW,
+    plotH,
+    freqToX: (f: number) => pad.left + ((Math.log10(f) - logMin) / logSpan) * plotW,
+    xToFreq: (x: number) => Math.pow(10, logMin + ((x - pad.left) / plotW) * logSpan),
+    dbToY: (db: number) => pad.top + plotH / 2 - (db / CURVE_DB_RANGE) * (plotH / 2),
+    yToDb: (y: number) => -(y - pad.top - plotH / 2) / (plotH / 2) * CURVE_DB_RANGE,
+  };
+}
+
+type CurveGeometry = ReturnType<typeof curveGeometry>;
+
+/** Grid, axis labels and the filled response curve. */
+function CurveBackground({ geo, response }: { geo: CurveGeometry; response: ResponsePoint[] }) {
+  const { pad, plotW, plotH, height, freqToX, dbToY } = geo;
+  const path = response
+    .map((p, i) => `${i === 0 ? "M" : "L"}${freqToX(p.freq).toFixed(1)},${dbToY(p.db).toFixed(1)}`)
+    .join("");
+  return (
+    <>
+      {GRID_FREQS.map((f) => (
+        <line key={`f${f}`} x1={freqToX(f)} x2={freqToX(f)} y1={pad.top} y2={pad.top + plotH} stroke="currentColor" strokeOpacity={0.1} />
+      ))}
+      {GRID_DBS.map((db) => (
+        <g key={`db${db}`}>
+          <line x1={pad.left} x2={pad.left + plotW} y1={dbToY(db)} y2={dbToY(db)} stroke="currentColor" strokeOpacity={db === 0 ? 0.3 : 0.1} />
+          <text x={pad.left - 4} y={dbToY(db) + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.4}>{db}</text>
+        </g>
+      ))}
+      {[100, 1000, 10000].map((f) => (
+        <text key={`fl${f}`} x={freqToX(f)} y={height - 4} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.4}>
+          {f >= 1000 ? `${f / 1000}k` : f}
+        </text>
+      ))}
+      {path && (
+        <>
+          <path d={path + `L${freqToX(FREQ_MAX_HZ)},${dbToY(0)}L${freqToX(FREQ_MIN_HZ)},${dbToY(0)}Z`} fill={CURVE_COLOR} fillOpacity={0.15} />
+          <path d={path} fill="none" stroke={CURVE_COLOR} strokeWidth={2} />
+        </>
+      )}
+      <text x={pad.left - 4} y={dbToY(0) + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.6} fontWeight="bold">0</text>
+    </>
+  );
+}
+
+/**
+ * The response curve with draggable band nodes. The nodes are a pointer shortcut: for
+ * assistive technology the curve is one image, and the band rows below it are the way to
+ * edit every value with the keyboard.
+ */
 export function InteractiveEQCurve({
   bands,
+  bandKeys,
   response,
+  curveLabel,
   selectedBand,
   onSelectBand,
   onBandChange,
@@ -40,7 +106,10 @@ export function InteractiveEQCurve({
   onRemoveBand,
 }: {
   bands: EqBand[];
-  response: { freq: number; db: number }[];
+  /** Stable keys of the bands, so that a removal does not move a node to another band. */
+  bandKeys?: readonly string[];
+  response: ResponsePoint[];
+  curveLabel: string;
   selectedBand: number | null;
   onSelectBand: (idx: number | null) => void;
   onBandChange: (idx: number, patch: Partial<EqBand>) => void;
@@ -51,25 +120,14 @@ export function InteractiveEQCurve({
   const [dragging, setDragging] = useState<number | null>(null);
   const [dragOutOfBounds, setDragOutOfBounds] = useState(false);
 
-  const width = CURVE_WIDTH;
-  const height = CURVE_HEIGHT;
-  const pad = { top: 10, right: 10, bottom: 20, left: 35 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-  const dbRange = CURVE_DB_RANGE;
+  const geo = curveGeometry();
+  const { width, height, pad, plotW, plotH, freqToX, xToFreq, dbToY, yToDb } = geo;
 
-  const freqToX = (f: number) => pad.left + ((Math.log10(f) - Math.log10(FREQ_MIN_HZ)) / (Math.log10(FREQ_MAX_HZ) - Math.log10(FREQ_MIN_HZ))) * plotW;
-  const xToFreq = (x: number) => Math.pow(10, Math.log10(FREQ_MIN_HZ) + ((x - pad.left) / plotW) * (Math.log10(FREQ_MAX_HZ) - Math.log10(FREQ_MIN_HZ)));
-  const dbToY = (db: number) => pad.top + plotH / 2 - (db / dbRange) * (plotH / 2);
-  const yToDb = (y: number) => -(y - pad.top - plotH / 2) / (plotH / 2) * dbRange;
-
-  const svgPoint = (e: React.PointerEvent) => {
+  const svgPoint = (e: React.PointerEvent | React.MouseEvent) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
-    const scaleX = width / rect.width;
-    const scaleY = height / rect.height;
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+    return { x: (e.clientX - rect.left) * (width / rect.width), y: (e.clientY - rect.top) * (height / rect.height) };
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -98,20 +156,10 @@ export function InteractiveEQCurve({
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const scaleX = width / rect.width;
-    const scaleY = height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
+    const { x, y } = svgPoint(e);
     if (x < pad.left || x > pad.left + plotW || y < pad.top || y > pad.top + plotH) return;
     onAddBand(xToFreq(x), yToDb(y));
   };
-
-  const path = response.length > 0
-    ? response.map((p, i) => `${i === 0 ? "M" : "L"}${freqToX(p.freq).toFixed(1)},${dbToY(p.db).toFixed(1)}`).join("")
-    : "";
 
   return (
     <svg
@@ -119,37 +167,18 @@ export function InteractiveEQCurve({
       viewBox={`0 0 ${width} ${height}`}
       className="w-full rounded-lg bg-muted/30 border border-border cursor-crosshair select-none touch-none"
       style={{ minHeight: CURVE_MIN_HEIGHT }}
+      role="img"
+      aria-label={curveLabel}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
       onDoubleClick={handleDoubleClick}
     >
-      {/* Grid */}
-      {GRID_FREQS.map((f) => (
-        <line key={`f${f}`} x1={freqToX(f)} x2={freqToX(f)} y1={pad.top} y2={pad.top + plotH} stroke="currentColor" strokeOpacity={0.1} />
-      ))}
-      {GRID_DBS.map((db) => (
-        <g key={`db${db}`}>
-          <line x1={pad.left} x2={pad.left + plotW} y1={dbToY(db)} y2={dbToY(db)} stroke="currentColor" strokeOpacity={db === 0 ? 0.3 : 0.1} />
-          <text x={pad.left - 4} y={dbToY(db) + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.4}>{db}</text>
-        </g>
-      ))}
-      {[100, 1000, 10000].map((f) => (
-        <text key={`fl${f}`} x={freqToX(f)} y={height - 4} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.4}>
-          {f >= 1000 ? `${f / 1000}k` : f}
-        </text>
-      ))}
-      {/* Curve fill + stroke */}
-      {path && (
-        <>
-          <path d={path + `L${freqToX(FREQ_MAX_HZ)},${dbToY(0)}L${freqToX(FREQ_MIN_HZ)},${dbToY(0)}Z`} fill={CURVE_COLOR} fillOpacity={0.15} />
-          <path d={path} fill="none" stroke={CURVE_COLOR} strokeWidth={2} />
-        </>
-      )}
+      <CurveBackground geo={geo} response={response} />
       {/* Draggable band nodes */}
       {bands.map((band, idx) => (
         <circle
-          key={idx}
+          key={bandKeys?.[idx] ?? idx}
           cx={freqToX(band.freq)}
           cy={dbToY(band.gain)}
           r={selectedBand === idx ? 7 : 5}
@@ -171,49 +200,15 @@ export function InteractiveEQCurve({
           }}
         />
       ))}
-      <text x={pad.left - 4} y={dbToY(0) + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.6} fontWeight="bold">0</text>
     </svg>
   );
 }
 
-export function FrequencyResponseCurve({ response, curveLabel }: { response: { freq: number; db: number }[]; curveLabel: string }) {
-  const width = CURVE_WIDTH;
-  const height = CURVE_HEIGHT;
-  const pad = { top: 10, right: 10, bottom: 20, left: 35 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-  const dbRange = CURVE_DB_RANGE;
-
-  const freqToX = (f: number) => pad.left + ((Math.log10(f) - Math.log10(FREQ_MIN_HZ)) / (Math.log10(FREQ_MAX_HZ) - Math.log10(FREQ_MIN_HZ))) * plotW;
-  const dbToY = (db: number) => pad.top + plotH / 2 - (db / dbRange) * (plotH / 2);
-
-  const path = response.length > 0
-    ? response.map((p, i) => `${i === 0 ? "M" : "L"}${freqToX(p.freq).toFixed(1)},${dbToY(p.db).toFixed(1)}`).join("")
-    : "";
-
+export function FrequencyResponseCurve({ response, curveLabel }: { response: ResponsePoint[]; curveLabel: string }) {
+  const geo = curveGeometry();
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full rounded-lg bg-muted/30 border border-border" style={{ minHeight: CURVE_MIN_HEIGHT }} role="img" aria-label={curveLabel}>
-      {GRID_FREQS.map((f) => (
-        <line key={`f${f}`} x1={freqToX(f)} x2={freqToX(f)} y1={pad.top} y2={pad.top + plotH} stroke="currentColor" strokeOpacity={0.1} />
-      ))}
-      {GRID_DBS.map((db) => (
-        <g key={`db${db}`}>
-          <line x1={pad.left} x2={pad.left + plotW} y1={dbToY(db)} y2={dbToY(db)} stroke="currentColor" strokeOpacity={db === 0 ? 0.3 : 0.1} />
-          <text x={pad.left - 4} y={dbToY(db) + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.4}>{db}</text>
-        </g>
-      ))}
-      {[100, 1000, 10000].map((f) => (
-        <text key={`fl${f}`} x={freqToX(f)} y={height - 4} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.4}>
-          {f >= 1000 ? `${f / 1000}k` : f}
-        </text>
-      ))}
-      {path && (
-        <>
-          <path d={path + `L${freqToX(FREQ_MAX_HZ)},${dbToY(0)}L${freqToX(FREQ_MIN_HZ)},${dbToY(0)}Z`} fill={CURVE_COLOR} fillOpacity={0.15} />
-          <path d={path} fill="none" stroke={CURVE_COLOR} strokeWidth={2} />
-        </>
-      )}
-      <text x={pad.left - 4} y={dbToY(0) + 3} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.6} fontWeight="bold">0</text>
+    <svg viewBox={`0 0 ${geo.width} ${geo.height}`} className="w-full rounded-lg bg-muted/30 border border-border" style={{ minHeight: CURVE_MIN_HEIGHT }} role="img" aria-label={curveLabel}>
+      <CurveBackground geo={geo} response={response} />
     </svg>
   );
 }

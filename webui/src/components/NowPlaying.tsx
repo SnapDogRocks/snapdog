@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import type { ZoneState } from "@/stores/useAppStore";
 
 export function NowPlaying({ zone }: { zone: ZoneState }) {
+  const t = useTranslations("zone");
   const track = zone.track;
   const isIdle = zone.source === "idle" || !track;
   const coverUrl = track?.cover_url ?? null;
@@ -42,7 +44,7 @@ export function NowPlaying({ zone }: { zone: ZoneState }) {
           <img
             key={`fg-${coverUrl}`}
             src={coverUrl}
-            alt={`${track.title} cover`}
+            alt={t("coverAlt", { title: track.title })}
             loading="lazy"
             className="w-full h-full object-cover animate-fade-in"
             onError={() => { setCoverError(true); }}

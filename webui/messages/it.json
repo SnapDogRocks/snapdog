@@ -4,7 +4,9 @@
     "skipToContent": "Vai al contenuto",
     "connected": "Connesso",
     "disconnected": "Disconnesso",
-    "language": "Lingua"
+    "language": "Lingua",
+    "legacyDeprecated": "Questa interfaccia è deprecata e verrà rimossa in una versione futura.",
+    "legacySwitch": "Apri l’interfaccia attuale"
   },
   "transport": {
     "play": "Riproduci",
@@ -41,7 +43,8 @@
     "error": "Si è verificato un errore",
     "retry": "Riprova",
     "presenceDetected": "Presenza rilevata",
-    "presenceTimerActive": "Timer di spegnimento automatico per presenza attivo"
+    "presenceTimerActive": "Timer di spegnimento automatico per presenza attivo",
+    "coverAlt": "Copertina di {title}"
   },
   "client": {
     "clients": "{count, plural, one {# client} other {# client}}",
@@ -59,16 +62,45 @@
     "close": "Chiudi equalizzatore",
     "toggle": "Attiva/disattiva EQ",
     "presets": "Preimpostazioni EQ",
-    "preset": "Preset",
-    "enabled": "Attivo",
     "addBand": "+ Aggiungi banda",
-    "removeBand": "Rimuovi banda",
     "filterType": "Tipo di filtro della banda {n}",
-    "frequency": "Frequenza",
-    "gain": "Guadagno",
-    "qFactor": "Fattore Q",
     "curve": "Curva della risposta in frequenza EQ",
-    "loading": "Caricamento dell’equalizzatore…"
+    "loading": "Caricamento dell’equalizzatore…",
+    "off": "Spento",
+    "on": "Acceso",
+    "spinorama": "Database diffusori",
+    "custom": "Personalizzato",
+    "speakerToggle": "Correzione diffusore",
+    "tabEq": "Equalizzatore",
+    "tabSpeaker": "Diffusore",
+    "speakerCurve": "Curva di correzione del diffusore",
+    "speakersLoading": "Caricamento diffusori…",
+    "clearSpeaker": "Rimuovi",
+    "searchSpeakers": "Cerca diffusori…",
+    "noSpeakers": "Nessun diffusore trovato",
+    "bandFrequency": "Frequenza della banda {n}",
+    "bandGain": "Guadagno della banda {n}",
+    "bandQ": "Fattore Q della banda {n}",
+    "removeBandN": "Rimuovi la banda {n}",
+    "filter": {
+      "low_shelf": "Shelf bassi",
+      "high_shelf": "Shelf alti",
+      "peaking": "Picco",
+      "low_pass": "Passa-basso",
+      "high_pass": "Passa-alto"
+    },
+    "presetName": {
+      "flat": "Piatto",
+      "bass_boost": "Bassi enfatizzati",
+      "treble_boost": "Alti enfatizzati",
+      "vocal": "Voce",
+      "rock": "Rock",
+      "jazz": "Jazz",
+      "classical": "Classica",
+      "electronic": "Elettronica",
+      "loudness": "Loudness",
+      "late_night": "Notturno"
+    }
   },
   "playlist": {
     "title": "Playlist",
@@ -145,7 +177,22 @@
     "updateCheck": "Controlla",
     "updateApply": "Aggiorna",
     "knxTitle": "KNX",
-    "programmingMode": "Modalità di programmazione"
+    "programmingMode": "Modalità di programmazione",
+    "updateState": {
+      "current": "Aggiornato",
+      "idle": "Aggiornato",
+      "available": "Aggiornamento disponibile",
+      "checking": "Verifica in corso…",
+      "preparing": "Versione in preparazione",
+      "updating": "Aggiornamento in corso…",
+      "verifying": "Verifica…",
+      "deploying": "Installazione…",
+      "waiting_for_health": "In attesa del server…",
+      "rolling_back": "Ripristino…",
+      "rolled_back": "Ripristinato",
+      "failed": "Aggiornamento non riuscito",
+      "error": "Errore"
+    }
   },
   "connect": {
     "title": "Connetti",

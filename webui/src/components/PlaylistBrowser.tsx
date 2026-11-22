@@ -198,6 +198,7 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
               <div className="relative w-full @sm:w-48">
                 <HugeiconsIcon icon={Search01Icon} size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
+                  aria-label={t("search")}
                   placeholder={t("search")}
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); }}
@@ -361,7 +362,8 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                 const isCurrent = zone.track?.playlist_id === selectedId && zone.track.playlist_track_index === i;
                 return (
                 <button
-                  key={t.id}
+                  // A playlist can hold the same track twice: the position makes the key unique.
+                  key={`${t.id}:${i}`}
                   data-track-index={i}
                   onClick={() => { playTrack(selectedId, i); }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-all group ${isCurrent ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted"}`}

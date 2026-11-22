@@ -4,7 +4,9 @@
     "skipToContent": "Przejdź do treści",
     "connected": "Połączono",
     "disconnected": "Rozłączono",
-    "language": "Język"
+    "language": "Język",
+    "legacyDeprecated": "Ten interfejs jest przestarzały i zostanie usunięty w przyszłej wersji.",
+    "legacySwitch": "Otwórz aktualny interfejs"
   },
   "transport": {
     "play": "Odtwórz",
@@ -41,7 +43,8 @@
     "error": "Coś poszło nie tak",
     "retry": "Spróbuj ponownie",
     "presenceDetected": "Wykryto obecność",
-    "presenceTimerActive": "Aktywny licznik automatycznego wyłączania przy obecności"
+    "presenceTimerActive": "Aktywny licznik automatycznego wyłączania przy obecności",
+    "coverAlt": "Okładka: {title}"
   },
   "client": {
     "clients": "{count, plural, one {# klient} few {# klienty} many {# klientów} other {# klienta}}",
@@ -59,16 +62,45 @@
     "close": "Zamknij korektor",
     "toggle": "EQ wł./wył.",
     "presets": "Ustawienia EQ",
-    "preset": "Ustawienia wstępne",
-    "enabled": "Włączony",
     "addBand": "+ Dodaj pasmo",
-    "removeBand": "Usuń pasmo",
     "filterType": "Typ filtra pasma {n}",
-    "frequency": "Częstotliwość",
-    "gain": "Wzmocnienie",
-    "qFactor": "Współczynnik Q",
     "curve": "Krzywa charakterystyki częstotliwościowej EQ",
-    "loading": "Ładowanie korektora…"
+    "loading": "Ładowanie korektora…",
+    "off": "Wył.",
+    "on": "Wł.",
+    "spinorama": "Baza głośników",
+    "custom": "Własne",
+    "speakerToggle": "Korekcja głośnika",
+    "tabEq": "Korektor",
+    "tabSpeaker": "Głośnik",
+    "speakerCurve": "Krzywa korekcji głośnika",
+    "speakersLoading": "Wczytywanie głośników…",
+    "clearSpeaker": "Usuń",
+    "searchSpeakers": "Szukaj głośników…",
+    "noSpeakers": "Nie znaleziono głośników",
+    "bandFrequency": "Częstotliwość pasma {n}",
+    "bandGain": "Wzmocnienie pasma {n}",
+    "bandQ": "Dobroć Q pasma {n}",
+    "removeBandN": "Usuń pasmo {n}",
+    "filter": {
+      "low_shelf": "Półka niskich",
+      "high_shelf": "Półka wysokich",
+      "peaking": "Szczytowy",
+      "low_pass": "Dolnoprzepustowy",
+      "high_pass": "Górnoprzepustowy"
+    },
+    "presetName": {
+      "flat": "Płaski",
+      "bass_boost": "Wzmocnienie basu",
+      "treble_boost": "Wzmocnienie sopranów",
+      "vocal": "Wokal",
+      "rock": "Rock",
+      "jazz": "Jazz",
+      "classical": "Klasyczna",
+      "electronic": "Elektroniczna",
+      "loudness": "Loudness",
+      "late_night": "Tryb nocny"
+    }
   },
   "playlist": {
     "title": "Listy odtwarzania",
@@ -145,7 +177,22 @@
     "updateCheck": "Sprawdź",
     "updateApply": "Aktualizuj",
     "knxTitle": "KNX",
-    "programmingMode": "Tryb programowania"
+    "programmingMode": "Tryb programowania",
+    "updateState": {
+      "current": "Aktualne",
+      "idle": "Aktualne",
+      "available": "Dostępna aktualizacja",
+      "checking": "Sprawdzanie…",
+      "preparing": "Wersja jest przygotowywana",
+      "updating": "Aktualizowanie…",
+      "verifying": "Weryfikowanie…",
+      "deploying": "Instalowanie…",
+      "waiting_for_health": "Oczekiwanie na serwer…",
+      "rolling_back": "Przywracanie…",
+      "rolled_back": "Przywrócono",
+      "failed": "Aktualizacja nie powiodła się",
+      "error": "Błąd"
+    }
   },
   "connect": {
     "title": "Połącz",
