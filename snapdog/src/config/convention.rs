@@ -109,7 +109,7 @@ pub fn resolve_client(
     Ok(ClientConfig {
         index,
         name: raw.name,
-        mac: raw.mac,
+        mac: super::normalize_mac(&raw.mac),
         zone_index,
         icon: raw.icon,
         max_volume: raw.max_volume.clamp(0, 100),
