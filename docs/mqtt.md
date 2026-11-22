@@ -15,6 +15,7 @@ gets the next free number after those in the file.
 |---|---|---|
 | `status` | published, retained | `online` / `offline`; `offline` is also the last will |
 | `zones/<n>/state`, `clients/<n>/state` | published, retained | JSON, see `snapdog/src/mqtt/payloads.rs` |
+| `zones/<n>/position` | published, not retained, `QoS` 0 | playback position in whole seconds, once per second while a track is loaded. The retained state does not carry the position, so it is only published when something else changes |
 | `zones/<n>/volume/set` | command | `0.0..1.0` or `0..100` (`1` is 100 %, `0.01` is 1 %) |
 | `zones/<n>/mute/set`, `shuffle/set`, `presence/set`, `presence/enable/set` | command | `true`/`false`, `on`/`off`, `1`/`0`, any case |
 | `zones/<n>/control/set` | command | `play`, `pause`, `stop`, `next`, `previous` |
@@ -301,6 +302,11 @@ release stays on the broker until you ask for it. It is harmless: Home Assistant
 did anything with it.
 
 ## Migration notes
+
+**Position (0.37.0).** `zones/<n>/state` no longer carries `media_position`, and it is
+published only when its content changes. Before, steady playback republished the whole
+retained state once per second just for the position. Read the position from
+`zones/<n>/position` instead. The discovered Home Assistant entities never used it.
 
 For users of earlier releases. Inbound MQTT commands did not work at all in releases
 from v0.16.0 on (the bridge rejected every message), so only automations written

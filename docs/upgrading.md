@@ -13,6 +13,14 @@ answered with 200, and reach the client when it connects (before, they were stor
 answered with 404). `PUT /clients/99/name` for an unknown client answers 404 instead of 200.
 A mutating route whose command cannot be handed to the server answers 500 instead of 200.
 
+## MQTT: the zone position has its own topic
+
+`zones/<n>/state` no longer contains `media_position` and is only published when it changes,
+instead of once per second during playback. An automation that read the position from the
+state reads `zones/<n>/position` (whole seconds, not retained) instead. The Home Assistant
+entities created by discovery are not affected. Steady playback also no longer rewrites the
+state file every five seconds.
+
 ## `base_url` follows the HTTP port when it is not set
 
 Without `[http].base_url` the server used `http://localhost:5555` whatever the port was. With a
