@@ -1600,6 +1600,15 @@ impl AppConfig {
     }
 }
 
+/// A MAC address in its one internal form: trimmed and lowercase.
+///
+/// Applied where a MAC enters the system (the configuration, a client hello, a Snapcast
+/// status), so the allowlist, the event handler and the store compare the same value.
+#[must_use]
+pub fn normalize_mac(mac: &str) -> String {
+    mac.trim().to_ascii_lowercase()
+}
+
 /// `playlist_id` of the radio list. `SnapDog` itself provides it, from `[[radio]]`.
 pub const RADIO_PLAYLIST_ID: &str = "snapdog:radio";
 /// Prefix of the `playlist_id` of a Subsonic playlist.

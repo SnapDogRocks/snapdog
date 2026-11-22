@@ -56,6 +56,16 @@ impl PlaylistCache {
         self.fetch(client).await
     }
 
+    /// The number of playlists in the cached list, of any age, without a request. `None`
+    /// before the first read.
+    pub async fn cached_len(&self) -> Option<usize> {
+        self.inner
+            .read()
+            .await
+            .as_ref()
+            .map(|(_, entries)| entries.len())
+    }
+
     /// The playlists, read from `client` now, whatever the age of the cached list.
     pub async fn fetch(&self, client: Option<&SubsonicClient>) -> Vec<PlaylistEntry> {
         let fetched = match client {
@@ -482,24 +492,9 @@ async fn read_response_bytes_limited(
     limit: u64,
     label: &str,
 ) -> Result<Vec<u8>> {
-    use futures_util::StreamExt;
-
-    if let Some(len) = response.content_length()
-        && len > limit
-    {
-        anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
-    }
-    let mut stream = response.bytes_stream();
-    let mut body = bytes::BytesMut::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.with_context(|| format!("Failed to read {label} body"))?;
-        let next_len = body.len() as u64 + chunk.len() as u64;
-        if next_len > limit {
-            anyhow::bail!("{label} body exceeded {limit} bytes");
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body.to_vec())
+    crate::audio::read_response_bytes_limited(response, limit, label)
+        .await
+        .map(|body| body.to_vec())
 }
 
 // ── Subsonic API response types ───────────────────────────────

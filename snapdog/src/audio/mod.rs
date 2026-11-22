@@ -168,7 +168,16 @@ where
     }
 }
 
-async fn read_response_bytes_limited(
+/// Read a response body of at most `limit` bytes.
+///
+/// A larger announced or delivered body is an error, so a remote server cannot make the
+/// server buffer without bound. The one implementation for streams, the Subsonic client and
+/// cover fetches.
+///
+/// # Errors
+///
+/// Returns an error if the body is larger than `limit` or cannot be read.
+pub(crate) async fn read_response_bytes_limited(
     response: reqwest::Response,
     limit: u64,
     label: &str,

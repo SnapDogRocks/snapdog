@@ -70,9 +70,7 @@ async fn handle_event(
                         .iter_mut()
                         .find(|(_, c)| c.name == hello.host_name)
                 } else {
-                    s.clients
-                        .iter_mut()
-                        .find(|(_, c)| c.mac.to_lowercase() == hello.mac)
+                    s.clients.iter_mut().find(|(_, c)| c.mac == hello.mac)
                 };
                 if let Some((&client_index, client)) = matched {
                     client.connected = true;
@@ -967,6 +965,68 @@ mod tests {
         assert_eq!(name, "TestClient");
         assert_eq!(zone_index, 1);
         assert!(connected);
+    }
+
+    /// #499: a client configured with an uppercase MAC is found by its hello (normalised by
+    /// the backend) and keeps one `ClientState` across reconnects.
+    #[tokio::test]
+    async fn an_uppercase_mac_resolves_to_the_configured_client_across_reconnects() {
+        let raw: crate::config::FileConfig = toml::from_str(
+            r#"
+            [[zone]]
+            name = "Ground Floor"
+            [[client]]
+            name = "Living Room"
+            mac = "6E:91:28:1D:34:2B"
+            zone = "Ground Floor"
+        "#,
+        )
+        .unwrap();
+        let config = crate::config::load_raw(raw).unwrap();
+        let store = crate::state::init(&config, None).unwrap();
+        let (notify, _) = tokio::sync::broadcast::channel(16);
+        let temp_dir = tempfile::tempdir().unwrap();
+        let eq_store = Arc::new(std::sync::Mutex::new(EqStore::load(
+            &temp_dir.path().join("eq.json"),
+        )));
+        for id in ["c1", "c2"] {
+            let event = SnapcastEvent::ClientConnected {
+                id: id.into(),
+                hello: ClientHello {
+                    client_name: "Snapclient".into(),
+                    mac: crate::config::normalize_mac("6E:91:28:1D:34:2B"),
+                    host_name: "living".into(),
+                    version: "0.12.2".into(),
+                },
+            };
+            handle_event(
+                event,
+                &config,
+                &MockBackend,
+                &store,
+                &notify,
+                &eq_store,
+                &std::collections::HashMap::new(),
+            )
+            .await;
+            handle_event(
+                SnapcastEvent::ClientDisconnected { id: id.into() },
+                &config,
+                &MockBackend,
+                &store,
+                &notify,
+                &eq_store,
+                &std::collections::HashMap::new(),
+            )
+            .await;
+        }
+        let s = store.read().await;
+        assert_eq!(s.clients.len(), 1, "no second ClientState for the same MAC");
+        let client = &s.clients[&1];
+        assert_eq!(client.name, "Living Room");
+        assert_eq!(client.mac, "6e:91:28:1d:34:2b");
+        assert_eq!(client.snapcast_id.as_deref(), Some("c2"));
+        drop(s);
     }
 
     /// A `SnapcastBackend` double that records every `execute()` command, so tests
