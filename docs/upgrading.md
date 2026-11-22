@@ -17,6 +17,14 @@ The changelog lists every change, this page lists the ones you have to act on or
   "Zone" and "Zone Status" to one address sends two telegrams per change.
 - In client mode a read of a zone's **Playlist Name** address is answered.
 
+## MQTT: the zone position has its own topic
+
+`zones/<n>/state` no longer contains `media_position` and is only published when it changes,
+instead of once per second during playback. An automation that read the position from the
+state reads `zones/<n>/position` (whole seconds, not retained) instead. The Home Assistant
+entities created by discovery are not affected. Steady playback also no longer rewrites the
+state file every five seconds.
+
 ## `base_url` follows the HTTP port when it is not set
 
 Without `[http].base_url` the server used `http://localhost:5555` whatever the port was. With a
