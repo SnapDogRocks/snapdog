@@ -12,20 +12,44 @@ const wss = new WebSocket.Server({ noServer: true });
 // Trust first proxy for correct client IP detection under Render/Cloudflare
 app.set('trust proxy', 1);
 
+// The public demo limits API requests per address (the real server has no limit). Static
+// files do not count, and the limit leaves room for normal use: one EQ drag sends a request
+// per pointer move.
 const limiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  limit: 100, // Limit each IP to 100 requests per `window`
-  standardHeaders: 'draft-7', // Use RFC 9421 RateLimit headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  message: { error: 'Too many requests, please try again later.' },
+  windowMs: 60 * 1000,
+  limit: 1200,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'too_many_requests', message: 'Too many requests, please try again later.' },
 });
 
-// Apply the rate limiting middleware to all requests
-app.use(limiter);
-
-app.use(express.json({ strict: false }));
 // Serve Next.js static files from 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/api', limiter);
+
+app.use(express.json({ strict: false }));
+
+// Errors carry the real server's ErrorBody, `{ error, message }`. Handlers write
+// `{ error: '<explanation>' }`; this turns it into the class of the status and the message.
+const ERROR_CLASSES = {
+  400: 'bad_request',
+  403: 'read_only',
+  404: 'not_found',
+  409: 'conflict',
+  422: 'unprocessable',
+  502: 'bad_gateway',
+  503: 'service_unavailable',
+};
+app.use((req, res, next) => {
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode >= 400 && body && typeof body.error === 'string' && body.message === undefined) {
+      return json({ error: ERROR_CLASSES[res.statusCode] ?? 'internal_error', message: body.error });
+    }
+    return json(body);
+  };
+  next();
+});
 
 // ── Mock Unsplash Images for Cover Art ────────────────────────
 // Using specific, aesthetic Unsplash images for our playlists and radio stations
@@ -697,13 +721,26 @@ function getTrackMetadata(zoneId) {
   return null;
 }
 
+/** Track metadata of a zone that plays nothing, as the real server reports it. */
+function idleTrackMetadata(zone) {
+  return {
+    title: '', artist: '', album: '', album_artist: null, genre: null, year: null,
+    track_number: null, disc_number: null, duration_ms: 0, position_ms: zone.position_ms,
+    seekable: false, bitrate_kbps: null, content_type: null, sample_rate: null,
+    source: zone.source, cover_url: null, playlist_index: null, playlist_id: null,
+    playlist_name: null, playlist_total: null, playlist_track_index: null,
+    playlist_track_count: null, can_playlist_next: false, can_playlist_prev: false,
+    can_next: false, can_prev: false,
+  };
+}
+
 // Generate the full zone notification payload for client updates
 function buildWsZoneChanged(zoneId) {
   const zone = zones[zoneId];
   const meta = getTrackMetadata(zoneId);
   return {
     type: 'zone_changed',
-    zone: zoneId,
+    zone: Number(zoneId),
     playback: zone.playback,
     source: zone.source,
     shuffle: zone.shuffle,
@@ -722,6 +759,7 @@ function buildWsZoneChanged(zoneId) {
     cover_url: meta ? meta.cover_url : null,
     bitrate_kbps: meta ? meta.bitrate_kbps : null,
     content_type: meta ? meta.content_type : null,
+    sample_rate: meta ? meta.sample_rate : null,
     track_index: meta ? meta.playlist_track_index : null,
     track_count: meta ? meta.playlist_track_count : null,
     playlist_index: meta ? meta.playlist_index : null,
@@ -741,7 +779,9 @@ function buildWsClientStateChanged(clientId) {
   const client = clients[clientId];
   return {
     type: 'client_state_changed',
-    client: clientId,
+    client: Number(clientId),
+    name: client.name,
+    latency_ms: client.latency,
     volume: client.volume,
     muted: client.muted,
     connected: client.connected,
@@ -752,7 +792,10 @@ function buildWsClientStateChanged(clientId) {
 
 // ── Playback Simulation Loop (1s ticker) ──────────────────────
 
-setInterval(() => {
+// DEMO_SIMULATION=off stops the playback and presence simulation (the contract test).
+const SIMULATION = process.env.DEMO_SIMULATION !== 'off';
+
+if (SIMULATION) setInterval(() => {
   Object.keys(zones).forEach((id) => {
     const zone = zones[id];
     if (zone.playback === 'playing') {
@@ -760,12 +803,7 @@ setInterval(() => {
       if (zone.source === 'airplay' || zone.source === 'radio') {
         // AirPlay & Radio streams just tick up indefinitely (live streams)
         zone.position_ms += 1000;
-        broadcast({
-          type: 'zone_progress',
-          zone: zone.index,
-          position_ms: zone.position_ms,
-          duration_ms: 0,
-        });
+        broadcast(buildWsZoneChanged(zone.index));
       } else if (meta && meta.duration_ms > 0) {
         zone.position_ms += 1000;
         if (zone.position_ms >= meta.duration_ms) {
@@ -786,13 +824,9 @@ setInterval(() => {
           }
           broadcast(buildWsZoneChanged(zone.index));
         } else {
-          // Normal progress update
-          broadcast({
-            type: 'zone_progress',
-            zone: zone.index,
-            position_ms: zone.position_ms,
-            duration_ms: meta.duration_ms,
-          });
+          // The real server reports the position with zone_changed (zone_progress is
+          // reserved and never sent).
+          broadcast(buildWsZoneChanged(zone.index));
         }
       }
     }
@@ -802,7 +836,7 @@ setInterval(() => {
 // ── Presence Simulation Loop (KNX-driven in the real server; here just a
 // believable, occasional toggle so the demo shows zone_presence_changed at
 // all) ──────────────────────────────────────────────────────────
-setInterval(() => {
+if (SIMULATION) setInterval(() => {
   const candidates = Object.values(zones).filter((z) => z.presence_enabled);
   if (candidates.length === 0) return;
   const zone = candidates[Math.floor(Math.random() * candidates.length)];
@@ -868,6 +902,10 @@ function findPlaylistByIndex(raw) {
 function findPlaylistById(raw) {
   return typeof raw === 'string' ? PLAYLISTS.find(p => p.playlist_id === raw) : undefined;
 }
+/** `PlaylistDetails`, as `GET /media/playlists/{index}` answers it. */
+function playlistDetails(pl) {
+  return { index: pl.index, playlist_id: pl.playlist_id, name: pl.name, tracks: pl.tracks.length };
+}
 function playlistTracksInfo(pl) {
   return pl.tracks.map((t, idx) => ({
     id: t.id,
@@ -882,7 +920,7 @@ function playlistTracksInfo(pl) {
 app.get('/api/v1/media/playlists/by-id/:playlistId', (req, res) => {
   const pl = findPlaylistById(req.params.playlistId);
   if (!pl) return res.status(404).json({ error: 'Playlist not found' });
-  res.json(plInfoList[pl.index]);
+  res.json(playlistDetails(pl));
 });
 app.get('/api/v1/media/playlists/by-id/:playlistId/tracks', (req, res) => {
   const pl = findPlaylistById(req.params.playlistId);
@@ -892,7 +930,7 @@ app.get('/api/v1/media/playlists/by-id/:playlistId/tracks', (req, res) => {
 app.get('/api/v1/media/playlists/:id', (req, res) => {
   const pl = findPlaylistByIndex(req.params.id);
   if (!pl) return res.status(404).json({ error: 'Playlist not found' });
-  res.json(plInfoList[pl.index]);
+  res.json(playlistDetails(pl));
 });
 app.get('/api/v1/media/playlists/:id/tracks', (req, res) => {
   const pl = findPlaylistByIndex(req.params.id);
@@ -1084,7 +1122,7 @@ app.put('/api/v1/zones/:id/mute', (req, res) => {
     }
   });
 
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast({
     type: 'zone_volume_changed',
     zone: z.index,
@@ -1105,7 +1143,7 @@ app.post('/api/v1/zones/:id/mute/toggle', (req, res) => {
     }
   });
 
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast({
     type: 'zone_volume_changed',
     zone: z.index,
@@ -1124,7 +1162,7 @@ app.post('/api/v1/zones/:id/play', (req, res) => {
     z.track_index = 0;
   }
   z.playback = 'playing';
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1132,7 +1170,7 @@ app.post('/api/v1/zones/:id/pause', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   z.playback = 'paused';
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1141,7 +1179,7 @@ app.post('/api/v1/zones/:id/stop', (req, res) => {
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   z.playback = 'stopped';
   z.position_ms = 0;
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1156,7 +1194,7 @@ app.post('/api/v1/zones/:id/next', (req, res) => {
       z.position_ms = 0;
     }
   }
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1170,7 +1208,7 @@ app.post('/api/v1/zones/:id/previous', (req, res) => {
       z.position_ms = 0;
     }
   }
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1185,7 +1223,7 @@ app.put('/api/v1/zones/:id/shuffle', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   z.shuffle = !!req.body;
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1193,7 +1231,7 @@ app.post('/api/v1/zones/:id/shuffle/toggle', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   z.shuffle = !z.shuffle;
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1207,7 +1245,7 @@ app.put('/api/v1/zones/:id/repeat', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   z.repeat = req.body;
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1217,15 +1255,16 @@ app.post('/api/v1/zones/:id/repeat/toggle', (req, res) => {
   const modes = ['off', 'track', 'playlist'];
   const idx = modes.indexOf(z.repeat);
   z.repeat = modes[(idx + 1) % modes.length];
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
 // Zone Track Position
 app.get('/api/v1/zones/:id/track/metadata', (req, res) => {
-  const meta = getTrackMetadata(req.params.id);
-  if (!meta) return res.status(404).json({ error: 'No track playing' });
-  res.json(meta);
+  const z = zones[req.params.id];
+  if (!z) return res.status(404).json({ error: 'Zone not found' });
+  // Like the real server: an idle zone answers 200 with empty fields.
+  res.json(getTrackMetadata(req.params.id) ?? idleTrackMetadata(z));
 });
 
 app.get('/api/v1/zones/:id/track/position', (req, res) => {
@@ -1238,14 +1277,8 @@ app.put('/api/v1/zones/:id/track/position', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
   z.position_ms = req.body.position_ms || 0;
-  res.sendStatus(204);
-  const meta = getTrackMetadata(z.index);
-  broadcast({
-    type: 'zone_progress',
-    zone: z.index,
-    position_ms: z.position_ms,
-    duration_ms: meta ? meta.duration_ms : 0,
-  });
+  res.sendStatus(200);
+  broadcast(buildWsZoneChanged(z.index));
 });
 
 app.get('/api/v1/zones/:id/track/progress', (req, res) => {
@@ -1258,15 +1291,11 @@ app.get('/api/v1/zones/:id/track/progress', (req, res) => {
 app.put('/api/v1/zones/:id/track/progress', (req, res) => {
   const z = zones[req.params.id];
   const meta = getTrackMetadata(req.params.id);
-  if (!z || !meta || meta.duration_ms === 0) return res.sendStatus(400);
+  if (!z) return res.status(404).json({ error: 'Zone not found' });
+  if (!meta || meta.duration_ms === 0) return res.sendStatus(200);
   z.position_ms = Math.round(req.body * meta.duration_ms);
-  res.sendStatus(204);
-  broadcast({
-    type: 'zone_progress',
-    zone: z.index,
-    position_ms: z.position_ms,
-    duration_ms: meta.duration_ms,
-  });
+  res.sendStatus(200);
+  broadcast(buildWsZoneChanged(z.index));
 });
 
 // Zone Play Specifics
@@ -1283,7 +1312,7 @@ app.post('/api/v1/zones/:id/play/track', (req, res) => {
       z.source = z.playlist_index === 0 ? 'radio' : 'subsonic_playlist';
     }
   }
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1304,7 +1333,7 @@ app.post('/api/v1/zones/:id/play/url', (req, res) => {
     z.airplay_meta = null;
     z.position_ms = 0;
 
-    res.sendStatus(204);
+    res.sendStatus(200);
     broadcast(buildWsZoneChanged(z.index));
     broadcast({
       type: 'playback_error',
@@ -1330,7 +1359,7 @@ app.post('/api/v1/zones/:id/play/url', (req, res) => {
     seekable: false,
   };
 
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1347,7 +1376,7 @@ app.post('/api/v1/zones/:id/play/playlist', (req, res) => {
   const trackIdx = parseInt(body.track) || 0;
   const pl = Number.isInteger(plIdx) ? PLAYLISTS.find(p => p.index === plIdx) : undefined;
   if (pl) startPlaylist(z, pl, trackIdx);
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1366,7 +1395,7 @@ app.post('/api/v1/zones/:id/play/playlist/by-id', (req, res) => {
   const pl = findPlaylistById(body.playlist_id);
   if (!pl) return res.status(404).json({ error: 'Playlist not found' });
   startPlaylist(z, pl, parseInt(body.track) || 0);
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1376,7 +1405,7 @@ app.post('/api/v1/zones/:zoneId/play/playlist/:playlistId/track', (req, res) => 
   
   const pl = findPlaylistByIndex(req.params.playlistId);
   if (pl) startPlaylist(z, pl, parseInt(req.body));
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1384,6 +1413,7 @@ app.post('/api/v1/zones/:zoneId/play/playlist/:playlistId/track', (req, res) => 
 app.get('/api/v1/zones/:id/playlist', (req, res) => {
   const z = zones[req.params.id];
   if (!z) return res.status(404).json({ error: 'Zone not found' });
+  if (z.playlist_index === null) return res.status(404).json({ error: 'No playlist active' });
   res.json(z.playlist_index);
 });
 
@@ -1403,7 +1433,7 @@ app.put('/api/v1/zones/:id/playlist/by-id', (req, res) => {
   z.track_index = 0;
   z.position_ms = 0;
   z.source = pl.index === 0 ? 'radio' : 'subsonic_playlist';
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1419,7 +1449,7 @@ app.put('/api/v1/zones/:id/playlist', (req, res) => {
     z.position_ms = 0;
     z.source = plId === 0 ? 'radio' : 'subsonic_playlist';
   }
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1434,7 +1464,7 @@ app.post('/api/v1/zones/:id/next/playlist', (req, res) => {
     z.position_ms = 0;
     z.source = nextId === 0 ? 'radio' : 'subsonic_playlist';
   }
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1449,7 +1479,7 @@ app.post('/api/v1/zones/:id/previous/playlist', (req, res) => {
     z.position_ms = 0;
     z.source = prevId === 0 ? 'radio' : 'subsonic_playlist';
   }
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsZoneChanged(z.index));
 });
 
@@ -1581,7 +1611,7 @@ app.put('/api/v1/clients/:id/mute', (req, res) => {
   const c = clients[req.params.id];
   if (!c) return res.status(404).json({ error: 'Client not found' });
   c.muted = !!req.body;
-  res.sendStatus(204);
+  res.json(c.muted);
   broadcast(buildWsClientStateChanged(c.index));
 });
 
@@ -1589,7 +1619,7 @@ app.post('/api/v1/clients/:id/mute/toggle', (req, res) => {
   const c = clients[req.params.id];
   if (!c) return res.status(404).json({ error: 'Client not found' });
   c.muted = !c.muted;
-  res.sendStatus(204);
+  res.sendStatus(200);
   broadcast(buildWsClientStateChanged(c.index));
 });
 
@@ -1604,7 +1634,8 @@ app.put('/api/v1/clients/:id/latency', (req, res) => {
   const c = clients[req.params.id];
   if (!c) return res.status(404).json({ error: 'Client not found' });
   c.latency = parseInt(req.body) || 0;
-  res.sendStatus(204);
+  res.json(c.latency);
+  broadcast(buildWsClientStateChanged(c.index));
 });
 
 // Client Zone Mapping
@@ -1637,7 +1668,7 @@ app.put('/api/v1/clients/:id/name', (req, res) => {
   const c = clients[req.params.id];
   if (!c) return res.status(404).json({ error: 'Client not found' });
   c.name = String(req.body);
-  res.sendStatus(204);
+  res.json(c.name);
   broadcast(buildWsClientStateChanged(c.index));
 });
 
@@ -1669,6 +1700,7 @@ app.put('/api/v1/clients/:id/eq', (req, res) => {
   if (req.body.bands) c.eq.bands = req.body.bands;
   c.eq.preset = req.body.preset || null;
   res.json(c.eq);
+  broadcast({ type: 'client_eq_changed', client: c.index, ...c.eq });
 });
 
 app.put('/api/v1/clients/:id/eq/:idx', (req, res) => {
@@ -1679,6 +1711,7 @@ app.put('/api/v1/clients/:id/eq/:idx', (req, res) => {
     c.eq.bands[bandIdx] = req.body;
   }
   res.json(c.eq);
+  broadcast({ type: 'client_eq_changed', client: c.index, ...c.eq });
 });
 
 app.post('/api/v1/clients/:id/eq/preset', (req, res) => {
@@ -1688,6 +1721,7 @@ app.post('/api/v1/clients/:id/eq/preset', (req, res) => {
   const preset = typeof req.body === 'string' ? req.body : (req.body.preset || Object.keys(req.body)[0] || 'flat');
   c.eq = mockEqConfig(true, preset);
   res.json(c.eq);
+  broadcast({ type: 'client_eq_changed', client: c.index, ...c.eq });
 });
 
 // Client Speaker Profiles
@@ -1717,6 +1751,7 @@ app.put('/api/v1/clients/:id/speaker', (req, res) => {
     c.eq = mockEqConfig(false, 'flat');
   }
   res.json(c.eq);
+  broadcast({ type: 'client_speaker_changed', client: c.index, ...c.eq });
 });
 
 // Speaker Profile lookup
@@ -1724,6 +1759,130 @@ app.get('/api/v1/speakers/:name/profile', (req, res) => {
   const name = req.params.name;
   res.json(mockEqConfig(true, `spinorama:${name}`));
 });
+
+// ── Routes the real server has and the demo answers from its seed data ──
+
+const zoneOr404 = (req, res) => {
+  const z = zones[req.params.id];
+  if (!z) res.status(404).json({ error: 'Zone not found' });
+  return z;
+};
+const metaOf = (z) => getTrackMetadata(z.index) ?? idleTrackMetadata(z);
+
+app.get('/api/v1/zones/:id/track', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  if (z.track_index === null) return res.status(404).json({ error: 'No track playing' });
+  res.json(z.track_index);
+});
+for (const field of ['title', 'artist', 'album']) {
+  app.get(`/api/v1/zones/:id/track/${field}`, (req, res) => {
+    const z = zoneOr404(req, res); if (!z) return;
+    res.json(metaOf(z)[field]);
+  });
+}
+app.get('/api/v1/zones/:id/track/duration', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.json(metaOf(z).duration_ms);
+});
+app.get('/api/v1/zones/:id/track/playing', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.json(z.playback === 'playing');
+});
+app.get('/api/v1/zones/:id/playlist/count', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.json(PLAYLISTS.length);
+});
+app.get('/api/v1/zones/:id/playlist/name', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.json(metaOf(z).playlist_name ?? '');
+});
+app.get('/api/v1/zones/:id/presence', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.json(z.presence);
+});
+app.get('/api/v1/zones/:id/presence/enable', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.json(z.presence_enabled);
+});
+app.get('/api/v1/zones/:id/presence/timeout', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.json(z.presence_timeout ?? 900);
+});
+app.get('/api/v1/zones/:id/presence/timer', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.json(z.presence_timer_active);
+});
+app.get('/api/v1/zones/:id/cover', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  // The demo's covers live on an image host or in the web UI's assets: redirect there.
+  const cover = metaOf(z).cover_url;
+  res.redirect(cover && /^(https?:|\/)/.test(cover) ? cover : '/assets/radio-cover.png');
+});
+
+// Presets as the real server lists them (the curves are the demo's).
+app.get('/api/v1/eq/presets', (req, res) => {
+  // The real server's order (snapdog/src/audio/eq.rs, preset_names).
+  const order = ['flat', 'bass_boost', 'treble_boost', 'vocal', 'rock', 'jazz', 'classical', 'electronic', 'loudness', 'late_night'];
+  res.json(order.filter((name) => PRESETS[name]).map((name) => ({ name, bands: PRESETS[name] })));
+});
+
+// Library search over the seed playlists: tracks, playlists and radio stations.
+app.get('/api/v1/media/search', (req, res) => {
+  const q = String(req.query.q ?? '').trim().toLowerCase();
+  if (q.length < 2) return res.status(400).json({ error: 'The query needs at least two characters' });
+  const kind = req.query.kind;
+  const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+  const matches = (...texts) => texts.some((t) => String(t ?? '').toLowerCase().includes(q));
+  const items = [];
+  for (const pl of PLAYLISTS) {
+    const plKind = pl.index === 0 ? 'radio' : 'playlist';
+    if (pl.index !== 0 && (!kind || kind === 'playlist') && matches(pl.name)) {
+      items.push({ kind: 'playlist', title: pl.name, subtitle: `${pl.tracks.length} tracks`, duration: 0, cover_art: pl.cover_art, playlist_id: pl.playlist_id, index: pl.index });
+    }
+    pl.tracks.forEach((t, idx) => {
+      if (plKind === 'radio') {
+        if ((!kind || kind === 'radio') && matches(t.title, t.album)) {
+          items.push({ kind: 'radio', title: t.title, subtitle: t.album, duration: 0, cover_art: null, playlist_id: pl.playlist_id, index: pl.index, track: idx });
+        }
+      } else if ((!kind || kind === 'track') && matches(t.title, t.artist, t.album)) {
+        items.push({ kind: 'track', title: t.title, subtitle: t.artist, duration: t.duration, cover_art: null, track_id: t.id });
+      }
+    });
+  }
+  res.json({ items: items.slice(0, limit), next_offset: null });
+});
+
+// Plays a seed track by its id, as `play/subsonic/{track_id}` does on the real server.
+app.post('/api/v1/zones/:id/play/subsonic/:trackId', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  for (const pl of PLAYLISTS) {
+    const idx = pl.tracks.findIndex((t) => t.id === req.params.trackId);
+    if (idx >= 0 && pl.index !== 0) {
+      Object.assign(z, { source: 'subsonic_playlist', playlist_index: pl.index, track_index: idx, position_ms: 0, playback: 'playing' });
+      res.sendStatus(200);
+      return broadcast(buildWsZoneChanged(z.index));
+    }
+  }
+  res.status(404).json({ error: 'Track not found' });
+});
+app.post('/api/v1/zones/:id/play/subsonic/album/:albumId', (req, res) => {
+  const z = zoneOr404(req, res); if (!z) return;
+  res.status(404).json({ error: 'The demo has no albums' });
+});
+
+// The demo has no updater: it reports a current installation.
+const updateStatus = {
+  state: 'idle', currentVersion: versionInfo.version, availableVersion: null,
+  updateAvailable: false, lastError: null, updateMode: 'manual',
+  maintenanceTime: '03:00', timezone: 'UTC', progress: null,
+};
+app.get('/api/v1/system/updates', (req, res) => res.json(updateStatus));
+app.post('/api/v1/system/updates/check', (req, res) => res.json(updateStatus));
+app.post('/api/v1/system/updates/apply', (req, res) => res.json(updateStatus));
+app.post('/api/v1/system/updates/config', (req, res) => res.json(updateStatus));
+app.get('/api/v1/system/listeners', (req, res) => res.json([
+  { service: 'HTTP API and web interface', protocol: 'tcp', address: '0.0.0.0', port: 5555, backend: 'axum', bind_support: 'full', note: 'Follows the bind setting.' },
+]));
 
 // Fallback: Catch-all for Next.js routing (client-side routing)
 app.get('/*splat', (req, res, next) => {
@@ -1733,17 +1892,13 @@ app.get('/*splat', (req, res, next) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// An unknown API route answers like the real server, with an ErrorBody.
+app.use('/api', (req, res) => res.status(404).json({ error: `No route ${req.method} ${req.path}` }));
+
 // ── WebSocket Handler ─────────────────────────────────────────
 
 wss.on('connection', (ws, req) => {
-  // On connection, send initial zone states and client states to the new subscriber
-  Object.keys(zones).forEach((id) => {
-    ws.send(JSON.stringify(buildWsZoneChanged(parseInt(id))));
-  });
-  
-  Object.keys(clients).forEach((id) => {
-    ws.send(JSON.stringify(buildWsClientStateChanged(parseInt(id))));
-  });
+  // Like the real server, nothing is sent on connect: the client reads the state over REST.
 
   ws.on('message', (message) => {
     try {
@@ -1770,7 +1925,7 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 // Start Server
-const PORT = process.env.PORT || 5555;
+const PORT = process.env.PORT ?? 5555;
 server.listen(PORT, () => {
-  console.log(`SnapDog Demo Backend listening on port ${PORT}`);
+  console.log(`SnapDog Demo Backend listening on port ${server.address().port}`);
 });
