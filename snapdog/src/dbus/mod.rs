@@ -73,13 +73,9 @@ mod mpris {
     ) -> Result<Vec<zbus::Connection>> {
         let use_system = std::env::var("DBUS_SESSION_BUS_ADDRESS").is_err();
 
-        let art_base = {
-            let host = config
-                .http
-                .single_specific_bind()
-                .unwrap_or_else(|| "localhost".to_owned());
-            format!("http://{host}:{}", config.http.port)
-        };
+        // The same base as MQTT cover URLs: `[http].base_url`, or the one derived from the port,
+        // a single bind address and TLS.
+        let art_base = config.http.base_url();
 
         let mut connections = Vec::with_capacity(config.zones.len());
 
@@ -604,8 +600,11 @@ mod mpris {
             store
         }
 
+        /// `before` runs between creating the channel and starting the updater, so what it
+        /// sends is queued before the updater can read anything.
         async fn updater_fixture_with(
             capacity: usize,
+            before: impl FnOnce(&broadcast::Sender<Arc<str>>),
         ) -> (
             crate::dbus::testing::Fixture,
             broadcast::Sender<Arc<str>>,
@@ -619,6 +618,7 @@ mod mpris {
                 .await
                 .expect("interface is served");
             let (tx, rx) = broadcast::channel(capacity);
+            before(&tx);
             let store = test_store();
             tokio::spawn(notification_updater(
                 ZONE,
@@ -631,7 +631,7 @@ mod mpris {
         }
 
         async fn updater_fixture() -> (crate::dbus::testing::Fixture, broadcast::Sender<Arc<str>>) {
-            let (f, tx, _) = updater_fixture_with(16).await;
+            let (f, tx, _) = updater_fixture_with(16, |_| {}).await;
             (f, tx)
         }
 
@@ -680,19 +680,22 @@ mod mpris {
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
         async fn a_lagged_updater_reads_the_zone_again() {
-            let (f, tx, _store) = updater_fixture_with(1).await;
-            // Overflow the one-slot channel before the updater reads it.
-            for volume in [1, 2, 3, 4] {
-                let _ = tx.send(
-                    serde_json::to_string(&Notification::ZoneVolumeChanged {
-                        zone: ZONE + 1,
-                        volume,
-                        muted: false,
-                    })
-                    .unwrap()
-                    .into(),
-                );
-            }
+            // Overflow the one-slot channel before the updater starts. Sent after the start,
+            // the updater could read the first value before the rest arrive and never lag.
+            let (f, _tx, _store) = updater_fixture_with(1, |tx| {
+                for volume in [1, 2, 3, 4] {
+                    let _ = tx.send(
+                        serde_json::to_string(&Notification::ZoneVolumeChanged {
+                            zone: ZONE + 1,
+                            volume,
+                            muted: false,
+                        })
+                        .unwrap()
+                        .into(),
+                    );
+                }
+            })
+            .await;
             wait_for_volume(&f.caller, 0.3).await;
         }
 

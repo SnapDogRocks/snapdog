@@ -105,6 +105,138 @@ fn the_release_workflow_runs_the_release_guard() {
     );
 }
 
+/// Workflows whose commands build, run or test the workspace.
+const fn build_workflows() -> [(&'static str, &'static str); 4] {
+    [
+        ("ci.yml", CI),
+        ("release.yml", RELEASE_WORKFLOW),
+        (
+            "nightly.yml",
+            include_str!("../../.github/workflows/nightly.yml"),
+        ),
+        (
+            "tier2-integration.yml",
+            include_str!("../../.github/workflows/tier2-integration.yml"),
+        ),
+    ]
+}
+
+/// Shell commands of a workflow with `\` continuations joined, comments dropped.
+fn workflow_commands(workflow: &str) -> Vec<String> {
+    let mut commands = Vec::new();
+    let mut pending = String::new();
+    for line in workflow.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some(head) = trimmed.strip_suffix('\\') {
+            pending.push_str(head);
+            pending.push(' ');
+            continue;
+        }
+        pending.push_str(trimmed);
+        commands.push(std::mem::take(&mut pending));
+    }
+    commands
+}
+
+/// #532: every command that resolves the dependency graph uses `--locked`, so a lockfile
+/// that lags the manifest fails instead of being re-resolved silently (above all at the tag).
+#[test]
+fn every_cargo_build_run_and_test_is_locked() {
+    let subcommands = [
+        "build", "run", "test", "nextest", "clippy", "llvm-cov", "check", "deb",
+    ];
+    for (name, workflow) in build_workflows() {
+        for command in workflow_commands(workflow) {
+            for segment in command.split(['|', ';', '(']).flat_map(|s| s.split("&&")) {
+                let words: Vec<&str> = segment.split_whitespace().collect();
+                let Some(at) = words.iter().position(|w| *w == "cargo") else {
+                    continue;
+                };
+                if words[..at].contains(&"name:") {
+                    continue; // a step name such as `- name: cargo check`, not a command
+                }
+                if words.get(at + 1).is_some_and(|w| subcommands.contains(w)) {
+                    assert!(
+                        words.contains(&"--locked"),
+                        "{name}: `{}` runs without --locked",
+                        segment.trim()
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// #532: images are referenced by digest. A floating tag alone (`:latest`, `node:24-slim`)
+/// changes under the build without any change in the repository.
+#[test]
+fn every_image_is_pinned_by_digest() {
+    let root = repository_root();
+    let mut files: Vec<std::path::PathBuf> = ["Dockerfile", "Dockerfile.client", "Dockerfile.demo"]
+        .iter()
+        .map(|f| root.join(f))
+        .collect();
+    files.push(root.join("deploy/updater/Dockerfile"));
+    for dir in ["devcontainer"] {
+        for entry in std::fs::read_dir(root.join(dir)).expect("devcontainer exists") {
+            let path = entry.expect("readable").path().join("Dockerfile");
+            if path.is_file() {
+                files.push(path);
+            }
+        }
+    }
+    let mut checked = 0;
+    for path in &files {
+        let text = std::fs::read_to_string(path).expect("readable Dockerfile");
+        for line in text.lines().map(str::trim) {
+            let image = if let Some(rest) = line.strip_prefix("FROM ") {
+                rest.split_whitespace().next().unwrap_or("")
+            } else if let Some(rest) = line.strip_prefix("ARG ")
+                && let Some((name, value)) = rest.split_once('=')
+                && name.ends_with("_IMAGE")
+            {
+                value.trim_matches('"')
+            } else {
+                continue;
+            };
+            if image == "scratch" || image.starts_with("${") {
+                continue;
+            }
+            checked += 1;
+            assert!(
+                image.contains("@sha256:"),
+                "{}: `{image}` is not pinned by digest",
+                path.display()
+            );
+        }
+    }
+    for (name, workflow) in build_workflows() {
+        for line in workflow.lines().map(str::trim) {
+            let Some(image) = line
+                .strip_prefix("image: ")
+                .or_else(|| line.strip_prefix("container: "))
+            else {
+                continue;
+            };
+            if image.starts_with("${{") || !image.contains(':') && !image.contains('/') {
+                continue; // a matrix expression or a plain matrix label such as `snapdog`
+            }
+            checked += 1;
+            assert!(
+                image.contains("@sha256:"),
+                "{name}: `{image}` is not pinned by digest"
+            );
+        }
+    }
+    assert!(
+        checked > 10,
+        "the image scan found only {checked} references"
+    );
+}
+
 /// Non-Rust files that a Rust test reads or embeds. Each must start `rust-core`, or a pull
 /// request that changes only that file passes without the test that guards it (#528). Add a
 /// file here when a test starts to read one.
@@ -126,6 +258,14 @@ const GUARDED_FILES: &[&str] = &[
     "snapdog/systemd/snapdog.service",
     "snapdog-client/dbus/snapdog-client.conf",
     "snapdog-client/debian/snapdog-client.default",
+    "Dockerfile",
+    "Dockerfile.client",
+    "Dockerfile.demo",
+    "deploy/updater/Dockerfile",
+    "devcontainer/knxd/Dockerfile",
+    "devcontainer/snapcast-client/Dockerfile",
+    "devcontainer/snapcast-server/Dockerfile",
+    "devcontainer/snapdog-client/Dockerfile",
 ];
 
 /// The patterns of one `dorny/paths-filter` filter in ci.yml.

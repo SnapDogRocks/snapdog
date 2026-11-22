@@ -317,7 +317,7 @@ jobs:
           umask 077
           printf '%s' "$ETS_SIGNING_KEY" > "$RUNNER_TEMP/ets-key.pem"
           export SNAPDOG_ETS_KEY="$RUNNER_TEMP/ets-key.pem"
-          cargo run -p xtask -- knxprod
+          cargo run --locked -p xtask -- knxprod
           rm -f "$RUNNER_TEMP/ets-key.pem"
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
@@ -375,7 +375,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.scope == 'server-image' && '[{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-latest","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"},{"target":"aarch64-unknown-linux-gnu","os":"ubuntu-24.04-arm","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"}]' || '[{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-latest","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"},{"target":"aarch64-unknown-linux-gnu","os":"ubuntu-24.04-arm","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"},{"target":"x86_64-apple-darwin","os":"macos-latest","container":""},{"target":"aarch64-apple-darwin","os":"macos-latest","container":""},{"target":"x86_64-pc-windows-msvc","os":"windows-2025","container":""}]') }}
+        # The Linux entries always; macOS and Windows only for a full release.
+        include: ${{ fromJSON(format('[{0}{1}]', '{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-latest","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"},{"target":"aarch64-unknown-linux-gnu","os":"ubuntu-24.04-arm","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"}', inputs.scope != 'server-image' && ',{"target":"x86_64-apple-darwin","os":"macos-latest","container":""},{"target":"aarch64-apple-darwin","os":"macos-latest","container":""},{"target":"x86_64-pc-windows-msvc","os":"windows-2025","container":""}' || '')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
       # The bookworm container ships the rust-toolchain.toml version; only the
@@ -419,7 +420,7 @@ jobs:
         # applies a bare name to every selected package that defines it (snapdog-client
         # already has its own `dbus`). snapdog/tests/feature_consistency.rs fails if this
         # line stops using it.
-        run: cargo build --release --timings --target ${{ matrix.target }} -p snapdog -p snapdog-client --features snapdog/full
+        run: cargo build --locked --release --timings --target ${{ matrix.target }} -p snapdog -p snapdog-client --features snapdog/full
       - name: Upload Cargo timings
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
@@ -769,7 +770,7 @@ jobs:
       - name: Package .deb
         run: |
           set -euo pipefail
-          cargo deb -p ${{ matrix.pkg }} --target ${{ matrix.target }} --no-build --no-strip
+          cargo deb --locked -p ${{ matrix.pkg }} --target ${{ matrix.target }} --no-build --no-strip
           deb=$(find target/debian -maxdepth 1 -name '*.deb' -print -quit)
           test -n "$deb" || { echo "::error::cargo deb produced no .deb file"; exit 1; }
           # cargo-deb encodes a hyphenated (prerelease-style) version with Debian's
@@ -1048,7 +1049,7 @@ jobs:
           PY
           done
           docker run --rm -v "$PWD/aur-smoke:/work" \
-            archlinux:base-devel@sha256:68bfc3b0d277b08a99101dc9b94aaa03e5ae70cf1b4fb965c03b2b87b915760d sh -euxc '
+            archlinux:base-devel@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239 sh -euxc '
             pacman -Syu --noconfirm alsa-lib avahi
             useradd -m builder
             chown -R builder:builder /work
@@ -1505,7 +1506,7 @@ jobs:
           set -euo pipefail
           dir=$(dirname "${{ matrix.pkgbuild }}")
           docker run --rm -v "$PWD/$dir:/pkg" -w /pkg \
-            archlinux:base-devel@sha256:61f7de2dd88cc4ba1fe36c24cfe1a503c3936984492d6405eeab013ce6ac68c5 \
+            archlinux:base-devel@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239 \
             bash -euc '
               useradd -m builder
               chown -R builder:builder /pkg
@@ -1670,46 +1671,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Point the floating tags at the released digest
         env:
           REPO: ${{ matrix.repo }}
           TAG: ${{ needs.meta.outputs.tag }}
-        run: |
-          set -euo pipefail
-          version="${TAG#v}"
-          # promote-images is already gated on a non-prerelease tag; this is the
-          # belt-and-braces check, because a floating tag pointing at a
-          # prerelease is exactly the state this job exists to prevent.
-          case "$version" in
-            *-*) echo "::error::IMG003 refusing to move floating tags for prerelease ${TAG}"; exit 1 ;;
-          esac
-          major="${version%%.*}"
-          rest="${version#*.}"
-          minor="${major}.${rest%%.*}"
-
-          # imagetools creates tags against the existing manifest list; it does
-          # not rebuild and does not re-push layers, so every floating tag
-          # resolves to the exact bytes already signed and attested under the
-          # version tag.
-          digest=$(docker buildx imagetools inspect "${REPO}:${TAG}" \
-            --format '{{json .Manifest.Digest}}' | tr -d '"')
-          test -n "$digest" || { echo "::error::IMG001 cannot resolve ${REPO}:${TAG}"; exit 1; }
-
-          docker buildx imagetools create \
-            --tag "${REPO}:latest" \
-            --tag "${REPO}:${minor}" \
-            --tag "${REPO}:${major}" \
-            "${REPO}@${digest}"
-
-          for floating in latest "$minor" "$major"; do
-            actual=$(docker buildx imagetools inspect "${REPO}:${floating}" \
-              --format '{{json .Manifest.Digest}}' | tr -d '"')
-            if [[ "$actual" != "$digest" ]]; then
-              echo "::error::IMG002 ${REPO}:${floating} is ${actual}, expected ${digest}"
-              exit 1
-            fi
-            echo "${REPO}:${floating} -> ${digest}"
-          done
+        run: bash .github/scripts/move-floating-tags.sh
 
   smoke-apt:
     name: Smoke-test the Debian packages
@@ -1945,7 +1914,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.scope == 'server-image' && '[{"image":"snapdog","file":"Dockerfile","repo":"ghcr.io/snapdogrocks/snapdog"}]' || '[{"image":"snapdog","file":"Dockerfile","repo":"ghcr.io/snapdogrocks/snapdog"},{"image":"snapdog-client","file":"Dockerfile.client","repo":"ghcr.io/snapdogrocks/snapdog-client"}]') }}
+        # The server image always; the client image only for a full release.
+        include: ${{ fromJSON(format('[{0}{1}]', '{"image":"snapdog","file":"Dockerfile","repo":"ghcr.io/snapdogrocks/snapdog"}', inputs.scope != 'server-image' && ',{"image":"snapdog-client","file":"Dockerfile.client","repo":"ghcr.io/snapdogrocks/snapdog-client"}' || '')) }}
     permissions:
       contents: read
       packages: write
@@ -2060,38 +2030,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Point floating tags at the verified server image
         env:
           REPO: ghcr.io/snapdogrocks/snapdog
           TAG: ${{ needs.meta.outputs.tag }}
-        run: |
-          set -euo pipefail
-          version="${TAG#v}"
-          case "$version" in
-            *-*) echo "::error::IMG003 refusing to move floating tags for prerelease ${TAG}"; exit 1 ;;
-          esac
-          major="${version%%.*}"
-          rest="${version#*.}"
-          minor="${major}.${rest%%.*}"
-          digest=$(docker buildx imagetools inspect "${REPO}:${TAG}" \
-            --format '{{json .Manifest.Digest}}' | tr -d '"')
-          test -n "$digest" || { echo "::error::IMG001 cannot resolve ${REPO}:${TAG}"; exit 1; }
-
-          docker buildx imagetools create \
-            --tag "${REPO}:latest" \
-            --tag "${REPO}:${minor}" \
-            --tag "${REPO}:${major}" \
-            "${REPO}@${digest}"
-
-          for floating in latest "$minor" "$major"; do
-            actual=$(docker buildx imagetools inspect "${REPO}:${floating}" \
-              --format '{{json .Manifest.Digest}}' | tr -d '"')
-            if [[ "$actual" != "$digest" ]]; then
-              echo "::error::IMG002 ${REPO}:${floating} is ${actual}, expected ${digest}"
-              exit 1
-            fi
-            echo "${REPO}:${floating} -> ${digest}"
-          done
+        run: bash .github/scripts/move-floating-tags.sh
 
   updater-image:
     name: Docker snapdog-updater

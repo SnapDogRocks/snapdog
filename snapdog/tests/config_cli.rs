@@ -141,7 +141,7 @@ fn command_line_overrides_are_validated_like_file_values() {
         &["--streaming-port", "5555"],
     );
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("must not be the same"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("would listen on the same"));
 }
 
 #[test]
@@ -456,4 +456,26 @@ fn check_config_flags_a_wrong_type_in_mqtt_and_names_the_key() {
         "{stderr}"
     );
     assert!(stderr.contains("without MQTT"), "{stderr}");
+}
+
+#[test]
+fn an_unknown_codec_or_log_level_is_rejected_with_the_valid_names() {
+    let zone = "[[zone]]\nname = \"Living\"\n";
+    let output = run_check(zone, &["--codec", "mp3"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for name in ["pcm", "flac", "f32lz4", "f32lz4e"] {
+        assert!(stderr.contains(name), "{stderr}");
+    }
+    let output = run_check(zone, &["--log-level", "loud"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for name in ["trace", "debug", "info", "warn", "error"] {
+        assert!(stderr.contains(name), "{stderr}");
+    }
+    assert!(
+        run_check(zone, &["--codec", "f32lz4", "--log-level", "debug"])
+            .status
+            .success()
+    );
 }

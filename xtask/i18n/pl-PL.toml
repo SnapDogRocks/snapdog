@@ -76,7 +76,7 @@
 "Max. volume" = "Maks. głośność"
 "Presence auto-off (s)" = "Automatyczne wyłączenie przy obecności (s)"
 "Presence enabled" = "Obecność włączona"
-"Presence source (0=none, 1..20=radio)" = "Źródło obecności (0=brak, 1..20=radio)"
+"Presence source (0=none, 1..50=radio)" = "Źródło obecności (0=brak, 1..50=radio)"
 "Source conflict" = "Konflikt źródeł"
 "Source switch fade (ms)" = "Płynne przejście przy zmianie źródła (ms)"
 "Sample rate" = "Częstotliwość próbkowania"

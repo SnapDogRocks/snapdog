@@ -173,7 +173,7 @@ impl GoFlags {
     }
 }
 
-// ── Zone group objects (39 per zone, in six groups) ───────────
+// ── Zone group objects (`ZONE_GO_COUNT` per zone, in six groups) ───────────
 
 /// Create a receive-only GO definition.
 const fn go_recv(
@@ -319,7 +319,9 @@ pub const GLOBAL_GOS: &[GoDefinition] = &[
     // Cyclic heartbeat — sent every `heartbeat` interval (an ETS parameter) so the bus can
     // detect the server going offline.
     go_send("Server Online", DPT_STATE, "DPST-1-11", "1 Bit"),
-    // Set when the server enters a fault state, cleared when it recovers.
+    // Set while a part of the server has failed (Snapcast server, an AirPlay or Spotify receiver,
+    // the Subsonic connection; see `crate::health`), cleared when all have recovered. Sent at
+    // once on a change, and with every heartbeat that finds it changed.
     go_send("System Fault", DPT_ALARM, "DPST-1-5", "1 Bit"),
     // KNX clock input — syncs the local time that drives presence schedules.
     go_recv("KNX Time", DPT_TIME_OF_DAY, "DPST-10-1", "3 Bytes"),
@@ -634,19 +636,19 @@ pub mod mem {
     /// Zones `1..=NUM_ZONES` are active; higher zones are hidden in ETS and inactive at
     /// runtime. Replaces the former 10 per-zone active flags with a single count.
     pub const NUM_ZONES: usize = 0;
-    /// Zone default volume (10 × 1 byte).
+    /// Zone default volume (`MAX_ZONES` × 1 byte).
     pub const ZONE_DEF_VOL: usize = NUM_ZONES + 1;
-    /// Zone max volume (10 × 1 byte).
+    /// Zone max volume (`MAX_ZONES` × 1 byte).
     pub const ZONE_MAX_VOL: usize = ZONE_DEF_VOL + MAX_ZONES;
-    /// Zone `AirPlay` enabled (10 × 1 byte).
+    /// Zone `AirPlay` enabled (`MAX_ZONES` × 1 byte).
     pub const ZONE_AIRPLAY: usize = ZONE_MAX_VOL + MAX_ZONES;
-    /// Zone Spotify enabled (10 × 1 byte).
+    /// Zone Spotify enabled (`MAX_ZONES` × 1 byte).
     pub const ZONE_SPOTIFY: usize = ZONE_AIRPLAY + MAX_ZONES;
-    /// Zone presence enabled (10 × 1 byte).
+    /// Zone presence enabled (`MAX_ZONES` × 1 byte).
     pub const ZONE_PRESENCE_EN: usize = ZONE_SPOTIFY + MAX_ZONES;
-    /// Zone presence timeout (10 × 2 bytes).
+    /// Zone presence timeout (`MAX_ZONES` × 2 bytes).
     pub const ZONE_PRESENCE_TO: usize = ZONE_PRESENCE_EN + MAX_ZONES;
-    /// Zone presence default source (10 × 1 byte; 0 = none, 1..=`MAX_RADIOS` = radio index).
+    /// Zone presence default source (`MAX_ZONES` × 1 byte; 0 = none, 1..=`MAX_RADIOS` = radio index).
     pub const ZONE_PRES_SRC: usize = ZONE_PRESENCE_TO + MAX_ZONES * 2;
     /// Zone seek interval in seconds (`MAX_ZONES` × 1 byte; 1 to 60, 0 = unprogrammed, read as 10).
     pub const ZONE_SEEK_INTERVAL: usize = ZONE_PRES_SRC + MAX_ZONES;
@@ -655,19 +657,19 @@ pub mod mem {
     /// Clients `1..=NUM_CLIENTS` are active; higher clients are hidden in ETS and inactive
     /// at runtime. Mirrors [`NUM_ZONES`] — replaces the former 10 per-client active flags.
     pub const NUM_CLIENTS: usize = ZONE_SEEK_INTERVAL + MAX_ZONES;
-    /// Client default zone (10 × 1 byte).
+    /// Client default zone (`MAX_CLIENTS` × 1 byte).
     pub const CLIENT_DEF_ZONE: usize = NUM_CLIENTS + 1;
-    /// Client default volume (10 × 1 byte).
+    /// Client default volume (`MAX_CLIENTS` × 1 byte).
     pub const CLIENT_DEF_VOL: usize = CLIENT_DEF_ZONE + MAX_CLIENTS;
-    /// Client max volume (10 × 1 byte).
+    /// Client max volume (`MAX_CLIENTS` × 1 byte).
     pub const CLIENT_MAX_VOL: usize = CLIENT_DEF_VOL + MAX_CLIENTS;
-    /// Client default latency (10 × 1 byte).
+    /// Client default latency (`MAX_CLIENTS` × 1 byte).
     pub const CLIENT_DEF_LAT: usize = CLIENT_MAX_VOL + MAX_CLIENTS;
     /// Global HTTP port (2 bytes).
     pub const GLOBAL_HTTP_PORT: usize = CLIENT_DEF_LAT + MAX_CLIENTS;
     /// Global log level enum (1 byte).
     pub const GLOBAL_LOG_LVL: usize = GLOBAL_HTTP_PORT + 2;
-    /// Global audio sample rate, server-wide (1 byte; index 0=44100, 1=48000, 2=96000 Hz).
+    /// Global audio sample rate, server-wide (1 byte; index 0=44100, 1=48000, 2=88200, 3=96000, 4=176400, 5=192000 Hz).
     pub const GLOBAL_SRATE: usize = GLOBAL_LOG_LVL + 1;
     /// Global audio bit depth, server-wide (1 byte; index 0=16, 1=24, 2=32 bit).
     pub const GLOBAL_BITD: usize = GLOBAL_SRATE + 1;
@@ -691,15 +693,15 @@ pub mod mem {
     /// End of numeric parameters.
     const NUMERIC_END: usize = NUM_RADIOS + 1;
 
-    /// Zone names (10 × 20 bytes).
+    /// Zone names (`MAX_ZONES` × 20 bytes).
     pub const ZONE_NAME: usize = NUMERIC_END;
     /// Zone name size in bytes.
     pub const ZONE_NAME_SIZE: usize = 20;
-    /// Client names (10 × 20 bytes).
+    /// Client names (`MAX_CLIENTS` × 20 bytes).
     pub const CLIENT_NAME: usize = ZONE_NAME + MAX_ZONES * ZONE_NAME_SIZE;
     /// Client name size in bytes.
     pub const CLIENT_NAME_SIZE: usize = 20;
-    /// Client MAC addresses (10 × 17 bytes).
+    /// Client MAC addresses (`MAX_CLIENTS` × 17 bytes).
     pub const CLIENT_MAC: usize = CLIENT_NAME + MAX_CLIENTS * CLIENT_NAME_SIZE;
     /// Client MAC size in bytes.
     pub const CLIENT_MAC_SIZE: usize = 17;
@@ -723,27 +725,27 @@ pub mod mem {
     pub const GLOBAL_MQTT_TOPIC: usize = GLOBAL_MQTT_BROKER + GLOBAL_MQTT_BROKER_SIZE;
     /// MQTT base topic size in bytes.
     pub const GLOBAL_MQTT_TOPIC_SIZE: usize = 20;
-    /// Radio station names (20 × 20 bytes).
+    /// Radio station names (`MAX_RADIOS` × 20 bytes).
     pub const RADIO_NAME: usize = GLOBAL_MQTT_TOPIC + GLOBAL_MQTT_TOPIC_SIZE;
     /// Radio name size in bytes.
     pub const RADIO_NAME_SIZE: usize = 20;
-    /// Radio station URLs (20 × 80 bytes).
+    /// Radio station URLs (`MAX_RADIOS` × 80 bytes).
     pub const RADIO_URL: usize = RADIO_NAME + MAX_RADIOS * RADIO_NAME_SIZE;
     /// Radio URL size in bytes.
     pub const RADIO_URL_SIZE: usize = 80;
-    /// Radio cover art URLs (20 × 80 bytes).
+    /// Radio cover art URLs (`MAX_RADIOS` × 80 bytes).
     pub const RADIO_COVER: usize = RADIO_URL + MAX_RADIOS * RADIO_URL_SIZE;
     /// Radio cover size in bytes.
     pub const RADIO_COVER_SIZE: usize = 80;
-    /// Zone `AirPlay` device names (10 × 20 bytes).
+    /// Zone `AirPlay` device names (`MAX_ZONES` × 20 bytes).
     pub const ZONE_AIRPLAY_NAME: usize = RADIO_COVER + MAX_RADIOS * RADIO_COVER_SIZE;
     /// Zone `AirPlay` name size in bytes.
     pub const ZONE_AIRPLAY_NAME_SIZE: usize = 20;
-    /// Zone Spotify device names (10 × 20 bytes).
+    /// Zone Spotify device names (`MAX_ZONES` × 20 bytes).
     pub const ZONE_SPOTIFY_NAME: usize = ZONE_AIRPLAY_NAME + MAX_ZONES * ZONE_AIRPLAY_NAME_SIZE;
     /// Zone Spotify name size in bytes.
     pub const ZONE_SPOTIFY_NAME_SIZE: usize = 20;
-    /// Client icons (10 × 20 bytes).
+    /// Client icons (`MAX_CLIENTS` × 20 bytes).
     pub const CLIENT_ICON: usize = ZONE_SPOTIFY_NAME + MAX_ZONES * ZONE_SPOTIFY_NAME_SIZE;
     /// Client icon size in bytes.
     pub const CLIENT_ICON_SIZE: usize = 20;
@@ -767,7 +769,7 @@ pub mod mem {
     pub const GLOBAL_API_KEYS: usize = GLOBAL_NUM_API_KEYS + 1;
     /// HTTP API key slot size in bytes.
     pub const GLOBAL_API_KEY_SIZE: usize = 40;
-    /// Heartbeat interval index (1 byte; enum → 1/3/5/10/15/30/45/60 minutes) for the
+    /// Heartbeat interval in minutes (1 byte; the ETS choices are 1/3/5/10/15/30/45/60) for the
     /// global "Server Online" cyclic send.
     pub const GLOBAL_HEARTBEAT: usize = GLOBAL_API_KEYS + MAX_API_KEYS * GLOBAL_API_KEY_SIZE;
 

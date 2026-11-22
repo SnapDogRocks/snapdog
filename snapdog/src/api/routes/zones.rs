@@ -174,16 +174,44 @@ async fn read_zone(state: &SharedState, idx: usize) -> Option<state::ZoneState> 
     state.store.read().await.zones.get(&idx).cloned()
 }
 
+impl ZoneInfo {
+    /// The answer for one zone: configuration and runtime state, with the defaults of a zone
+    /// that has no state yet.
+    fn new(cfg: &crate::config::ZoneConfig, zs: Option<&state::ZoneState>) -> Self {
+        Self {
+            index: cfg.index,
+            name: cfg.name.clone(),
+            icon: cfg.icon.clone(),
+            volume: zs.map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
+            muted: zs.is_some_and(|s| s.muted),
+            playback: zs.map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
+            source: zs.map_or_else(|| "idle".into(), |s| s.source.to_string()),
+            shuffle: zs.is_some_and(|s| s.shuffle),
+            repeat: zs.map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
+            presence: zs.is_some_and(|s| s.presence),
+            presence_enabled: zs.is_none_or(|s| s.presence_enabled),
+            presence_timer_active: zs.is_some_and(|s| s.auto_off_active),
+        }
+    }
+}
+
 const fn zone_not_found() -> ApiError {
     ApiError::NotFound("zone")
 }
 
-fn zone_exists(state: &SharedState, idx: usize) -> Result<(), ApiError> {
-    state
-        .zone_commands
-        .contains_key(&idx)
-        .then_some(())
+/// The configuration of zone `idx`, or 404. The configuration is the one source of which
+/// zones exist: the store, the command senders and the EQ store are all built from it.
+pub(super) fn zone_config(
+    state: &SharedState,
+    idx: usize,
+) -> Result<&crate::config::ZoneConfig, ApiError> {
+    idx.checked_sub(1)
+        .and_then(|i| state.config.zones.get(i))
         .ok_or_else(zone_not_found)
+}
+
+fn zone_exists(state: &SharedState, idx: usize) -> Result<(), ApiError> {
+    zone_config(state, idx).map(drop)
 }
 
 async fn send_cmd(state: &SharedState, idx: usize, cmd: ZoneCommand) -> Result<(), ApiError> {
@@ -258,23 +286,7 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ZoneInfo>> {
             .config
             .zones
             .iter()
-            .map(|z| {
-                let zs = store.zones.get(&z.index);
-                ZoneInfo {
-                    index: z.index,
-                    name: z.name.clone(),
-                    icon: z.icon.clone(),
-                    volume: zs.map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
-                    muted: zs.is_some_and(|s| s.muted),
-                    playback: zs.map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
-                    source: zs.map_or_else(|| "idle".into(), |s| s.source.to_string()),
-                    shuffle: zs.is_some_and(|s| s.shuffle),
-                    repeat: zs.map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
-                    presence: zs.is_some_and(|s| s.presence),
-                    presence_enabled: zs.is_none_or(|s| s.presence_enabled),
-                    presence_timer_active: zs.is_some_and(|s| s.auto_off_active),
-                }
-            })
+            .map(|z| ZoneInfo::new(z, store.zones.get(&z.index)))
             .collect(),
     )
 }
@@ -295,33 +307,9 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ZoneInfo>> {
     tag = "zones"
 )]
 async fn get_zone(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
-    let cfg = idx
-        .checked_sub(1)
-        .and_then(|i| state.config.zones.get(i))
-        .ok_or(zone_not_found())?;
+    let cfg = zone_config(&state, idx)?;
     let zs = state.store.read().await.zones.get(&idx).cloned();
-    Ok::<_, ApiError>(Json(ZoneInfo {
-        index: cfg.index,
-        name: cfg.name.clone(),
-        icon: cfg.icon.clone(),
-        volume: zs
-            .as_ref()
-            .map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
-        muted: zs.as_ref().is_some_and(|s| s.muted),
-        playback: zs
-            .as_ref()
-            .map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
-        source: zs
-            .as_ref()
-            .map_or_else(|| "idle".into(), |s| s.source.to_string()),
-        shuffle: zs.as_ref().is_some_and(|s| s.shuffle),
-        repeat: zs
-            .as_ref()
-            .map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
-        presence: zs.as_ref().is_some_and(|s| s.presence),
-        presence_enabled: zs.as_ref().is_none_or(|s| s.presence_enabled),
-        presence_timer_active: zs.as_ref().is_some_and(|s| s.auto_off_active),
-    }))
+    Ok::<_, ApiError>(Json(ZoneInfo::new(cfg, zs.as_ref())))
 }
 
 // ── Volume ────────────────────────────────────────────────────
@@ -361,7 +349,8 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     responses(
         (status = 200, description = "Updated zone volume", body = i32),
         (status = 400, description = "Invalid volume value", body = ErrorBody),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -420,7 +409,8 @@ async fn get_mute(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
     request_body = bool,
     responses(
         (status = 200, description = "Updated mute status"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -443,7 +433,8 @@ async fn set_mute(
     ),
     responses(
         (status = 200, description = "Mute toggled successfully"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -467,7 +458,8 @@ async fn toggle_mute(
     ),
     responses(
         (status = 200, description = "Playback resumed"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -486,7 +478,8 @@ async fn play(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl 
     ),
     responses(
         (status = 200, description = "Playback paused"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -505,7 +498,8 @@ async fn pause(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl
     ),
     responses(
         (status = 200, description = "Playback stopped"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -524,7 +518,8 @@ async fn stop(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl 
     ),
     responses(
         (status = 200, description = "Skipped to next track"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -543,7 +538,8 @@ async fn next_track(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     ),
     responses(
         (status = 200, description = "Skipped to previous track"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -621,7 +617,8 @@ async fn get_zone_playlist_by_id(
     request_body = String,
     responses(
         (status = 200, description = "Playlist changed successfully"),
-        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -648,7 +645,8 @@ async fn set_zone_playlist_by_id(
     request_body = usize,
     responses(
         (status = 200, description = "Playlist changed successfully"),
-        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -671,7 +669,8 @@ async fn set_playlist(
     ),
     responses(
         (status = 200, description = "Switched to next playlist"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -693,7 +692,8 @@ async fn next_playlist(
     ),
     responses(
         (status = 200, description = "Switched to previous playlist"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -741,7 +741,8 @@ async fn get_shuffle(
     request_body = bool,
     responses(
         (status = 200, description = "Shuffle status updated"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -764,7 +765,8 @@ async fn set_shuffle(
     ),
     responses(
         (status = 200, description = "Shuffle status toggled"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -809,7 +811,8 @@ async fn get_repeat(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     request_body = RepeatMode,
     responses(
         (status = 200, description = "Repeat mode updated"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -832,7 +835,8 @@ async fn set_repeat(
     ),
     responses(
         (status = 200, description = "Repeat mode toggled"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1117,7 +1121,8 @@ async fn get_track_position(
     responses(
         (status = 200, description = "Seek command processed"),
         (status = 400, description = "Invalid payload (both or neither field provided, or out of range)", body = ErrorBody),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1198,7 +1203,8 @@ async fn get_track_progress(
     request_body = f64,
     responses(
         (status = 200, description = "Seek command processed"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1250,7 +1256,8 @@ async fn get_track_playing(
     responses(
         (status = 200, description = "Track play command sent"),
         (status = 400, description = "Negative track index", body = ErrorBody),
-        (status = 404, description = "Zone not found, no active playlist, or no such track", body = ErrorBody)
+        (status = 404, description = "Zone not found, no active playlist, or no such track", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1277,7 +1284,8 @@ async fn play_track(
     responses(
         (status = 200, description = "URL playback started"),
         (status = 400, description = "Invalid URL schema (must be http or https)", body = ErrorBody),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1329,7 +1337,9 @@ pub struct PlaylistByIdPayload {
     request_body = PlaylistPayload,
     responses(
         (status = 200, description = "Playlist playback triggered"),
-        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 400, description = "Neither or both of `index` and `playlist_id`, or an invalid index", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1362,7 +1372,8 @@ async fn play_subsonic_playlist(
     request_body = PlaylistByIdPayload,
     responses(
         (status = 200, description = "Playlist playback triggered"),
-        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1394,7 +1405,9 @@ async fn play_playlist_by_id(
     request_body = i32,
     responses(
         (status = 200, description = "Playlist track playback started"),
-        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 400, description = "Invalid playlist or track index", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1426,7 +1439,8 @@ async fn play_playlist_track(
     ),
     responses(
         (status = 200, description = "Subsonic track playback started"),
-        (status = 404, description = "Zone or track not found", body = ErrorBody)
+        (status = 404, description = "Zone or track not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1451,7 +1465,8 @@ async fn play_subsonic_track(
     ),
     responses(
         (status = 200, description = "Album playback started"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1705,7 +1720,8 @@ async fn get_presence(
     request_body = bool,
     responses(
         (status = 200, description = "Presence status updated successfully"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1754,7 +1770,8 @@ async fn get_presence_enabled(
     request_body = bool,
     responses(
         (status = 200, description = "Presence sensor status updated"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1803,7 +1820,8 @@ async fn get_presence_timeout(
     request_body = u16,
     responses(
         (status = 200, description = "Presence timeout updated"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]

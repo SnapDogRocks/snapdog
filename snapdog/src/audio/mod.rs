@@ -168,7 +168,16 @@ where
     }
 }
 
-async fn read_response_bytes_limited(
+/// Read a response body of at most `limit` bytes.
+///
+/// A larger announced or delivered body is an error, so a remote server cannot make the
+/// server buffer without bound. The one implementation for streams, the Subsonic client and
+/// cover fetches.
+///
+/// # Errors
+///
+/// Returns an error if the body is larger than `limit` or cannot be read.
+pub(crate) async fn read_response_bytes_limited(
     response: reqwest::Response,
     limit: u64,
     label: &str,
@@ -679,6 +688,7 @@ async fn decode_hls_stream(
                 }
             }
 
+            prune_seen_segments(&mut seen, &segments);
             first_fetch = false;
             if !is_live {
                 tracing::debug!("HLS VOD playlist complete");
@@ -1126,43 +1136,82 @@ fn is_http_url(url: &str) -> bool {
     url::Url::parse(url).is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.host().is_some())
 }
 
+/// Forget segments that are no longer in the playlist. A live playlist slides forward, and a
+/// segment that left it does not come back, so `seen` stays as small as the playlist.
+fn prune_seen_segments(
+    seen: &mut std::collections::HashSet<String>,
+    segments: &[(String, Option<String>)],
+) {
+    seen.retain(|url| segments.iter().any(|(s, _)| s == url));
+}
+
 /// Extract the highest bitrate variant URL from an HLS master playlist.
 fn resolve_hls_master(base: &url::Url, body: &str) -> Option<String> {
-    let mut best_bandwidth: u64 = 0;
-    let mut best_url: Option<String> = None;
-    let mut next_is_url = false;
+    let mut best: Option<(u64, String)> = None;
+    // Bandwidth of the variant whose URI comes next (0 when the tag has none).
+    let mut pending: Option<u64> = None;
 
     for line in body.lines() {
         let line = line.trim();
-        if line.starts_with("#EXT-X-STREAM-INF") {
-            // Parse BANDWIDTH=nnn from the tag
-            if let Some(bw_str) = line.split(',').find_map(|attr| {
-                let attr = attr.trim();
-                attr.strip_prefix("BANDWIDTH=")
-                    .or_else(|| attr.strip_prefix("#EXT-X-STREAM-INF:BANDWIDTH="))
-            }) && let Ok(bw) = bw_str.trim().parse::<u64>()
-                && bw > best_bandwidth
-            {
-                best_bandwidth = bw;
-                next_is_url = true;
-                continue;
+        if let Some(attrs) = line.strip_prefix("#EXT-X-STREAM-INF:") {
+            let bandwidth = attrs
+                .split(',')
+                .find_map(|attr| attr.trim().strip_prefix("BANDWIDTH="))
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .unwrap_or(0);
+            pending = Some(bandwidth);
+        } else if let Some(bandwidth) = pending
+            && !line.is_empty()
+            && !line.starts_with('#')
+        {
+            if best.as_ref().is_none_or(|(b, _)| bandwidth > *b) {
+                best = Some((bandwidth, resolve_relative(base, line)));
             }
-            next_is_url = true;
-        } else if next_is_url && !line.is_empty() && !line.starts_with('#') {
-            if best_bandwidth > 0 || best_url.is_none() {
-                best_url = Some(resolve_relative(base, line));
-            }
-            next_is_url = false;
-            best_bandwidth = 0; // Reset so we only update on higher bandwidth
+            pending = None;
         }
     }
 
-    best_url
+    best.map(|(_, url)| url)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hls_master_picks_the_highest_bandwidth_in_any_order() {
+        let base = url::Url::parse("https://radio.example/live/master.m3u8").unwrap();
+        let descending = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=256000,CODECS=\"mp4a.40.2\"\nhigh.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=64000\nlow.m3u8\n";
+        let ascending = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=64000\nlow.m3u8\n#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=1,BANDWIDTH=256000\nhigh.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=128000\nmid.m3u8\n";
+        for body in [descending, ascending] {
+            assert_eq!(
+                resolve_hls_master(&base, body).as_deref(),
+                Some("https://radio.example/live/high.m3u8"),
+                "{body}"
+            );
+        }
+        let no_bandwidth = "#EXTM3U\n#EXT-X-STREAM-INF:CODECS=\"mp4a\"\nonly.m3u8\n";
+        assert_eq!(
+            resolve_hls_master(&base, no_bandwidth).as_deref(),
+            Some("https://radio.example/live/only.m3u8")
+        );
+    }
+
+    #[test]
+    fn the_seen_set_stays_bounded_on_a_long_live_playlist() {
+        let mut seen = std::collections::HashSet::new();
+        for refresh in 0..10_000u32 {
+            // A sliding window of six segments, one new per refresh.
+            let segments: Vec<(String, Option<String>)> = (refresh..refresh + 6)
+                .map(|n| (format!("https://radio.example/seg{n}.aac"), None))
+                .collect();
+            for (url, _) in &segments {
+                seen.insert(url.clone());
+            }
+            prune_seen_segments(&mut seen, &segments);
+        }
+        assert_eq!(seen.len(), 6);
+    }
     use std::io::Write;
 
     /// A server that sends the headers and a few body bytes, then stalls with the connection
