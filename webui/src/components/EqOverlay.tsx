@@ -8,6 +8,8 @@ import { Slider } from "@/components/ui/slider";
 import { api, type EqBand, type EqConfig } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";
 import { computeResponse } from "@/lib/eq-response";
+import { createLatestSender, type LatestSender } from "@/lib/latest-sender";
+import { subscribeEqChanges, type EqTarget } from "@/lib/eq-events";
 import {
   FILTER_TYPES,
   MAX_EQ_BANDS,
@@ -109,11 +111,41 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
   const loading = loadState.target !== targetKey || loadState.status === "loading";
   const loadError = !loading && loadState.status === "error";
 
+  const abBypassRef = useRef(abBypass);
+  useEffect(() => { abBypassRef.current = abBypass; }, [abBypass]);
+
+  // One request at a time, latest wins: a drag does not flood the server, requests cannot
+  // overtake each other, and a failed one restores what the server holds.
+  const restoreFromServer = useCallback((error: unknown) => {
+    logApiError(error);
+    eqApi.get().then((server) => {
+      if (!mountedRef.current) return;
+      configRef.current = server;
+      setConfig(server);
+      setAbBypass(false);
+    }).catch(logApiError);
+  }, [eqApi]);
+  // Created in an effect: it is only used from handlers and effects, never during render.
+  const eqSenderRef = useRef<LatestSender<EqConfig> | null>(null);
+  useEffect(() => {
+    eqSenderRef.current = createLatestSender((c: EqConfig) => eqApi.set(c), { onError: restoreFromServer });
+  }, [eqApi, restoreFromServer]);
+
   // Push to server
   const pushConfig = useCallback(
-    (c: EqConfig) => { eqApi.set(c).catch(logApiError); },
-    [eqApi],
+    (c: EqConfig) => { eqSenderRef.current?.push(c); },
+    [],
   );
+
+  // A change from another controller updates the dialog, unless a local edit is on its way.
+  const eqTarget: EqTarget = clientId != null ? `client:${clientId}` : `zone:${zoneId ?? 0}`;
+  useEffect(() => subscribeEqChanges(eqTarget, (server) => {
+    if (eqSenderRef.current?.busy()) return;
+    // During A/B the server holds the EQ switched off on purpose; the dialog keeps `enabled`.
+    const next = abBypassRef.current ? { ...server, enabled: configRef.current.enabled } : server;
+    configRef.current = next;
+    setConfig(next);
+  }), [eqTarget]);
 
   const update = useCallback(
     (patch: Partial<EqConfig>) => {
@@ -128,6 +160,9 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
   const updateBand = useCallback(
     (idx: number, patch: Partial<EqBand>) => {
       const current = configRef.current;
+      const band = current.bands[idx];
+      // A pointer move or slider step that does not change the rounded values sends nothing.
+      if (!band || (Object.keys(patch) as (keyof EqBand)[]).every((k) => patch[k] === band[k])) return;
       const bands = current.bands.map((b, i) => (i === idx ? { ...b, ...patch } : b));
       const next = { ...current, bands, preset: null };
       configRef.current = next;
@@ -168,7 +203,7 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
     } else {
       const next = { ...configRef.current, enabled: false };
       configRef.current = next;
-      eqApi.set(next).catch(logApiError);
+      pushConfig(next);
       setConfig(next);
     }
   };
@@ -365,11 +400,47 @@ function SpeakerTab({ clientId, mode, setMode, abBypass, setAbBypass }: SpeakerT
 
   // The A/B bypass sends the same correction switched off, so it is never lost: not when the
   // dialog closes, not on a tab switch and not when the page is reloaded while bypassed.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Custom bands and the A/B bypass go through one sender: one request at a time, latest wins,
+  // and a failed request restores the correction the server holds.
+  const restoreFromServer = useCallback((error: unknown) => {
+    logApiError(error);
+    api.speakers.get(clientId).then((server) => {
+      if (!mountedRef.current) return;
+      setCurrentConfig(server);
+      const name = server.preset?.startsWith("spinorama:") ? server.preset.slice("spinorama:".length) : null;
+      if (!name) setCustomBands(limitEqBands(server.bands));
+    }).catch(logApiError);
+  }, [clientId]);
+  // Created in an effect: it is only used from handlers and effects, never during render.
+  const customSenderRef = useRef<LatestSender<EqConfig> | null>(null);
+  useEffect(() => {
+    customSenderRef.current = createLatestSender(
+      (c: EqConfig) => api.speakers.applyCustom(clientId, c),
+      { onError: restoreFromServer },
+    );
+  }, [clientId, restoreFromServer]);
+
   const sendBypass = useCallback((bypassed: boolean) => {
     const config = currentConfigRef.current;
     if (!config || config.bands.length === 0) return;
-    api.speakers.applyCustom(clientId, { ...config, enabled: !bypassed }).catch(logApiError);
-  }, [clientId]);
+    customSenderRef.current?.push({ ...config, enabled: !bypassed });
+  }, []);
+
+  // A change from another controller updates the tab, unless a local edit is on its way or
+  // the correction is bypassed here on purpose.
+  useEffect(() => subscribeEqChanges(`speaker:${clientId}`, (server) => {
+    if (customSenderRef.current?.busy() || abBypassRef.current) return;
+    setCurrentConfig(server);
+    const name = server.preset?.startsWith("spinorama:") ? server.preset.slice("spinorama:".length) : null;
+    setAppliedName(name);
+    if (!name) setCustomBands(limitEqBands(server.bands));
+  }), [clientId]);
 
   // End the bypass when the tab goes away (tab switch or closing the dialog).
   useEffect(() => () => {
@@ -445,8 +516,8 @@ function SpeakerTab({ clientId, mode, setMode, abBypass, setAbBypass }: SpeakerT
     const limitedBands = limitEqBands(bands);
     const eq: EqConfig = { enabled: limitedBands.length > 0, bands: limitedBands, preset: null };
     setCurrentConfig(eq);
-    api.speakers.applyCustom(clientId, eq).catch(logApiError);
-  }, [clientId]);
+    customSenderRef.current?.push(eq);
+  }, []);
 
   const toggleEnabled = useCallback((on: boolean) => {
     if (!on) {

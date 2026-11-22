@@ -78,7 +78,10 @@ export function InteractiveEQCurve({
     if (!outOfBounds) {
       const freq = Math.max(FREQ_MIN_HZ, Math.min(FREQ_MAX_HZ, xToFreq(pt.x)));
       const gain = Math.max(GAIN_MIN_DB, Math.min(GAIN_MAX_DB, yToDb(pt.y)));
-      onBandChange(dragging, { freq: Math.round(freq), gain: Math.round(gain * 2) / 2 });
+      const next = { freq: Math.round(freq), gain: Math.round(gain * 2) / 2 };
+      const band = bands[dragging];
+      // Most pointer moves land on the same rounded values: send nothing for those.
+      if (band?.freq !== next.freq || band.gain !== next.gain) onBandChange(dragging, next);
     }
   };
 
