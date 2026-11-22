@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { useAppStore } from "@/stores/useAppStore";
 import { logApiError } from "@/lib/log-api-error";
 import { formatTime } from "@/lib/format-time";
+import { scrollRowIntoList } from "@/lib/scroll-into-list";
 import type { PlaylistInfo, TrackInfo } from "@/lib/types";
 import type { ZoneState } from "@/stores/useAppStore";
 import { Input } from "@/components/ui/input";
@@ -74,6 +75,9 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
   const [playlistRetry, setPlaylistRetry] = useState(0);
   const trackRequestId = useRef(0);
   const [showAll, setShowAll] = useState(false);
+  // State, not a ref: the list mounts after the exit animation of the playlist grid, and the
+  // scroll effect has to run again once it is there.
+  const [trackList, setTrackList] = useState<HTMLDivElement | null>(null);
   const loading = listState.version !== playlistsVersion || listState.status === "loading";
   const playlistError = listState.version === playlistsVersion && listState.status === "error";
 
@@ -150,6 +154,17 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
   }, [filteredPlaylists, search, showAll]);
 
   const hasMore = !search && !showAll && filteredPlaylists.length > INITIAL_VISIBLE_COUNT;
+
+  // Show the current track when the playing playlist is opened and when the track changes, and
+  // at no other time: a re-render from an unrelated event (volume, clients) must not pull the
+  // list back while the user scrolls it. Only the list scrolls, never the page.
+  const currentTrackIndex = zone.track?.playlist_id === selectedId ? zone.track.playlist_track_index ?? null : null;
+  const tracksShown = trackStatus === "idle" && tracks.length > 0;
+  useEffect(() => {
+    if (!tracksShown || currentTrackIndex === null) return;
+    const row = trackList?.querySelector<HTMLElement>(`[data-track-index="${String(currentTrackIndex)}"]`);
+    if (trackList && row) scrollRowIntoList(trackList, row);
+  }, [trackList, selectedId, currentTrackIndex, tracksShown]);
 
   if (loading && playlists.length === 0) {
     return <div className="h-32 flex items-center justify-center text-muted-foreground animate-pulse" role="status">{t("loading")}</div>;
@@ -341,21 +356,13 @@ export function PlaylistBrowser({ zone }: PlaylistBrowserProps) {
                 </Button>
               </div>
             ) : (
-            <div className="space-y-0.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin" ref={(el) => {
-              // Auto-scroll to current track
-              if (el && zone.track?.playlist_id === selectedId) {
-                const idx = zone.track.playlist_track_index;
-                if (idx != null) {
-                  const child = el.children[idx] as HTMLElement | undefined;
-                  child?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-                }
-              }
-            }}>
+            <div className="space-y-0.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin" ref={setTrackList}>
               {tracks.map((t, i) => {
                 const isCurrent = zone.track?.playlist_id === selectedId && zone.track.playlist_track_index === i;
                 return (
                 <button
                   key={t.id}
+                  data-track-index={i}
                   onClick={() => { playTrack(selectedId, i); }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-all group ${isCurrent ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted"}`}
                 >
