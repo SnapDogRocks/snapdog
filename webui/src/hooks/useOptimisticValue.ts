@@ -68,17 +68,25 @@ export function useOptimisticValue(
     (value: number) => {
       draggingRef.current = false;
       setLocalValue(value);
+      clearTimeout(timeoutRef.current);
+      // Already the server value (a release at the start position or at a cap): nothing to
+      // wait for. The server value does not change, so the sync effect would never confirm it
+      // and later server values would be held back until the timeout.
+      if (Math.abs(value - serverValueRef.current) <= tolerance) {
+        committedRef.current = null;
+        setPending(false);
+        return;
+      }
       committedRef.current = value;
       setPending(true);
       // Safety fallback: release after timeout
-      clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
         committedRef.current = null;
         setPending(false);
         setLocalValue(serverValueRef.current);
       }, timeoutMs);
     },
-    [timeoutMs],
+    [timeoutMs, tolerance],
   );
 
   return { value: localValue, setOptimistic, commit, cancel, pending };

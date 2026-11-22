@@ -18,19 +18,43 @@ const token = process.env.UPDATER_TOKEN ?? "";
 const intervalSeconds = Number(process.env.POLL_INTERVAL_SECONDS ?? 900);
 const operationTimeoutMs = Number(process.env.UPDATE_TIMEOUT_SECONDS ?? 900) * 1000;
 const port = Number(process.env.CONTROL_PORT ?? 8080);
-// Server releases explicitly own GitHub's Latest badge; other component workflows set
-// make_latest=false. The single-release endpoint is therefore authoritative and
-// avoids downloading the repository's increasingly large release collection.
-const releaseApi =
-  process.env.RELEASE_API ?? "https://api.github.com/repos/SnapDogRocks/snapdog/releases/latest";
-const serverImageRepository = process.env.IMAGE_REPOSITORY ?? "ghcr.io/snapdogrocks/snapdog";
-const updaterImageRepository =
-  process.env.UPDATER_IMAGE_REPOSITORY ?? "ghcr.io/snapdogrocks/snapdog-updater";
+/* The one place for the updater's endpoints, image repositories, env file, readiness URL
+ * and signature identity. update.sh has no defaults of its own: apply() passes these in its
+ * environment (updateEnvironment), so a stale copy in the script cannot take effect. The
+ * compose file may override the first five; the identity is fixed here.
+ *
+ * Server releases explicitly own GitHub's Latest badge; other component workflows set
+ * make_latest=false. The single-release endpoint is therefore authoritative and avoids
+ * downloading the repository's increasingly large release collection. */
+const UPDATE_DEFAULTS = Object.freeze({
+  RELEASE_API: "https://api.github.com/repos/SnapDogRocks/snapdog/releases/latest",
+  IMAGE_REPOSITORY: "ghcr.io/snapdogrocks/snapdog",
+  UPDATER_IMAGE_REPOSITORY: "ghcr.io/snapdogrocks/snapdog-updater",
+  SNAPDOG_ENV_FILE: "/stack/.env",
+  READINESS_URL: "http://server:5555/health/ready",
+});
+/* Both images are built and signed by release.yml for a version tag. README.md shows the
+ * same expression for manual verification; control.test.mjs keeps the two equal. */
+const COSIGN_IDENTITY_REGEXP =
+  "^https://github\\.com/SnapDogRocks/snapdog/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$";
+function updateSettings(env = process.env) {
+  const settings = {};
+  for (const [name, fallback] of Object.entries(UPDATE_DEFAULTS)) {
+    settings[name] = env[name] || fallback;
+  }
+  settings.COSIGN_IDENTITY_REGEXP = COSIGN_IDENTITY_REGEXP;
+  return settings;
+}
+/** The environment update.sh runs with: the inherited one plus every required setting. */
+function updateEnvironment(env = process.env) {
+  return { ...env, ...updateSettings(env) };
+}
+const {
+  IMAGE_REPOSITORY: serverImageRepository,
+  UPDATER_IMAGE_REPOSITORY: updaterImageRepository,
+  RELEASE_API: releaseApi,
+} = updateSettings();
 const cosignIssuer = "https://token.actions.githubusercontent.com";
-const serverIdentity =
-  "^https://github\\.com/SnapDogRocks/snapdog/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$";
-const updaterIdentity =
-  "^https://github\\.com/SnapDogRocks/snapdog/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$";
 /* Own image version, baked in at build time (Dockerfile ARG UPDATER_VERSION).
  * Current updaters can hand their replacement to a detached, health-checked
  * helper. Older updaters omit these fields, which lets the UI show the one-time
@@ -146,9 +170,9 @@ const status = {
 };
 let active = false;
 
+/* Exactly the phases update.sh writes with set_phase; control.test.mjs compares the two. */
 const PHASES = [
   "verifying",
-  "backing-up",
   "deploying",
   "waiting-for-health",
   "done",
@@ -271,9 +295,9 @@ function signedImageReady(repository, tag, identity) {
     .catch(() => false);
 }
 async function releaseArtifactsReady(tag) {
-  const checks = [signedImageReady(serverImageRepository, tag, serverIdentity)];
+  const checks = [signedImageReady(serverImageRepository, tag, COSIGN_IDENTITY_REGEXP)];
   if (updaterSelfUpdateEnabled)
-    checks.push(signedImageReady(updaterImageRepository, tag, updaterIdentity));
+    checks.push(signedImageReady(updaterImageRepository, tag, COSIGN_IDENTITY_REGEXP));
   return (await Promise.all(checks)).every(Boolean);
 }
 let readinessRetryTimer = null;
@@ -391,7 +415,7 @@ async function apply() {
       // The control plane already resolved and validated this exact release.
       // Hand it to the deployment worker so an unrelated GitHub API outage
       // cannot break an update after the administrator has started it.
-      env: { ...process.env, UPDATE_ONCE: "true", TARGET_VERSION: targetVersion },
+      env: { ...updateEnvironment(), UPDATE_ONCE: "true", TARGET_VERSION: targetVersion },
     });
     const runningVersion = await currentVersion();
     if (!reached(runningVersion, targetVersion)) {
@@ -503,6 +527,10 @@ if (!testMode) {
 }
 
 export {
+  COSIGN_IDENTITY_REGEXP,
+  PHASES,
+  UPDATE_DEFAULTS,
+  updateEnvironment,
   equalToken,
   newer,
   reached,

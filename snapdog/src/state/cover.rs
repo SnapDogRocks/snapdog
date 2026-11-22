@@ -11,6 +11,8 @@ use tokio::sync::RwLock;
 
 const MAX_COVER_ART_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_FAVICON_HTML_BYTES: u64 = 1024 * 1024;
+/// Upper bound for fetching one cover image, body included.
+const COVER_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Thread-safe cover cache handle.
 pub type SharedCoverCache = Arc<RwLock<CoverCache>>;
@@ -156,6 +158,8 @@ pub async fn fetch_cover(url: &str) -> Option<(Vec<u8>, String)> {
 
     let client = reqwest::Client::builder()
         .user_agent(crate::USER_AGENT)
+        .connect_timeout(crate::audio::CONNECT_TIMEOUT)
+        .timeout(COVER_FETCH_TIMEOUT)
         .build()
         .inspect_err(
             |e| tracing::debug!(error = %e, url, "Failed to build HTTP client for cover fetch"),
@@ -315,9 +319,15 @@ fn parse_best_icon_url(html: &str, origin: &str) -> Option<String> {
 }
 
 fn extract_attr(tag: &str, attr: &str) -> Option<String> {
+    // Search the original string, ASCII case-insensitively: lowercasing first can change byte
+    // lengths (`İ` becomes three bytes), so an offset into the lowercased copy may not even be
+    // a char boundary of the original. An ASCII match always starts on a char boundary.
     let needle = format!("{attr}=");
-    let tag_lower = tag.to_lowercase();
-    let pos = tag_lower.find(&needle)? + needle.len();
+    let pos = tag
+        .as_bytes()
+        .windows(needle.len())
+        .position(|w| w.eq_ignore_ascii_case(needle.as_bytes()))?
+        + needle.len();
     let rest = &tag[pos..];
     let (quote, rest) = if let Some(stripped) = rest.strip_prefix('"') {
         ('"', stripped)
@@ -402,6 +412,21 @@ mod tests {
     fn detects_webp() {
         let webp = [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50];
         assert_eq!(detect_mime(&webp), "image/webp");
+    }
+
+    #[test]
+    fn extract_attr_survives_characters_that_grow_when_lowercased() {
+        // `İ` (2 bytes) lowercases to `i̇` (3 bytes): an offset into a lowercased copy would
+        // point into the middle of a character of the original and panic.
+        let tag = r#"<link title="İİİİ" REL="icon" HREF="/fav.png" sizes="32x32">"#;
+        assert_eq!(extract_attr(tag, "href").as_deref(), Some("/fav.png"));
+        assert_eq!(extract_attr(tag, "sizes").as_deref(), Some("32x32"));
+        assert_eq!(extract_attr(tag, "rel").as_deref(), Some("icon"));
+        assert_eq!(
+            extract_attr("<link İ href=x.ico >", "href").as_deref(),
+            Some("x.ico")
+        );
+        assert_eq!(extract_attr("<link title=\"İ\">", "href"), None);
     }
 
     #[test]

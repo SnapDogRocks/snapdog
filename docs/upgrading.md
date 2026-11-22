@@ -11,6 +11,30 @@ state reads `zones/<n>/position` (whole seconds, not retained) instead. The Home
 entities created by discovery are not affected. Steady playback also no longer rewrites the
 state file every five seconds.
 
+## `base_url` follows the HTTP port when it is not set
+
+Without `[http].base_url` the server used `http://localhost:5555` whatever the port was. With a
+changed port (in the file, `--port` or `SNAPDOG_HTTP_PORT`) that value was taken for a configured
+one, and the mDNS record `base_url` pointed clients at port 5555. Now an unset `base_url` is derived
+from the final port, a single bind address and TLS. MQTT cover URLs use the right port as well.
+
+The mDNS record `base_url` is only sent when it is a URL another host can use: a configured
+`base_url`, or one built from a single specific bind address. A server with TLS on all interfaces
+no longer advertises `https://localhost:<port>`; the `tls` record tells clients to use HTTPS with
+the mDNS host name. An explicit `base_url` is advertised unchanged, also when it names `localhost`.
+
+## Zones: start volume, volume limit, AirPlay and Spotify per zone
+
+New optional keys under `[[zone]]`: `default_volume` (0 to 100, set at every server start),
+`max_volume` (0 to 100, default 100, a hard limit for every source of a zone volume) and `airplay` /
+`spotify` (default `true`). Without them nothing changes for a TOML setup.
+
+**KNX device mode:** the zone parameters "Max. volume", "AirPlay enabled" and "Spotify enabled" now
+take effect; before they were read and ignored. "Default volume" is now "Volume at start", a list
+with "Last value" (the default: the zone keeps the volume it had) and 1 % to 100 %. A device that
+was programmed with the older product file keeps working: a value of 0 % there means "Last value",
+every other value is the start volume. Import the new product file to get the list.
+
 ## SnapDog 1.0: the deprecated playlist `id` and `zone_changed.playlist` are removed (breaks `/api/v1`)
 
 This change **breaks compatibility of `/api/v1`** for clients that still use the names deprecated in

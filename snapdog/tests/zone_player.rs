@@ -269,6 +269,35 @@ async fn injected_pcm_reaches_backend_send_audio() {
     assert_eq!(call.channels, 2);
 }
 
+// ── Checked commands: the zone answers whether the index exists ──
+
+async fn checked(h: &common::ZoneHarness, zone: usize, cmd: ZoneCommand) -> bool {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    h.senders[&zone]
+        .send(ZoneCommand::Checked(Box::new(cmd), tx))
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), rx)
+        .await
+        .expect("the zone answers")
+        .unwrap_or(true)
+}
+
+#[tokio::test]
+async fn an_unknown_playlist_index_is_refused_and_not_clamped() {
+    let h = spawn_zone_harness(test_config()).await;
+    // test_config has no radio and no Subsonic: no playlist exists at all.
+    assert!(!checked(&h, 1, ZoneCommand::SetPlaylist(99, 0)).await);
+    assert!(!checked(&h, 1, ZoneCommand::PlayPlaylist(0, 0)).await);
+    assert_eq!(h.store.read().await.zones[&1].playlist_index, None);
+}
+
+#[tokio::test]
+async fn a_track_index_without_an_active_playlist_is_refused() {
+    let h = spawn_zone_harness(test_config()).await;
+    assert!(!checked(&h, 1, ZoneCommand::SetTrack(0)).await);
+}
+
 // ── A2: the last action wins between a receiver and local control ──
 
 #[cfg(feature = "test-harness")]
@@ -400,4 +429,44 @@ async fn a_mono_source_reaches_the_backend_as_stereo_frames() {
 
     assert_eq!(call.channels, 2);
     assert_eq!(call.len, 960, "480 mono frames become 480 stereo frames");
+}
+
+/// #509: `max_volume` is a hard limit for every volume command the zone takes.
+#[tokio::test]
+async fn zone_volume_never_exceeds_max_volume() {
+    let mut cfg = test_config();
+    cfg.zones[0].max_volume = 60;
+    let mut h = spawn_zone_harness(cfg).await;
+
+    h.senders[&1]
+        .send(ZoneCommand::SetVolume(90))
+        .await
+        .unwrap();
+    let n = h
+        .await_notification(|v| v["type"] == "zone_volume_changed" && v["zone"] == 1)
+        .await;
+    assert_eq!(n["volume"], 60, "SetVolume is clamped to max_volume");
+
+    h.senders[&1]
+        .send(ZoneCommand::AdjustVolume(20))
+        .await
+        .unwrap();
+    h.senders[&1]
+        .send(ZoneCommand::SetVolume(40))
+        .await
+        .unwrap();
+    h.await_notification(|v| {
+        v["type"] == "zone_volume_changed" && v["zone"] == 1 && v["volume"] == 40
+    })
+    .await;
+    h.senders[&1]
+        .send(ZoneCommand::AdjustVolume(50))
+        .await
+        .unwrap();
+    let n = h
+        .await_notification(|v| {
+            v["type"] == "zone_volume_changed" && v["zone"] == 1 && v["volume"] != 40
+        })
+        .await;
+    assert_eq!(n["volume"], 60, "AdjustVolume stops at max_volume");
 }
