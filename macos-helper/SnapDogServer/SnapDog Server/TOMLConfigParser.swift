@@ -109,6 +109,7 @@ enum TOMLConfigParser {
                     icon: c["icon"]?.string ?? "🔊"
                 )
                 entry.knx = readKnx(c["knx"]?.table)
+                entry.fileName = entry.name
                 return entry
             }
         }
@@ -273,16 +274,26 @@ enum TOMLConfigParser {
 
         // Clients — same preserve-merge (keeps `.knx` GAs etc. the app doesn't model).
         var existingClients: [String: TOMLTable] = [:]
+        var existingClientsByMac: [String: TOMLTable] = [:]
         if let arr = existing["client"]?.array {
             for item in arr {
-                if let c = item.table, let name = c["name"]?.string, !name.isEmpty {
+                guard let c = item.table else { continue }
+                if let name = c["name"]?.string, !name.isEmpty {
                     existingClients[name] = c
+                }
+                if let mac = c["mac"]?.string, !mac.isEmpty {
+                    existingClientsByMac[Self.normalizedMac(mac)] = c
                 }
             }
         }
         let clientsArr = TOMLArray()
         for client in model.clients where !client.name.isEmpty {
-            let c = existingClients[client.name] ?? TOMLTable()
+            // A renamed client keeps its table: look it up under the name it had in the file,
+            // then under its current name, then by MAC (the identity the server uses).
+            let c = client.fileName.flatMap { existingClients[$0] }
+                ?? existingClients[client.name]
+                ?? (client.mac.isEmpty ? nil : existingClientsByMac[Self.normalizedMac(client.mac)])
+                ?? TOMLTable()
             c["name"] = client.name
             c["mac"] = client.mac
             c["zone"] = client.zone
@@ -312,6 +323,11 @@ enum TOMLConfigParser {
 
     /// Read a `[…].knx` sub-table into a `[field: group-address]` dictionary (all string keys,
     /// so unknown/future fields are preserved through an edit).
+    /// MAC addresses compare without separators and case, as the server does.
+    private static func normalizedMac(_ mac: String) -> String {
+        mac.lowercased().filter { $0.isHexDigit }
+    }
+
     private static func readKnx(_ table: TOMLTable?) -> [String: String] {
         guard let table else { return [:] }
         var out: [String: String] = [:]

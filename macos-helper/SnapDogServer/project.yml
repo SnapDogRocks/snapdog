@@ -12,7 +12,7 @@ packages:
     exactVersion: "0.6.0"
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle.git
-    exactVersion: "2.9.1"
+    exactVersion: "2.9.6"
 
 targets:
   SnapDog Server:
@@ -67,3 +67,32 @@ targets:
         NSHumanReadableCopyright: "Copyright © 2026 Fabian Schmieder. All rights reserved."
         SUFeedURL: "https://updates.snapdog.cc/helper/appcast.xml"
         SUPublicEDKey: "KIg907mzCZc4rIUC2zNxtu2HOxy1tDVSOOKrix2ZR9w="
+
+  # Unit tests of the configuration parser. The two source files are compiled into the test
+  # bundle itself (no host app), so a test run never starts the menu bar app or the server.
+  SnapDog ServerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: SnapDog ServerTests
+      - path: SnapDog Server/ConfigModel.swift
+      - path: SnapDog Server/TOMLConfigParser.swift
+    dependencies:
+      - package: TOMLKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.metaneutrons.snapdog.helper.tests
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGN_IDENTITY: "-"
+
+schemes:
+  SnapDog Server:
+    build:
+      targets:
+        SnapDog Server: all
+    test:
+      targets:
+        - SnapDog ServerTests
