@@ -617,6 +617,7 @@ pub async fn run_state_publisher(feed: &mut StateFeed) {
                     | Notification::ZoneProgress { zone, .. } => {
                         if let Some(z) = store.zones.get(&zone) {
                             let _ = publisher.zone_state(zone, z);
+                            let _ = publisher.zone_position(zone, z);
                         }
                     }
                     Notification::ClientStateChanged { client, .. } => {
