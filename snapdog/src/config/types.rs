@@ -268,10 +268,6 @@ impl Default for SystemConfig {
     }
 }
 
-fn default_base_url() -> String {
-    "http://localhost:5555".into()
-}
-
 fn default_state_dir() -> String {
     // Running as systemd service → /var/lib/snapdog
     if std::env::var("INVOCATION_ID").is_ok() {
@@ -596,14 +592,25 @@ where
         OneOrMany::One(one) => vec![one],
         OneOrMany::Many(many) => many,
     };
+    resolve_http_bind(&entries).map_err(serde::de::Error::custom)
+}
+
+/// Turn `[http].bind` entries (addresses, `loopback`, interface names) into addresses.
+///
+/// The same for the file key and for `--bind`. An entry that is neither is kept as written
+/// and fails when the listener binds it.
+///
+/// # Errors
+///
+/// Returns the message of an interface name that resolves to no usable address.
+pub fn resolve_http_bind(entries: &[String]) -> Result<Vec<String>, String> {
     let mut bind = Vec::with_capacity(entries.len());
     for entry in entries {
-        if super::interfaces::is_address_or_known_name(&entry) {
-            let addrs =
-                super::interfaces::resolve_here(&entry).map_err(serde::de::Error::custom)?;
+        if super::interfaces::is_address_or_known_name(entry) {
+            let addrs = super::interfaces::resolve_here(entry)?;
             bind.extend(addrs.iter().map(ToString::to_string));
         } else {
-            bind.push(entry);
+            bind.push(entry.clone());
         }
     }
     Ok(bind)
@@ -676,9 +683,10 @@ pub struct HttpConfig {
     #[serde(default, deserialize_with = "http_bind_list")]
     pub bind: Vec<String>,
     /// External base URL (e.g., `http://192.168.2.20:5555` or `https://music.example.com`).
-    /// Used for absolute URLs in API responses. Defaults to `http://localhost:<port>`.
-    #[serde(default = "default_base_url")]
-    pub base_url: String,
+    /// Used for absolute URLs (MQTT cover art, mDNS). Unset: derived after all overrides
+    /// from the final port, the bind address and TLS, see [`HttpConfig::base_url`].
+    #[serde(default)]
+    pub base_url: Option<String>,
     /// TLS certificate path (PEM fullchain). If set with `tls_key`, enables HTTPS.
     #[serde(default)]
     pub tls_cert: Option<std::path::PathBuf>,
@@ -731,13 +739,50 @@ impl HttpConfig {
     }
 }
 
+impl HttpConfig {
+    /// `https` when a TLS certificate is configured, else `http`.
+    const fn scheme(&self) -> &'static str {
+        if self.tls_cert.is_some() {
+            "https"
+        } else {
+            "http"
+        }
+    }
+
+    /// The base URL another host can reach the server at, when one is known: the configured
+    /// `base_url` unchanged, or one derived from a single specific bind address with the
+    /// final port and scheme. `None` for a wildcard or several bind addresses; clients then
+    /// use the mDNS host name and port. This is what the mDNS `base_url` record carries.
+    #[must_use]
+    pub fn advertised_base_url(&self) -> Option<String> {
+        if let Some(url) = &self.base_url {
+            return Some(url.clone());
+        }
+        let host = self.single_specific_bind()?;
+        let host = if host.parse::<std::net::Ipv6Addr>().is_ok() {
+            format!("[{host}]")
+        } else {
+            host
+        };
+        Some(format!("{}://{host}:{}", self.scheme(), self.port))
+    }
+
+    /// The base URL for absolute links (MQTT cover art, receiver covers): the advertised one,
+    /// or `<scheme>://localhost:<port>` with the final port as a last resort.
+    #[must_use]
+    pub fn base_url(&self) -> String {
+        self.advertised_base_url()
+            .unwrap_or_else(|| format!("{}://localhost:{}", self.scheme(), self.port))
+    }
+}
+
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
             port: default_http_port(),
             webui: WebUi::default(),
             bind: Vec::new(),
-            base_url: default_base_url(),
+            base_url: None,
             tls_cert: None,
             tls_key: None,
             api_keys: vec![],
@@ -1870,5 +1915,75 @@ mod webui_config_tests {
     fn unknown_webui_choice_is_rejected() {
         let error = toml::from_str::<HttpConfig>("webui = 'future'").unwrap_err();
         assert!(error.to_string().contains("future"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod base_url_tests {
+    use super::HttpConfig;
+
+    fn http(toml: &str) -> HttpConfig {
+        toml::from_str(toml).unwrap()
+    }
+
+    #[test]
+    fn the_default_port_on_a_wildcard_advertises_nothing() {
+        let c = http("");
+        assert_eq!(c.advertised_base_url(), None);
+        assert_eq!(c.base_url(), "http://localhost:5555");
+    }
+
+    #[test]
+    fn a_changed_port_is_followed_and_never_advertised_as_5555() {
+        let mut c = http("port = 8080");
+        assert_eq!(c.advertised_base_url(), None);
+        assert_eq!(c.base_url(), "http://localhost:8080");
+        // A port set later, as `--port` and `SNAPDOG_HTTP_PORT` do, is followed as well.
+        c.port = 9000;
+        assert_eq!(c.base_url(), "http://localhost:9000");
+    }
+
+    #[test]
+    fn a_single_specific_bind_is_advertised_with_the_final_port() {
+        let c = http("port = 8080\nbind = '192.168.1.10'");
+        assert_eq!(
+            c.advertised_base_url().as_deref(),
+            Some("http://192.168.1.10:8080")
+        );
+        let v6 = http("bind = 'fd00::10'");
+        assert_eq!(
+            v6.advertised_base_url().as_deref(),
+            Some("http://[fd00::10]:5555")
+        );
+        // A wildcard or a list is not a single address.
+        assert_eq!(http("bind = '::'").advertised_base_url(), None);
+        assert_eq!(
+            http("bind = ['192.168.1.10', '127.0.0.1']").advertised_base_url(),
+            None
+        );
+    }
+
+    #[test]
+    fn tls_switches_the_scheme() {
+        let c = http("bind = '192.168.1.10'\ntls_cert = 'c.pem'\ntls_key = 'k.pem'");
+        assert_eq!(
+            c.advertised_base_url().as_deref(),
+            Some("https://192.168.1.10:5555")
+        );
+        // On a wildcard the localhost fallback is not something another host can use.
+        let wildcard = http("tls_cert = 'c.pem'\ntls_key = 'k.pem'");
+        assert_eq!(wildcard.advertised_base_url(), None);
+        assert_eq!(wildcard.base_url(), "https://localhost:5555");
+    }
+
+    #[test]
+    fn an_explicit_base_url_is_kept_unchanged_even_when_it_names_localhost() {
+        let c = http("port = 8080\nbase_url = 'http://localhost:8080'");
+        assert_eq!(
+            c.advertised_base_url().as_deref(),
+            Some("http://localhost:8080")
+        );
+        let proxy = http("bind = '192.168.1.10'\nbase_url = 'https://music.example.com'");
+        assert_eq!(proxy.base_url(), "https://music.example.com");
     }
 }
