@@ -307,6 +307,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -380,6 +390,16 @@
           },
           "422": {
             "description": "Client does not support EQ (not a SnapDog client)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -470,6 +490,16 @@
           },
           "422": {
             "description": "Client does not support EQ (not a SnapDog client)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -648,6 +678,26 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Client is configured but not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -756,6 +806,26 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Client is configured but not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -799,6 +869,26 @@
           },
           "404": {
             "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Client is configured but not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -1052,6 +1142,26 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The speaker database could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -1172,6 +1282,26 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Client is configured but not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -1276,6 +1406,16 @@
           },
           "404": {
             "description": "Client or Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -2447,7 +2587,14 @@
             }
           },
           "503": {
-            "description": "Speaker database unavailable"
+            "description": "Speaker database unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -2489,7 +2636,24 @@
             }
           },
           "404": {
-            "description": "Speaker profile not found"
+            "description": "Speaker profile not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The speaker database could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -3087,6 +3251,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -3150,6 +3324,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3230,6 +3414,16 @@
           },
           "404": {
             "description": "Zone or band not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -6044,17 +6238,23 @@
           "freq": {
             "type": "number",
             "format": "float",
-            "description": "Center frequency in Hz."
+            "description": "Center frequency in Hz.",
+            "maximum": 20000,
+            "minimum": 10
           },
           "gain": {
             "type": "number",
             "format": "float",
-            "description": "Gain in dB (positive = boost, negative = cut). Ignored for low/high pass."
+            "description": "Gain in dB (positive = boost, negative = cut). Ignored for low/high pass.",
+            "maximum": 24,
+            "minimum": -24
           },
           "q": {
             "type": "number",
             "format": "float",
-            "description": "Q factor controlling bandwidth. Higher values = narrower band."
+            "description": "Q factor controlling bandwidth. Higher values = narrower band. 0 selects the\nButterworth default.",
+            "maximum": 20,
+            "minimum": 0
           },
           "type": {
             "$ref": "#/components/schemas/FilterType",
@@ -6075,7 +6275,8 @@
             "items": {
               "$ref": "#/components/schemas/EqBand"
             },
-            "description": "Ordered list of biquad filter bands applied in series."
+            "description": "Ordered list of biquad filter bands applied in series, at most `MAX_EQ_BANDS`.",
+            "maxItems": 10
           },
           "enabled": {
             "type": "boolean",

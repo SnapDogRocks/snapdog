@@ -667,16 +667,22 @@
           "freq": {
             "description": "Center frequency in Hz.",
             "format": "float",
+            "maximum": 20000,
+            "minimum": 10,
             "type": "number"
           },
           "gain": {
             "description": "Gain in dB (positive = boost, negative = cut). Ignored for low/high pass.",
             "format": "float",
+            "maximum": 24,
+            "minimum": -24,
             "type": "number"
           },
           "q": {
-            "description": "Q factor controlling bandwidth. Higher values = narrower band.",
+            "description": "Q factor controlling bandwidth. Higher values = narrower band. 0 selects the\nButterworth default.",
             "format": "float",
+            "maximum": 20,
+            "minimum": 0,
             "type": "number"
           },
           "type": {
@@ -696,10 +702,11 @@
         "description": "Full EQ configuration for a zone.",
         "properties": {
           "bands": {
-            "description": "Ordered list of biquad filter bands applied in series.",
+            "description": "Ordered list of biquad filter bands applied in series, at most `MAX_EQ_BANDS`.",
             "items": {
               "$ref": "#/components/schemas/EqBand"
             },
+            "maxItems": 10,
             "type": "array"
           },
           "enabled": {

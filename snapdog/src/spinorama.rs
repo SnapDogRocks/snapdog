@@ -25,11 +25,25 @@ const INDEX_URL: &str =
 const SPINORAMA_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const INDEX_CACHE_DURATION: std::time::Duration = std::time::Duration::from_hours(24);
 
+/// The speaker database has no profile of this name (the server answered 404).
+#[derive(Debug)]
+pub struct ProfileNotFound(pub String);
+
+impl std::fmt::Display for ProfileNotFound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "speaker profile not found: '{}'", self.0)
+    }
+}
+
+impl std::error::Error for ProfileNotFound {}
+
 /// Cached speaker profile database.
 #[derive(Clone)]
 pub struct SpeakerDb {
     inner: Arc<RwLock<SpeakerDbInner>>,
     client: reqwest::Client,
+    profile_base: String,
+    index_url: String,
 }
 
 struct SpeakerDbInner {
@@ -42,19 +56,32 @@ impl SpeakerDb {
     /// Create a new speaker database with empty cache.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_endpoints(GITHUB_RAW_BASE, INDEX_URL, SPINORAMA_TIMEOUT)
+    }
+
+    /// A database reading profiles below `profile_base` and the list from `index_url`, each
+    /// request bounded by `timeout`. For tests and mirrors.
+    #[must_use]
+    pub fn with_endpoints(
+        profile_base: &str,
+        index_url: &str,
+        timeout: std::time::Duration,
+    ) -> Self {
         Self {
             inner: Arc::new(RwLock::new(SpeakerDbInner {
                 index: Vec::new(),
                 index_fetched_at: None,
                 profiles: HashMap::new(),
             })),
-            // Profiles are small JSON files: a total timeout bounds a slow or stalled server.
+            // Profiles are small text files: a total timeout bounds a slow or stalled server.
             client: reqwest::Client::builder()
                 .user_agent(crate::USER_AGENT)
                 .connect_timeout(crate::audio::CONNECT_TIMEOUT)
-                .timeout(SPINORAMA_TIMEOUT)
+                .timeout(timeout)
                 .build()
                 .unwrap_or_default(),
+            profile_base: profile_base.to_owned(),
+            index_url: index_url.to_owned(),
         }
     }
 
@@ -93,7 +120,7 @@ impl SpeakerDb {
     async fn refresh_index(&self) -> Result<Vec<String>> {
         let resp = self
             .client
-            .get(INDEX_URL)
+            .get(&self.index_url)
             .header("Accept", "application/vnd.github.v3+json")
             .header("User-Agent", concat!("snapdog/", env!("CARGO_PKG_VERSION")))
             .send()
@@ -115,16 +142,19 @@ impl SpeakerDb {
     }
 
     async fn fetch_profile(&self, speaker: &str) -> Result<EqConfig> {
-        let url = profile_url(speaker)?;
+        let url = profile_url(&self.profile_base, speaker)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
             .with_context(|| format!("Failed to fetch profile for '{speaker}'"))?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(ProfileNotFound(speaker.to_owned()).into());
+        }
         if !resp.status().is_success() {
             anyhow::bail!(
-                "Speaker profile not found: '{speaker}' (HTTP {})",
+                "speaker database answered HTTP {} for '{speaker}'",
                 resp.status()
             );
         }
@@ -147,8 +177,8 @@ impl Default for SpeakerDb {
 
 /// Raw URL of a speaker's profile. The name is one path segment, so a `/`, `?` or `#` in it
 /// cannot reach another file.
-fn profile_url(speaker: &str) -> Result<url::Url> {
-    let mut url = url::Url::parse(GITHUB_RAW_BASE).context("invalid speaker profile base URL")?;
+fn profile_url(base: &str, speaker: &str) -> Result<url::Url> {
+    let mut url = url::Url::parse(base).context("invalid speaker profile base URL")?;
     url.path_segments_mut()
         .map_err(|()| anyhow::anyhow!("speaker profile base URL cannot hold a path"))?
         .push(speaker)
@@ -279,12 +309,12 @@ mod tests {
 
     #[test]
     fn a_speaker_name_stays_one_path_segment() {
-        let url = profile_url("ADS L520").unwrap();
+        let url = profile_url(GITHUB_RAW_BASE, "ADS L520").unwrap();
         assert_eq!(
             url.as_str(),
             "https://raw.githubusercontent.com/spinorama-org/spinorama/main/datas/eq/ADS%20L520/iir-autoeq.txt"
         );
-        let url = profile_url("a/../b?c#d").unwrap();
+        let url = profile_url(GITHUB_RAW_BASE, "a/../b?c#d").unwrap();
         assert_eq!(url.path_segments().unwrap().count(), 7);
         assert!(url.query().is_none() && url.fragment().is_none());
     }

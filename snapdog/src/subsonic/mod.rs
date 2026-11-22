@@ -152,7 +152,8 @@ pub struct Page {
     pub offset: usize,
 }
 
-/// Subsonic API client.
+/// Subsonic API client. Cloning is cheap and shares the connection pool.
+#[derive(Clone)]
 pub struct SubsonicClient {
     base_url: String,
     username: String,

@@ -114,6 +114,10 @@ pub fn build_test_app(config: AppConfig) -> TestApp {
     }
     let (snap_tx, snap_rx) = mpsc::channel::<SnapcastCmd>(64);
 
+    let subsonic = config
+        .subsonic
+        .as_ref()
+        .map(snapdog::subsonic::SubsonicClient::new);
     let state: SharedState = Arc::new(AppState {
         config,
         store: store.clone(),
@@ -125,6 +129,8 @@ pub fn build_test_app(config: AppConfig) -> TestApp {
         knx_device_control: None,
         playlist_cache: Arc::new(snapdog::subsonic::PlaylistCache::new()),
         speaker_db: snapdog::spinorama::SpeakerDb::new(),
+        subsonic,
+        updater_http: snapdog::api::updater_http_client(),
     });
 
     TestApp {

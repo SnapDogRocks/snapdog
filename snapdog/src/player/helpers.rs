@@ -799,7 +799,10 @@ async fn prefetch_one(
         .to_string();
     let content_length = response.content_length();
 
-    let mut writer = cache.start_download(track_id, &content_type, content_length)?;
+    let Some(mut writer) = cache.start_download(track_id, &content_type, content_length)? else {
+        tracing::debug!(track_id = %track_id, "Track is already being downloaded, prefetch skipped");
+        return Ok(());
+    };
 
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
