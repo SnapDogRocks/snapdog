@@ -612,6 +612,17 @@ mod tests {
             !partial_path.exists(),
             "Partial file should be cleaned up by Drop"
         );
+        assert!(
+            !cache.is_complete("abandoned"),
+            "a cancelled writer leaves no entry"
+        );
+        assert!(
+            cache
+                .start_download("abandoned", "audio/ogg", None)
+                .unwrap()
+                .is_some(),
+            "the track can be downloaded again"
+        );
     }
 
     #[test]
