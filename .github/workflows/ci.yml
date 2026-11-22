@@ -97,6 +97,9 @@ jobs:
               - 'Dockerfile'
               - 'Dockerfile.client'
               - 'deploy/**'
+              # control.test.mjs checks the readiness URL against the server's routes
+              - 'snapdog/src/api/health.rs'
+              - 'README.md'
             integration:
               - '.config/nextest.toml'
               - 'snapdog/src/mqtt/**'

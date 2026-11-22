@@ -347,10 +347,32 @@ impl Sink for ChannelSink {
             AudioPacket::Samples(samples) => samples.iter().map(|&s| s as f32).collect(),
             AudioPacket::Raw(_) => return Ok(()),
         };
-        self.tx
-            .try_send(f32_samples)
-            .map_err(|e| SinkError::OnWrite(format!("Channel send failed: {e}")))?;
-        Ok(())
+        send_waiting(&self.tx, f32_samples)
+    }
+}
+
+/// How long the sink sleeps before it retries a full channel.
+const SINK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2);
+
+/// Hand a packet to the zone, waiting while the channel is full.
+///
+/// librespot calls `write` once per decoded packet without pacing and expects the sink to
+/// block until the audio is taken; an error makes it pause playback. So a full channel is
+/// waited out here. tokio's `blocking_send` cannot be used: the librespot player runs inside
+/// `block_on` on its own thread, where `blocking_send` panics. Only a closed channel (zone
+/// restart, shutdown) is an error, so the player thread ends instead of spinning.
+fn send_waiting(tx: &AudioSender, mut samples: Vec<f32>) -> SinkResult<()> {
+    loop {
+        match tx.try_send(samples) {
+            Ok(()) => return Ok(()),
+            Err(tokio::sync::mpsc::error::TrySendError::Full(back)) => {
+                samples = back;
+                std::thread::sleep(SINK_RETRY_INTERVAL);
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                return Err(SinkError::OnWrite("Zone audio channel closed".into()));
+            }
+        }
     }
 }
 
@@ -389,6 +411,49 @@ mod tests {
             rx.try_recv().expect("samples forwarded"),
             vec![0.5_f32, -0.25, 1.0, 0.0]
         );
+    }
+
+    /// #493: a full channel makes `write` wait until the zone takes a packet, instead of
+    /// failing (which librespot answers by pausing).
+    #[test]
+    fn channel_sink_waits_on_a_full_channel() {
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut sink = ChannelSink::new(tx);
+        let mut conv = Converter::new(None);
+        sink.write(AudioPacket::Samples(vec![0.1]), &mut conv)
+            .expect("first packet fits");
+        let writer = std::thread::spawn(move || {
+            let mut conv = Converter::new(None);
+            sink.write(AudioPacket::Samples(vec![0.2]), &mut conv)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(
+            !writer.is_finished(),
+            "the write waits while the channel is full"
+        );
+        assert_eq!(rx.blocking_recv(), Some(vec![0.1_f32]));
+        writer
+            .join()
+            .unwrap()
+            .expect("the write succeeds once there is room");
+        assert_eq!(rx.blocking_recv(), Some(vec![0.2_f32]));
+    }
+
+    /// #493: a closed channel ends the write with an error, also while waiting for room.
+    #[test]
+    fn channel_sink_fails_once_the_zone_is_gone() {
+        let (tx, rx) = mpsc::channel(1);
+        let mut sink = ChannelSink::new(tx);
+        let mut conv = Converter::new(None);
+        sink.write(AudioPacket::Samples(vec![0.1]), &mut conv)
+            .expect("first packet fits");
+        let writer = std::thread::spawn(move || {
+            let mut conv = Converter::new(None);
+            sink.write(AudioPacket::Samples(vec![0.2]), &mut conv)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        drop(rx);
+        assert!(writer.join().unwrap().is_err());
     }
 
     // ── IT-T72: PlayerEvent → ReceiverEvent mapper goldens ────────────

@@ -17,6 +17,18 @@ The changelog lists every change, this page lists the ones you have to act on or
   "Zone" and "Zone Status" to one address sends two telegrams per change.
 - In client mode a read of a zone's **Playlist Name** address is answered.
 
+## `base_url` follows the HTTP port when it is not set
+
+Without `[http].base_url` the server used `http://localhost:5555` whatever the port was. With a
+changed port (in the file, `--port` or `SNAPDOG_HTTP_PORT`) that value was taken for a configured
+one, and the mDNS record `base_url` pointed clients at port 5555. Now an unset `base_url` is derived
+from the final port, a single bind address and TLS. MQTT cover URLs use the right port as well.
+
+The mDNS record `base_url` is only sent when it is a URL another host can use: a configured
+`base_url`, or one built from a single specific bind address. A server with TLS on all interfaces
+no longer advertises `https://localhost:<port>`; the `tls` record tells clients to use HTTPS with
+the mDNS host name. An explicit `base_url` is advertised unchanged, also when it names `localhost`.
+
 ## Zones: start volume, volume limit, AirPlay and Spotify per zone
 
 New optional keys under `[[zone]]`: `default_volume` (0 to 100, set at every server start),
