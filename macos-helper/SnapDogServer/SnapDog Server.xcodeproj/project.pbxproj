@@ -8,33 +8,49 @@
 
 /* Begin PBXBuildFile section */
 		0E3812A45F373B0A57DF9D00 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7362345BB262E78D9C1B077D /* LogView.swift */; };
+		152E51FDFC3B8CA348B38348 /* ConfigModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FD05901CF7F7396A7135E38 /* ConfigModel.swift */; };
 		2934DF33C6BB93B8FDACD973 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F345B134174843E76874F9 /* App.swift */; };
 		2A1F1E98946CBE1DEB6EFDEF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A41907050CB9198DF85006A6 /* Assets.xcassets */; };
-		AA11BB22CC33DD44EE55F002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55F001 /* Localizable.xcstrings */; };
 		35AFFFAD23A19714B0A6169F /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 4067205D4BF4999F64B67740 /* AppIcon.icon */; };
 		3AE05A7D31BC54730A2DB903 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3000AEF8E40EA1A911AB7202 /* Sparkle */; };
+		4C8DEE072D0A1F4E17595F1D /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6819E0F8723A7F1BBB625483 /* TOMLKit */; };
 		5FE25F82D7C11EF695EE2F94 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62254E5F33C8BBB2DD07E800 /* AboutView.swift */; };
+		6203984AE9F04D849BAB6EA7 /* ConfigModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FD05901CF7F7396A7135E38 /* ConfigModel.swift */; };
 		71393F70ACFC5D6FA633B82F /* ServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 798CB180E614495536F2CC9E /* ServerManager.swift */; };
 		80FC45B370906095B342219D /* TOMLConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */; };
+		9F085D3398C273FC25B503D5 /* TOMLConfigParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C356B1EACDD618E8524F5E09 /* TOMLConfigParserTests.swift */; };
+		B53E2A8B8FE744537ED4E731 /* TOMLConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */; };
 		CF384D3AAAF5865042B32A38 /* ConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0DEE6574D3EECDCCA97D3E /* ConfigView.swift */; };
+		DCC550E049ED42700E80E48C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 3FE5FCEF34C3712A1C441DA0 /* Localizable.xcstrings */; };
 		E6D10A6F4F826E39C7B7A6EC /* TOMLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 81361EABDEADDA4B4F41C10F /* TOMLKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		1A0DEE6574D3EECDCCA97D3E /* ConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigView.swift; sourceTree = "<group>"; };
 		267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TOMLConfigParser.swift; sourceTree = "<group>"; };
+		2C5984B1ACD704C6B8EEABF5 /* SnapDog ServerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "SnapDog ServerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3FE5FCEF34C3712A1C441DA0 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		4067205D4BF4999F64B67740 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		5FD05901CF7F7396A7135E38 /* ConfigModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigModel.swift; sourceTree = "<group>"; };
 		62254E5F33C8BBB2DD07E800 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		65205740F55E2DFF66DD8D6C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7362345BB262E78D9C1B077D /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
 		798CB180E614495536F2CC9E /* ServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerManager.swift; sourceTree = "<group>"; };
 		A3F345B134174843E76874F9 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		A41907050CB9198DF85006A6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		AA11BB22CC33DD44EE55F001 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		C356B1EACDD618E8524F5E09 /* TOMLConfigParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TOMLConfigParserTests.swift; sourceTree = "<group>"; };
 		DB56A0FCF073986CBACB4794 /* SnapDog Server.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SnapDog Server.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		2017F8CD332A6648554F3CA3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4C8DEE072D0A1F4E17595F1D /* TOMLKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B9C00241BE2DCE12A83F7693 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -51,8 +67,17 @@
 			isa = PBXGroup;
 			children = (
 				A17AD8FC509555BAD420C65C /* SnapDog Server */,
+				9C0064CCDFA7EAAD6CB55215 /* SnapDog ServerTests */,
 				FF70F5A8441FF8F08C392BBA /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		9C0064CCDFA7EAAD6CB55215 /* SnapDog ServerTests */ = {
+			isa = PBXGroup;
+			children = (
+				C356B1EACDD618E8524F5E09 /* TOMLConfigParserTests.swift */,
+			);
+			path = "SnapDog ServerTests";
 			sourceTree = "<group>";
 		};
 		A17AD8FC509555BAD420C65C /* SnapDog Server */ = {
@@ -62,9 +87,10 @@
 				A3F345B134174843E76874F9 /* App.swift */,
 				4067205D4BF4999F64B67740 /* AppIcon.icon */,
 				A41907050CB9198DF85006A6 /* Assets.xcassets */,
-				AA11BB22CC33DD44EE55F001 /* Localizable.xcstrings */,
+				5FD05901CF7F7396A7135E38 /* ConfigModel.swift */,
 				1A0DEE6574D3EECDCCA97D3E /* ConfigView.swift */,
 				65205740F55E2DFF66DD8D6C /* Info.plist */,
+				3FE5FCEF34C3712A1C441DA0 /* Localizable.xcstrings */,
 				7362345BB262E78D9C1B077D /* LogView.swift */,
 				798CB180E614495536F2CC9E /* ServerManager.swift */,
 				267E705B6C60113B8ED01E41 /* TOMLConfigParser.swift */,
@@ -76,6 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				DB56A0FCF073986CBACB4794 /* SnapDog Server.app */,
+				2C5984B1ACD704C6B8EEABF5 /* SnapDog ServerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -105,6 +132,25 @@
 			productReference = DB56A0FCF073986CBACB4794 /* SnapDog Server.app */;
 			productType = "com.apple.product-type.application";
 		};
+		862FCA4A55364458A6DDA0D0 /* SnapDog ServerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B7328E80E243388B3F891007 /* Build configuration list for PBXNativeTarget "SnapDog ServerTests" */;
+			buildPhases = (
+				458CE0FF637193BF19133A95 /* Sources */,
+				2017F8CD332A6648554F3CA3 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "SnapDog ServerTests";
+			packageProductDependencies = (
+				6819E0F8723A7F1BBB625483 /* TOMLKit */,
+			);
+			productName = "SnapDog ServerTests";
+			productReference = 2C5984B1ACD704C6B8EEABF5 /* SnapDog ServerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -121,8 +167,8 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
-				en,
 				de,
+				en,
 				es,
 				fr,
 				nl,
@@ -139,6 +185,7 @@
 			projectRoot = "";
 			targets = (
 				0191F4398197E4B03BEB580B /* SnapDog Server */,
+				862FCA4A55364458A6DDA0D0 /* SnapDog ServerTests */,
 			);
 		};
 /* End PBXProject section */
@@ -150,7 +197,7 @@
 			files = (
 				35AFFFAD23A19714B0A6169F /* AppIcon.icon in Resources */,
 				2A1F1E98946CBE1DEB6EFDEF /* Assets.xcassets in Resources */,
-				AA11BB22CC33DD44EE55F002 /* Localizable.xcstrings in Resources */,
+				DCC550E049ED42700E80E48C /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -179,12 +226,23 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		458CE0FF637193BF19133A95 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6203984AE9F04D849BAB6EA7 /* ConfigModel.swift in Sources */,
+				B53E2A8B8FE744537ED4E731 /* TOMLConfigParser.swift in Sources */,
+				9F085D3398C273FC25B503D5 /* TOMLConfigParserTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A684337872E9FE86C5CF73D0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				5FE25F82D7C11EF695EE2F94 /* AboutView.swift in Sources */,
 				2934DF33C6BB93B8FDACD973 /* App.swift in Sources */,
+				152E51FDFC3B8CA348B38348 /* ConfigModel.swift in Sources */,
 				CF384D3AAAF5865042B32A38 /* ConfigView.swift in Sources */,
 				0E3812A45F373B0A57DF9D00 /* LogView.swift in Sources */,
 				71393F70ACFC5D6FA633B82F /* ServerManager.swift in Sources */,
@@ -279,6 +337,26 @@
 			};
 			name = Debug;
 		};
+		959AF5247FBABDC1F9EE082B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.metaneutrons.snapdog.helper.tests;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 		B137DAC35620802B6F3037D4 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -356,6 +434,26 @@
 			};
 			name = Debug;
 		};
+		E0B3F73A7687B4DABAC461DA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.metaneutrons.snapdog.helper.tests;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -373,6 +471,15 @@
 			buildConfigurations = (
 				C19C49B82F068F13A381155F /* Debug */,
 				3AC94A3A6C1CF456766305EB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B7328E80E243388B3F891007 /* Build configuration list for PBXNativeTarget "SnapDog ServerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E0B3F73A7687B4DABAC461DA /* Debug */,
+				959AF5247FBABDC1F9EE082B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -403,6 +510,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 21A5A9DB96933084BBC2F721 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		6819E0F8723A7F1BBB625483 /* TOMLKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08AFD7E498B82AE3D4908CCD /* XCRemoteSwiftPackageReference "TOMLKit" */;
+			productName = TOMLKit;
 		};
 		81361EABDEADDA4B4F41C10F /* TOMLKit */ = {
 			isa = XCSwiftPackageProductDependency;
