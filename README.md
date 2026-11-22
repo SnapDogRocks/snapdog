@@ -453,7 +453,8 @@ alternative is named.
 Topics, all below `base_topic` (`{n}` is the 1-based position of the `[[zone]]` or `[[client]]`):
 
 - `status`: `online` / `offline`, retained. `offline` is the last will, and is also published on a clean shutdown.
-- `zones/{n}/state`, `clients/{n}/state`: retained JSON.
+- `zones/{n}/state`, `clients/{n}/state`: retained JSON, published when it changes.
+- `zones/{n}/position`: playback position in whole seconds, not retained, once per second while a track is loaded.
 - `zones/{n}/{volume,mute,control,shuffle,repeat,position,track,playlist}/set`, `zones/{n}/presence/{,enable/,timeout/}set`, `clients/{n}/{volume,mute,latency,zone}/set`: commands. `volume` takes `0.0..1.0` or `0..100` (so `1` is 100 %); booleans take `true`/`false`, `on`/`off`, `1`/`0`. A retained command is ignored.
 
 After a reconnect SnapDog subscribes again and republishes availability and state. Commands are rate limited per zone and client.
@@ -712,6 +713,7 @@ A specialized Snapcast client that understands SnapDog's custom protocol extensi
   # SnapDog sets the faders, the desk does not report back
   snapdog-client --mixer x32:192.168.1.20:31,32 --mixer-sync out
   ```
+- **MPRIS2** — the client registers its own player (`org.mpris.MediaPlayer2.snapdog_client`). `Volume` is this speaker's volume, not the zone's. Changes from the server (track, playback state, volume, shuffle, repeat, cover) are announced with `PropertiesChanged`, so `playerctl --follow` and desktop widgets follow them. The cover is kept as a single file per instance in `/run/snapdog-client` under the shipped systemd unit (readable by other processes), else in `$XDG_RUNTIME_DIR/snapdog-client`.
 - **Encryption** — PSK-based chunk encryption matching the embedded server
 
 Available as binary and Docker image (`ghcr.io/snapdogrocks/snapdog-client`).
