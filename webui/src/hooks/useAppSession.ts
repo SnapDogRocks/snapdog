@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { api } from "@/lib/api";
 import { setApiKey } from "@/lib/auth";
 import { trackFromZoneChanged } from "@/lib/ws-zone";
+import { publishEqChange } from "@/lib/eq-events";
 import type { WsNotification } from "@/lib/types";
 export function useAppSession() {
     const needsAuth = useAppStore((s) => s.needsAuth);
@@ -52,6 +53,13 @@ export function useAppSession() {
                 break;
             case "zone_eq_changed":
                 store.updateZoneEq(n.zone, n.enabled, n.bands, n.preset);
+                publishEqChange(`zone:${n.zone}`, { enabled: n.enabled, bands: n.bands, preset: n.preset ?? null });
+                break;
+            case "client_eq_changed":
+                publishEqChange(`client:${n.client}`, { enabled: n.enabled, bands: n.bands, preset: n.preset ?? null });
+                break;
+            case "client_speaker_changed":
+                publishEqChange(`speaker:${n.client}`, { enabled: n.enabled, bands: n.bands, preset: n.preset ?? null });
                 break;
             case "playback_error":
                 store.setZoneError(n.zone, {
