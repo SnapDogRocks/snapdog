@@ -36,6 +36,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       webui: ${{ steps.filter.outputs.webui }}
+      demo: ${{ steps.filter.outputs.demo }}
       knx: ${{ steps.filter.outputs.knx }}
       macos: ${{ steps.filter.outputs.macos }}
       macos_client: ${{ steps.filter.outputs.macos_client }}
@@ -67,6 +68,11 @@ jobs:
               - 'rust-toolchain*'
             webui:
               - 'webui/**'
+            demo:
+              - 'demo-backend/**'
+              # the contract test checks the demo against both specifications
+              - 'openapi.json'
+              - 'docs/api/asyncapi.json'
             knx:
               - 'knx/**'
               - 'snapdog/src/knx/**'
@@ -315,6 +321,29 @@ jobs:
         working-directory: webui
         run: pnpm run build
 
+  demo-contract:
+    name: Demo Contract
+    needs: changes
+    if: needs.changes.outputs.demo == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: demo-backend/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: demo-backend/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: demo-backend
+        run: pnpm install --frozen-lockfile
+      - name: Contract test against openapi.json and asyncapi.json
+        working-directory: demo-backend
+        run: pnpm test
+
   docker-contract:
     name: Docker Contract
     needs: changes
@@ -529,6 +558,7 @@ jobs:
       - i18n
       - rust-core
       - webui
+      - demo-contract
       - docker-contract
       - integration-tests
       - audit
