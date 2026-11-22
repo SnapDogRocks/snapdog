@@ -1985,7 +1985,7 @@ mod tests {
         let mut entries = std::collections::BTreeMap::new();
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i).expect("read zip entry");
-            let name = entry.name().to_owned();
+            let name = entry.name().expect("zip entry name").into_owned();
             let mut text = String::new();
             if name.ends_with(".xml") && entry.read_to_string(&mut text).is_ok() {
                 entries.insert(name, text);
@@ -2008,8 +2008,8 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let generated = knx_rs_prod::normalize_ids(&super::generate_xml()).expect("normalize ids");
 
-        let committed_xml = std::fs::read_to_string(root.join("knx/snapdog.xml"))
-            .expect("read knx/snapdog.xml");
+        let committed_xml =
+            std::fs::read_to_string(root.join("knx/snapdog.xml")).expect("read knx/snapdog.xml");
         assert!(
             committed_xml == generated,
             "\n\n  STALE ARTIFACT: knx/snapdog.xml differs from the generator output.\n  {FIX}\n"
