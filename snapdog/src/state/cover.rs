@@ -222,7 +222,7 @@ pub async fn fetch_cover_with_favicon_fallback(
     let base = url::Url::parse(stream_url).ok().and_then(|u| {
         let scheme = u.scheme();
         let host = u.host_str()?;
-        let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+        let port = u.port().map_or_default(|p| format!(":{p}"));
         Some(format!("{scheme}://{host}{port}"))
     })?;
 

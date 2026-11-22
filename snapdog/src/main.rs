@@ -783,8 +783,7 @@ pub async fn run_app() -> Result<()> {
                 let cover_cache = meta_covers.read().await;
                 let current_hash = cover_cache
                     .get(zone_index)
-                    .map(|e| e.hash.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|e| e.hash.clone());
                 let prev_hash = last_cover_hash
                     .get(&zone_index)
                     .cloned()
@@ -793,8 +792,7 @@ pub async fn run_app() -> Result<()> {
                     last_cover_hash.insert(zone_index, current_hash);
                     let cover_payload = cover_cache
                         .get(zone_index)
-                        .map(|e| e.bytes.clone())
-                        .unwrap_or_default();
+                        .map_or_default(|e| e.bytes.clone());
                     drop(cover_cache);
                     for snap_id in &targets {
                         let _ = meta_backend

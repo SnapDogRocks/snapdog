@@ -79,7 +79,6 @@ url = "2"
 futures-util = "0.3"
 
 # Error handling
-thiserror = "2"
 anyhow = "1"
 
 # Snapcast

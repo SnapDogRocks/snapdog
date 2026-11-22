@@ -123,10 +123,7 @@ fn refreshed_cache(
                 .checked_sub(PLAYLIST_RETRY)
                 .and_then(|back| now.checked_sub(back))
                 .unwrap_or(now);
-            (
-                stamp,
-                previous.map(|(_, entries)| entries).unwrap_or_default(),
-            )
+            (stamp, previous.map_or_default(|(_, entries)| entries))
         }
     }
 }
@@ -236,10 +233,7 @@ impl SubsonicClient {
         } else {
             anyhow::bail!(
                 "Subsonic ping failed: {}",
-                resp.subsonic_response
-                    .error
-                    .map(|e| e.message)
-                    .unwrap_or_default()
+                resp.subsonic_response.error.map_or_default(|e| e.message)
             )
         }
     }
@@ -258,8 +252,7 @@ impl SubsonicClient {
             .subsonic_response
             .ok_or_failure("getPlaylists")?
             .playlists
-            .map(|p| p.playlist)
-            .unwrap_or_default())
+            .map_or_default(|p| p.playlist))
     }
 
     /// Get a playlist with its tracks.
@@ -288,7 +281,7 @@ impl SubsonicClient {
         if inner.status != "ok" {
             anyhow::bail!(
                 "getSong failed: {}",
-                inner.error.map(|e| e.message).unwrap_or_default()
+                inner.error.map_or_default(|e| e.message)
             );
         }
         inner.song.context("Track not found")

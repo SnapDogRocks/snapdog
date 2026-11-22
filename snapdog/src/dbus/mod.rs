@@ -87,8 +87,7 @@ mod mpris {
                 .await
                 .zones
                 .get(&zone.index)
-                .map(|z| PlayerState::from_zone(zone.index, z))
-                .unwrap_or_default();
+                .map_or_default(|z| PlayerState::from_zone(zone.index, z));
             let state = Arc::new(Mutex::new(initial));
 
             let root = RootInterface::new(&zone.name);

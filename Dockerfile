@@ -3,7 +3,7 @@
 # Base images are pinned to multi-architecture manifest digests. Dependabot or
 # Renovate should update the readable tag and digest together.
 ARG NODE_IMAGE="node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5"
-ARG RUST_IMAGE="rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"
+ARG RUST_IMAGE="rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea"
 ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc"
 
 # Which stage supplies the snapdog binary at /out/snapdog:

@@ -74,8 +74,7 @@ fn parse(content: &str) -> Result<(FileConfig, Vec<String>, Option<String>)> {
         if let Ok(raw) = deserialize_collecting(table, &mut unknown) {
             let place = original
                 .span()
-                .map(|span| key_and_line(content, span.start))
-                .unwrap_or_default();
+                .map_or_default(|span| key_and_line(content, span.start));
             let problem = format!("[mqtt]{place} {}", without_values(problem.message()));
             return Ok((raw, unknown, Some(problem)));
         }

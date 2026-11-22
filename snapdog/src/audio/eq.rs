@@ -371,13 +371,10 @@ impl ZoneEq {
         if self.bands.is_empty() {
             return;
         }
-        let ch = self.channels;
-        let frames = samples.len() / ch;
-        for frame in 0..frames {
+        for frame in samples.chunks_exact_mut(self.channels) {
             for band in &mut self.bands {
-                for c in 0..ch {
-                    let idx = frame * ch + c;
-                    samples[idx] = band.filters[c].run(samples[idx]);
+                for (sample, filter) in frame.iter_mut().zip(band.filters.iter_mut()) {
+                    *sample = filter.run(*sample);
                 }
             }
         }
