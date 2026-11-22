@@ -26,11 +26,14 @@ mod mpris {
     use tokio::sync::{Mutex, broadcast, mpsc};
     use zbus::object_server::InterfaceRef;
 
-    use super::player::{PlayerInterface, PlayerState};
+    use super::player::{
+        PlayerInterface, PlayerState, TrackKey, playback_status, track_object_path,
+    };
     use super::root::RootInterface;
     use crate::api::ws::Notification;
     use crate::config::AppConfig;
     use crate::player::ZoneCommand;
+    use crate::state::SharedState;
 
     /// MPRIS2 bus name prefix.
     const BUS_NAME_PREFIX: &str = "org.mpris.MediaPlayer2.snapdog";
@@ -66,25 +69,30 @@ mod mpris {
         config: &Arc<AppConfig>,
         zone_commands: &HashMap<usize, mpsc::Sender<ZoneCommand>>,
         notify_rx: broadcast::Sender<Arc<str>>,
+        store: &SharedState,
     ) -> Result<Vec<zbus::Connection>> {
         let use_system = std::env::var("DBUS_SESSION_BUS_ADDRESS").is_err();
 
-        let art_base = {
-            let host = config
-                .http
-                .single_specific_bind()
-                .unwrap_or_else(|| "localhost".to_owned());
-            format!("http://{host}:{}", config.http.port)
-        };
+        // The same base as MQTT cover URLs: `[http].base_url`, or the one derived from the port,
+        // a single bind address and TLS.
+        let art_base = config.http.base_url();
 
         let mut connections = Vec::with_capacity(config.zones.len());
 
         for zone in &config.zones {
-            let state = Arc::new(Mutex::new(PlayerState::default()));
+            // Start from what the store holds: a zone restored at volume 30 reads 0.3
+            // before anything changes.
+            let initial = store
+                .read()
+                .await
+                .zones
+                .get(&zone.index)
+                .map(|z| PlayerState::from_zone(zone.index, z))
+                .unwrap_or_default();
+            let state = Arc::new(Mutex::new(initial));
 
             let root = RootInterface::new(&zone.name);
             let player = PlayerInterface::new(
-                zone.index,
                 art_base.clone(),
                 Arc::clone(&state),
                 zone_commands[&zone.index].clone(),
@@ -107,14 +115,25 @@ mod mpris {
 
             // Request bus name, appending .instanceN if already taken
             let mut acquired = false;
+            let mut last_error = None;
             for name in bus_names(zone.index) {
-                if conn.request_name(name.as_str()).await.is_ok() {
-                    acquired = true;
-                    break;
+                match conn.request_name(name.as_str()).await {
+                    Ok(()) => {
+                        acquired = true;
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::debug!(zone = %zone.name, %name, error = %e, "D-Bus name not available");
+                        last_error = Some(e);
+                    }
                 }
             }
             if !acquired {
-                tracing::warn!(zone = %zone.name, "Could not acquire D-Bus name, skipping");
+                tracing::warn!(
+                    zone = %zone.name,
+                    error = ?last_error.map(|e| e.to_string()),
+                    "Could not acquire D-Bus name, skipping"
+                );
                 continue;
             }
             if use_system && zone.index > POLICY_MAX_ZONES {
@@ -133,7 +152,13 @@ mod mpris {
                 .await?;
 
             let rx = notify_rx.subscribe();
-            tokio::spawn(notification_updater(zone.index, state, iface_ref, rx));
+            tokio::spawn(notification_updater(
+                zone.index,
+                state,
+                iface_ref,
+                rx,
+                Arc::clone(store),
+            ));
 
             connections.push(conn);
         }
@@ -141,18 +166,120 @@ mod mpris {
         Ok(connections)
     }
 
-    #[allow(clippy::significant_drop_tightening)]
+    /// Announce the properties whose value differs between `before` and `after`. A
+    /// position change alone announces nothing (MPRIS clients read `Position` themselves).
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "the interface guard is needed for every signal below"
+    )]
+    async fn announce_changes(
+        iface_ref: &InterfaceRef<PlayerInterface>,
+        before: &PlayerState,
+        after: &PlayerState,
+    ) {
+        let emitter = iface_ref.signal_emitter();
+        let iface = iface_ref.get().await;
+        if before.playback != after.playback {
+            let _ = iface.playback_status_changed(emitter).await;
+        }
+        if (before.volume, before.muted) != (after.volume, after.muted) {
+            let _ = iface.volume_changed(emitter).await;
+        }
+        if before.shuffle != after.shuffle {
+            let _ = iface.shuffle_changed(emitter).await;
+        }
+        if (before.repeat, before.track_repeat) != (after.repeat, after.track_repeat) {
+            let _ = iface.loop_status_changed(emitter).await;
+        }
+        if (
+            &before.track_id,
+            &before.title,
+            &before.artist,
+            &before.album,
+            &before.cover_url,
+            before.duration_ms,
+        ) != (
+            &after.track_id,
+            &after.title,
+            &after.artist,
+            &after.album,
+            &after.cover_url,
+            after.duration_ms,
+        ) {
+            let _ = iface.metadata_changed(emitter).await;
+        }
+        if before.seekable != after.seekable {
+            let _ = iface.can_seek_changed(emitter).await;
+        }
+        if before.can_next != after.can_next {
+            let _ = iface.can_go_next_changed(emitter).await;
+        }
+        if before.can_prev != after.can_prev {
+            let _ = iface.can_go_previous_changed(emitter).await;
+        }
+    }
+
+    /// Apply `change` to the state, announce what changed, and send `Seeked` when the
+    /// position jumped within the same track (a seek from any interface: REST, MQTT, KNX
+    /// or this one).
+    async fn update(
+        state: &Mutex<PlayerState>,
+        iface_ref: &InterfaceRef<PlayerInterface>,
+        change: impl FnOnce(&mut PlayerState),
+        position_ms: Option<i64>,
+    ) {
+        let (before, after, seeked) = {
+            let mut s = state.lock().await;
+            let before = s.clone();
+            change(&mut s);
+            let seeked = position_ms.is_some_and(|ms| {
+                let jumped = s.report_position(ms, std::time::Instant::now());
+                jumped && s.track_id == before.track_id
+            });
+            (before, s.clone(), seeked)
+        };
+        announce_changes(iface_ref, &before, &after).await;
+        if seeked {
+            let _ = PlayerInterface::seeked(
+                iface_ref.signal_emitter(),
+                after.position_ms.saturating_mul(1000),
+            )
+            .await;
+        }
+    }
+
+    /// Notifications were lost: read the zone again instead of guessing.
+    async fn resync(
+        zone_index: usize,
+        state: &Mutex<PlayerState>,
+        iface_ref: &InterfaceRef<PlayerInterface>,
+        store: &SharedState,
+    ) {
+        let fresh = store
+            .read()
+            .await
+            .zones
+            .get(&zone_index)
+            .map(|z| PlayerState::from_zone(zone_index, z));
+        if let Some(fresh) = fresh {
+            update(state, iface_ref, |s| *s = fresh, None).await;
+        }
+    }
+
     async fn notification_updater(
         zone_index: usize,
         state: Arc<Mutex<PlayerState>>,
         iface_ref: InterfaceRef<PlayerInterface>,
         mut rx: broadcast::Receiver<Arc<str>>,
+        store: SharedState,
     ) {
-        let emitter = iface_ref.signal_emitter();
         loop {
             let msg = match rx.recv().await {
                 Ok(m) => m,
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    resync(zone_index, &state, &iface_ref, &store).await;
+                    continue;
+                }
                 Err(broadcast::error::RecvError::Closed) => break,
             };
 
@@ -164,6 +291,7 @@ mod mpris {
                 Notification::ZoneChanged {
                     zone,
                     playback,
+                    source,
                     volume,
                     muted,
                     shuffle,
@@ -177,62 +305,66 @@ mod mpris {
                     can_next,
                     can_prev,
                     cover_url,
+                    track_index,
+                    playlist_id,
                     ..
                 } if zone == zone_index => {
-                    {
-                        let mut s = state.lock().await;
-                        s.playback = match playback.as_str() {
-                            "playing" => "Playing",
-                            "paused" => "Paused",
-                            _ => "Stopped",
-                        }
-                        .into();
-                        s.volume = volume;
-                        s.muted = muted;
-                        s.shuffle = shuffle;
-                        s.repeat = repeat == snapdog_common::RepeatMode::Playlist;
-                        s.track_repeat = repeat == snapdog_common::RepeatMode::Track;
-                        s.title = title;
-                        s.artist = artist;
-                        s.album = album;
-                        s.duration_ms = duration_ms;
-                        s.position_ms = position_ms;
-                        s.seekable = seekable;
-                        s.can_next = can_next;
-                        s.can_prev = can_prev;
-                        s.cover_url = cover_url;
-                    }
-                    {
-                        let iface = iface_ref.get().await;
-                        let _ = iface.playback_status_changed(emitter).await;
-                        let _ = iface.volume_changed(emitter).await;
-                        let _ = iface.shuffle_changed(emitter).await;
-                        let _ = iface.loop_status_changed(emitter).await;
-                        let _ = iface.metadata_changed(emitter).await;
-                        let _ = iface.can_seek_changed(emitter).await;
-                        let _ = iface.can_go_next_changed(emitter).await;
-                        let _ = iface.can_go_previous_changed(emitter).await;
-                    }
+                    let track_id = track_object_path(
+                        zone_index,
+                        &TrackKey {
+                            source: &source,
+                            playlist_id: playlist_id.as_deref(),
+                            track_index,
+                            title: &title,
+                            artist: &artist,
+                            album: &album,
+                            duration_ms,
+                        },
+                    );
+                    update(
+                        &state,
+                        &iface_ref,
+                        |s| {
+                            s.playback = playback_status(&playback).into();
+                            s.volume = volume;
+                            s.muted = muted;
+                            s.shuffle = shuffle;
+                            s.repeat = repeat == snapdog_common::RepeatMode::Playlist;
+                            s.track_repeat = repeat == snapdog_common::RepeatMode::Track;
+                            s.title = title;
+                            s.artist = artist;
+                            s.album = album;
+                            s.duration_ms = duration_ms;
+                            s.seekable = seekable;
+                            s.can_next = can_next;
+                            s.can_prev = can_prev;
+                            s.cover_url = cover_url;
+                            s.track_id = track_id;
+                        },
+                        Some(position_ms),
+                    )
+                    .await;
                 }
                 Notification::ZoneVolumeChanged {
                     zone,
                     volume,
                     muted,
                 } if zone == zone_index => {
-                    {
-                        let mut s = state.lock().await;
-                        s.volume = volume;
-                        s.muted = muted;
-                    }
-                    {
-                        let iface = iface_ref.get().await;
-                        let _ = iface.volume_changed(emitter).await;
-                    }
+                    update(
+                        &state,
+                        &iface_ref,
+                        |s| {
+                            s.volume = volume;
+                            s.muted = muted;
+                        },
+                        None,
+                    )
+                    .await;
                 }
                 Notification::ZoneProgress {
                     zone, position_ms, ..
                 } if zone == zone_index => {
-                    state.lock().await.position_ms = position_ms;
+                    update(&state, &iface_ref, |_| {}, Some(position_ms)).await;
                 }
                 _ => {}
             }
@@ -447,7 +579,37 @@ mod mpris {
             }
         }
 
-        async fn updater_fixture() -> (crate::dbus::testing::Fixture, broadcast::Sender<Arc<str>>) {
+        /// A store with one zone at volume 30, playing.
+        fn test_store() -> SharedState {
+            let raw: crate::config::FileConfig = toml::from_str(
+                r#"
+                [[zone]]
+                name = "Ground Floor"
+            "#,
+            )
+            .expect("config");
+            let config = crate::config::load_raw(raw).expect("config");
+            let store = crate::state::init(&config, None).expect("store");
+            {
+                let mut s = store.try_write().expect("unshared");
+                let zone = s.zones.get_mut(&ZONE).expect("zone");
+                zone.volume = 30;
+                zone.playback = crate::state::PlaybackState::Playing;
+                drop(s);
+            }
+            store
+        }
+
+        /// `before` runs between creating the channel and starting the updater, so what it
+        /// sends is queued before the updater can read anything.
+        async fn updater_fixture_with(
+            capacity: usize,
+            before: impl FnOnce(&broadcast::Sender<Arc<str>>),
+        ) -> (
+            crate::dbus::testing::Fixture,
+            broadcast::Sender<Arc<str>>,
+            SharedState,
+        ) {
             let f = fixture().await;
             let iface_ref: InterfaceRef<PlayerInterface> = f
                 .server
@@ -455,14 +617,122 @@ mod mpris {
                 .interface(PATH)
                 .await
                 .expect("interface is served");
-            let (tx, rx) = broadcast::channel(16);
+            let (tx, rx) = broadcast::channel(capacity);
+            before(&tx);
+            let store = test_store();
             tokio::spawn(notification_updater(
                 ZONE,
                 Arc::clone(&f.state),
                 iface_ref,
                 rx,
+                Arc::clone(&store),
             ));
+            (f, tx, store)
+        }
+
+        async fn updater_fixture() -> (crate::dbus::testing::Fixture, broadcast::Sender<Arc<str>>) {
+            let (f, tx, _) = updater_fixture_with(16, |_| {}).await;
             (f, tx)
+        }
+
+        /// Collect the names of the `PropertiesChanged` signals and `Seeked` signals that
+        /// arrive within `wait`.
+        async fn signals_within(
+            stream: &mut zbus::MessageStream,
+            wait: Duration,
+        ) -> (Vec<String>, usize) {
+            use futures_util::StreamExt;
+            let mut changed = Vec::new();
+            let mut seeked = 0;
+            let _ = tokio::time::timeout(wait, async {
+                while let Some(Ok(msg)) = stream.next().await {
+                    match msg
+                        .header()
+                        .member()
+                        .map(|m| m.as_str().to_owned())
+                        .as_deref()
+                    {
+                        Some("PropertiesChanged") => {
+                            let (_, props, _): (
+                                String,
+                                HashMap<String, zbus::OwnedVariant>,
+                                Vec<String>,
+                            ) = msg.body().deserialize().expect("PropertiesChanged body");
+                            changed.extend(props.into_keys());
+                        }
+                        Some("Seeked") => seeked += 1,
+                        _ => {}
+                    }
+                }
+            })
+            .await;
+            (changed, seeked)
+        }
+
+        #[tokio::test]
+        async fn the_player_starts_from_the_stored_zone() {
+            let store = test_store();
+            let state = PlayerState::from_zone(ZONE, &store.read().await.zones[&ZONE]);
+            assert_eq!(state.volume, 30);
+            assert_eq!(state.playback, "Playing");
+            assert_eq!(state.track_id, super::super::player::NO_TRACK);
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn a_lagged_updater_reads_the_zone_again() {
+            // Overflow the one-slot channel before the updater starts. Sent after the start,
+            // the updater could read the first value before the rest arrive and never lag.
+            let (f, _tx, _store) = updater_fixture_with(1, |tx| {
+                for volume in [1, 2, 3, 4] {
+                    let _ = tx.send(
+                        serde_json::to_string(&Notification::ZoneVolumeChanged {
+                            zone: ZONE + 1,
+                            volume,
+                            muted: false,
+                        })
+                        .unwrap()
+                        .into(),
+                    );
+                }
+            })
+            .await;
+            wait_for_volume(&f.caller, 0.3).await;
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn a_seek_elsewhere_emits_seeked_once_and_a_tick_emits_no_property_change() {
+            let (f, tx) = updater_fixture().await;
+            let mut signals = zbus::MessageStream::from(&f.caller);
+            publish(&tx, &zone_changed(ZONE, "playing"));
+            wait_for_string(&f.caller, "PlaybackStatus", "Playing").await;
+            let (changed, seeked) = signals_within(&mut signals, Duration::from_millis(300)).await;
+            assert!(
+                changed.contains(&"PlaybackStatus".to_owned()),
+                "{changed:?}"
+            );
+            assert_eq!(seeked, 0);
+
+            // A position tick: the same state one second on.
+            let mut tick = zone_changed(ZONE, "playing");
+            if let Notification::ZoneChanged { position_ms, .. } = &mut tick {
+                *position_ms = 6_000;
+            }
+            publish(&tx, &tick);
+            wait_for_position(&f.caller, 6_000_000).await;
+            let (changed, seeked) = signals_within(&mut signals, Duration::from_millis(300)).await;
+            assert!(changed.is_empty(), "a tick announced {changed:?}");
+            assert_eq!(seeked, 0);
+
+            // A seek from REST, MQTT or KNX: the position jumps within the track.
+            let mut seek = zone_changed(ZONE, "playing");
+            if let Notification::ZoneChanged { position_ms, .. } = &mut seek {
+                *position_ms = 120_000;
+            }
+            publish(&tx, &seek);
+            wait_for_position(&f.caller, 120_000_000).await;
+            let (changed, seeked) = signals_within(&mut signals, Duration::from_millis(300)).await;
+            assert!(changed.is_empty(), "{changed:?}");
+            assert_eq!(seeked, 1, "Seeked once");
         }
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

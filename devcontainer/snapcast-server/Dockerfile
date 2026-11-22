@@ -1,4 +1,4 @@
-FROM alpine:3.21 AS builder
+FROM alpine:3.21@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab AS builder
 
 ARG SNAPCAST_VERSION=0.32.3
 
@@ -18,7 +18,7 @@ RUN git clone --depth 1 --branch v${SNAPCAST_VERSION} https://github.com/badaix/
     cmake --build build -j$(nproc) && \
     cmake --install build
 
-FROM alpine:3.21
+FROM alpine:3.21@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab
 RUN apk add --no-cache dumb-init alsa-lib flac openssl libstdc++
 COPY --from=builder /usr/local/bin/snapserver /usr/local/bin/
 

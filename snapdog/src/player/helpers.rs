@@ -31,6 +31,7 @@ pub struct PlaybackCtx<'a> {
     pub notify: &'a NotifySender,
     pub covers: &'a SharedCoverCache,
     pub track_cache: &'a Option<crate::audio::cache::TrackCache>,
+    pub playlist_cache: &'a crate::subsonic::PlaylistCache,
 }
 
 /// Fetch cover art in the background and update zone state.
@@ -58,7 +59,7 @@ pub fn spawn_cover_fetch(
             let hash = cache.get(zone_index).map(|e| e.hash.clone());
             drop(cache);
             if let Some(h) = hash {
-                let cover_url = format!("/api/v1/zones/{zone_index}/cover?h={h}");
+                let cover_url = state::cover::zone_cover_url(zone_index, &h);
                 update_and_notify(&store, zone_index, &notify, |z| {
                     z.cover_url = Some(cover_url.clone());
                 })
@@ -242,7 +243,7 @@ pub async fn start_radio_decode(
                 let hash = cache.get(zone_index).map(|e| e.hash.clone());
                 drop(cache);
                 if let Some(h) = hash {
-                    let url = format!("/api/v1/zones/{zone_index}/cover?h={h}");
+                    let url = state::cover::zone_cover_url(zone_index, &h);
                     update_and_notify(&store, zone_index, &notify, |z| {
                         z.cover_url = Some(url.clone());
                     })
@@ -368,14 +369,12 @@ pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
                     start_radio_decode(radio, ds, ctx).await;
                 }
                 *ds.source = ActiveSource::Radio { index: next };
+                let total = radio_playlist_total(ctx).await;
                 update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
                     if was_playing {
                         z.playback = crate::state::PlaybackState::Playing;
                     }
-                    z.playlist_index = Some(0);
-                    z.playlist_id = Some(crate::config::RADIO_PLAYLIST_ID.into());
-                    z.playlist_track_index = Some(next);
-                    z.track = Some(radio_track_info(&radio.name));
+                    apply_radio_state(z, ctx.config, total, next, radio);
                 })
                 .await;
                 tracing::info!(zone = %ctx.config.zones[ctx.zone_index - 1].name, radio = %radio.name, "Next station");
@@ -401,13 +400,7 @@ pub async fn handle_next(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
             if let Some(i) = nav::next_index(track_index, track_count, repeat) {
                 advance_playlist_track(ds, &playlist_id, i, track_count, ctx).await;
             } else {
-                stop_decode(ds.current_decode, ds.decode_rx).await;
-                *ds.source = ActiveSource::Idle;
-                update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
-                    z.playback = PlaybackState::Stopped;
-                    z.source = SourceType::Idle;
-                })
-                .await;
+                enter_idle(ds, ctx).await;
             }
         }
         _ => {}
@@ -437,14 +430,12 @@ pub async fn handle_previous(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
                     start_radio_decode(radio, ds, ctx).await;
                 }
                 *ds.source = ActiveSource::Radio { index: prev };
+                let total = radio_playlist_total(ctx).await;
                 update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
                     if was_playing {
                         z.playback = crate::state::PlaybackState::Playing;
                     }
-                    z.playlist_index = Some(0);
-                    z.playlist_id = Some(crate::config::RADIO_PLAYLIST_ID.into());
-                    z.playlist_track_index = Some(prev);
-                    z.track = Some(radio_track_info(&radio.name));
+                    apply_radio_state(z, ctx.config, total, prev, radio);
                 })
                 .await;
                 tracing::info!(zone = %ctx.config.zones[ctx.zone_index - 1].name, radio = %radio.name, "Previous station");
@@ -497,48 +488,128 @@ pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'
         // its channel closing here means the task ended abnormally: stop instead of restarting
         // it without any bound (falls through to the default arm).
         ActiveSource::AirPlay => {
-            *ds.source = ActiveSource::Idle;
-            update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
-                z.playback = PlaybackState::Stopped;
-                z.source = SourceType::Idle;
-                z.track = None;
-            })
-            .await;
+            enter_idle(ds, ctx).await;
             tracing::info!(zone = %ctx.config.zones[ctx.zone_index - 1].name, "AirPlay ended");
         }
-        _ => {
-            *ds.source = ActiveSource::Idle;
-            update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
-                z.playback = PlaybackState::Stopped;
-                z.source = SourceType::Idle;
-            })
-            .await;
-        }
+        _ => enter_idle(ds, ctx).await,
     }
 }
 
-/// A track could not be fetched: stop the decode and leave the zone `Stopped` and idle,
-/// so it never reads `Playing` without a decoder behind it.
+/// A track could not be fetched: leave the zone idle, so it never reads `Playing` without a
+/// decoder behind it.
 pub(super) async fn stop_after_failed_fetch(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
-    stop_decode(ds.current_decode, ds.decode_rx).await;
-    *ds.source = ActiveSource::Idle;
-    mark_zone_stopped(ctx.store, ctx.zone_index, ctx.notify).await;
+    enter_idle(ds, ctx).await;
 }
 
-/// Set the zone to `Stopped` with no track, as the Stop command does.
-pub(super) async fn mark_zone_stopped(
-    store: &state::SharedState,
-    zone_index: usize,
-    notify: &NotifySender,
+/// Leave the zone idle: the decode and the cover fetch stopped, the internal source `Idle`,
+/// the cover image dropped, and in the store `Stopped` with no track, cover URL or buffered
+/// duration. The one implementation behind Stop, the end of a playlist or stream, a playback
+/// error, a failed fetch, presence auto-off and the end of a receiver session.
+pub async fn enter_idle(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'_>) {
+    enter_idle_with(ds, ctx, |_| {}).await;
+}
+
+/// [`enter_idle`], with `also` applied in the same store update (presence auto-off clears its
+/// flags there, so the zone changes in one notification).
+pub async fn enter_idle_with(
+    ds: &mut DecodeState<'_>,
+    ctx: &PlaybackCtx<'_>,
+    also: impl FnOnce(&mut state::ZoneState),
 ) {
-    update_and_notify(store, zone_index, notify, |z| {
+    stop_decode(ds.current_decode, ds.decode_rx).await;
+    if let Some(h) = ds.current_cover.take() {
+        h.abort();
+    }
+    *ds.source = ActiveSource::Idle;
+    ctx.covers.write().await.clear(ctx.zone_index);
+    update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
         z.playback = PlaybackState::Stopped;
         z.source = SourceType::Idle;
         z.track = None;
         z.cover_url = None;
         z.buffered_ms = None;
+        also(z);
     })
     .await;
+}
+
+/// The unified playlist count as radio reports it: radio plus the Subsonic playlists known to
+/// the cache. Read without a request, so switching stations never waits for the server.
+pub async fn radio_playlist_total(ctx: &PlaybackCtx<'_>) -> usize {
+    ctx.config
+        .unified_playlist_count(ctx.playlist_cache.cached_len().await.unwrap_or(0))
+}
+
+/// The zone state of radio station `index`: the radio playlist (unified index 0) with its
+/// name, total and track count, the station as track. Playback is left to the caller.
+pub fn apply_radio_state(
+    z: &mut state::ZoneState,
+    config: &AppConfig,
+    playlist_total: usize,
+    index: usize,
+    radio: &crate::config::RadioConfig,
+) {
+    z.source = SourceType::Radio;
+    z.playlist_index = Some(0);
+    z.playlist_id = Some(crate::config::RADIO_PLAYLIST_ID.into());
+    z.playlist_name = Some("Radio".into());
+    z.playlist_total = Some(playlist_total);
+    z.playlist_track_index = Some(index);
+    z.playlist_track_count = Some(config.radios.len());
+    z.track = Some(radio_track_info(&radio.name));
+}
+
+/// Start decoding Subsonic track `track_id` at `pos_ms`, for resume and seek: from the complete
+/// cached file when there is one (a cache entry that fails to decode is invalidated), else
+/// streamed from the server with a time offset. The caller has stopped the previous decode.
+///
+/// Returns the offset to add to the decoder's positions: 0 for the cached file, whose positions
+/// are absolute, `pos_ms` for a stream that starts at the offset.
+pub fn start_track_at(
+    sub: &SubsonicClient,
+    track_id: &str,
+    pos_ms: i64,
+    ctx: &PlaybackCtx<'_>,
+    current_decode: &mut Option<JoinHandle<()>>,
+    decode_rx: &mut Option<mpsc::Receiver<audio::PcmMessage>>,
+) -> i64 {
+    let (tx, rx) = audio::pcm_channel(super::runner::PCM_DECODE_CHANNEL_SIZE);
+    *decode_rx = Some(rx);
+    let cached = ctx.track_cache.as_ref().and_then(|cache| {
+        if let audio::cache::CacheEntry::Complete { path, content_type } = cache.get(track_id) {
+            Some((path, content_type))
+        } else {
+            None
+        }
+    });
+    if let Some((path, content_type)) = cached {
+        let cache = ctx.track_cache.clone();
+        let tid = track_id.to_owned();
+        *current_decode = Some(tokio::spawn(async move {
+            let decoded = tokio::task::spawn_blocking(move || {
+                audio::decode_cached_file(&path, &content_type, Some(pos_ms), &tx)
+            })
+            .await
+            .unwrap_or_else(|e| Err(e.into()));
+            if let Err(e) = decoded {
+                tracing::error!(error = %e, "Decode from the track cache failed");
+                if let Some(cache) = cache {
+                    cache.invalidate(&tid);
+                }
+            }
+        }));
+        0
+    } else {
+        let offset_secs = u64::try_from(pos_ms / 1000).unwrap_or(0);
+        let url = sub.stream_url_with_offset(track_id, offset_secs);
+        let ac = ctx.config.audio.clone();
+        *current_decode = Some(tokio::spawn(async move {
+            if let Err(e) = audio::decode_http_stream(url, tx, ac, None).await {
+                tracing::error!(error = %e, "Track decode at an offset failed");
+            }
+        }));
+        pos_ms
+    }
 }
 
 async fn advance_playlist_track(
@@ -728,7 +799,10 @@ async fn prefetch_one(
         .to_string();
     let content_length = response.content_length();
 
-    let mut writer = cache.start_download(track_id, &content_type, content_length)?;
+    let Some(mut writer) = cache.start_download(track_id, &content_type, content_length)? else {
+        tracing::debug!(track_id = %track_id, "Track is already being downloaded, prefetch skipped");
+        return Ok(());
+    };
 
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -851,6 +925,7 @@ mod tests {
         notify: NotifySender,
         covers: SharedCoverCache,
         cache: Option<crate::audio::cache::TrackCache>,
+        playlist_cache: crate::subsonic::PlaylistCache,
     }
 
     fn harness(server: &MockServer) -> Harness {
@@ -880,7 +955,56 @@ mod tests {
             notify: crate::api::ws::notification_channel().0,
             covers: state::cover::new_cache(),
             cache: None,
+            playlist_cache: crate::subsonic::PlaylistCache::new(),
         }
+    }
+
+    /// #499: the end of a playlist leaves the zone idle like Stop does.
+    #[tokio::test]
+    async fn the_end_of_a_playlist_leaves_the_zone_idle() {
+        let server = MockServer::start().await;
+        let h = harness(&server);
+        let (mut decode, mut cover, mut rx) = (None, None, None);
+        let mut source = ActiveSource::SubsonicPlaylist {
+            playlist_id: "p".into(),
+            track_index: 1,
+            track_count: 2,
+        };
+        update_and_notify(&h.store, 1, &h.notify, |z| {
+            z.playback = PlaybackState::Playing;
+            z.track = Some(radio_track_info("Last"));
+            z.cover_url = Some("/api/v1/zones/1/cover?h=x".into());
+            z.buffered_ms = Some(500);
+        })
+        .await;
+        let ctx = PlaybackCtx {
+            config: &h.config,
+            subsonic: &h.subsonic,
+            store: &h.store,
+            zone_index: 1,
+            notify: &h.notify,
+            covers: &h.covers,
+            track_cache: &h.cache,
+            playlist_cache: &h.playlist_cache,
+        };
+        handle_track_complete(
+            &mut DecodeState {
+                current_decode: &mut decode,
+                current_cover: &mut cover,
+                decode_rx: &mut rx,
+                source: &mut source,
+            },
+            &ctx,
+        )
+        .await;
+        assert!(
+            matches!(source, ActiveSource::Idle),
+            "internal source is idle"
+        );
+        let z = h.store.read().await.zones[&1].clone();
+        assert_eq!(z.playback, PlaybackState::Stopped);
+        assert_eq!(z.source, SourceType::Idle);
+        assert!(z.track.is_none() && z.cover_url.is_none() && z.buffered_ms.is_none());
     }
 
     async fn run_advance(
@@ -904,6 +1028,7 @@ mod tests {
             notify: &h.notify,
             covers: &h.covers,
             track_cache: &h.cache,
+            playlist_cache: &h.playlist_cache,
         };
         // The zone reads Playing, as it does when a track ends on its own.
         update_and_notify(&h.store, 1, &h.notify, |z| {

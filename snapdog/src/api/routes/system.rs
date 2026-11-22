@@ -105,12 +105,12 @@ fn updater_config() -> Result<(String, String), ApiError> {
     Ok((url.trim_end_matches('/').to_owned(), token))
 }
 
-async fn updater_request(path: &str, body: Option<Value>) -> Result<Json<Value>, ApiError> {
+async fn updater_request(
+    client: &reqwest::Client,
+    path: &str,
+    body: Option<Value>,
+) -> Result<Json<Value>, ApiError> {
     let (base, token) = updater_config()?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
     let builder = body.map_or_else(
         || {
             if path == "/v1/status" {
@@ -153,8 +153,8 @@ async fn updater_request(path: &str, body: Option<Value>) -> Result<Json<Value>,
         (status = 503, description = "No updater sidecar is configured", body = ErrorBody)
     )
 )]
-async fn update_status() -> Result<Json<Value>, ApiError> {
-    updater_request("/v1/status", None).await
+async fn update_status(State(state): State<SharedState>) -> Result<Json<Value>, ApiError> {
+    updater_request(&state.updater_http, "/v1/status", None).await
 }
 
 /// Ask the sidecar to look for a newer release now.
@@ -171,8 +171,8 @@ async fn update_status() -> Result<Json<Value>, ApiError> {
         (status = 503, description = "No updater sidecar is configured", body = ErrorBody)
     )
 )]
-async fn check_updates() -> Result<Json<Value>, ApiError> {
-    updater_request("/v1/check", None).await
+async fn check_updates(State(state): State<SharedState>) -> Result<Json<Value>, ApiError> {
+    updater_request(&state.updater_http, "/v1/check", None).await
 }
 
 /// Apply the available update now.
@@ -189,8 +189,8 @@ async fn check_updates() -> Result<Json<Value>, ApiError> {
         (status = 503, description = "No updater sidecar is configured", body = ErrorBody)
     )
 )]
-async fn apply_update() -> Result<Json<Value>, ApiError> {
-    updater_request("/v1/apply", None).await
+async fn apply_update(State(state): State<SharedState>) -> Result<Json<Value>, ApiError> {
+    updater_request(&state.updater_http, "/v1/apply", None).await
 }
 
 /// Change the update mode and maintenance window of the sidecar.
@@ -206,8 +206,12 @@ async fn apply_update() -> Result<Json<Value>, ApiError> {
         (status = 503, description = "No updater sidecar is configured", body = ErrorBody)
     )
 )]
-async fn configure_updates(Json(config): Json<UpdateConfig>) -> Result<Json<Value>, ApiError> {
+async fn configure_updates(
+    State(state): State<SharedState>,
+    Json(config): Json<UpdateConfig>,
+) -> Result<Json<Value>, ApiError> {
     updater_request(
+        &state.updater_http,
         "/v1/config",
         Some(serde_json::json!({
             "mode": config.mode,

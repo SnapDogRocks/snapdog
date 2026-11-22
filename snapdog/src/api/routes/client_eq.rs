@@ -11,7 +11,6 @@ use axum::{Json, Router};
 use crate::api::SharedState;
 use crate::api::error::{ApiError, ErrorBody};
 use crate::audio::eq::{EqBand, EqConfig, TYPE_EQ_CONFIG};
-use crate::player::{ClientAction, SnapcastCmd};
 
 use super::eq::resolve_preset;
 
@@ -23,35 +22,12 @@ pub fn router(state: SharedState) -> Router {
         .with_state(state)
 }
 
-/// Returns 400 if the client is not a `SnapDog` client.
 async fn require_snapdog(state: &SharedState, idx: usize) -> Result<(), ApiError> {
-    if idx == 0 || idx > state.config.clients.len() {
-        return Err(ApiError::NotFound("client"));
-    }
-    let store = state.store.read().await;
-    match store.clients.get(&idx) {
-        Some(c) if c.is_snapdog => Ok(()),
-        Some(_) => Err(ApiError::Unprocessable(
-            "Client does not support EQ (not a SnapDog client)".into(),
-        )),
-        None => Err(ApiError::NotFound("client")),
-    }
+    super::clients::require_snapdog(state, idx, "EQ").await
 }
 
-async fn snap_id(state: &SharedState, idx: usize) -> Result<String, ApiError> {
-    state
-        .store
-        .read()
-        .await
-        .clients
-        .get(&idx)
-        .and_then(|c| c.snapcast_id.clone())
-        .ok_or(ApiError::NotFound("client"))
-}
-
+/// Announce the stored EQ and send it to the client if it is connected.
 async fn send_eq(state: &SharedState, idx: usize, config: &EqConfig) -> Result<(), ApiError> {
-    // The store is already written, so the event tells what is stored even when the client
-    // is not connected and cannot be sent to.
     crate::api::ws::broadcast_notification(
         &state.notifications,
         &crate::api::ws::Notification::ClientEqChanged {
@@ -59,19 +35,7 @@ async fn send_eq(state: &SharedState, idx: usize, config: &EqConfig) -> Result<(
             config: config.clone(),
         },
     );
-    let client_id = snap_id(state, idx).await?;
-    let payload = serde_json::to_vec(config).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let _ = state
-        .snap_tx
-        .send(SnapcastCmd::Client {
-            client_id,
-            action: ClientAction::SendCustom {
-                type_id: TYPE_EQ_CONFIG,
-                payload,
-            },
-        })
-        .await;
-    Ok(())
+    super::clients::send_setting_if_connected(state, idx, TYPE_EQ_CONFIG, config).await
 }
 
 /// Get client Equalizer configuration
@@ -114,7 +78,8 @@ async fn get_eq(State(state): State<SharedState>, Path(idx): Path<usize>) -> imp
         (status = 200, description = "Updated equalizer configuration", body = EqConfig),
         (status = 400, description = "Too many bands or validation error", body = ErrorBody),
         (status = 404, description = "Client not found", body = ErrorBody),
-        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody)
+        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "equalizer"
 )]
@@ -149,7 +114,8 @@ async fn set_eq(
         (status = 200, description = "Updated full equalizer configuration", body = EqConfig),
         (status = 400, description = "Validation error", body = ErrorBody),
         (status = 404, description = "Client or band not found", body = ErrorBody),
-        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody)
+        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "equalizer"
 )]
@@ -160,21 +126,21 @@ async fn set_band(
 ) -> impl IntoResponse {
     band.validate().map_err(ApiError::BadRequest)?;
     require_snapdog(&state, idx).await?;
-    let mut config = state
-        .eq_store
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get_client(idx);
-    if band_idx >= config.bands.len() {
-        return Err(ApiError::NotFound("band"));
-    }
-    config.bands[band_idx] = band;
-    config.preset = None;
-    state
-        .eq_store
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .set_client(idx, config.clone());
+    // Read, change and write under one lock, so that two quick band changes both survive.
+    let config = {
+        let mut store = state
+            .eq_store
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut config = store.get_client(idx);
+        if band_idx >= config.bands.len() {
+            return Err(ApiError::NotFound("band"));
+        }
+        config.bands[band_idx] = band;
+        config.preset = None;
+        store.set_client(idx, config.clone());
+        config
+    };
     send_eq(&state, idx, &config).await?;
     Ok::<_, ApiError>(Json(config))
 }
@@ -182,7 +148,7 @@ async fn set_band(
 /// Apply client Equalizer preset
 ///
 /// Overwrites the client's Equalizer settings with a predefined preset curve.
-/// Supported values: "flat", `bass_boost`, "loudness", "vocals", `treble_boost`.
+/// The body is a preset name as listed by `GET /api/v1/eq/presets`.
 #[utoipa::path(
     post,
     path = "/api/v1/clients/{client_index}/eq/preset",
@@ -194,7 +160,8 @@ async fn set_band(
         (status = 200, description = "Updated full equalizer configuration from preset", body = EqConfig),
         (status = 400, description = "Unknown preset name", body = ErrorBody),
         (status = 404, description = "Client not found", body = ErrorBody),
-        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody)
+        (status = 422, description = "Client does not support EQ (not a SnapDog client)", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody)
     ),
     tag = "equalizer"
 )]

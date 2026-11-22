@@ -3,6 +3,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { EqBand, EqConfig } from "@/lib/api";
 import { EqOverlay } from "./EqOverlay";
 import { renderWithIntl } from "@/test/render";
+import { resetEqPresetsCache } from "@/hooks/useEqPresets";
 import { publishEqChange } from "@/lib/eq-events";
 import { FREQ_MAX_HZ, FREQ_MIN_HZ } from "./EqCurve";
 
@@ -16,11 +17,12 @@ const mocks = vi.hoisted(() => ({
   speakersGet: vi.fn(),
   applyCustom: vi.fn(),
   apply: vi.fn(),
+  presets: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
   api: {
-    eq: { get: mocks.eqGet, set: mocks.eqSet, applyPreset: vi.fn() },
+    eq: { get: mocks.eqGet, set: mocks.eqSet, applyPreset: vi.fn(), presets: mocks.presets },
     clientEq: { get: mocks.clientEqGet, set: vi.fn(() => Promise.resolve()), applyPreset: vi.fn() },
     speakers: {
       list: mocks.speakersList,
@@ -43,10 +45,29 @@ function abButton() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetEqPresetsCache();
+  mocks.presets.mockResolvedValue([{ name: "flat", bands: [] }]);
   mocks.eqSet.mockResolvedValue(undefined);
   mocks.applyCustom.mockImplementation((_id: number, c: EqConfig) => Promise.resolve(c));
   mocks.speakersList.mockResolvedValue([]);
   mocks.clientEqGet.mockResolvedValue({ enabled: false, bands: [], preset: "flat" });
+});
+
+describe("EqOverlay, presets", () => {
+  it("offers the server's presets, a preset without a label under its raw name", async () => {
+    mocks.presets.mockResolvedValue([
+      { name: "flat", bands: [] },
+      { name: "bass_boost", bands: [] },
+      { name: "studio_monitor", bands: [] },
+    ]);
+    mocks.eqGet.mockResolvedValue({ enabled: true, bands: [BAND], preset: null });
+    renderWithIntl(<EqOverlay zoneId={1} label="Kitchen" onClose={vi.fn()} />);
+
+    const group = await screen.findByRole("group", { name: "EQ presets" });
+    await waitFor(() => { expect(group.querySelectorAll("button")).toHaveLength(3); });
+    expect(screen.getByRole("button", { name: "Bass boost" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "studio_monitor" })).toBeTruthy();
+  });
 });
 
 describe("EqOverlay, EQ tab", () => {
@@ -118,7 +139,7 @@ describe("EqOverlay, sending edits", () => {
     renderWithIntl(<EqOverlay zoneId={1} label="Kitchen" onClose={vi.fn()} />);
     await screen.findByText("+3.0");
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove band" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove band 1" }));
     expect(screen.queryByText("+3.0")).toBeNull();
     await screen.findByText("-2.0");
     expect(mocks.eqGet).toHaveBeenCalledTimes(2);
@@ -142,7 +163,7 @@ describe("EqOverlay, speaker tab", () => {
     const { unmount } = renderWithIntl(<EqOverlay clientId={2} label="Desk" onClose={vi.fn()} />);
     fireEvent.click(await screen.findByRole("tab", { name: "Speaker" }));
     fireEvent.click(await screen.findByRole("radio", { name: "Custom" }));
-    fireEvent.click(await screen.findByRole("button", { name: "+ + Add Band" }));
+    fireEvent.click(await screen.findByRole("button", { name: "+ Add Band" }));
     await waitFor(() => { expect(lastCall(mocks.applyCustom)[1]).toMatchObject({ enabled: true }); });
 
     fireEvent.click(abButton());

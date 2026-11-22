@@ -14,6 +14,7 @@ pub mod audio;
 pub mod config;
 #[cfg(feature = "dbus")]
 pub mod dbus;
+pub mod health;
 pub mod knx;
 pub mod logging;
 pub mod mqtt;

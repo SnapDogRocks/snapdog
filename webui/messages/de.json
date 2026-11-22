@@ -4,7 +4,9 @@
     "skipToContent": "Zum Inhalt springen",
     "connected": "Verbunden",
     "disconnected": "Getrennt",
-    "language": "Sprache"
+    "language": "Sprache",
+    "legacyDeprecated": "Diese Oberfläche ist veraltet und wird in einer künftigen Version entfernt.",
+    "legacySwitch": "Aktuelle Oberfläche öffnen"
   },
   "transport": {
     "play": "Wiedergabe",
@@ -41,7 +43,8 @@
     "error": "Etwas ist schiefgelaufen",
     "retry": "Erneut versuchen",
     "presenceDetected": "Präsenz erkannt",
-    "presenceTimerActive": "Präsenz Auto-Off Timer aktiv"
+    "presenceTimerActive": "Präsenz Auto-Off Timer aktiv",
+    "coverAlt": "Cover von {title}"
   },
   "client": {
     "clients": "{count, plural, one {# Client} other {# Clients}}",
@@ -59,16 +62,45 @@
     "close": "Equalizer schließen",
     "toggle": "EQ ein/aus",
     "presets": "EQ-Presets",
-    "preset": "Presets",
-    "enabled": "Aktiviert",
     "addBand": "+ Band hinzufügen",
-    "removeBand": "Band entfernen",
     "filterType": "Band {n} Filtertyp",
-    "frequency": "Frequenz",
-    "gain": "Verstärkung",
-    "qFactor": "Q-Faktor",
     "curve": "EQ-Frequenzgangkurve",
-    "loading": "Equalizer wird geladen…"
+    "loading": "Equalizer wird geladen…",
+    "off": "Aus",
+    "on": "Ein",
+    "spinorama": "Lautsprecher-Datenbank",
+    "custom": "Eigene",
+    "speakerToggle": "Lautsprecherkorrektur",
+    "tabEq": "Equalizer",
+    "tabSpeaker": "Lautsprecher",
+    "speakerCurve": "Kurve der Lautsprecherkorrektur",
+    "speakersLoading": "Lautsprecher werden geladen …",
+    "clearSpeaker": "Entfernen",
+    "searchSpeakers": "Lautsprecher suchen …",
+    "noSpeakers": "Keine Lautsprecher gefunden",
+    "bandFrequency": "Band {n} Frequenz",
+    "bandGain": "Band {n} Verstärkung",
+    "bandQ": "Band {n} Q-Faktor",
+    "removeBandN": "Band {n} entfernen",
+    "filter": {
+      "low_shelf": "Tiefen-Shelf",
+      "high_shelf": "Höhen-Shelf",
+      "peaking": "Glocke",
+      "low_pass": "Tiefpass",
+      "high_pass": "Hochpass"
+    },
+    "presetName": {
+      "flat": "Linear",
+      "bass_boost": "Bass betont",
+      "treble_boost": "Höhen betont",
+      "vocal": "Stimme",
+      "rock": "Rock",
+      "jazz": "Jazz",
+      "classical": "Klassik",
+      "electronic": "Elektronisch",
+      "loudness": "Loudness",
+      "late_night": "Nachtmodus"
+    }
   },
   "playlist": {
     "title": "Playlisten",
@@ -145,7 +177,22 @@
     "updateCheck": "Prüfen",
     "updateApply": "Aktualisieren",
     "knxTitle": "KNX",
-    "programmingMode": "Programmiermodus"
+    "programmingMode": "Programmiermodus",
+    "updateState": {
+      "current": "Aktuell",
+      "idle": "Aktuell",
+      "available": "Update verfügbar",
+      "checking": "Wird geprüft …",
+      "preparing": "Version wird vorbereitet",
+      "updating": "Wird aktualisiert …",
+      "verifying": "Wird verifiziert …",
+      "deploying": "Wird installiert …",
+      "waiting_for_health": "Warte auf den Server …",
+      "rolling_back": "Wird zurückgesetzt …",
+      "rolled_back": "Zurückgesetzt",
+      "failed": "Update fehlgeschlagen",
+      "error": "Fehler"
+    }
   },
   "connect": {
     "title": "Verbinden",

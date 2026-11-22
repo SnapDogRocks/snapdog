@@ -4,7 +4,9 @@
     "skipToContent": "Skip to content",
     "connected": "Connected",
     "disconnected": "Disconnected",
-    "language": "Language"
+    "language": "Language",
+    "legacyDeprecated": "This interface is deprecated and will be removed in a future release.",
+    "legacySwitch": "Open the current interface"
   },
   "transport": {
     "play": "Play",
@@ -41,7 +43,8 @@
     "error": "Something went wrong",
     "retry": "Try again",
     "presenceDetected": "Presence detected",
-    "presenceTimerActive": "Presence auto-off timer active"
+    "presenceTimerActive": "Presence auto-off timer active",
+    "coverAlt": "Cover of {title}"
   },
   "client": {
     "clients": "{count, plural, one {# client} other {# clients}}",
@@ -59,16 +62,45 @@
     "close": "Close equalizer",
     "toggle": "EQ on/off",
     "presets": "EQ presets",
-    "preset": "Presets",
-    "enabled": "Enabled",
     "addBand": "+ Add Band",
-    "removeBand": "Remove band",
     "filterType": "Band {n} filter type",
-    "frequency": "Frequency",
-    "gain": "Gain",
-    "qFactor": "Q factor",
     "curve": "EQ frequency response curve",
-    "loading": "Loading equalizer…"
+    "loading": "Loading equalizer…",
+    "off": "Off",
+    "on": "On",
+    "spinorama": "Speaker database",
+    "custom": "Custom",
+    "speakerToggle": "Speaker correction",
+    "tabEq": "Equalizer",
+    "tabSpeaker": "Speaker",
+    "speakerCurve": "Speaker correction curve",
+    "speakersLoading": "Loading speakers…",
+    "clearSpeaker": "Remove",
+    "searchSpeakers": "Search speakers…",
+    "noSpeakers": "No speakers found",
+    "bandFrequency": "Band {n} frequency",
+    "bandGain": "Band {n} gain",
+    "bandQ": "Band {n} Q factor",
+    "removeBandN": "Remove band {n}",
+    "filter": {
+      "low_shelf": "Low shelf",
+      "high_shelf": "High shelf",
+      "peaking": "Peak",
+      "low_pass": "Low pass",
+      "high_pass": "High pass"
+    },
+    "presetName": {
+      "flat": "Flat",
+      "bass_boost": "Bass boost",
+      "treble_boost": "Treble boost",
+      "vocal": "Vocal",
+      "rock": "Rock",
+      "jazz": "Jazz",
+      "classical": "Classical",
+      "electronic": "Electronic",
+      "loudness": "Loudness",
+      "late_night": "Late night"
+    }
   },
   "playlist": {
     "title": "Playlists",
@@ -145,7 +177,22 @@
     "updateCheck": "Check",
     "updateApply": "Update",
     "knxTitle": "KNX",
-    "programmingMode": "Programming mode"
+    "programmingMode": "Programming mode",
+    "updateState": {
+      "current": "Up to date",
+      "idle": "Up to date",
+      "available": "Update available",
+      "checking": "Checking…",
+      "preparing": "Release is being prepared",
+      "updating": "Updating…",
+      "verifying": "Verifying…",
+      "deploying": "Installing…",
+      "waiting_for_health": "Waiting for the server…",
+      "rolling_back": "Rolling back…",
+      "rolled_back": "Rolled back",
+      "failed": "Update failed",
+      "error": "Error"
+    }
   },
   "connect": {
     "title": "Connect",
