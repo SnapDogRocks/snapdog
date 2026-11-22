@@ -266,7 +266,7 @@ async fn handle_player_event(
         PlayerEvent::TrackChanged { audio_item } => {
             let (artist, album) = match &audio_item.unique_fields {
                 UniqueFields::Track { artists, album, .. } => (
-                    artists.first().map(|a| a.name.clone()).unwrap_or_default(),
+                    artists.first().map_or_default(|a| a.name.clone()),
                     album.clone(),
                 ),
                 UniqueFields::Episode { show_name, .. } => (show_name.clone(), String::new()),

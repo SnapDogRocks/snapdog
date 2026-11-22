@@ -376,7 +376,7 @@ jobs:
       fail-fast: false
       matrix:
         # The Linux entries always; macOS and Windows only for a full release.
-        include: ${{ fromJSON(format('[{0}{1}]', '{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-latest","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"},{"target":"aarch64-unknown-linux-gnu","os":"ubuntu-24.04-arm","container":"rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8"}', inputs.scope != 'server-image' && ',{"target":"x86_64-apple-darwin","os":"macos-latest","container":""},{"target":"aarch64-apple-darwin","os":"macos-latest","container":""},{"target":"x86_64-pc-windows-msvc","os":"windows-2025","container":""}' || '')) }}
+        include: ${{ fromJSON(format('[{0}{1}]', '{"target":"x86_64-unknown-linux-gnu","os":"ubuntu-latest","container":"rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea"},{"target":"aarch64-unknown-linux-gnu","os":"ubuntu-24.04-arm","container":"rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea"}', inputs.scope != 'server-image' && ',{"target":"x86_64-apple-darwin","os":"macos-latest","container":""},{"target":"aarch64-apple-darwin","os":"macos-latest","container":""},{"target":"x86_64-pc-windows-msvc","os":"windows-2025","container":""}' || '')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
       # The bookworm container ships the rust-toolchain.toml version; only the

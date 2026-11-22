@@ -430,13 +430,12 @@ async fn setup_zone_group(
     let current_clients: Vec<&str> = group
         .get("clients")
         .and_then(|c| c.as_array())
-        .map(|clients| {
+        .map_or_default(|clients| {
             clients
                 .iter()
                 .filter_map(|c| c.get("id").and_then(|id| id.as_str()))
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     let current_stream = group
         .get("stream_id")
         .and_then(|s| s.as_str())
@@ -644,12 +643,11 @@ async fn sync_group_ids(
             let group_clients: Vec<&str> = group
                 .get("clients")
                 .and_then(|c| c.as_array())
-                .map(|arr| {
+                .map_or_default(|arr| {
                     arr.iter()
                         .filter_map(|c| c.get("id").and_then(|id| id.as_str()))
                         .collect()
-                })
-                .unwrap_or_default();
+                });
             let has_our_client = zone_snap_ids.iter().any(|id| group_clients.contains(id));
             if !has_our_client {
                 continue;
@@ -756,8 +754,7 @@ fn locate_client(
         .zones
         .iter()
         .find(|z| z.index == zone_index)
-        .map(|z| z.group_volume_mode)
-        .unwrap_or_default();
+        .map_or_default(|z| z.group_volume_mode);
     Some((idx, zone_index, zone_volume, mode))
 }
 

@@ -375,15 +375,12 @@ fn connect_midi(param: &str) -> anyhow::Result<(midir::MidiOutputConnection, u8,
                 .is_ok_and(|n| n.to_lowercase().contains(&interface.to_lowercase()))
         })
         .ok_or_else(|| {
-            let available: Vec<_> = midir::MidiOutput::new("probe")
-                .ok()
-                .map(|m| {
-                    m.ports()
-                        .iter()
-                        .filter_map(|p| m.port_name(p).ok())
-                        .collect()
-                })
-                .unwrap_or_default();
+            let available: Vec<_> = midir::MidiOutput::new("probe").ok().map_or_default(|m| {
+                m.ports()
+                    .iter()
+                    .filter_map(|p| m.port_name(p).ok())
+                    .collect()
+            });
             anyhow::anyhow!("MIDI interface '{interface}' not found. Available: {available:?}")
         })?;
     let conn = midi_out
@@ -617,7 +614,7 @@ fn output_devices(host: &cpal::Host) -> anyhow::Result<(Vec<cpal::Device>, Vec<O
             name: d
                 .description()
                 .map_or_else(|_| "(unnamed device)".to_string(), |n| format!("{n}")),
-            id: d.id().map(|id| id.to_string()).unwrap_or_default(),
+            id: d.id().map_or_default(|id| id.to_string()),
         })
         .collect();
     Ok((devices, described))
@@ -904,7 +901,7 @@ fn run_cpal(
     let host = cpal::default_host();
     let device = find_output_device(&host, soundcard)?;
 
-    tracing::info!(device = %device.description().map(|d| format!("{d}")).unwrap_or_default(), "Using audio device");
+    tracing::info!(device = %device.description().map_or_default(|d| format!("{d}")), "Using audio device");
 
     // Probe device capabilities: the stream's own layout, or the device default if it is the
     // same layout. Samples are copied frame by frame without remapping, so a different
@@ -1072,10 +1069,7 @@ pub fn play_test_tone(device_name: &str) -> anyhow::Result<()> {
 
     println!(
         "Playing 440 Hz test tone for 2s on: {}",
-        device
-            .description()
-            .map(|d| format!("{d}"))
-            .unwrap_or_default()
+        device.description().map_or_default(|d| format!("{d}"))
     );
 
     let stream_config = cpal::StreamConfig {
