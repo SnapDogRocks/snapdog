@@ -4,7 +4,7 @@ WORKDIR /build
 COPY . .
 RUN cargo build --release -p snapdog-client
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 ca-certificates dumb-init \
     && rm -rf /var/lib/apt/lists/*

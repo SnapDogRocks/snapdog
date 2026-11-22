@@ -45,7 +45,7 @@ jobs:
       - name: Coverage (tier-1, gate on threshold)
         # Default features (snapcast-embedded). Threshold is a regression guard set
         # a few points below the current ~50% line coverage (IT-T92).
-        run: cargo llvm-cov -p snapdog --lcov --output-path lcov.info --fail-under-lines 45
+        run: cargo llvm-cov --locked -p snapdog --lcov --output-path lcov.info --fail-under-lines 45
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         if: ${{ !cancelled() }}
         with:
@@ -63,7 +63,7 @@ jobs:
         include:
           - { name: "embedded (default)", features: "snapcast-embedded,spotify,dbus" }
           - { name: "embedded minimal", features: "snapcast-embedded" }
-          - { name: "embedded full", features: "snapcast-embedded,ap2,spotify,dbus,api-docs" }
+          - { name: "embedded full", features: "full" }
           - { name: "process minimal", features: "snapcast-process" }
           - { name: "process full", features: "snapcast-process,ap2,spotify,dbus,api-docs" }
     steps:
@@ -77,55 +77,13 @@ jobs:
         shell: bash
         run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
       - name: cargo check
-        run: cargo check -p snapdog --no-default-features --features "${{ matrix.features }}"
+        run: cargo check --locked -p snapdog --no-default-features --features "${{ matrix.features }}"
 
   integration:
     name: Integration Tests
-    runs-on: ubuntu-latest
-    services:
-      navidrome:
-        image: deluan/navidrome:latest
-        ports:
-          - 4533:4533
-        env:
-          ND_SCANSCHEDULE: "0"
-          ND_LOGLEVEL: error
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
-      - name: Install Rust toolchain
-        # Version, components and profile come from rust-toolchain.toml.
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - run: echo "SKIP_WEBUI_BUILD=1" >> "$GITHUB_ENV"
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
-        with:
-          tool: cargo-nextest
-      - name: Install test services
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y snapserver libasound2-dev libavahi-compat-libdnssd-dev mosquitto
-          printf "listener 1883\nallow_anonymous true\n" | sudo tee /etc/mosquitto/conf.d/ci.conf
-          sudo systemctl restart mosquitto
-      - name: Create test environment
-        run: |
-          cat > .env.test << EOF
-          SNAPDOG_TEST_SUBSONIC_URL=http://localhost:4533
-          SNAPDOG_TEST_SUBSONIC_USERNAME=admin
-          SNAPDOG_TEST_SUBSONIC_PASSWORD=admin
-          SNAPDOG_TEST_MQTT_BROKER=localhost:1883
-          SNAPDOG_TEST_MQTT_USERNAME=
-          SNAPDOG_TEST_MQTT_PASSWORD=
-          EOF
-      - name: Run real-service integration tests
-        run: |
-          cargo nextest run -p snapdog --profile ci --no-default-features --features snapcast-process \
-            -E 'binary(integration) | binary(snapcast_rpc) | binary(snapserver_e2e) | binary(mqtt_tier2)'
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
-        if: ${{ !cancelled() }}
-        with:
-          name: nightly-nextest-report
-          path: target/nextest/ci/junit.xml
-          if-no-files-found: ignore
+    uses: ./.github/workflows/tier2-integration.yml
+    with:
+      report-name: nightly-nextest-report
 
   container-images:
     name: Container (${{ matrix.image }})

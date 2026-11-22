@@ -781,11 +781,12 @@ See [Architecture Decision Records](docs/architecture/decisions.md) for design r
 ```bash
 make setup                                    # Git hooks
 docker compose -f docker-compose.dev.yml up -d  # Dev infrastructure
-cargo run -- --config snapdog.dev.toml        # Run
-cargo xtask ci                                # Run all CI checks locally
-cargo test                                    # Test
-cargo clippy -- -D warnings                   # Lint
-cargo run --package xtask -- gen-api-spec openapi.json  # Refresh API contract
+cp snapdog.example.toml snapdog.dev.toml       # Local config (gitignored), then edit
+cargo run -p snapdog -- --config snapdog.dev.toml  # Run
+cargo xtask ci                                # Run the CI checks locally (same steps as ci.yml)
+cargo nextest run --workspace                 # Test
+cargo clippy --all-targets -- -D warnings     # Lint
+cargo xtask gen-api-spec openapi.json         # Refresh API contract
 ```
 
 `openapi.json` is the committed REST contract. The OpenAPI contract test rejects

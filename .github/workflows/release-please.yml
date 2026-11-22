@@ -13,10 +13,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+# Every step authenticates with the GitHub App token below; the default GITHUB_TOKEN needs
+# no write access.
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+  contents: read
 
 jobs:
   release-please:
