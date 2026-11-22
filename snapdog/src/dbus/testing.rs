@@ -41,12 +41,7 @@ pub async fn fixture() -> Fixture {
     let (server_end, caller_end) = UnixStream::pair().expect("socketpair");
     let (cmd_tx, commands) = mpsc::channel(8);
     let state = Arc::new(Mutex::new(PlayerState::default()));
-    let player = PlayerInterface::new(
-        ZONE,
-        "http://localhost:5555".into(),
-        Arc::clone(&state),
-        cmd_tx,
-    );
+    let player = PlayerInterface::new("http://localhost:5555".into(), Arc::clone(&state), cmd_tx);
     let (server, caller) = tokio::try_join!(
         async {
             connection::Builder::unix_stream(server_end)
@@ -80,6 +75,72 @@ where
         panic!("{method} got no reply within {DEADLINE:?}: the method most likely panicked")
     })
     .unwrap_or_else(|e| panic!("{method} failed: {e}"));
+}
+
+/// A method call that is expected to fail: returns the D-Bus error name.
+pub async fn call_err<B>(caller: &zbus::Connection, method: &str, body: &B) -> String
+where
+    B: zbus::export::serde::Serialize + zbus::zvariant::DynamicType,
+{
+    let result = tokio::time::timeout(
+        DEADLINE,
+        caller.call_method(None::<&str>, PATH, Some(PLAYER), method, body),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("{method} got no reply within {DEADLINE:?}"));
+    match result {
+        Ok(_) => panic!("{method} succeeded, expected an error"),
+        Err(zbus::Error::MethodError(name, _, _)) => name.to_string(),
+        Err(zbus::Error::FDO(e)) => zbus::DBusError::name(e.as_ref()).to_string(),
+        Err(e) => panic!("{method} failed with {e}, expected a method error"),
+    }
+}
+
+/// `Properties.Set` that is expected to fail: returns the D-Bus error name.
+pub async fn set_property_err(
+    caller: &zbus::Connection,
+    name: &str,
+    value: zbus::Variant<'_>,
+) -> String {
+    let result = tokio::time::timeout(
+        DEADLINE,
+        caller.call_method(
+            None::<&str>,
+            PATH,
+            Some(PROPERTIES),
+            "Set",
+            &(PLAYER, name, value),
+        ),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("Set {name} got no reply within {DEADLINE:?}"));
+    match result {
+        Ok(_) => panic!("Set {name} succeeded, expected an error"),
+        Err(zbus::Error::MethodError(err, _, _)) => err.to_string(),
+        Err(zbus::Error::FDO(e)) => zbus::DBusError::name(e.as_ref()).to_string(),
+        Err(e) => panic!("Set {name} failed with {e}, expected a method error"),
+    }
+}
+
+/// No command arrives within a short wait.
+pub async fn no_command(commands: &mut mpsc::Receiver<ZoneCommand>) {
+    let got = tokio::time::timeout(Duration::from_millis(100), commands.recv()).await;
+    assert!(got.is_err(), "unexpected command {got:?}");
+}
+
+/// No `Seeked` signal arrives within a short wait.
+pub async fn no_seeked(stream: &mut zbus::MessageStream) {
+    use futures_util::StreamExt;
+    let found = tokio::time::timeout(Duration::from_millis(200), async {
+        while let Some(Ok(msg)) = stream.next().await {
+            if msg.header().member().map(zbus::names::MemberName::as_str) == Some("Seeked") {
+                return;
+            }
+        }
+        std::future::pending::<()>().await;
+    })
+    .await;
+    assert!(found.is_err(), "an unexpected Seeked signal");
 }
 
 pub async fn next_command(commands: &mut mpsc::Receiver<ZoneCommand>) -> ZoneCommand {
@@ -136,24 +197,4 @@ pub async fn set_property(caller: &zbus::Connection, name: &str, value: zbus::Va
         panic!("Set {name} got no reply within {DEADLINE:?}: the setter most likely panicked")
     })
     .unwrap_or_else(|e| panic!("Set {name} failed: {e}"));
-}
-
-/// The position carried by the next `Seeked` signal on `stream`, with a deadline. Create the
-/// stream (`zbus::MessageStream::from(&caller)`) before the call that causes the signal.
-pub async fn next_seeked(stream: &mut zbus::MessageStream) -> i64 {
-    use futures_util::StreamExt;
-    tokio::time::timeout(DEADLINE, async {
-        loop {
-            let msg = stream
-                .next()
-                .await
-                .expect("connection closed")
-                .expect("message");
-            if msg.header().member().map(zbus::names::MemberName::as_str) == Some("Seeked") {
-                return msg.body().deserialize::<i64>().expect("Seeked(i64)");
-            }
-        }
-    })
-    .await
-    .expect("no Seeked signal")
 }

@@ -741,7 +741,7 @@ pub async fn run_app() -> Result<()> {
     // ── D-Bus MPRIS2 ──────────────────────────────────────────
     #[cfg(all(feature = "dbus", target_os = "linux"))]
     let _dbus = if config.dbus.enabled {
-        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone()).await {
+        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone(), &store).await {
             Ok(conns) => {
                 tracing::info!(zones = conns.len(), "MPRIS2 D-Bus interfaces registered");
                 Some(conns)
