@@ -5,10 +5,7 @@
 
 use anyhow::{Context, Result};
 
-use super::types::{
-    AudioConfig, ClientConfig, ClientKnxAddresses, RawClientConfig, RawClientKnxConfig,
-    RawZoneConfig, RawZoneKnxConfig, ZoneConfig, ZoneKnxAddresses,
-};
+use super::types::{AudioConfig, ClientConfig, RawClientConfig, RawZoneConfig, ZoneConfig};
 
 const TCP_SOURCE_BASE_PORT: u16 = 4952;
 
@@ -75,7 +72,8 @@ pub fn resolve_zone(
         tcp_source_port: TCP_SOURCE_BASE_PORT + n as u16,
         airplay_name,
         spotify_name,
-        knx: resolve_zone_knx(n, raw.knx),
+        // Group addresses are used as written; validation has checked them.
+        knx: raw.knx,
         group_volume_mode: raw.group_volume_mode.unwrap_or(snapcast.group_volume_mode),
         seek_interval_secs: raw
             .seek_interval_secs
@@ -117,75 +115,6 @@ pub fn resolve_client(
         max_volume: raw.max_volume.clamp(0, 100),
         default_volume: raw.default_volume.clamp(0, 100),
         default_latency: raw.default_latency,
-        knx: resolve_client_knx(index, raw.knx),
+        knx: raw.knx,
     })
-}
-
-/// Zone KNX addresses — explicit only, no convention defaults.
-/// Only configured GAs are active. Unconfigured GAs are ignored.
-fn resolve_zone_knx(_n: usize, raw: RawZoneKnxConfig) -> ZoneKnxAddresses {
-    ZoneKnxAddresses {
-        play: raw.play,
-        pause: raw.pause,
-        stop: raw.stop,
-        volume: raw.volume,
-        volume_status: raw.volume_status,
-        volume_dim: raw.volume_dim,
-        mute: raw.mute,
-        mute_status: raw.mute_status,
-        mute_toggle: raw.mute_toggle,
-        track_next: raw.track_next,
-        track_previous: raw.track_previous,
-        control_status: raw.control_status,
-        track_title_status: raw.track_title_status,
-        track_artist_status: raw.track_artist_status,
-        track_album_status: raw.track_album_status,
-        track_progress_status: raw.track_progress_status,
-        track_playing_status: raw.track_playing_status,
-        track_repeat: raw.track_repeat,
-        track_repeat_status: raw.track_repeat_status,
-        track_repeat_toggle: raw.track_repeat_toggle,
-        playlist: raw.playlist,
-        playlist_status: raw.playlist_status,
-        playlist_next: raw.playlist_next,
-        playlist_previous: raw.playlist_previous,
-        playlist_step: raw.playlist_step,
-        playlist_step_updown: raw.playlist_step_updown,
-        playlist_name_status: raw.playlist_name_status,
-        track_number: raw.track_number,
-        track_number_status: raw.track_number_status,
-        play_pause: raw.play_pause,
-        track_step: raw.track_step,
-        track_step_updown: raw.track_step_updown,
-        track_position: raw.track_position,
-        track_seek: raw.track_seek,
-        track_seek_updown: raw.track_seek_updown,
-        shuffle: raw.shuffle,
-        shuffle_status: raw.shuffle_status,
-        shuffle_toggle: raw.shuffle_toggle,
-        repeat: raw.repeat,
-        repeat_status: raw.repeat_status,
-        repeat_toggle: raw.repeat_toggle,
-        presence: raw.presence,
-        presence_enable: raw.presence_enable,
-        presence_enable_status: raw.presence_enable_status,
-        presence_timer_status: raw.presence_timer_status,
-    }
-}
-
-/// Client KNX addresses — explicit only, no convention defaults.
-fn resolve_client_knx(_n: usize, raw: RawClientKnxConfig) -> ClientKnxAddresses {
-    ClientKnxAddresses {
-        volume: raw.volume,
-        volume_status: raw.volume_status,
-        volume_dim: raw.volume_dim,
-        mute: raw.mute,
-        mute_status: raw.mute_status,
-        mute_toggle: raw.mute_toggle,
-        latency: raw.latency,
-        latency_status: raw.latency_status,
-        zone: raw.zone,
-        zone_status: raw.zone_status,
-        connected_status: raw.connected_status,
-    }
 }

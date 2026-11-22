@@ -41,7 +41,7 @@ fn bus_names() -> impl Iterator<Item = String> {
 
 /// Shared state between the D-Bus interface and the event loop.
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ClientDbusState {
     pub volume: u16,
     pub muted: bool,
@@ -94,10 +94,10 @@ impl ClientDbusState {
         }
     }
 
-    /// Update from Type 14 metadata. The metadata carries the zone's volume and mute; the
-    /// MPRIS player is this one speaker, so `Volume` keeps following the client's own volume
-    /// (`VolumeChanged` events) and is not taken from here.
+    /// Update from Type 14 metadata.
     pub fn set_metadata(&mut self, meta: &snapdog_common::TrackMetadata) {
+        self.volume = meta.volume as u16;
+        self.muted = meta.muted;
         self.playing = meta.playback == "playing";
         self.title.clone_from(&meta.title);
         self.artist.clone_from(&meta.artist);
@@ -123,97 +123,6 @@ impl ClientDbusState {
 
 /// Shared state handle.
 pub type SharedDbusState = Arc<Mutex<ClientDbusState>>;
-
-/// Which properties an event changed, so their `PropertiesChanged` signals can be sent.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Changed {
-    pub volume: bool,
-    pub playback_status: bool,
-    pub metadata: bool,
-    pub shuffle: bool,
-    pub loop_status: bool,
-    pub can_seek: bool,
-    pub can_go_next: bool,
-    pub can_go_previous: bool,
-}
-
-impl Changed {
-    /// The properties that differ between two states. `Position` is not among them: MPRIS
-    /// forbids signalling it.
-    fn between(before: &ClientDbusState, after: &ClientDbusState) -> Self {
-        Self {
-            volume: before.mpris_volume().to_bits() != after.mpris_volume().to_bits(),
-            playback_status: before.playing != after.playing,
-            metadata: (
-                &before.title,
-                &before.artist,
-                &before.album,
-                before.duration_ms,
-                &before.cover_path,
-            ) != (
-                &after.title,
-                &after.artist,
-                &after.album,
-                after.duration_ms,
-                &after.cover_path,
-            ),
-            shuffle: before.shuffle != after.shuffle,
-            loop_status: before.repeat != after.repeat,
-            can_seek: before.seekable != after.seekable,
-            can_go_next: before.can_next != after.can_next,
-            can_go_previous: before.can_prev != after.can_prev,
-        }
-    }
-}
-
-/// Change `state` with `f` and report which properties it changed.
-pub async fn update(state: &SharedDbusState, f: impl FnOnce(&mut ClientDbusState)) -> Changed {
-    let mut s = state.lock().await;
-    let before = s.clone();
-    f(&mut s);
-    let changed = Changed::between(&before, &s);
-    drop(s);
-    changed
-}
-
-/// Send `PropertiesChanged` for every property in `changed`. A consumer such as
-/// `playerctl --follow` or a desktop widget only learns about changes from the server this way:
-/// zbus signals a property by itself only after a setter called over D-Bus.
-#[allow(
-    clippy::significant_drop_tightening,
-    reason = "the generated `*_changed` methods are on the interface, so it is held while they run"
-)]
-pub async fn announce(iface: &InterfaceRef<PlayerInterface>, changed: Changed) {
-    if changed == Changed::default() {
-        return;
-    }
-    let player = iface.get().await;
-    let emitter = iface.signal_emitter();
-    macro_rules! signal {
-        ($flag:expr, $method:ident, $name:literal) => {
-            if $flag && let Err(e) = player.$method(emitter).await {
-                tracing::debug!(property = $name, error = %e, "PropertiesChanged not sent");
-            }
-        };
-    }
-    signal!(changed.volume, volume_changed, "Volume");
-    signal!(
-        changed.playback_status,
-        playback_status_changed,
-        "PlaybackStatus"
-    );
-    signal!(changed.metadata, metadata_changed, "Metadata");
-    signal!(changed.shuffle, shuffle_changed, "Shuffle");
-    signal!(changed.loop_status, loop_status_changed, "LoopStatus");
-    signal!(changed.can_seek, can_seek_changed, "CanSeek");
-    signal!(changed.can_go_next, can_go_next_changed, "CanGoNext");
-    signal!(
-        changed.can_go_previous,
-        can_go_previous_changed,
-        "CanGoPrevious"
-    );
-}
 
 /// MPRIS2 Root interface.
 pub struct RootInterface;
@@ -413,8 +322,7 @@ impl PlayerInterface {
         map
     }
 
-    /// MPRIS forbids signalling `Position`: consumers extrapolate it from `Rate`.
-    #[zbus(property(emits_changed_signal = "false"))]
+    #[zbus(property)]
     async fn position(&self) -> i64 {
         self.state.lock().await.position_ms * 1000 // µs
     }
@@ -480,76 +388,22 @@ impl PlayerInterface {
 /// Feed a client event into the D-Bus state, the way the event loop in `main` does for
 /// every event it receives: a volume change from the server or a Type 14 metadata message.
 /// Anything else, and a metadata payload that does not parse, leaves the state alone.
-/// Returns the properties that changed, for [`announce`].
-pub async fn handle_event(state: &SharedDbusState, event: &ClientEvent) -> Changed {
+pub async fn handle_event(state: &SharedDbusState, event: &ClientEvent) {
     match event {
         ClientEvent::VolumeChanged { volume, muted } => {
-            update(state, |s| s.set_volume(*volume, *muted)).await
+            state.lock().await.set_volume(*volume, *muted);
         }
         #[cfg(feature = "custom-protocol")]
         ClientEvent::CustomMessage(msg)
             if msg.type_id == snapdog_common::MSG_TYPE_TRACK_METADATA =>
         {
-            match serde_json::from_slice::<snapdog_common::TrackMetadata>(&msg.payload) {
-                Ok(meta) => update(state, |s| s.set_metadata(&meta)).await,
-                Err(_) => Changed::default(),
+            if let Ok(meta) = serde_json::from_slice::<snapdog_common::TrackMetadata>(&msg.payload)
+            {
+                state.lock().await.set_metadata(&meta);
             }
         }
-        _ => Changed::default(),
+        _ => {}
     }
-}
-
-/// Where the cover art for MPRIS consumers is kept: systemd's `RuntimeDirectory`
-/// (`/run/snapdog-client` under the shipped unit, readable by other processes), else
-/// `$XDG_RUNTIME_DIR/snapdog-client`, else the temp directory.
-pub fn cover_dir() -> std::path::PathBuf {
-    if let Some(dir) = std::env::var_os("RUNTIME_DIRECTORY").filter(|d| !d.is_empty()) {
-        // systemd may list several directories separated by ':'; the first is ours.
-        let first = std::ffi::OsString::from(
-            dir.to_string_lossy()
-                .split(':')
-                .next()
-                .unwrap_or_default()
-                .to_owned(),
-        );
-        return first.into();
-    }
-    std::env::var_os("XDG_RUNTIME_DIR")
-        .filter(|d| !d.is_empty())
-        .map_or_else(std::env::temp_dir, |d| {
-            std::path::Path::new(&d).join("snapdog-client")
-        })
-}
-
-/// Store a cover as the one cover file of this client instance and return its path.
-///
-/// The file is replaced atomically (write to a temporary name, then rename), so a consumer
-/// never reads half an image and there is never more than one cover per instance. It is
-/// readable by everyone, so a session-bus consumer can open it.
-///
-/// # Errors
-///
-/// Returns an error if the directory or the file cannot be written.
-pub fn store_cover(
-    dir: &std::path::Path,
-    instance: u32,
-    bytes: &[u8],
-) -> std::io::Result<std::path::PathBuf> {
-    use std::io::Write;
-    std::fs::create_dir_all(dir)?;
-    let path = dir.join(format!("cover-{instance}"));
-    let tmp = dir.join(format!(".cover-{instance}.tmp"));
-    {
-        let mut file = std::fs::File::create(&tmp)?;
-        file.write_all(bytes)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(std::fs::Permissions::from_mode(0o644))?;
-        }
-    }
-    std::fs::rename(&tmp, &path)?;
-    Ok(path)
 }
 
 /// Start the MPRIS2 D-Bus interface. Returns the shared state for the event loop to update.
@@ -695,58 +549,14 @@ mod tests {
     #[test]
     fn set_metadata_copies_every_field_the_properties_report() {
         let mut state = ClientDbusState::default();
-        state.set_volume(40, false);
-        state.set_volume(40, true);
-        state.set_volume(55, true);
-        let volume = (state.volume, state.muted, state.pre_mute_volume);
         state.set_metadata(&sample_metadata("playing"));
-        // The metadata carries the zone's volume (42, muted). The MPRIS player is this one
-        // speaker, so its own volume, mute and the volume to restore stay untouched.
-        assert_eq!((state.volume, state.muted, state.pre_mute_volume), volume);
+        assert_eq!((state.volume, state.muted), (42, true));
         assert_eq!(state.title, "Title");
         assert_eq!(state.artist, "Artist");
         assert_eq!(state.album, "Album");
         assert_eq!((state.duration_ms, state.position_ms), (240_000, 61_000));
         assert!(state.seekable && state.can_next && state.can_prev && state.shuffle);
         assert_eq!(state.repeat, snapdog_common::RepeatMode::Playlist);
-    }
-
-    #[test]
-    fn changed_lists_the_properties_that_differ_and_never_position() {
-        let before = ClientDbusState::default();
-        let mut after = before.clone();
-        assert_eq!(Changed::between(&before, &after), Changed::default());
-        after.position_ms = 5_000;
-        assert_eq!(Changed::between(&before, &after), Changed::default());
-        after.set_metadata(&sample_metadata("playing"));
-        let c = Changed::between(&before, &after);
-        assert!(c.metadata && c.playback_status && c.shuffle && c.loop_status);
-        assert!(c.can_seek && c.can_go_next && c.can_go_previous);
-        assert!(!c.volume, "metadata does not carry the client volume");
-        let mut cover = after.clone();
-        cover.cover_path = Some("/run/snapdog-client/cover-1".into());
-        assert!(Changed::between(&after, &cover).metadata);
-    }
-
-    #[test]
-    fn a_new_cover_replaces_the_old_one_and_is_readable() {
-        let dir = std::env::temp_dir().join(format!("snapdog-cover-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let first = store_cover(&dir, 1, b"\xFF\xD8first").unwrap();
-        let second = store_cover(&dir, 1, b"\x89PNGsecond").unwrap();
-        assert_eq!(first, second, "one fixed file per instance");
-        assert_eq!(std::fs::read(&second).unwrap(), b"\x89PNGsecond");
-        let files: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
-        assert_eq!(files.len(), 1, "no old covers and no temporary file left");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&second).unwrap().permissions().mode();
-            assert_eq!(mode & 0o777, 0o644);
-        }
-        let other = store_cover(&dir, 2, b"x").unwrap();
-        assert_ne!(other, second, "instances do not share a file");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -883,7 +693,7 @@ mod p2p_tests {
     struct Fixture {
         caller: zbus::Connection,
         /// Keeps the serving end open.
-        server: zbus::Connection,
+        _server: zbus::Connection,
         state: SharedDbusState,
         commands: mpsc::Receiver<ClientCommand>,
     }
@@ -911,7 +721,7 @@ mod p2p_tests {
         .expect("peer-to-peer handshake");
         Fixture {
             caller,
-            server,
+            _server: server,
             state,
             commands,
         }
@@ -1106,9 +916,8 @@ mod p2p_tests {
         call(&f.caller, "PlayPause", &()).await;
         assert_eq!(next_control(&mut f.commands).await, PlaybackControl::Play);
 
-        // The rest of the message reaches the properties. Its zone volume (42 %, muted) does
-        // not: `Volume` stays this speaker's own volume (100 % by default).
-        assert!((get_f64(&f.caller, "Volume").await - 1.0).abs() < f64::EPSILON);
+        // The rest of the message reaches the properties (42 % volume, but muted).
+        assert!(get_f64(&f.caller, "Volume").await.abs() < f64::EPSILON);
         assert!(get_bool(&f.caller, "Shuffle").await);
         assert_eq!(get_string(&f.caller, "LoopStatus").await, "Playlist");
         assert!(get_bool(&f.caller, "CanSeek").await);
@@ -1243,94 +1052,6 @@ mod p2p_tests {
             handle_event(&f.state, &event).await;
             assert_eq!(format!("{:?}", *f.state.lock().await), before);
         }
-    }
-
-    /// Wait for the next `PropertiesChanged` on the caller's end and return the names of the
-    /// properties it carries (changed and invalidated).
-    async fn next_properties_changed(stream: &mut zbus::MessageStream) -> Vec<String> {
-        use futures_util::StreamExt;
-        tokio::time::timeout(DEADLINE, async {
-            loop {
-                let msg = stream.next().await.expect("stream open").expect("message");
-                let header = msg.header();
-                if header.member().map(zbus::names::MemberName::as_str) != Some("PropertiesChanged")
-                {
-                    continue;
-                }
-                let (iface, changed, invalidated): (
-                    String,
-                    std::collections::HashMap<String, zbus::OwnedVariant>,
-                    Vec<String>,
-                ) = msg.body().deserialize().expect("PropertiesChanged body");
-                assert_eq!(iface, PLAYER);
-                let mut names: Vec<String> = changed.into_keys().chain(invalidated).collect();
-                names.sort();
-                return names;
-            }
-        })
-        .await
-        .expect("no PropertiesChanged within the deadline")
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn server_events_are_announced_with_properties_changed() {
-        let f = fixture().await;
-        let iface: InterfaceRef<PlayerInterface> = f
-            .server
-            .object_server()
-            .interface(PATH)
-            .await
-            .expect("player interface");
-        let mut signals = zbus::MessageStream::from(&f.caller);
-
-        let changed = handle_event(
-            &f.state,
-            &ClientEvent::VolumeChanged {
-                volume: 30,
-                muted: false,
-            },
-        )
-        .await;
-        announce(&iface, changed).await;
-        assert_eq!(next_properties_changed(&mut signals).await, ["Volume"]);
-
-        let changed = handle_event(&f.state, &metadata_event("playing")).await;
-        assert!(
-            !changed.volume,
-            "the zone volume in the metadata is not the client's"
-        );
-        announce(&iface, changed).await;
-        let expected = [
-            "CanGoNext",
-            "CanGoPrevious",
-            "CanSeek",
-            "LoopStatus",
-            "Metadata",
-            "PlaybackStatus",
-            "Shuffle",
-        ];
-        let mut seen = Vec::new();
-        while seen.len() < expected.len() {
-            seen.extend(next_properties_changed(&mut signals).await);
-        }
-        seen.sort();
-        assert_eq!(seen, expected);
-
-        // Only the position moved: nothing is signalled. A volume event afterwards is the
-        // next signal the caller sees.
-        let changed = update(&f.state, |s| s.position_ms += 1_000).await;
-        assert_eq!(changed, Changed::default());
-        announce(&iface, changed).await;
-        let changed = handle_event(
-            &f.state,
-            &ClientEvent::VolumeChanged {
-                volume: 31,
-                muted: false,
-            },
-        )
-        .await;
-        announce(&iface, changed).await;
-        assert_eq!(next_properties_changed(&mut signals).await, ["Volume"]);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
