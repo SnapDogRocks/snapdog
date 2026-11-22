@@ -1,3 +1,5 @@
+import type { WsEventType } from "./ws-events.generated";
+
 // ── Enums ─────────────────────────────────────────────────────
 
 export type PlaybackState = "playing" | "paused" | "stopped";
@@ -84,6 +86,10 @@ export interface ClientInfo {
   muted: boolean;
   connected: boolean;
   is_snapdog: boolean;
+  /** Manual latency correction in ms, from `client_state_changed`; absent until one arrives. */
+  latency_ms?: number;
+  /** Whether the client EQ is on, from `client_eq_changed`; absent until one arrives. */
+  eq_enabled?: boolean;
 }
 
 // ── Media (Subsonic) ──────────────────────────────────────────
@@ -235,8 +241,10 @@ export interface WsClientStateChanged {
   connected: boolean;
   zone: number;
   is_snapdog: boolean;
-  latency_ms: number;
-  name: string;
+  /** Absent in events of servers before this field. */
+  latency_ms?: number;
+  /** Absent in events of servers before this field. */
+  name?: string;
 }
 
 export interface WsZonePresenceChanged {
@@ -294,11 +302,22 @@ export type WsNotification =
   | WsZoneVolumeChanged
   | WsZoneProgress
   | WsClientStateChanged
-  | WsZonePresenceChanged
-  | WsZoneEqChanged
   | WsClientEqChanged
   | WsClientSpeakerChanged
+  | WsZonePresenceChanged
+  | WsZoneEqChanged
   | WsPlaybackError;
+
+type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type AssertTrue<T extends true> = T;
+/**
+ * Fails the type check when the union above and the events in the server's AsyncAPI
+ * document (`ws-events.generated.ts`) differ: a new server event must be typed here and
+ * handled in `useAppSession`.
+ */
+export type WsNotificationCoversServerEvents = AssertTrue<
+  Exactly<WsNotification["type"], WsEventType>
+>;
 
 // ── Volume ────────────────────────────────────────────────────
 
