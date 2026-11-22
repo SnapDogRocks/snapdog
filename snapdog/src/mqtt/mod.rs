@@ -333,7 +333,7 @@ mod tests {
             .await
             .unwrap();
         assert!(bridge.wait_connected(Duration::from_secs(5)).await);
-        // One CONNECT, 16 subscription filters, `online` and the state of 2 zones
+        // One CONNECT, one subscription filter per command route, `online` and the state of 2 zones
         // and 1 client (plus the clearing of legacy topics).
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while tokio::time::Instant::now() < deadline

@@ -221,7 +221,10 @@ pub enum ActiveSource {
         track_id: String,
     },
     /// Playing an arbitrary URL.
-    Url,
+    Url {
+        /// The URL, kept so that Play after Pause can start it again.
+        url: String,
+    },
     /// Receiving audio from an `AirPlay` client.
     AirPlay,
     /// Receiving audio from a Spotify Connect client.

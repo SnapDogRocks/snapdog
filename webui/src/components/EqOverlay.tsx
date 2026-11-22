@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useEqPresets } from "@/hooks/useEqPresets";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
@@ -25,10 +26,9 @@ import {
   FrequencyResponseCurve
 } from "./EqCurve";
 
-const PRESETS = ['flat', 'bass_boost', 'treble_boost', 'vocal', 'rock', 'jazz', 'classical', 'electronic', 'loudness', 'late_night'] as const;
-
 const MAX_SPEAKER_RESULTS = 50;
 
+/** Display names of the server's presets. A preset without one shows its raw name. */
 const PRESET_LABELS: Record<string, string> = {
   flat: 'Flat',
   bass_boost: 'Bass Boost',
@@ -67,6 +67,7 @@ function requireZoneId(zoneId: number | undefined): number {
 export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: EqOverlayProps) {
   const t = useTranslations("eq");
   const tZone = useTranslations("zone");
+  const presets = useEqPresets();
   const [tab, setTab] = useState<Tab>("eq");
   const [config, setConfig] = useState<EqConfig>({ enabled: initialEnabled ?? false, bands: [], preset: "flat" });
   const configRef = useRef(config);
@@ -321,7 +322,7 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
                   }}
                 />
                 <div className="flex gap-1.5 overflow-x-auto scrollbar-none py-1 -mx-1 px-1" role="radiogroup" aria-label={t("presets")}>
-                  {PRESETS.map((p) => (
+                  {presets.map((p) => (
                     <button
                       key={p}
                       onClick={() => { applyPreset(p); }}

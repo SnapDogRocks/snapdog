@@ -733,3 +733,35 @@ fn collect_descriptions(value: &serde_json::Value, out: &mut Vec<String>) {
         _ => {}
     }
 }
+
+/// #539: the `EqBand` and `EqConfig` bounds in the schema are literals in attributes. They
+/// must state the ranges the server enforces, since the web interface reads them from there.
+#[test]
+#[allow(clippy::float_cmp)] // the literals and constants are the same exact values
+fn eq_schema_bounds_match_the_enforced_ranges() {
+    let doc: serde_json::Value =
+        serde_json::to_value(ApiDoc::openapi()).expect("openapi serializes");
+    let schemas = &doc["components"]["schemas"];
+    let band = &schemas["EqBand"]["properties"];
+    let bound = |field: &str, key: &str| band[field][key].as_f64().expect("bound is a number");
+    for (field, range) in [
+        ("freq", snapdog_common::EQ_FREQ_RANGE_HZ),
+        ("gain", snapdog_common::EQ_GAIN_RANGE_DB),
+        ("q", snapdog_common::EQ_Q_RANGE),
+    ] {
+        assert_eq!(
+            bound(field, "minimum"),
+            f64::from(*range.start()),
+            "{field} minimum"
+        );
+        assert_eq!(
+            bound(field, "maximum"),
+            f64::from(*range.end()),
+            "{field} maximum"
+        );
+    }
+    assert_eq!(
+        schemas["EqConfig"]["properties"]["bands"]["maxItems"].as_u64(),
+        Some(snapdog_common::MAX_EQ_BANDS as u64)
+    );
+}

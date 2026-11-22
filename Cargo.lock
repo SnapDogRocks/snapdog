@@ -5398,7 +5398,6 @@ dependencies = [
  "biquad",
  "clap",
  "cpal",
- "futures-util",
  "libc",
  "mdns-sd 0.22.0",
  "midir",
