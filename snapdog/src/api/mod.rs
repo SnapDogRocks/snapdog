@@ -10,6 +10,7 @@ pub mod console;
 pub mod error;
 mod health;
 pub mod openapi;
+mod origin;
 mod routes;
 pub use routes::media::run_playlist_refresh;
 mod webui;
@@ -359,6 +360,10 @@ pub fn build_router(state: &SharedState) -> Router {
             axum::routing::get(openapi::openapi_json),
         );
     }
+
+    // A page on another origin must not drive the API or read the WebSocket, with or without
+    // an API key (origin.rs).
+    protected = protected.layer(axum::middleware::from_fn(origin::reject_cross_origin));
 
     if !api_keys.is_empty() {
         tracing::info!(keys = api_keys.len(), "API authentication enabled");

@@ -3,6 +3,15 @@
 Changes that alter what an existing installation does after an update. Newest first.
 The changelog lists every change, this page lists the ones you have to act on or check.
 
+## API: requests from another origin are refused
+
+The API and the WebSocket answer 403 `cross_origin` to a request whose `Origin` header names
+another host or port than the one the request was sent to (`Host`, or `X-Forwarded-Host` behind a
+reverse proxy). Browsers send `Origin` with cross-site requests and every WebSocket handshake, so a
+web page on another site can no longer control a server or read its events, also when no API key
+is set. The web interface served by SnapDog, the apps, Home Assistant and scripts are not affected.
+A reverse proxy that rewrites `Host` has to pass the original host in `X-Forwarded-Host`.
+
 ## KNX: System Fault reports failures, Playlist Status no longer wraps
 
 - **System Fault** is now set when the Snapcast server stops, when the connection to an external
