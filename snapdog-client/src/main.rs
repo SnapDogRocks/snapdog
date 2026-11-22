@@ -182,7 +182,7 @@ fn main() -> anyhow::Result<()> {
         // Event handler
         // D-Bus MPRIS2 interface
         #[cfg(feature = "dbus")]
-        let (_dbus_conn, dbus_state, _dbus_iface) = match dbus::start(cmd.clone()).await {
+        let (_dbus_conn, dbus_state, dbus_iface) = match dbus::start(cmd.clone()).await {
             Ok(v) => (Some(v.0), Some(v.1), Some(v.2)),
             Err(e) => {
                 tracing::warn!(error = %e, "D-Bus not available — MPRIS2 disabled");
@@ -195,14 +195,20 @@ fn main() -> anyhow::Result<()> {
         let event_fade = fade.clone();
         let event_mixer = mixer.clone();
         let event_sample_rate = stream_sample_rate.clone();
+        #[cfg(feature = "dbus")]
+        let cover_instance = settings.instance;
         tokio::spawn(async move {
             let mut last_eq_config: Option<eq::EqConfig> = None;
             let mut last_speaker_config: Option<eq::EqConfig> = None;
             while let Some(event) = events.recv().await {
-                // The MPRIS2 state follows the volume and metadata events.
+                // The MPRIS2 state follows the volume and metadata events, and consumers are
+                // told about every property that changed.
                 #[cfg(feature = "dbus")]
                 if let Some(ref state) = dbus_state {
-                    dbus::handle_event(state, &event).await;
+                    let changed = dbus::handle_event(state, &event).await;
+                    if let Some(ref iface) = dbus_iface {
+                        dbus::announce(iface, changed).await;
+                    }
                 }
                 match event {
                     ClientEvent::Connected { host, port } => {
@@ -317,30 +323,23 @@ fn main() -> anyhow::Result<()> {
                             tracing::debug!(title = %meta.title, artist = %meta.artist, "Metadata received");
                         }
                     }
-                    #[cfg(feature = "custom-protocol")]
+                    // The cover only serves MPRIS consumers: without D-Bus it is not written.
+                    #[cfg(all(feature = "custom-protocol", feature = "dbus"))]
                     ClientEvent::CustomMessage(msg)
                         if msg.type_id == snapdog_common::MSG_TYPE_COVER_ART =>
                     {
-                        let ext = if msg.payload.starts_with(&[0xFF, 0xD8]) {
-                            "jpg"
-                        } else {
-                            "png"
-                        };
-                        let file_path = std::env::temp_dir().join(format!(
-                            "snapdog-cover-{:x}.{ext}",
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis()
-                        ));
-                        if let Err(e) = std::fs::write(&file_path, &msg.payload) {
-                            tracing::warn!(error = %e, "Failed to write cover art");
-                        } else {
-                            tracing::debug!(path = %file_path.display(), bytes = msg.payload.len(), "Cover art saved");
-                            #[cfg(feature = "dbus")]
-                            if let Some(ref state) = dbus_state {
-                                state.lock().await.cover_path =
-                                    Some(file_path.to_string_lossy().into_owned());
+                        if let Some(ref state) = dbus_state {
+                            match dbus::store_cover(&dbus::cover_dir(), cover_instance, &msg.payload) {
+                                Ok(path) => {
+                                    tracing::debug!(path = %path.display(), bytes = msg.payload.len(), "Cover art saved");
+                                    let path = path.to_string_lossy().into_owned();
+                                    let changed =
+                                        dbus::update(state, |s| s.cover_path = Some(path)).await;
+                                    if let Some(ref iface) = dbus_iface {
+                                        dbus::announce(iface, changed).await;
+                                    }
+                                }
+                                Err(e) => tracing::warn!(error = %e, "Failed to write cover art"),
                             }
                         }
                     }
