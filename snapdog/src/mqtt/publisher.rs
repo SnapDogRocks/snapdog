@@ -10,13 +10,14 @@
 //! dropped, which is harmless for retained state: the snapshot taken after the
 //! next (re)connect replaces it.
 
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
 use rumqttc::{AsyncClient, QoS};
 
-use super::payloads::{client_state_payload, zone_state_json};
+use super::payloads::{client_state_payload, zone_position_payload, zone_state_json};
 use super::topics::{COMMAND_ROUTES, Topics};
 use super::transport::MAX_OUTGOING_PACKET_BYTES;
 use crate::config::LegacyCleanup;
@@ -48,6 +49,9 @@ pub struct Publisher {
     /// Set while the outbox is known to be full, so that the warning is logged once
     /// per episode instead of once per dropped message.
     outbox_full: Arc<AtomicBool>,
+    /// The last payload queued per topic for state and position, so that a
+    /// notification that changes nothing on a topic publishes nothing there.
+    last: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
 impl Publisher {
@@ -57,6 +61,7 @@ impl Publisher {
             topics,
             base_url: base_url.trim_end_matches('/').to_string(),
             outbox_full: Arc::new(AtomicBool::new(false)),
+            last: Arc::default(),
         }
     }
 
@@ -118,19 +123,77 @@ impl Publisher {
         self.retained(&self.topics.availability(), "offline")
     }
 
-    /// Retained zone state.
+    /// Queue `payload` on `topic` with `publish`, unless it equals the last payload
+    /// queued there. A failed publish is not remembered, so the next one retries.
+    fn if_changed(
+        &self,
+        topic: &str,
+        payload: Vec<u8>,
+        publish: impl FnOnce(&str, Vec<u8>) -> Result<()>,
+    ) -> Result<()> {
+        // Held across the publish, so that two callers cannot both see the old payload.
+        let mut last = self
+            .last
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if last.get(topic) == Some(&payload) {
+            return Ok(());
+        }
+        publish(topic, payload.clone())?;
+        last.insert(topic.to_owned(), payload);
+        drop(last);
+        Ok(())
+    }
+
+    /// Forget the last payloads, so the next publish of each topic goes out.
+    fn forget_last_payloads(&self) {
+        self.last
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+
+    /// Queue a non-retained `QoS` 0 message for the full `topic`: for values that
+    /// are stale a second later, where a lost message is replaced by the next.
+    fn transient(&self, topic: &str, payload: Vec<u8>) -> Result<()> {
+        if !fits_in_a_packet(topic, payload.len()) {
+            return Err(anyhow!("MQTT message for {topic} is too large"));
+        }
+        self.client
+            .try_publish(topic, QoS::AtMostOnce, false, payload)
+            .map_err(|e| anyhow!("MQTT request queue rejected {topic}: {e}"))
+    }
+
+    /// Retained zone state, published only when it differs from the last one. The
+    /// playback position is not part of it (see [`Self::zone_position`]), so steady
+    /// playback publishes nothing here.
     pub fn zone_state(&self, index: usize, zone: &state::ZoneState) -> Result<()> {
-        self.retained(
+        self.if_changed(
             &self.topics.zone_state(index),
-            zone_state_json(&self.base_url, zone),
+            zone_state_json(&self.base_url, zone).into_bytes(),
+            |topic, payload| self.retained(topic, payload),
         )
     }
 
-    /// Retained client state.
+    /// Playback position in whole seconds, not retained, published when the second
+    /// changes. Nothing is published for a zone without a track.
+    pub fn zone_position(&self, index: usize, zone: &state::ZoneState) -> Result<()> {
+        let Some(payload) = zone_position_payload(zone) else {
+            return Ok(());
+        };
+        self.if_changed(
+            &self.topics.zone_position(index),
+            payload.into_bytes(),
+            |topic, payload| self.transient(topic, payload),
+        )
+    }
+
+    /// Retained client state, published only when it differs from the last one.
     pub fn client_state(&self, index: usize, client: &state::ClientState) -> Result<()> {
-        self.retained(
+        self.if_changed(
             &self.topics.client_state(index),
-            client_state_payload(client).to_string(),
+            client_state_payload(client).to_string().into_bytes(),
+            |topic, payload| self.retained(topic, payload),
         )
     }
 
@@ -138,6 +201,8 @@ impl Publisher {
     /// queued. Synchronous on purpose: the caller holds the store lock, so no
     /// newer notification can overtake the snapshot.
     pub fn snapshot(&self, store: &state::Store) -> usize {
+        // After a (re)connect or a lag the broker may hold anything: send it all.
+        self.forget_last_payloads();
         let mut queued = 0;
         for (&index, zone) in &store.zones {
             queued += usize::from(self.zone_state(index, zone).is_ok());
@@ -217,6 +282,90 @@ mod tests {
         let queued = 16 + 10 + 1 + 1 + 10 + 30;
         assert!(queued > old_capacity);
         assert!(request_capacity(10, 30) > queued);
+    }
+
+    fn playing_zone() -> state::ZoneState {
+        let store = crate::mqtt::test_support::test_state_with_client();
+        let mut zone = store.try_read().unwrap().zones[&1].clone();
+        zone.playback = state::PlaybackState::Playing;
+        zone.track = Some(
+            serde_json::from_value(serde_json::json!({
+                "title": "T", "artist": "A", "album": "Al",
+                "album_artist": null, "genre": null, "year": null,
+                "track_number": null, "disc_number": null,
+                "duration_ms": 200_000, "position_ms": 5_000, "seekable": true,
+                "source": "radio", "bitrate_kbps": null,
+                "content_type": null, "sample_rate": null
+            }))
+            .unwrap(),
+        );
+        zone
+    }
+
+    #[tokio::test]
+    async fn steady_playback_publishes_no_state_only_the_position() {
+        // Room for one request: a publish that is attempted while the channel holds
+        // one fails, so an `Ok` after the first publish means "skipped".
+        let (client, _eventloop) =
+            AsyncClient::new(rumqttc::MqttOptions::new("t", "localhost", 1883), 1);
+        let publisher = Publisher::new(client, Topics::new("snapdog"), "http://h");
+        let mut zone = playing_zone();
+        assert!(
+            publisher.zone_state(1, &zone).is_ok(),
+            "first state is sent"
+        );
+
+        // Position ticks change nothing in the state.
+        for second in 6..10 {
+            zone.track.as_mut().unwrap().position_ms = second * 1000;
+            assert!(
+                publisher.zone_state(1, &zone).is_ok(),
+                "tick {second} is skipped"
+            );
+        }
+
+        // A real change is published (and finds the channel full here).
+        zone.volume = 70;
+        assert!(
+            publisher.zone_state(1, &zone).is_err(),
+            "the volume change is sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_position_goes_out_once_per_second() {
+        let (client, _eventloop) =
+            AsyncClient::new(rumqttc::MqttOptions::new("t", "localhost", 1883), 1);
+        let publisher = Publisher::new(client, Topics::new("snapdog"), "http://h");
+        let mut zone = playing_zone();
+        assert!(publisher.zone_position(1, &zone).is_ok());
+        zone.track.as_mut().unwrap().position_ms = 5_900;
+        assert!(
+            publisher.zone_position(1, &zone).is_ok(),
+            "same second, skipped"
+        );
+        zone.track.as_mut().unwrap().position_ms = 6_000;
+        assert!(
+            publisher.zone_position(1, &zone).is_err(),
+            "next second is sent"
+        );
+        zone.track = None;
+        assert!(
+            publisher.zone_position(1, &zone).is_ok(),
+            "no track, nothing sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_snapshot_sends_the_state_again() {
+        let (client, _eventloop) =
+            AsyncClient::new(rumqttc::MqttOptions::new("t", "localhost", 1883), 8);
+        let publisher = Publisher::new(client, Topics::new("snapdog"), "http://h");
+        let store = crate::mqtt::test_support::test_state_with_client();
+        let store = store.try_read().unwrap();
+        // Two zones and one client, every time: the broker may have lost them.
+        assert_eq!(publisher.snapshot(&store), 3);
+        assert_eq!(publisher.snapshot(&store), 3);
     }
 
     #[tokio::test]

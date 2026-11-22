@@ -431,6 +431,61 @@ async fn a_mono_source_reaches_the_backend_as_stereo_frames() {
     assert_eq!(call.len, 960, "480 mono frames become 480 stereo frames");
 }
 
+/// #494: seek steps and presence starts derive follow-up commands. With the command channel
+/// full and more senders waiting, those follow-ups must not be sent back into the same
+/// channel (the zone would wait on itself forever); the zone keeps processing everything.
+#[tokio::test]
+async fn follow_up_commands_do_not_block_a_full_command_channel() {
+    let h = spawn_zone_harness(test_config()).await;
+    let zone = 1usize;
+    // An idle zone with presence enabled: every presence trigger derives a Play, every seek
+    // step a relative seek.
+    h.store
+        .write()
+        .await
+        .zones
+        .get_mut(&zone)
+        .unwrap()
+        .presence_enabled = true;
+
+    // Many concurrent senders keep the channel (capacity 32) full while every other
+    // command derives a follow-up.
+    let mut senders = Vec::new();
+    for i in 0..64 {
+        let tx = h.senders[&zone].clone();
+        senders.push(tokio::spawn(async move {
+            for j in 0..20 {
+                let cmd = match (i + j) % 3 {
+                    0 => ZoneCommand::SeekStep(true),
+                    1 => ZoneCommand::SetPresence(true),
+                    _ => ZoneCommand::SetShuffle(j % 2 == 0),
+                };
+                tx.send(cmd).await.unwrap();
+            }
+        }));
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        for s in senders {
+            s.await.unwrap();
+        }
+    })
+    .await
+    .expect("all commands are accepted: the zone task never waits on its own channel");
+
+    // The zone is still responsive afterwards.
+    h.senders[&zone]
+        .send(ZoneCommand::SetRepeat(RepeatMode::Track))
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while h.store.read().await.zones[&zone].repeat != RepeatMode::Track {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the zone still handles commands");
+}
+
 /// #509: `max_volume` is a hard limit for every volume command the zone takes.
 #[tokio::test]
 async fn zone_volume_never_exceeds_max_volume() {
