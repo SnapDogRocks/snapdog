@@ -16,7 +16,9 @@
     "lint": "eslint --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
-    "i18n:check": "node scripts/check-i18n.mjs"
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "ws:generate": "node scripts/gen-ws-events.mjs",
+    "ws:check": "node scripts/gen-ws-events.mjs --check"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

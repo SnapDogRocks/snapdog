@@ -482,8 +482,18 @@ mod tests {
             .count()
     }
 
-    fn volume_changed() -> Arc<str> {
-        serde_json::json!({"type": "zone_volume_changed", "zone": 1, "volume": 20, "muted": false})
+    /// Change the volume of zone 1 in the store and announce it. The state is published
+    /// only when it differs from the last one, so the store has to change too.
+    async fn volume_changed(ends: &crate::mqtt::test_support::RuntimeEnds) -> Arc<str> {
+        let volume = {
+            let mut store = ends.store.write().await;
+            let zone = store.zones.get_mut(&1).unwrap();
+            zone.volume = (zone.volume + 7) % 100;
+            let volume = zone.volume;
+            drop(store);
+            volume
+        };
+        serde_json::json!({"type": "zone_volume_changed", "zone": 1, "volume": volume, "muted": false})
             .to_string()
             .into()
     }
@@ -511,7 +521,7 @@ mod tests {
             1
         );
         // State still flows.
-        ends.notify_tx.send(volume_changed()).unwrap();
+        ends.notify_tx.send(volume_changed(&ends).await).unwrap();
         wait_for(&broker, |_| zone_state_publishes(&broker) > before).await;
         assert!(
             zone_state_publishes(&broker) > before,
@@ -560,7 +570,7 @@ mod tests {
         );
         // And it keeps working: a notification becomes a state message.
         let after = zone_state_publishes(&broker);
-        ends.notify_tx.send(volume_changed()).unwrap();
+        ends.notify_tx.send(volume_changed(&ends).await).unwrap();
         wait_for(&broker, |_| zone_state_publishes(&broker) > after).await;
         assert!(
             zone_state_publishes(&broker) > after,
