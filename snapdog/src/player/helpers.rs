@@ -258,10 +258,85 @@ pub async fn start_radio_decode(
     let icy_guard = AbortOnDrop(Some(icy_task));
     *ds.current_decode = Some(tokio::spawn(async move {
         let _icy_guard = icy_guard;
-        if let Err(e) = audio::decode_http_stream(url, tx, ac, Some(icy_tx)).await {
-            tracing::error!(error = %e, "Radio decode failed");
-        }
+        run_radio_with_reconnect(&url, &tx, &ac, &icy_tx, &RadioReconnect::DEFAULT).await;
     }));
+}
+
+/// How a radio stream is reconnected after an error or an end of stream.
+#[derive(Debug, Clone, Copy)]
+pub struct RadioReconnect {
+    /// Reconnects in a row before the zone is stopped with an error.
+    pub max_attempts: u32,
+    /// Delay before the first reconnect; doubles with every further attempt.
+    pub base_delay: std::time::Duration,
+    /// Upper bound for the delay.
+    pub max_delay: std::time::Duration,
+    /// A connection that played this long counts as healthy and resets the attempt count.
+    pub healthy_after: std::time::Duration,
+}
+
+impl RadioReconnect {
+    pub const DEFAULT: Self = Self {
+        max_attempts: 5,
+        base_delay: std::time::Duration::from_secs(1),
+        max_delay: std::time::Duration::from_secs(30),
+        healthy_after: std::time::Duration::from_secs(60),
+    };
+
+    /// Delay before reconnect number `attempt` (1-based), or `None` once attempts are used up.
+    #[must_use]
+    pub fn delay(&self, attempt: u32) -> Option<std::time::Duration> {
+        (attempt <= self.max_attempts).then(|| {
+            self.base_delay
+                .saturating_mul(1 << attempt.saturating_sub(1).min(16))
+                .min(self.max_delay)
+        })
+    }
+}
+
+/// Play a radio stream and reconnect with backoff when it fails or ends: a station that drops
+/// the connection (a clean end of stream included) comes back on its own, and one that keeps
+/// failing stops the zone with an error after `policy.max_attempts` tries instead of looping.
+pub async fn run_radio_with_reconnect(
+    url: &str,
+    tx: &audio::PcmSender,
+    audio_config: &crate::config::AudioConfig,
+    icy_tx: &mpsc::Sender<audio::icy::IcyMetadata>,
+    policy: &RadioReconnect,
+) {
+    let mut attempt = 0u32;
+    loop {
+        let started = std::time::Instant::now();
+        let result = audio::decode_http_stream_unreported(
+            url.to_owned(),
+            tx.clone(),
+            audio_config.clone(),
+            Some(icy_tx.clone()),
+        )
+        .await;
+        if tx.is_closed() {
+            return; // The zone moved on.
+        }
+        if started.elapsed() >= policy.healthy_after {
+            attempt = 0;
+        }
+        attempt += 1;
+        let reason = match &result {
+            Ok(()) => "stream ended".to_owned(),
+            Err(e) => format!("{e:#}"),
+        };
+        let Some(delay) = policy.delay(attempt) else {
+            tracing::error!(%url, reason, "Radio stream failed, giving up");
+            let (message, details) = match result {
+                Err(e) => (e.to_string(), e.source().map(ToString::to_string)),
+                Ok(()) => ("Radio stream keeps ending".to_owned(), None),
+            };
+            let _ = tx.send(audio::PcmMessage::Error { message, details }).await;
+            return;
+        };
+        tracing::warn!(%url, reason, attempt, ?delay, "Radio stream interrupted, reconnecting");
+        tokio::time::sleep(delay).await;
+    }
 }
 
 /// Aborts the task it holds when dropped.
@@ -418,12 +493,9 @@ pub async fn handle_track_complete(ds: &mut DecodeState<'_>, ctx: &PlaybackCtx<'
                 handle_next(ds, ctx).await;
             }
         }
-        ActiveSource::Radio { index } => {
-            tracing::warn!(zone = ctx.zone_index, "Radio stream ended, restarting");
-            if let Some(radio) = ctx.config.radios.get(index) {
-                start_radio_decode(radio, ds, ctx).await;
-            }
-        }
+        // The radio decode task reconnects by itself and reports an error once it gives up, so
+        // its channel closing here means the task ended abnormally: stop instead of restarting
+        // it without any bound (falls through to the default arm).
         ActiveSource::AirPlay => {
             *ds.source = ActiveSource::Idle;
             update_and_notify(ctx.store, ctx.zone_index, ctx.notify, |z| {
@@ -645,7 +717,7 @@ async fn prefetch_one(
             .is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.host().is_some()),
         "Only http and https URLs can be prefetched"
     );
-    let client = reqwest::Client::new();
+    let client = audio::streaming_client()?;
     let response = client.get(url).send().await?.error_for_status()?;
 
     let content_type = response
@@ -674,6 +746,101 @@ async fn prefetch_one(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- radio reconnect ---
+
+    const FAST: RadioReconnect = RadioReconnect {
+        max_attempts: 2,
+        base_delay: std::time::Duration::from_millis(1),
+        max_delay: std::time::Duration::from_millis(5),
+        healthy_after: std::time::Duration::from_secs(3600),
+    };
+
+    #[test]
+    fn radio_reconnect_backs_off_and_gives_up() {
+        let p = RadioReconnect::DEFAULT;
+        let secs = |a| p.delay(a).map(|d| d.as_secs());
+        assert_eq!(
+            (1..=6).map(secs).collect::<Vec<_>>(),
+            [Some(1), Some(2), Some(4), Some(8), Some(16), None]
+        );
+        let capped = RadioReconnect {
+            max_attempts: 40,
+            ..p
+        };
+        assert_eq!(capped.delay(40), Some(capped.max_delay));
+    }
+
+    #[tokio::test]
+    async fn a_failing_station_is_retried_then_stops_the_zone_with_an_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let (tx, mut rx) = audio::pcm_channel(16);
+        let (icy_tx, _icy_rx) = mpsc::channel(4);
+        let url = format!("{}/stream", server.uri());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            run_radio_with_reconnect(
+                &url,
+                &tx,
+                &crate::config::AudioConfig::default(),
+                &icy_tx,
+                &FAST,
+            ),
+        )
+        .await
+        .expect("gives up after the bounded attempts");
+
+        let stream_requests = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path() == "/stream")
+            .count();
+        assert!(
+            stream_requests >= 3,
+            "first try and two reconnects, got {stream_requests}"
+        );
+        let mut error = None;
+        while let Ok(msg) = rx.try_recv() {
+            if let audio::PcmMessage::Error { message, .. } = msg {
+                error = Some(message);
+            }
+        }
+        assert!(error.is_some(), "the zone learns that the station is gone");
+    }
+
+    #[tokio::test]
+    async fn the_reconnect_loop_ends_when_the_zone_moves_on() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let (tx, rx) = audio::pcm_channel(16);
+        drop(rx);
+        let (icy_tx, _icy_rx) = mpsc::channel(4);
+        let patient = RadioReconnect {
+            max_attempts: 1000,
+            ..FAST
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            run_radio_with_reconnect(
+                &format!("{}/stream", server.uri()),
+                &tx,
+                &crate::config::AudioConfig::default(),
+                &icy_tx,
+                &patient,
+            ),
+        )
+        .await
+        .expect("a closed channel ends the loop");
+    }
 
     // --- queue advance against a mock Subsonic server ---
 

@@ -13,10 +13,14 @@ use snapdog_common::RepeatMode;
 /// Largest payload any command accepts, in bytes. The longest legitimate one is a
 /// decimal number or a word like `previous`.
 pub const MAX_PAYLOAD_BYTES: usize = 256;
-/// Seeking beyond a week is a typo, not a position.
-const MAX_SEEK_SECS: f64 = 7.0 * 24.0 * 3600.0;
-/// Snapcast latency offsets beyond ten seconds are a typo, not a setting.
-const MAX_LATENCY_MS: i32 = 10_000;
+/// Seeking beyond a week is a typo, not a position (shared with REST).
+#[allow(clippy::cast_precision_loss)] // a week in milliseconds is exact in f64
+const MAX_SEEK_SECS: f64 = snapdog_common::MAX_SEEK_MS as f64 / 1000.0;
+/// Largest playlist index MQTT accepts, also the bound of the Home Assistant number entity.
+/// The zone rejects an index beyond its current playlists.
+pub const MAX_PLAYLIST_INDEX: usize = 999;
+/// Snapcast latency offsets beyond ten seconds are a typo, not a setting (shared with REST).
+const MAX_LATENCY_MS: i32 = snapdog_common::MAX_LATENCY_MS;
 
 /// A payload that could not be understood. The text names the expectation, never
 /// the payload.
@@ -160,6 +164,19 @@ pub fn parse_count(payload: &str) -> Parsed<usize> {
         .map_err(|_| PayloadError("integer is out of range"))
 }
 
+/// A playlist index, `0..=MAX_PLAYLIST_INDEX`.
+///
+/// # Errors
+///
+/// Not a non-negative integer, or above the bound.
+pub fn parse_playlist_index(payload: &str) -> Parsed<usize> {
+    let n = parse_count(payload)?;
+    if n > MAX_PLAYLIST_INDEX {
+        return Err(PayloadError("playlist index is out of range (0..999)"));
+    }
+    Ok(n)
+}
+
 /// A `playlist_id` (`snapdog:radio`, `subsonic:<id>`) as plain text.
 ///
 /// # Errors
@@ -203,6 +220,29 @@ pub fn parse_latency_ms(payload: &str) -> Parsed<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The ranges in docs/mqtt.md are the constants the parser enforces.
+    #[test]
+    fn the_documented_ranges_are_the_enforced_ones() {
+        let doc = include_str!("../../../docs/mqtt.md");
+        let latency = format!("-{0}..{0}", snapdog_common::MAX_LATENCY_MS);
+        assert!(
+            doc.contains(&latency),
+            "docs/mqtt.md names the latency range {latency}"
+        );
+        assert_eq!(
+            snapdog_common::MAX_SEEK_MS,
+            7 * 24 * 3600 * 1000,
+            "the docs say one week"
+        );
+        let playlist = format!("0..{MAX_PLAYLIST_INDEX}");
+        assert!(
+            doc.contains(&playlist),
+            "docs/mqtt.md names the playlist range {playlist}"
+        );
+        assert!(parse_playlist_index("999").is_ok());
+        assert!(parse_playlist_index("1000").is_err());
+    }
 
     #[test]
     fn bool_accepts_the_documented_spellings_in_any_case() {

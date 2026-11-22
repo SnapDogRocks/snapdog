@@ -124,8 +124,14 @@ async fn apply_speaker(
     } else {
         body.custom.unwrap_or_default()
     };
-    if config.bands.len() > snapdog_common::MAX_EQ_BANDS {
-        return Err(ApiError::BadRequest("Maximum 10 EQ bands".into()));
+    // Profiles from the speaker database are taken as they come, a custom correction is checked.
+    if body.speaker.is_none() {
+        config.validate().map_err(ApiError::BadRequest)?;
+    } else if config.bands.len() > snapdog_common::MAX_EQ_BANDS {
+        return Err(ApiError::BadRequest(format!(
+            "at most {} EQ bands",
+            snapdog_common::MAX_EQ_BANDS
+        )));
     }
 
     state
