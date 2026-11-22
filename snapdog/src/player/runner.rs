@@ -56,17 +56,26 @@ pub async fn spawn_zone_players(
     let mut senders = HashMap::new();
     let ctx = Arc::new(ctx);
 
+    // One track cache for all zones (if Subsonic is configured): one index over the shared
+    // directory, one size limit, and one download per track at a time (#495).
+    let track_cache = ctx.config.subsonic.as_ref().and_then(|s| {
+        crate::audio::cache::TrackCache::new(&s.cache)
+            .map_err(|e| tracing::warn!(error = %e, "Failed to initialize track cache"))
+            .ok()
+    });
+
     for zone in &ctx.config.zones {
         let (cmd_tx, cmd_rx) = mpsc::channel(ZONE_CMD_CHANNEL_SIZE); // zone command backlog
-        senders.insert(zone.index, cmd_tx.clone());
+        senders.insert(zone.index, cmd_tx);
 
         let ctx = ctx.clone();
+        let track_cache = track_cache.clone();
         let zone_index = zone.index;
 
         tokio::spawn(async move {
             let mut cmd_rx = cmd_rx;
             supervise(zone_index, async move || {
-                run(zone_index, &mut cmd_rx, ctx.clone()).await
+                run(zone_index, &mut cmd_rx, ctx.clone(), track_cache.clone()).await
             })
             .await;
         });
@@ -268,6 +277,7 @@ async fn run(
     zone_index: usize,
     commands: &mut mpsc::Receiver<ZoneCommand>,
     ctx: Arc<ZonePlayerContext>,
+    track_cache: Option<crate::audio::cache::TrackCache>,
 ) -> Result<()> {
     const TIMER_INACTIVE: std::time::Duration = std::time::Duration::from_hours(24);
 
@@ -291,13 +301,6 @@ async fn run(
 
     // Subsonic client (if configured)
     let subsonic = config.subsonic.as_ref().map(SubsonicClient::new);
-
-    // Track cache (if subsonic + cache enabled)
-    let track_cache = config.subsonic.as_ref().and_then(|s| {
-        crate::audio::cache::TrackCache::new(&s.cache)
-            .map_err(|e| tracing::warn!(error = %e, "Failed to initialize track cache"))
-            .ok()
-    });
 
     // AirPlay: F32 audio channel + event channel + receiver instance
     let (airplay_audio_tx, mut airplay_audio_rx) =
