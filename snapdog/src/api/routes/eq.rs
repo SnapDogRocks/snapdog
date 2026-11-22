@@ -132,15 +132,13 @@ async fn set_eq(
     Json(config): Json<EqConfig>,
 ) -> impl IntoResponse {
     require_zone(zone, &state.config)?;
-    if config.bands.len() > snapdog_common::MAX_EQ_BANDS {
-        return Err(ApiError::BadRequest("Maximum 10 EQ bands".into()));
-    }
+    config.validate().map_err(ApiError::BadRequest)?;
     let tx = state
         .zone_commands
         .get(&zone)
         .ok_or(ApiError::NotFound("zone"))?;
     let _ = tx.send(ZoneCommand::SetEq(config.clone())).await;
-    Ok(Json(config))
+    Ok::<_, ApiError>(Json(config))
 }
 
 /// Update specific Equalizer band
@@ -167,6 +165,7 @@ async fn set_band(
     Json(band): Json<EqBand>,
 ) -> impl IntoResponse {
     require_zone(zone, &state.config)?;
+    band.validate().map_err(ApiError::BadRequest)?;
     let mut config = state
         .eq_store
         .lock()
@@ -182,7 +181,7 @@ async fn set_band(
         .get(&zone)
         .ok_or(ApiError::NotFound("zone"))?;
     let _ = tx.send(ZoneCommand::SetEq(config.clone())).await;
-    Ok(Json(config))
+    Ok::<_, ApiError>(Json(config))
 }
 
 /// Apply Equalizer preset

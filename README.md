@@ -117,7 +117,7 @@ Sigstore. Verify an immutable release before deployment:
 
 ```bash
 cosign verify ghcr.io/snapdogrocks/snapdog:v0.25.1 \
-  --certificate-identity-regexp '^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9].*$' \
+  --certificate-identity-regexp '^https://github\.com/SnapDogRocks/snapdog/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -622,8 +622,8 @@ SnapDog advertises `_snapdog._tcp` via the OS DNS-SD daemon (Avahi on Linux, mDN
 **`base_url` resolution:** The `base_url` TXT record is included when the server is not reachable on all interfaces. Clients should prefer `base_url` over the mDNS hostname when present:
 
 - `base_url` explicitly configured → use configured value (reverse proxy, custom domain)
-- `[http].bind` set to a specific IP (not `::` or `0.0.0.0`) → auto-derived as `http://{bind}:{port}`
-- Otherwise → `base_url` omitted; clients use the mDNS hostname + port directly
+- `[http].bind` set to a specific IP (not `::` or `0.0.0.0`) → auto-derived as `http://{bind}:{port}` (`https` with TLS, IPv6 in brackets), with the port after all overrides
+- Otherwise → `base_url` omitted; clients use the mDNS hostname + port directly (and HTTPS when TXT `tls` is present)
 
 Optionally, `_snapcast._tcp` can be advertised on the streaming port for standard Snapcast client compatibility:
 
@@ -712,6 +712,7 @@ A specialized Snapcast client that understands SnapDog's custom protocol extensi
   # SnapDog sets the faders, the desk does not report back
   snapdog-client --mixer x32:192.168.1.20:31,32 --mixer-sync out
   ```
+- **MPRIS2** — the client registers its own player (`org.mpris.MediaPlayer2.snapdog_client`). `Volume` is this speaker's volume, not the zone's. Changes from the server (track, playback state, volume, shuffle, repeat, cover) are announced with `PropertiesChanged`, so `playerctl --follow` and desktop widgets follow them. The cover is kept as a single file per instance in `/run/snapdog-client` under the shipped systemd unit (readable by other processes), else in `$XDG_RUNTIME_DIR/snapdog-client`.
 - **Encryption** — PSK-based chunk encryption matching the embedded server
 
 Available as binary and Docker image (`ghcr.io/snapdogrocks/snapdog-client`).

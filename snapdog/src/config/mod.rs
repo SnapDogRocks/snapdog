@@ -100,6 +100,13 @@ fn resolve(
     mqtt_problem: Option<String>,
 ) -> Result<AppConfig> {
     let mut config = load_raw(raw)?;
+    finish(&mut config, unknown, mqtt_problem);
+    Ok(config)
+}
+
+/// Record what parsing found besides the configuration: the `[mqtt]` problem and the keys
+/// no struct knows.
+fn finish(config: &mut AppConfig, unknown: Vec<String>, mqtt_problem: Option<String>) {
     if mqtt_problem.is_some() {
         config.mqtt_problem = mqtt_problem;
     }
@@ -109,7 +116,6 @@ fn resolve(
             display_key_path(&key)
         ));
     }
-    Ok(config)
 }
 
 pub use crate::net::listener::address_is_not_local;
@@ -258,7 +264,7 @@ fn without_values(message: &str) -> String {
 ///
 /// Returns an error if the configuration is invalid.
 pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
-    load_raw_inner(raw, false)
+    load_raw_inner(raw, false, &Overrides::default())
 }
 
 /// Like `load_raw` but skips zone/client validation (for KNX device mode).
@@ -267,7 +273,147 @@ pub fn load_raw(raw: FileConfig) -> Result<AppConfig> {
 ///
 /// Returns an error if the configuration is invalid.
 pub fn load_raw_no_validate(raw: FileConfig) -> Result<AppConfig> {
-    load_raw_inner(raw, true)
+    load_raw_inner(raw, true, &Overrides::default())
+}
+
+/// Settings given on the command line. They are applied to the raw configuration before
+/// role validation and bind resolution, so a flag behaves like the same key in the file.
+#[derive(Debug, Clone, Default)]
+pub struct Overrides {
+    /// `--knx-device`: run as a KNX device with this individual address (`--knx-address`,
+    /// else [`DEFAULT_KNX_DEVICE_ADDRESS`]).
+    pub knx_device: Option<String>,
+    /// `--knx-prog-mode`: start with programming mode active.
+    pub knx_prog_mode: bool,
+    /// `--knx-sync-system-clock`: let the KNX Time object set the system clock.
+    pub knx_sync_system_clock: bool,
+    /// `--webui`.
+    pub webui: Option<WebUi>,
+    /// `--port`. Takes precedence over `SNAPDOG_HTTP_PORT`.
+    pub port: Option<u16>,
+    /// `--bind`: addresses, `loopback` or interface names, like `[http].bind`.
+    pub bind: Vec<String>,
+    /// `--tls-cert`.
+    pub tls_cert: Option<std::path::PathBuf>,
+    /// `--tls-key`.
+    pub tls_key: Option<std::path::PathBuf>,
+    /// `--codec`.
+    pub codec: Option<AudioCodec>,
+    /// `--sample-rate`.
+    pub sample_rate: Option<u32>,
+    /// `--bit-depth`.
+    pub bit_depth: Option<u16>,
+    /// `--streaming-port`.
+    pub streaming_port: Option<u16>,
+    /// `--name`.
+    pub name: Option<String>,
+    /// `--log-level`.
+    pub log_level: Option<LogLevel>,
+}
+
+/// Individual address of a KNX device started with `--knx-device` and no `--knx-address`.
+pub const DEFAULT_KNX_DEVICE_ADDRESS: &str = "15.15.255";
+
+/// Load the configuration the way `snapdog` starts, with the command line applied.
+///
+/// Reads `path`, or for `--knx-device` without a file the parameters an ETS download left
+/// (else built-in defaults). The `overrides` are applied before validation.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read, or the configuration with the overrides is
+/// invalid.
+pub fn load_with_overrides(path: Option<&Path>, overrides: &Overrides) -> Result<AppConfig> {
+    if let Some(path) = path {
+        let content = std::fs::read_to_string(path) /* blocking OK: called once at startup */
+            .with_context(|| format!("Failed to read {}", path.display()))?;
+        load_str_with_overrides(&content, overrides)
+            .with_context(|| format!("Failed to load {}", path.display()))
+    } else {
+        let raw = crate::knx::ets_device_config(overrides.knx_device.as_deref());
+        load_raw_inner(raw, true, overrides)
+    }
+}
+
+/// Like [`load_with_overrides`], but takes the TOML text.
+///
+/// # Errors
+///
+/// Returns an error if the text is not valid TOML or the configuration is invalid.
+pub fn load_str_with_overrides(content: &str, overrides: &Overrides) -> Result<AppConfig> {
+    let (raw, unknown, mqtt_problem) = parse(content)?;
+    let mut config = load_raw_inner(raw, false, overrides)?;
+    finish(&mut config, unknown, mqtt_problem);
+    Ok(config)
+}
+
+/// Apply the command line to the raw configuration. Returns the warnings to report.
+fn apply_overrides(raw: &mut FileConfig, o: &Overrides) -> Result<Vec<String>> {
+    let mut notices = Vec::new();
+    if let Some(address) = &o.knx_device {
+        let knx = raw.knx.get_or_insert_default();
+        knx.role = KnxRole::Device;
+        if let Some(configured) = knx.individual_address.as_ref()
+            && configured != address
+        {
+            notices.push(format!(
+                "--knx-device replaces [knx].individual_address = {configured} from the \
+                 configuration file with {address}. Pass --knx-address {configured} to keep the \
+                 file's address."
+            ));
+        }
+        knx.individual_address = Some(address.clone());
+    }
+    if o.knx_prog_mode
+        && let Some(knx) = raw.knx.as_mut()
+    {
+        knx.start_prog_mode = true;
+    }
+    if o.knx_sync_system_clock {
+        if let Some(knx) = raw.knx.as_mut() {
+            knx.sync_system_clock = true;
+        } else {
+            notices.push(
+                "--knx-sync-system-clock has no effect: KNX is not configured. Add a [knx] \
+                 section or pass --knx-device."
+                    .to_owned(),
+            );
+        }
+    }
+    if let Some(webui) = o.webui {
+        raw.http.webui = webui;
+    }
+    if let Some(port) = o.port {
+        raw.http.port = port;
+    }
+    if !o.bind.is_empty() {
+        raw.http.bind = resolve_http_bind(&o.bind).map_err(|e| anyhow::anyhow!("--bind: {e}"))?;
+    }
+    if let Some(cert) = &o.tls_cert {
+        raw.http.tls_cert = Some(cert.clone());
+    }
+    if let Some(key) = &o.tls_key {
+        raw.http.tls_key = Some(key.clone());
+    }
+    if let Some(codec) = o.codec {
+        raw.snapcast.codec = codec;
+    }
+    if let Some(rate) = o.sample_rate {
+        raw.audio.sample_rate = rate;
+    }
+    if let Some(bits) = o.bit_depth {
+        raw.audio.bit_depth = bits;
+    }
+    if let Some(port) = o.streaming_port {
+        raw.snapcast.streaming_port = port;
+    }
+    if let Some(name) = &o.name {
+        raw.name.clone_from(name);
+    }
+    if let Some(level) = o.log_level {
+        raw.system.log_level = level;
+    }
+    Ok(notices)
 }
 
 /// What each KNX role needs: a gateway URL for a client, an individual address (and an IPv4
@@ -296,7 +442,12 @@ fn validate_knx_role(knx: &KnxConfig) -> Result<()> {
     Ok(())
 }
 
-fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<AppConfig> {
+fn load_raw_inner(
+    mut raw: FileConfig,
+    skip_zone_validation: bool,
+    overrides: &Overrides,
+) -> Result<AppConfig> {
+    let override_notices = apply_overrides(&mut raw, overrides)?;
     let path_notices = expand_paths(&mut raw, &|p| Path::new(p).exists());
     if !skip_zone_validation {
         anyhow::ensure!(
@@ -391,8 +542,9 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
     };
 
     let duplicates = duplicate_spotify_names(&config.zones).map(|m| (NoticeLevel::Warn, m));
-    let load_notices = volume_notices
+    let load_notices = override_notices
         .into_iter()
+        .chain(volume_notices)
         .chain(path_notices)
         .map(|m| (NoticeLevel::Warn, m))
         .chain(spotify_notices)
@@ -404,6 +556,10 @@ fn load_raw_inner(mut raw: FileConfig, skip_zone_validation: bool) -> Result<App
         }
     }
     apply_env_overrides(&mut config);
+    if let Some(port) = overrides.port {
+        // The command line wins over SNAPDOG_HTTP_PORT, as it always did.
+        config.http.port = port;
+    }
     resolve_binds(&mut config);
     resolve_mqtt(&mut config);
     validate(&mut config)?;
@@ -2541,5 +2697,97 @@ mod interface_bind_tests {
         let http: Vec<_> = rows.iter().filter(|r| r.service == "HTTP API").collect();
         assert_eq!(http.len(), 2);
         assert!(http.iter().all(|r| r.via.as_deref() == Some("loopback")));
+    }
+}
+
+#[cfg(test)]
+mod cli_override_tests {
+    //! The command line goes through [`load_with_overrides`], the entry point `main` uses.
+    use super::interfaces::{Interface, InterfaceTable, with_table};
+    use super::*;
+    use std::io::Write;
+
+    const ZONE: &str = "[[zone]]\nname = \"A\"\n";
+
+    fn host() -> InterfaceTable {
+        InterfaceTable::new(vec![Interface {
+            name: "eth0".into(),
+            addrs: vec!["192.168.1.10".parse().unwrap()],
+        }])
+    }
+
+    fn load(toml: &str, overrides: &Overrides) -> Result<AppConfig> {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write!(file, "{ZONE}{toml}").unwrap();
+        with_table(host(), || load_with_overrides(Some(file.path()), overrides))
+    }
+
+    fn device() -> Overrides {
+        Overrides {
+            knx_device: Some(DEFAULT_KNX_DEVICE_ADDRESS.into()),
+            ..Overrides::default()
+        }
+    }
+
+    #[test]
+    fn knx_device_from_the_command_line_inherits_the_network_bind() {
+        let config = load("[network]\nbind = \"eth0\"\n", &device()).unwrap();
+        let knx = config.knx.unwrap();
+        assert_eq!(knx.role, KnxRole::Device);
+        assert_eq!(knx.bind, Some("192.168.1.10".parse().unwrap()));
+    }
+
+    #[test]
+    fn knx_device_switches_a_section_without_url_to_device_mode() {
+        // Group addresses only, no gateway URL: client mode refuses it without the flag.
+        let file = "[knx]\n[zone.knx]\nvolume = \"1/1/1\"\n";
+        let without_flag = load(file, &Overrides::default()).unwrap_err();
+        assert!(format!("{without_flag:#}").contains("requires 'url'"));
+        let config = load(file, &device()).unwrap();
+        assert_eq!(config.knx.unwrap().role, KnxRole::Device);
+    }
+
+    #[test]
+    fn bind_from_the_command_line_resolves_names_like_the_file_key() {
+        let by_name = Overrides {
+            bind: vec!["eth0".into()],
+            ..Overrides::default()
+        };
+        assert_eq!(load("", &by_name).unwrap().http.bind, ["192.168.1.10"]);
+        let loopback = Overrides {
+            bind: vec!["loopback".into()],
+            ..Overrides::default()
+        };
+        let config = load("", &loopback).unwrap();
+        assert_ne!(config.http.bind, Vec::<String>::new());
+        assert!(config.http.bind.iter().all(|a| {
+            a.parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+        }));
+    }
+
+    #[test]
+    fn the_command_line_port_wins_over_the_file() {
+        let o = Overrides {
+            port: Some(8080),
+            ..Overrides::default()
+        };
+        assert_eq!(load("[http]\nport = 7000\n", &o).unwrap().http.port, 8080);
+    }
+
+    #[test]
+    fn sync_clock_without_knx_is_reported_instead_of_creating_a_client_section() {
+        let o = Overrides {
+            knx_sync_system_clock: true,
+            ..Overrides::default()
+        };
+        let config = load("", &o).unwrap();
+        assert!(config.knx.is_none());
+        assert!(
+            config
+                .notices
+                .iter()
+                .any(|n| n.message.contains("--knx-sync-system-clock"))
+        );
     }
 }

@@ -380,3 +380,59 @@ async fn changing_the_eq_or_the_speaker_of_a_client_sends_an_event() {
     assert_eq!(event["client"], 1);
     assert_eq!(event["bands"].as_array().map(Vec::len), Some(1));
 }
+
+// ── Value bounds shared with MQTT ─────────────────────────────
+
+#[tokio::test]
+async fn out_of_range_eq_values_are_rejected_on_every_write_path() {
+    let app = common::test_app();
+    let bad = json!({"freq": 1000.0, "gain": 120.0, "q": 1.0, "type": "peaking"});
+    let huge = json!({"freq": 1e39, "gain": 0.0, "q": 1.0, "type": "peaking"});
+    for (method, uri, body) in [
+        (
+            "PUT",
+            "/api/v1/zones/1/eq",
+            json!({"enabled": true, "bands": [bad.clone()]}),
+        ),
+        (
+            "PUT",
+            "/api/v1/zones/1/eq",
+            json!({"enabled": true, "bands": [huge.clone()]}),
+        ),
+        ("PUT", "/api/v1/zones/1/eq/0", bad.clone()),
+    ] {
+        let (s, _) = app.request(method, uri, Some(body)).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{method} {uri}");
+    }
+    let (s, _) = app
+        .request(
+            "PUT",
+            "/api/v1/zones/1/eq",
+            Some(json!({"enabled": true, "bands": bands(3)})),
+        )
+        .await;
+    assert!(s.is_success(), "valid bands still pass");
+}
+
+#[tokio::test]
+async fn latency_and_seek_position_outside_the_shared_bounds_are_rejected() {
+    let app = common::test_app();
+    let (s, _) = app
+        .request(
+            "PUT",
+            "/api/v1/clients/1/latency",
+            Some(json!(2_000_000_000)),
+        )
+        .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    for body in [
+        json!({"position_ms": -5000}),
+        json!({"position_ms": snapdog_common::MAX_SEEK_MS + 1}),
+        json!({"offset_ms": i64::MAX}),
+    ] {
+        let (s, _) = app
+            .request("PUT", "/api/v1/zones/1/track/position", Some(body.clone()))
+            .await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{body}");
+    }
+}

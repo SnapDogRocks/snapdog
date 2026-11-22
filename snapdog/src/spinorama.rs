@@ -21,6 +21,8 @@ const GITHUB_RAW_BASE: &str =
 /// directory has more, the tree API lists them all and says when it had to cut the list.
 const INDEX_URL: &str =
     "https://api.github.com/repos/spinorama-org/spinorama/git/trees/main:datas/eq";
+/// Upper bound for one request to the speaker database.
+const SPINORAMA_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const INDEX_CACHE_DURATION: std::time::Duration = std::time::Duration::from_hours(24);
 
 /// Cached speaker profile database.
@@ -46,7 +48,13 @@ impl SpeakerDb {
                 index_fetched_at: None,
                 profiles: HashMap::new(),
             })),
-            client: reqwest::Client::new(),
+            // Profiles are small JSON files: a total timeout bounds a slow or stalled server.
+            client: reqwest::Client::builder()
+                .user_agent(crate::USER_AGENT)
+                .connect_timeout(crate::audio::CONNECT_TIMEOUT)
+                .timeout(SPINORAMA_TIMEOUT)
+                .build()
+                .unwrap_or_default(),
         }
     }
 
