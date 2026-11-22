@@ -82,6 +82,12 @@ pub enum ZoneCommand {
     /// Set auto-off delay in seconds.
     SetAutoOffDelay(u16),
 
+    // ── Checked delivery ──────────────────────────────────────
+    /// A command whose target index the zone checks against its current state. The zone
+    /// answers `false` on the channel when the index does not exist, and `true` once it is
+    /// accepted (or drops the sender, which also counts as accepted).
+    Checked(Box<Self>, tokio::sync::oneshot::Sender<bool>),
+
     // ── DSP ───────────────────────────────────────────────────
     /// Apply a new parametric EQ configuration to the zone.
     SetEq(crate::audio::eq::EqConfig),

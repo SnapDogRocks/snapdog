@@ -11,7 +11,15 @@ const testDirectory = mkdtempSync(join(tmpdir(), "snapdog-updater-control-"));
 const progressFile = join(testDirectory, "progress.json");
 process.env.PROGRESS_FILE = progressFile;
 after(() => rmSync(testDirectory, { recursive: true, force: true }));
-const { equalToken, publicStatus, startProgressJournal } = await import("./control.mjs");
+const {
+  COSIGN_IDENTITY_REGEXP,
+  PHASES,
+  UPDATE_DEFAULTS,
+  equalToken,
+  publicStatus,
+  startProgressJournal,
+  updateEnvironment,
+} = await import("./control.mjs");
 const {
   fetchReleaseVersion,
   newer,
@@ -202,4 +210,54 @@ test("honors GitHub rate-limit reset metadata without busy retrying", async () =
     (error) => error?.code === "rate-limited" && error?.retryAt === retryAt
   );
   assert.equal(attempts, 1);
+});
+
+const updaterDirectory = new URL(".", import.meta.url);
+const repositoryFile = (path) =>
+  // Fixed paths inside this repository.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  readFileSync(new URL(`../../${path}`, updaterDirectory), "utf8");
+
+test("the phase list equals the phases update.sh writes", () => {
+  const script = repositoryFile("deploy/updater/update.sh");
+  const written = new Set([...script.matchAll(/set_phase "([a-z-]+)"/g)].map((m) => m[1]));
+  assert.deepEqual([...written].sort(), [...PHASES].sort());
+});
+
+test("update.sh gets every required setting from the control service", () => {
+  const env = updateEnvironment({});
+  for (const name of [...Object.keys(UPDATE_DEFAULTS), "COSIGN_IDENTITY_REGEXP"]) {
+    assert.ok(env[name], `${name} is passed to update.sh`);
+  }
+  // The compose file may override a default, but never the signature identity.
+  const overridden = updateEnvironment({
+    READINESS_URL: "http://other:1/health/ready",
+    COSIGN_IDENTITY_REGEXP: ".*",
+  });
+  assert.equal(overridden.READINESS_URL, "http://other:1/health/ready");
+  assert.equal(overridden.COSIGN_IDENTITY_REGEXP, COSIGN_IDENTITY_REGEXP);
+  // Server releases own GitHub's Latest badge: stay on the bounded single-release endpoint.
+  assert.match(UPDATE_DEFAULTS.RELEASE_API, /\/releases\/latest$/);
+  // update.sh itself defines none of them.
+  const script = repositoryFile("deploy/updater/update.sh");
+  assert.doesNotMatch(script, /ghcr\.io|api\.github\.com|refs\/tags/);
+});
+
+test("the readiness URL names a route and the port the server listens on", () => {
+  const compose = repositoryFile("deploy/docker-compose.yml");
+  const fromCompose = compose.match(/READINESS_URL: (\S+)/)?.[1];
+  assert.equal(fromCompose, UPDATE_DEFAULTS.READINESS_URL);
+  const url = new URL(UPDATE_DEFAULTS.READINESS_URL);
+  const routes = repositoryFile("snapdog/src/api/health.rs");
+  assert.ok(routes.includes(`.route("${url.pathname}"`), `the server registers ${url.pathname}`);
+  const types = repositoryFile("snapdog/src/config/types.rs");
+  assert.match(types, new RegExp(`fn default_http_port\\(\\) -> u16 \\{\\s*${url.port}\\s*\\}`));
+});
+
+test("the README verifies images with the identity the updater uses", () => {
+  const readme = repositoryFile("README.md");
+  assert.ok(
+    readme.includes(`--certificate-identity-regexp '${COSIGN_IDENTITY_REGEXP}'`),
+    "README.md shows the updater's identity regexp"
+  );
 });

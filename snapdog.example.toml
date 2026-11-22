@@ -85,8 +85,9 @@ port = 5555
 # bind = "::"
 # bind = ["192.168.1.10", "127.0.0.1"]
 # bind = ["eth0", "loopback"]
-# External base URL for absolute links in API responses.
-# Required if behind a reverse proxy or accessed from other hosts.
+# External base URL for absolute links (MQTT cover art) and the mDNS record `base_url`.
+# Set it behind a reverse proxy or when MQTT consumers run on other hosts.
+# Unset: derived from a single bind address, the port and TLS; else http://localhost:<port>.
 base_url = "http://192.168.1.10:5555"
 # Optional: restrict API access with bearer tokens.
 # If empty, all endpoints are open. WebUI and /health are always accessible.
