@@ -5,11 +5,15 @@
   "main": "server.js",
   "packageManager": "pnpm@11.28.8",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.4",
     "ws": "^8.22.2"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0"
   }
 }
