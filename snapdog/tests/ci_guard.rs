@@ -237,6 +237,50 @@ fn every_image_is_pinned_by_digest() {
     );
 }
 
+/// The text of one top-level job in the release workflow, up to the next job.
+fn release_job(name: &str) -> &'static str {
+    let start = RELEASE_WORKFLOW
+        .find(&format!("\n  {name}:\n"))
+        .unwrap_or_else(|| panic!("release.yml has no job {name}"))
+        + 1;
+    let rest = &RELEASE_WORKFLOW[start..];
+    let end = rest[1..]
+        .match_indices("\n  ")
+        .find(|(i, _)| {
+            let line = &rest[1 + i + 1..];
+            !line.starts_with(' ') && !line.starts_with('#')
+        })
+        .map_or(rest.len(), |(i, _)| 1 + i);
+    &rest[..end]
+}
+
+/// #527: the version tags are pushed while the release is still being verified, the floating
+/// tags only by `promote-images` once it is live. A floating tag pushed by a build job stays
+/// on an unpromoted (possibly unsigned) version when the release fails later.
+#[test]
+fn floating_image_tags_move_only_after_promotion() {
+    let updater = release_job("updater-image");
+    assert!(
+        !updater
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('#'))
+            .any(|l| l.contains(":latest")),
+        "updater-image must push only the version tag; promote-images moves :latest"
+    );
+    let promote = release_job("promote-images");
+    for repo in [
+        "ghcr.io/snapdogrocks/snapdog\n",
+        "ghcr.io/snapdogrocks/snapdog-client\n",
+        "ghcr.io/snapdogrocks/snapdog-updater\n",
+    ] {
+        assert!(
+            promote.contains(&format!("repo: {repo}")),
+            "promote-images does not move the floating tags of {}",
+            repo.trim_end()
+        );
+    }
+}
+
 const RELEASE_PLEASE_WORKFLOW: &str = include_str!("../../.github/workflows/release-please.yml");
 
 /// #529: a cancelled release-please run can leave a tag and a draft release without a build,
