@@ -2,15 +2,18 @@
 
 import { useRef, useState } from "react";
 import type { EqBand } from "@/lib/api";
+import { SERVER_EQ_LIMITS } from "@/lib/eq-limits.generated";
 
 export const FILTER_TYPES: readonly EqBand["type"][] = ["low_shelf", "high_shelf", "peaking", "low_pass", "high_pass"] as const;
-const SERVER_MAX_EQ_BANDS = 10;
-/** The server allows ten bands. A build can lower the limit (the demo does), never raise it. */
+const SERVER_MAX_EQ_BANDS = SERVER_EQ_LIMITS.maxBands;
+/** The server's band limit. A build can lower it (the demo does), never raise it. */
 const configuredMaxBands = Number.parseInt(process.env.NEXT_PUBLIC_MAX_EQ_BANDS ?? "", 10);
 export const MAX_EQ_BANDS =
   Number.isInteger(configuredMaxBands) && configuredMaxBands >= 1
     ? Math.min(configuredMaxBands, SERVER_MAX_EQ_BANDS)
     : SERVER_MAX_EQ_BANDS;
+// The editing ranges of the curve: a narrower choice than the server accepts
+// (`SERVER_EQ_LIMITS`, which speaker profiles use in full). A test keeps them inside it.
 export const FREQ_MIN_HZ = 20;
 export const FREQ_MAX_HZ = 20000;
 export const GAIN_MIN_DB = -12;

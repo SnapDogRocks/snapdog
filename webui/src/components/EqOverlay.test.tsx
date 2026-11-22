@@ -3,6 +3,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { EqBand, EqConfig } from "@/lib/api";
 import { EqOverlay } from "./EqOverlay";
 import { renderWithIntl } from "@/test/render";
+import { resetEqPresetsCache } from "@/hooks/useEqPresets";
 
 const BAND: EqBand = { freq: 1000, gain: 3, q: 1, type: "peaking" };
 
@@ -14,11 +15,12 @@ const mocks = vi.hoisted(() => ({
   speakersGet: vi.fn(),
   applyCustom: vi.fn(),
   apply: vi.fn(),
+  presets: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
   api: {
-    eq: { get: mocks.eqGet, set: mocks.eqSet, applyPreset: vi.fn() },
+    eq: { get: mocks.eqGet, set: mocks.eqSet, applyPreset: vi.fn(), presets: mocks.presets },
     clientEq: { get: mocks.clientEqGet, set: vi.fn(() => Promise.resolve()), applyPreset: vi.fn() },
     speakers: {
       list: mocks.speakersList,
@@ -41,10 +43,29 @@ function abButton() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetEqPresetsCache();
+  mocks.presets.mockResolvedValue([{ name: "flat", bands: [] }]);
   mocks.eqSet.mockResolvedValue(undefined);
   mocks.applyCustom.mockImplementation((_id: number, c: EqConfig) => Promise.resolve(c));
   mocks.speakersList.mockResolvedValue([]);
   mocks.clientEqGet.mockResolvedValue({ enabled: false, bands: [], preset: "flat" });
+});
+
+describe("EqOverlay, presets", () => {
+  it("offers the server's presets, a preset without a label under its raw name", async () => {
+    mocks.presets.mockResolvedValue([
+      { name: "flat", bands: [] },
+      { name: "bass_boost", bands: [] },
+      { name: "studio_monitor", bands: [] },
+    ]);
+    mocks.eqGet.mockResolvedValue({ enabled: true, bands: [BAND], preset: null });
+    renderWithIntl(<EqOverlay zoneId={1} label="Kitchen" onClose={vi.fn()} />);
+
+    const group = await screen.findByRole("radiogroup", { name: "EQ presets" });
+    await waitFor(() => { expect(group.querySelectorAll("[role=radio]")).toHaveLength(3); });
+    expect(screen.getByRole("radio", { name: "Bass Boost" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "studio_monitor" })).toBeTruthy();
+  });
 });
 
 describe("EqOverlay, EQ tab", () => {
