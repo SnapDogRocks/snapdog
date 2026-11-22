@@ -188,7 +188,12 @@ fn workflow_build_lines(workflow: &str) -> Vec<String> {
         .lines()
         .map(str::trim)
         .filter(|l| !l.starts_with('#'))
-        .filter(|l| l.contains("cargo build --release") && l.contains("-p snapdog"))
+        // Flags in any order: `cargo build --locked --release` is the same release build.
+        .filter(|l| {
+            l.contains("cargo build ")
+                && l.split_whitespace().any(|w| w == "--release")
+                && l.contains("-p snapdog")
+        })
         .map(str::to_owned)
         .collect()
 }

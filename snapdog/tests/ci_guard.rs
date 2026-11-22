@@ -281,6 +281,98 @@ fn floating_image_tags_move_only_after_promotion() {
     }
 }
 
+/// Non-Rust files that a Rust test reads or embeds. Each must start `rust-core`, or a pull
+/// request that changes only that file passes without the test that guards it (#528). Add a
+/// file here when a test starts to read one.
+const GUARDED_FILES: &[&str] = &[
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/release-please.yml",
+    ".github/scripts/release_guard.py",
+    "README.md",
+    "snapdog.example.toml",
+    "docs/api/asyncapi.json",
+    "aur/snapdog/PKGBUILD",
+    "assets/radio-cover.png",
+    "knx/snapdog.knxprod",
+    "xtask/i18n/de-DE.toml",
+    "snapdog/assets/scalar/console.html",
+    "snapdog/dbus/snapdog.conf",
+    "snapdog/debian/snapdog.toml",
+    "snapdog/systemd/snapdog.service",
+    "snapdog-client/dbus/snapdog-client.conf",
+    "snapdog-client/debian/snapdog-client.default",
+    "Dockerfile",
+    "Dockerfile.client",
+    "Dockerfile.demo",
+    "deploy/updater/Dockerfile",
+    "devcontainer/knxd/Dockerfile",
+    "devcontainer/snapcast-client/Dockerfile",
+    "devcontainer/snapcast-server/Dockerfile",
+    "devcontainer/snapdog-client/Dockerfile",
+];
+
+/// The patterns of one `dorny/paths-filter` filter in ci.yml.
+fn path_filter(name: &str) -> Vec<&'static str> {
+    let header = format!("            {name}:");
+    CI.lines()
+        .skip_while(|l| l.trim_end() != header)
+        .skip(1)
+        .take_while(|l| l.starts_with("              "))
+        .filter_map(|l| l.trim().strip_prefix("- "))
+        .map(|p| p.trim_matches('\''))
+        .collect()
+}
+
+/// Minimal glob as paths-filter (picomatch) reads these patterns: `**` spans directories,
+/// `*` stays within one path segment.
+fn glob_matches(pattern: &str, path: &str) -> bool {
+    fn go(p: &[u8], s: &[u8]) -> bool {
+        match p {
+            [] => s.is_empty(),
+            [b'*', b'*', b'/', rest @ ..] => {
+                (0..=s.len()).any(|i| (i == 0 || s[i - 1] == b'/') && go(rest, &s[i..]))
+            }
+            [b'*', b'*', rest @ ..] => (0..=s.len()).any(|i| go(rest, &s[i..])),
+            [b'*', rest @ ..] => (0..=s.len())
+                .take_while(|&i| i == 0 || s[i - 1] != b'/')
+                .any(|i| go(rest, &s[i..])),
+            [c, rest @ ..] => s.first() == Some(c) && go(rest, &s[1..]),
+        }
+    }
+    go(pattern.as_bytes(), path.as_bytes())
+}
+
+#[test]
+fn the_glob_reads_patterns_like_paths_filter() {
+    assert!(glob_matches("**/*.rs", "snapdog/src/main.rs"));
+    assert!(glob_matches("**/*.rs", "build.rs"));
+    assert!(glob_matches("knx/**", "knx/snapdog.knxprod"));
+    assert!(glob_matches("rust-toolchain*", "rust-toolchain.toml"));
+    assert!(!glob_matches("knx/**", "snapdog/knx/x"));
+    assert!(!glob_matches("docs/*.json", "docs/api/asyncapi.json"));
+}
+
+#[test]
+fn every_guarded_file_starts_the_rust_tests() {
+    let rust = path_filter("rust");
+    assert!(
+        rust.contains(&"**/*.rs"),
+        "the `rust` filter was not found in ci.yml"
+    );
+    for file in GUARDED_FILES {
+        assert!(
+            repository_root().join(file).is_file(),
+            "{file} is listed in GUARDED_FILES but does not exist"
+        );
+        assert!(
+            rust.iter().any(|p| glob_matches(p, file)),
+            "{file} is read by a Rust test but does not start rust-core: add it to the `rust` \
+             filter in ci.yml"
+        );
+    }
+}
+
 const RELEASE_PLEASE_WORKFLOW: &str = include_str!("../../.github/workflows/release-please.yml");
 
 /// #529: a cancelled release-please run can leave a tag and a draft release without a build,
@@ -301,5 +393,13 @@ fn release_please_never_cancels_a_running_instance() {
     assert!(
         RELEASE_PLEASE_WORKFLOW.contains("Check that every draft release has a release build"),
         "the step that reports a draft release without a build is gone"
+    );
+}
+
+#[test]
+fn ci_runs_the_updater_script_tests() {
+    assert!(
+        active_lines().any(|l| l.contains("run: bash deploy/updater/test-update.sh")),
+        "ci.yml no longer runs deploy/updater/test-update.sh"
     );
 }
