@@ -543,17 +543,17 @@ pub async fn assign_client_zone(
 
 /// Update a client's state via closure and broadcast a [`Notification::ClientStateChanged`] event.
 ///
-/// No-op if `client_index` does not exist in the store.
+/// No-op if `client_index` does not exist in the store. Returns whether the client exists.
 pub async fn update_client_and_notify(
     store: &SharedState,
     client_index: usize,
     notify: &crate::api::ws::NotifySender,
     f: impl FnOnce(&mut ClientState),
-) {
+) -> bool {
     let notification = {
         let mut s = store.write().await;
         let Some(client) = s.clients.get_mut(&client_index) else {
-            return;
+            return false;
         };
         f(client);
         let volume = client.base_volume;
@@ -577,6 +577,7 @@ pub async fn update_client_and_notify(
         }
     };
     crate::api::ws::broadcast_notification(notify, &notification);
+    true
 }
 
 #[cfg(test)]

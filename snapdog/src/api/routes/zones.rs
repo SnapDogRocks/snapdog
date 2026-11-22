@@ -174,16 +174,44 @@ async fn read_zone(state: &SharedState, idx: usize) -> Option<state::ZoneState> 
     state.store.read().await.zones.get(&idx).cloned()
 }
 
+impl ZoneInfo {
+    /// The answer for one zone: configuration and runtime state, with the defaults of a zone
+    /// that has no state yet.
+    fn new(cfg: &crate::config::ZoneConfig, zs: Option<&state::ZoneState>) -> Self {
+        Self {
+            index: cfg.index,
+            name: cfg.name.clone(),
+            icon: cfg.icon.clone(),
+            volume: zs.map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
+            muted: zs.is_some_and(|s| s.muted),
+            playback: zs.map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
+            source: zs.map_or_else(|| "idle".into(), |s| s.source.to_string()),
+            shuffle: zs.is_some_and(|s| s.shuffle),
+            repeat: zs.map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
+            presence: zs.is_some_and(|s| s.presence),
+            presence_enabled: zs.is_none_or(|s| s.presence_enabled),
+            presence_timer_active: zs.is_some_and(|s| s.auto_off_active),
+        }
+    }
+}
+
 const fn zone_not_found() -> ApiError {
     ApiError::NotFound("zone")
 }
 
-fn zone_exists(state: &SharedState, idx: usize) -> Result<(), ApiError> {
-    state
-        .zone_commands
-        .contains_key(&idx)
-        .then_some(())
+/// The configuration of zone `idx`, or 404. The configuration is the one source of which
+/// zones exist: the store, the command senders and the EQ store are all built from it.
+pub(super) fn zone_config(
+    state: &SharedState,
+    idx: usize,
+) -> Result<&crate::config::ZoneConfig, ApiError> {
+    idx.checked_sub(1)
+        .and_then(|i| state.config.zones.get(i))
         .ok_or_else(zone_not_found)
+}
+
+fn zone_exists(state: &SharedState, idx: usize) -> Result<(), ApiError> {
+    zone_config(state, idx).map(drop)
 }
 
 async fn send_cmd(state: &SharedState, idx: usize, cmd: ZoneCommand) -> Result<(), ApiError> {
@@ -258,23 +286,7 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ZoneInfo>> {
             .config
             .zones
             .iter()
-            .map(|z| {
-                let zs = store.zones.get(&z.index);
-                ZoneInfo {
-                    index: z.index,
-                    name: z.name.clone(),
-                    icon: z.icon.clone(),
-                    volume: zs.map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
-                    muted: zs.is_some_and(|s| s.muted),
-                    playback: zs.map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
-                    source: zs.map_or_else(|| "idle".into(), |s| s.source.to_string()),
-                    shuffle: zs.is_some_and(|s| s.shuffle),
-                    repeat: zs.map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
-                    presence: zs.is_some_and(|s| s.presence),
-                    presence_enabled: zs.is_none_or(|s| s.presence_enabled),
-                    presence_timer_active: zs.is_some_and(|s| s.auto_off_active),
-                }
-            })
+            .map(|z| ZoneInfo::new(z, store.zones.get(&z.index)))
             .collect(),
     )
 }
@@ -295,33 +307,9 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ZoneInfo>> {
     tag = "zones"
 )]
 async fn get_zone(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
-    let cfg = idx
-        .checked_sub(1)
-        .and_then(|i| state.config.zones.get(i))
-        .ok_or(zone_not_found())?;
+    let cfg = zone_config(&state, idx)?;
     let zs = state.store.read().await.zones.get(&idx).cloned();
-    Ok::<_, ApiError>(Json(ZoneInfo {
-        index: cfg.index,
-        name: cfg.name.clone(),
-        icon: cfg.icon.clone(),
-        volume: zs
-            .as_ref()
-            .map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
-        muted: zs.as_ref().is_some_and(|s| s.muted),
-        playback: zs
-            .as_ref()
-            .map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
-        source: zs
-            .as_ref()
-            .map_or_else(|| "idle".into(), |s| s.source.to_string()),
-        shuffle: zs.as_ref().is_some_and(|s| s.shuffle),
-        repeat: zs
-            .as_ref()
-            .map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
-        presence: zs.as_ref().is_some_and(|s| s.presence),
-        presence_enabled: zs.as_ref().is_none_or(|s| s.presence_enabled),
-        presence_timer_active: zs.as_ref().is_some_and(|s| s.auto_off_active),
-    }))
+    Ok::<_, ApiError>(Json(ZoneInfo::new(cfg, zs.as_ref())))
 }
 
 // ── Volume ────────────────────────────────────────────────────
