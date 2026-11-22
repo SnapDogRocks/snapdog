@@ -11,6 +11,15 @@ use tokio::sync::RwLock;
 
 const MAX_COVER_ART_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_FAVICON_HTML_BYTES: u64 = 1024 * 1024;
+/// The cover URL of a zone as the store keeps it: relative to the HTTP server, with the image
+/// hash so that clients reload a changed cover. MQTT makes it absolute with `base_url`.
+#[must_use]
+pub fn zone_cover_url(zone_index: usize, hash: &str) -> String {
+    format!("/api/v1/zones/{zone_index}/cover?h={hash}")
+}
+
+/// Upper bound for fetching one cover image, body included.
+const COVER_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Thread-safe cover cache handle.
 pub type SharedCoverCache = Arc<RwLock<CoverCache>>;
@@ -156,6 +165,8 @@ pub async fn fetch_cover(url: &str) -> Option<(Vec<u8>, String)> {
 
     let client = reqwest::Client::builder()
         .user_agent(crate::USER_AGENT)
+        .connect_timeout(crate::audio::CONNECT_TIMEOUT)
+        .timeout(COVER_FETCH_TIMEOUT)
         .build()
         .inspect_err(
             |e| tracing::debug!(error = %e, url, "Failed to build HTTP client for cover fetch"),
@@ -315,9 +326,15 @@ fn parse_best_icon_url(html: &str, origin: &str) -> Option<String> {
 }
 
 fn extract_attr(tag: &str, attr: &str) -> Option<String> {
+    // Search the original string, ASCII case-insensitively: lowercasing first can change byte
+    // lengths (`İ` becomes three bytes), so an offset into the lowercased copy may not even be
+    // a char boundary of the original. An ASCII match always starts on a char boundary.
     let needle = format!("{attr}=");
-    let tag_lower = tag.to_lowercase();
-    let pos = tag_lower.find(&needle)? + needle.len();
+    let pos = tag
+        .as_bytes()
+        .windows(needle.len())
+        .position(|w| w.eq_ignore_ascii_case(needle.as_bytes()))?
+        + needle.len();
     let rest = &tag[pos..];
     let (quote, rest) = if let Some(stripped) = rest.strip_prefix('"') {
         ('"', stripped)
@@ -340,28 +357,13 @@ async fn response_bytes_limited(
     url: &str,
     label: &str,
 ) -> Option<Vec<u8>> {
-    use futures_util::StreamExt;
-
-    if let Some(len) = response.content_length()
-        && len > limit
-    {
-        tracing::debug!(url, label, len, limit, "Remote body too large");
-        return None;
-    }
-    let mut stream = response.bytes_stream();
-    let mut body = bytes::BytesMut::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk
-            .inspect_err(|e| tracing::debug!(error = %e, url, label, "Failed to read remote body"))
-            .ok()?;
-        let next_len = body.len() as u64 + chunk.len() as u64;
-        if next_len > limit {
-            tracing::debug!(url, label, next_len, limit, "Remote body exceeded limit");
-            return None;
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Some(body.to_vec())
+    crate::audio::read_response_bytes_limited(response, limit, label)
+        .await
+        .inspect_err(
+            |e| tracing::debug!(error = %format!("{e:#}"), url, label, "Remote body not read"),
+        )
+        .ok()
+        .map(|body| body.to_vec())
 }
 
 /// Convert ICO to PNG using the `image` crate.
@@ -384,9 +386,48 @@ fn ico_to_png(data: &[u8]) -> Option<(Vec<u8>, String)> {
     Some((buf.into_inner(), "image/png".into()))
 }
 
+/// A cover as an absolute URL for MQTT and MPRIS.
+///
+/// A value that already has a scheme (`https://…`, `data:…`) stays unchanged, anything else
+/// becomes a path below `base_url`, with exactly one slash between them
+/// (`/api/v1/zones/1/cover` and `covers/x.png` alike).
+#[must_use]
+pub fn absolute_cover_url(base_url: &str, url: &str) -> String {
+    if url::Url::parse(url).is_ok() {
+        return url.to_owned();
+    }
+    format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        url.trim_start_matches('/')
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cover_becomes_one_absolute_url() {
+        let base = "https://audio.example";
+        assert_eq!(
+            absolute_cover_url(base, "https://cdn.example/a.png"),
+            "https://cdn.example/a.png"
+        );
+        assert_eq!(
+            absolute_cover_url(base, "data:image/png;base64,AAAA"),
+            "data:image/png;base64,AAAA"
+        );
+        assert_eq!(
+            absolute_cover_url(base, "/api/v1/zones/1/cover?h=1"),
+            "https://audio.example/api/v1/zones/1/cover?h=1"
+        );
+        assert_eq!(
+            absolute_cover_url("http://host:5555/", "covers/x.png"),
+            "http://host:5555/covers/x.png",
+            "a path without a leading slash still gets one"
+        );
+    }
 
     #[test]
     fn detects_jpeg() {
@@ -402,6 +443,21 @@ mod tests {
     fn detects_webp() {
         let webp = [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50];
         assert_eq!(detect_mime(&webp), "image/webp");
+    }
+
+    #[test]
+    fn extract_attr_survives_characters_that_grow_when_lowercased() {
+        // `İ` (2 bytes) lowercases to `i̇` (3 bytes): an offset into a lowercased copy would
+        // point into the middle of a character of the original and panic.
+        let tag = r#"<link title="İİİİ" REL="icon" HREF="/fav.png" sizes="32x32">"#;
+        assert_eq!(extract_attr(tag, "href").as_deref(), Some("/fav.png"));
+        assert_eq!(extract_attr(tag, "sizes").as_deref(), Some("32x32"));
+        assert_eq!(extract_attr(tag, "rel").as_deref(), Some("icon"));
+        assert_eq!(
+            extract_attr("<link İ href=x.ico >", "href").as_deref(),
+            Some("x.ico")
+        );
+        assert_eq!(extract_attr("<link title=\"İ\">", "href"), None);
     }
 
     #[test]

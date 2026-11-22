@@ -104,6 +104,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -154,6 +160,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -202,6 +214,12 @@
                   "$ref": "#/components/schemas/EqConfig"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -298,8 +316,24 @@
               }
             }
           },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "422": {
             "description": "Client does not support EQ (not a SnapDog client)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -317,7 +351,7 @@
           "equalizer"
         ],
         "summary": "Apply client Equalizer preset",
-        "description": "Overwrites the client's Equalizer settings with a predefined preset curve.\nSupported values: \"flat\", `bass_boost`, \"loudness\", \"vocals\", `treble_boost`.",
+        "description": "Overwrites the client's Equalizer settings with a predefined preset curve.\nThe body is a preset name as listed by `GET /api/v1/eq/presets`.",
         "operationId": "apply_preset",
         "parameters": [
           {
@@ -378,8 +412,24 @@
               }
             }
           },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "422": {
             "description": "Client does not support EQ (not a SnapDog client)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -468,8 +518,24 @@
               }
             }
           },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "422": {
             "description": "Client does not support EQ (not a SnapDog client)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -510,6 +576,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -561,6 +633,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -623,6 +701,16 @@
               }
             }
           },
+          "400": {
+            "description": "Latency out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -631,6 +719,38 @@
           },
           "404": {
             "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Client is configured but not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -671,6 +791,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -731,6 +857,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -739,6 +871,38 @@
           },
           "404": {
             "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Client is configured but not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -781,6 +945,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -789,6 +959,26 @@
           },
           "404": {
             "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Client is configured but not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -829,6 +1019,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -889,6 +1085,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -903,6 +1105,18 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           }
         }
@@ -937,6 +1151,12 @@
                   "$ref": "#/components/schemas/EqConfig"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -1033,8 +1253,34 @@
               }
             }
           },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "422": {
             "description": "Client does not support speaker correction (not a SnapDog client)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The speaker database could not be read",
             "content": {
               "application/json": {
                 "schema": {
@@ -1078,6 +1324,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -1101,7 +1353,7 @@
           "clients"
         ],
         "summary": "Set client volume level",
-        "description": "Updates the volume level of the specified client. Supports absolute or relative values (e.g. \"+5\", \"-5\", or \"45\").",
+        "description": "Updates the volume level of the specified client. A number or an unsigned string (\"45\") sets the level, a string with a sign (\"+5\", \"-5\") changes it by that amount.",
         "operationId": "set_volume",
         "parameters": [
           {
@@ -1162,6 +1414,38 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Client is configured but not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -1196,6 +1480,12 @@
                   "minimum": 0
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -1258,6 +1548,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -1266,6 +1562,28 @@
           },
           "404": {
             "description": "Client or Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -1431,6 +1749,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -1445,6 +1769,18 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "503": {
@@ -1597,6 +1933,18 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "502": {
@@ -1815,6 +2163,18 @@
               }
             }
           },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "502": {
             "description": "Subsonic refused or failed",
             "content": {
@@ -1957,6 +2317,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -1981,6 +2347,18 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "502": {
@@ -2025,6 +2403,12 @@
                   "$ref": "#/components/schemas/PlaylistDetails"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -2081,6 +2465,12 @@
             "description": "Playlist cover image",
             "content": {
               "image/*": {}
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -2165,6 +2555,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -2235,6 +2631,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -2301,6 +2703,12 @@
               "image/*": {}
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -2309,6 +2717,16 @@
           },
           "404": {
             "description": "Track or cover not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream request failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -2437,7 +2855,14 @@
             }
           },
           "503": {
-            "description": "Speaker database unavailable"
+            "description": "Speaker database unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -2479,7 +2904,24 @@
             }
           },
           "404": {
-            "description": "Speaker profile not found"
+            "description": "Speaker profile not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The speaker database could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -2714,8 +3156,20 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
             "content": {
               "text/plain": {}
             }
@@ -2864,6 +3318,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -2918,6 +3378,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -2952,6 +3418,12 @@
             "description": "Zone cover art image binary",
             "content": {
               "image/*": {}
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -2992,6 +3464,12 @@
                   "$ref": "#/components/schemas/EqConfig"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -3077,6 +3555,28 @@
                 }
               }
             }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -3087,7 +3587,7 @@
           "equalizer"
         ],
         "summary": "Apply Equalizer preset",
-        "description": "Overwrites the zone's Equalizer settings with a predefined preset curve.\nSupported values: \"flat\", `bass_boost`, \"loudness\", \"vocals\", `treble_boost`.",
+        "description": "Overwrites the zone's Equalizer settings with a predefined preset curve.\nThe body is a preset name as listed by `GET /api/v1/eq/presets`.",
         "operationId": "apply_preset",
         "parameters": [
           {
@@ -3140,6 +3640,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3227,6 +3749,28 @@
                 }
               }
             }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the server task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -3260,6 +3804,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -3310,6 +3860,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -3363,6 +3919,12 @@
           "200": {
             "description": "Updated mute status"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3371,6 +3933,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3406,6 +3990,12 @@
           "200": {
             "description": "Mute toggled successfully"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3414,6 +4004,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3454,6 +4054,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -3499,6 +4105,12 @@
           "200": {
             "description": "Skipped to next track"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3507,6 +4119,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3542,6 +4164,12 @@
           "200": {
             "description": "Switched to next playlist"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3550,6 +4178,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3585,6 +4223,12 @@
           "200": {
             "description": "Playback paused"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3593,6 +4237,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3628,6 +4282,12 @@
           "200": {
             "description": "Playback resumed"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3636,6 +4296,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3681,6 +4351,16 @@
           "200": {
             "description": "Playlist playback triggered"
           },
+          "400": {
+            "description": "Neither or both of `index` and `playlist_id`, or an invalid index",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3688,7 +4368,29 @@
             }
           },
           "404": {
-            "description": "Zone not found",
+            "description": "Zone or playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3734,6 +4436,12 @@
           "200": {
             "description": "Playlist playback triggered"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3742,6 +4450,28 @@
           },
           "404": {
             "description": "Zone or playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3798,6 +4528,16 @@
           "200": {
             "description": "Playlist track playback started"
           },
+          "400": {
+            "description": "Invalid playlist or track index",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3806,6 +4546,28 @@
           },
           "404": {
             "description": "Zone or playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3850,6 +4612,12 @@
           "200": {
             "description": "Album playback started"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3858,6 +4626,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3902,6 +4680,12 @@
           "200": {
             "description": "Subsonic track playback started"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3910,6 +4694,16 @@
           },
           "404": {
             "description": "Zone or track not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -3956,6 +4750,16 @@
           "200": {
             "description": "Track play command sent"
           },
+          "400": {
+            "description": "Negative track index",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -3963,7 +4767,29 @@
             }
           },
           "404": {
-            "description": "Zone not found",
+            "description": "Zone not found, no active playlist, or no such track",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -4034,6 +4860,28 @@
                 }
               }
             }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -4067,6 +4915,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4118,6 +4972,12 @@
                   "minimum": 0
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4172,6 +5032,12 @@
           "200": {
             "description": "Playlist changed successfully"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4179,7 +5045,29 @@
             }
           },
           "404": {
-            "description": "Zone not found",
+            "description": "Zone or playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -4220,6 +5108,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4273,6 +5167,12 @@
           "200": {
             "description": "Playlist changed successfully"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4281,6 +5181,28 @@
           },
           "404": {
             "description": "Zone or playlist not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -4322,6 +5244,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4374,6 +5302,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4424,6 +5358,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4472,6 +5412,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4525,6 +5471,12 @@
           "200": {
             "description": "Presence status updated successfully"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4533,6 +5485,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -4573,6 +5547,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4626,6 +5606,12 @@
           "200": {
             "description": "Presence sensor status updated"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4634,6 +5620,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -4676,6 +5684,12 @@
                   "minimum": 0
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4731,6 +5745,12 @@
           "200": {
             "description": "Presence timeout updated"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4739,6 +5759,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -4779,6 +5821,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4824,6 +5872,12 @@
           "200": {
             "description": "Skipped to previous track"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4832,6 +5886,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -4867,6 +5931,12 @@
           "200": {
             "description": "Switched to previous playlist"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4875,6 +5945,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -4915,6 +5995,12 @@
                   "$ref": "#/components/schemas/RepeatMode"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -4968,6 +6054,12 @@
           "200": {
             "description": "Repeat mode updated"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -4976,6 +6068,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -5011,6 +6125,12 @@
           "200": {
             "description": "Repeat mode toggled"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5019,6 +6139,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -5059,6 +6189,12 @@
                   "type": "boolean"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -5112,6 +6248,12 @@
           "200": {
             "description": "Shuffle status updated"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5120,6 +6262,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -5155,6 +6319,12 @@
           "200": {
             "description": "Shuffle status toggled"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5163,6 +6333,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -5198,6 +6378,12 @@
           "200": {
             "description": "Playback stopped"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5206,6 +6392,16 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -5247,6 +6443,12 @@
                   "format": "int32"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -5299,6 +6501,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5347,6 +6555,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -5400,6 +6614,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5448,6 +6668,12 @@
                   "$ref": "#/components/schemas/ZoneTrackMetadata"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -5500,6 +6726,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5549,6 +6781,12 @@
                   "format": "int64"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -5603,7 +6841,7 @@
             "description": "Seek command processed"
           },
           "400": {
-            "description": "Invalid payload (both or neither field provided)",
+            "description": "Invalid payload (both or neither field provided, or out of range)",
             "content": {
               "application/json": {
                 "schema": {
@@ -5620,6 +6858,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -5661,6 +6921,12 @@
                   "format": "double"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -5715,6 +6981,12 @@
           "200": {
             "description": "Seek command processed"
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5723,6 +6995,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -5763,6 +7057,12 @@
                   "type": "string"
                 }
               }
+            }
+          },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
             }
           },
           "401": {
@@ -5816,6 +7116,12 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is not a valid number, or the body is not valid JSON (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
           "401": {
             "description": "Missing or invalid API key (plain-text body)",
             "content": {
@@ -5839,7 +7145,7 @@
           "zones"
         ],
         "summary": "Set zone volume level",
-        "description": "Updates the volume level of the specified zone. Supports absolute or relative values (e.g. \"+5\", \"-5\", or \"45\").",
+        "description": "Updates the volume level of the specified zone. A number or an unsigned string (\"45\") sets the level, a string with a sign (\"+5\", \"-5\") changes it by that amount.",
         "operationId": "set_volume",
         "parameters": [
           {
@@ -5893,6 +7199,28 @@
           },
           "404": {
             "description": "Zone not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body is not sent as `application/json` (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "The JSON body does not match the expected type (plain-text body)",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "500": {
+            "description": "The command could not be handed to the zone task",
             "content": {
               "application/json": {
                 "schema": {
@@ -6024,17 +7352,23 @@
           "freq": {
             "type": "number",
             "format": "float",
-            "description": "Center frequency in Hz."
+            "description": "Center frequency in Hz.",
+            "maximum": 20000,
+            "minimum": 10
           },
           "gain": {
             "type": "number",
             "format": "float",
-            "description": "Gain in dB (positive = boost, negative = cut). Ignored for low/high pass."
+            "description": "Gain in dB (positive = boost, negative = cut). Ignored for low/high pass.",
+            "maximum": 24,
+            "minimum": -24
           },
           "q": {
             "type": "number",
             "format": "float",
-            "description": "Q factor controlling bandwidth. Higher values = narrower band."
+            "description": "Q factor controlling bandwidth. Higher values = narrower band. 0 selects the\nButterworth default.",
+            "maximum": 20,
+            "minimum": 0
           },
           "type": {
             "$ref": "#/components/schemas/FilterType",
@@ -6055,11 +7389,17 @@
             "items": {
               "$ref": "#/components/schemas/EqBand"
             },
-            "description": "Ordered list of biquad filter bands applied in series."
+            "description": "Ordered list of biquad filter bands applied in series, at most `MAX_EQ_BANDS`.",
+            "maxItems": 10
           },
           "enabled": {
             "type": "boolean",
             "description": "Whether the EQ is active. When `false`, audio passes through unmodified."
+          },
+          "preamp_db": {
+            "type": "number",
+            "format": "float",
+            "description": "Gain in dB applied before the bands while the EQ is enabled. Speaker corrections use\na negative preamp to leave headroom for boosted bands. 0 when absent."
           },
           "preset": {
             "type": [
@@ -6416,19 +7756,12 @@
       "PlaylistDetails": {
         "type": "object",
         "required": [
-          "id",
           "index",
           "playlist_id",
           "name",
           "tracks"
         ],
         "properties": {
-          "id": {
-            "type": "integer",
-            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
-            "deprecated": true,
-            "minimum": 0
-          },
           "index": {
             "type": "integer",
             "description": "Unified playlist index (0-based). Moves when the list changes, see `playlist_id`.",
@@ -6450,7 +7783,6 @@
       "PlaylistInfo": {
         "type": "object",
         "required": [
-          "id",
           "index",
           "playlist_id",
           "name",
@@ -6467,12 +7799,6 @@
           "duration": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0
-          },
-          "id": {
-            "type": "integer",
-            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
-            "deprecated": true,
             "minimum": 0
           },
           "index": {
@@ -6497,15 +7823,6 @@
       "PlaylistPayload": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Unified playlist index.\n\nDeprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.",
-            "deprecated": true,
-            "minimum": 0
-          },
           "index": {
             "type": [
               "integer",
@@ -7110,7 +8427,7 @@
             "type": "string"
           }
         ],
-        "description": "Volume value: absolute (e.g. `75`) or relative (e.g. `\"+5\"`, `\"-3\"`)."
+        "description": "Volume value: absolute (`75` or `\"75\"`) or relative (a string with a sign, `\"+5\"` or `\"-3\"`)."
       },
       "ZoneInfo": {
         "type": "object",

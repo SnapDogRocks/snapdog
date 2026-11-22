@@ -168,6 +168,11 @@ impl Topics {
         self.join(&format!("zones/{index}/state"))
     }
 
+    /// Playback position of a zone in whole seconds (not retained).
+    pub fn zone_position(&self, index: usize) -> String {
+        self.join(&format!("zones/{index}/position"))
+    }
+
     /// Retained client state (JSON).
     pub fn client_state(&self, index: usize) -> String {
         self.join(&format!("clients/{index}/state"))
@@ -241,6 +246,23 @@ fn parse_index(level: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `docs/mqtt.md` is the one documented list of command topics (the README links to it):
+    /// every route has to appear there.
+    #[test]
+    fn every_command_route_is_documented() {
+        let docs = include_str!("../../../docs/mqtt.md");
+        for (scope, tail, _) in COMMAND_ROUTES {
+            let (full, short) = match scope {
+                Scope::Zone => (format!("`zones/<n>/{tail}`"), format!("`{tail}`")),
+                Scope::Client => (format!("`clients/<n>/{tail}`"), String::new()),
+            };
+            assert!(
+                docs.contains(&full) || (!short.is_empty() && docs.contains(&short)),
+                "docs/mqtt.md does not list {full}"
+            );
+        }
+    }
 
     #[test]
     fn base_is_normalised_once_whatever_the_input() {

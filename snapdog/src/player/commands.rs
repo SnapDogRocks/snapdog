@@ -69,6 +69,10 @@ pub enum ZoneCommand {
     SetRepeat(snapdog_common::RepeatMode),
     /// Cycle repeat mode: Off → Playlist → Track → Off.
     CycleRepeat,
+    /// Switch between Off and the given mode (see [`toggled_repeat`]).
+    ToggleRepeatMode(snapdog_common::RepeatMode),
+    /// Switch repeat off, but only while the given mode is active (see [`cleared_repeat`]).
+    ClearRepeatMode(snapdog_common::RepeatMode),
 
     // ── Presence ──────────────────────────────────────────────
     /// Set presence state (from KNX occupancy sensor, MQTT, or API).
@@ -78,9 +82,24 @@ pub enum ZoneCommand {
     /// Set auto-off delay in seconds.
     SetAutoOffDelay(u16),
 
+    // ── Checked delivery ──────────────────────────────────────
+    /// A command whose target index the zone checks against its current state. The zone
+    /// answers `false` on the channel when the index does not exist, and `true` once it is
+    /// accepted (or drops the sender, which also counts as accepted).
+    Checked(Box<Self>, tokio::sync::oneshot::Sender<bool>),
+
     // ── DSP ───────────────────────────────────────────────────
     /// Apply a new parametric EQ configuration to the zone.
     SetEq(crate::audio::eq::EqConfig),
+    /// Replace one band of the zone's EQ. The zone task merges it into the configuration it
+    /// holds, so quick changes of different bands do not overwrite each other. A band index
+    /// out of range is ignored.
+    SetEqBand {
+        /// 0-based band index.
+        band_index: usize,
+        /// The new band.
+        band: crate::audio::eq::EqBand,
+    },
 }
 
 impl ZoneCommand {
@@ -92,9 +111,77 @@ impl ZoneCommand {
     }
 }
 
+/// The repeat mode after toggling `mode`: `mode` when it is not active, Off when it is.
+///
+/// Toggling one mode while the other is active switches to the toggled one, as a press on a
+/// "Track Repeat" button does while the playlist repeats.
+#[must_use]
+pub fn toggled_repeat(
+    current: snapdog_common::RepeatMode,
+    mode: snapdog_common::RepeatMode,
+) -> snapdog_common::RepeatMode {
+    if current == mode {
+        snapdog_common::RepeatMode::Off
+    } else {
+        mode
+    }
+}
+
+/// The repeat mode after switching `mode` off: Off when `mode` is active, otherwise unchanged.
+#[must_use]
+pub fn cleared_repeat(
+    current: snapdog_common::RepeatMode,
+    mode: snapdog_common::RepeatMode,
+) -> snapdog_common::RepeatMode {
+    if current == mode {
+        snapdog_common::RepeatMode::Off
+    } else {
+        current
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ZoneCommand;
+    use super::{ZoneCommand, cleared_repeat, toggled_repeat};
+
+    #[test]
+    fn toggling_a_repeat_mode_switches_between_off_and_that_mode() {
+        use snapdog_common::RepeatMode::{Off, Playlist, Track};
+        // (current, toggled mode, result)
+        for (current, mode, expected) in [
+            (Off, Playlist, Playlist),
+            (Playlist, Playlist, Off),
+            (Track, Playlist, Playlist),
+            (Off, Track, Track),
+            (Track, Track, Off),
+            (Playlist, Track, Track),
+        ] {
+            assert_eq!(
+                toggled_repeat(current, mode),
+                expected,
+                "{current:?} toggle {mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn clearing_a_repeat_mode_leaves_the_other_mode_alone() {
+        use snapdog_common::RepeatMode::{Off, Playlist, Track};
+        for (current, mode, expected) in [
+            (Playlist, Playlist, Off),
+            (Track, Playlist, Track),
+            (Off, Playlist, Off),
+            (Track, Track, Off),
+            (Playlist, Track, Playlist),
+            (Off, Track, Off),
+        ] {
+            assert_eq!(
+                cleared_repeat(current, mode),
+                expected,
+                "{current:?} clear {mode:?}"
+            );
+        }
+    }
 
     #[test]
     fn a_seek_step_is_the_interval_in_milliseconds_forward_or_back() {
@@ -134,7 +221,10 @@ pub enum ActiveSource {
         track_id: String,
     },
     /// Playing an arbitrary URL.
-    Url,
+    Url {
+        /// The URL, kept so that Play after Pause can start it again.
+        url: String,
+    },
     /// Receiving audio from an `AirPlay` client.
     AirPlay,
     /// Receiving audio from a Spotify Connect client.

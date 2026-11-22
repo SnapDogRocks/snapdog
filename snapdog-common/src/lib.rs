@@ -164,6 +164,18 @@ pub const DEFAULT_SAMPLE_RATE: u32 = 48000;
 /// Maximum number of EQ bands per zone/client.
 pub const MAX_EQ_BANDS: usize = 10;
 
+/// Accepted EQ band frequencies in Hz.
+pub const EQ_FREQ_RANGE_HZ: std::ops::RangeInclusive<f32> = 10.0..=20_000.0;
+/// Accepted EQ band gains in dB. Wider than the web interface offers, for speaker profiles.
+pub const EQ_GAIN_RANGE_DB: std::ops::RangeInclusive<f32> = -24.0..=24.0;
+/// Accepted EQ band Q factors. 0 selects the Butterworth default.
+pub const EQ_Q_RANGE: std::ops::RangeInclusive<f32> = 0.0..=20.0;
+
+/// Largest client latency offset in milliseconds, either way. Beyond ten seconds is a typo.
+pub const MAX_LATENCY_MS: i32 = 10_000;
+/// Largest seek position in milliseconds. Beyond a week is a typo, not a position.
+pub const MAX_SEEK_MS: i64 = 7 * 24 * 3600 * 1000;
+
 // ── Playback types ────────────────────────────────────────────
 
 /// Repeat mode for zone playback.
@@ -200,14 +212,20 @@ pub enum FilterType {
 }
 
 /// Single EQ band configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EqBand {
+    // The schema bounds repeat `EQ_FREQ_RANGE_HZ`, `EQ_GAIN_RANGE_DB` and `EQ_Q_RANGE`
+    // (attributes take literals); a test in `snapdog` checks that they agree.
     /// Center frequency in Hz.
+    #[cfg_attr(feature = "openapi", schema(minimum = 10.0, maximum = 20000.0))]
     pub freq: f32,
     /// Gain in dB (positive = boost, negative = cut). Ignored for low/high pass.
+    #[cfg_attr(feature = "openapi", schema(minimum = -24.0, maximum = 24.0))]
     pub gain: f32,
-    /// Q factor controlling bandwidth. Higher values = narrower band.
+    /// Q factor controlling bandwidth. Higher values = narrower band. 0 selects the
+    /// Butterworth default.
+    #[cfg_attr(feature = "openapi", schema(minimum = 0.0, maximum = 20.0))]
     pub q: f32,
     /// Filter type (low shelf, high shelf, peaking, low pass, high pass).
     #[serde(rename = "type")]
@@ -220,11 +238,84 @@ pub struct EqBand {
 pub struct EqConfig {
     /// Whether the EQ is active. When `false`, audio passes through unmodified.
     pub enabled: bool,
-    /// Ordered list of biquad filter bands applied in series.
+    /// Ordered list of biquad filter bands applied in series, at most `MAX_EQ_BANDS`.
+    #[cfg_attr(feature = "openapi", schema(max_items = 10))]
     pub bands: Vec<EqBand>,
     /// Name of the preset this config was loaded from, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
+    /// Gain in dB applied before the bands while the EQ is enabled. Speaker corrections use
+    /// a negative preamp to leave headroom for boosted bands. 0 when absent.
+    #[serde(default, skip_serializing_if = "is_zero_db")]
+    pub preamp_db: f32,
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if signature"
+)]
+fn is_zero_db(db: &f32) -> bool {
+    *db == 0.0
+}
+
+impl EqConfig {
+    /// The preamp as a linear gain factor.
+    #[must_use]
+    pub fn preamp_gain(&self) -> f32 {
+        10f32.powf(self.preamp_db / 20.0)
+    }
+}
+
+impl EqBand {
+    /// Check that every value is finite and within the accepted ranges.
+    ///
+    /// # Errors
+    ///
+    /// A message naming the value and its range.
+    pub fn validate(&self) -> Result<(), String> {
+        let check = |name: &str, value: f32, range: &std::ops::RangeInclusive<f32>, unit: &str| {
+            if value.is_finite() && range.contains(&value) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{name} must be between {} and {}{unit}",
+                    range.start(),
+                    range.end()
+                ))
+            }
+        };
+        check("freq", self.freq, &EQ_FREQ_RANGE_HZ, " Hz")?;
+        check("gain", self.gain, &EQ_GAIN_RANGE_DB, " dB")?;
+        check("q", self.q, &EQ_Q_RANGE, "")
+    }
+}
+
+impl EqConfig {
+    /// Check only the number of bands, for configurations whose band values are taken as
+    /// they come (speaker database profiles).
+    ///
+    /// # Errors
+    ///
+    /// A message when there are more than [`MAX_EQ_BANDS`] bands.
+    pub fn validate_band_count(&self) -> Result<(), String> {
+        if self.bands.len() > MAX_EQ_BANDS {
+            return Err(format!("at most {MAX_EQ_BANDS} EQ bands"));
+        }
+        Ok(())
+    }
+
+    /// Check the band count and every band.
+    ///
+    /// # Errors
+    ///
+    /// A message naming the band and the value that is out of range.
+    pub fn validate(&self) -> Result<(), String> {
+        self.validate_band_count()?;
+        for (i, band) in self.bands.iter().enumerate() {
+            band.validate().map_err(|e| format!("band {i}: {e}"))?;
+        }
+        Ok(())
+    }
 }
 
 impl Default for EqConfig {
@@ -233,6 +324,7 @@ impl Default for EqConfig {
             enabled: false,
             bands: vec![],
             preset: Some("flat".into()),
+            preamp_db: 0.0,
         }
     }
 }
@@ -263,6 +355,50 @@ pub fn perceptual_volume(linear: u8) -> f32 {
 mod tests {
     use super::*;
 
+    fn band(freq: f32, gain: f32, q: f32) -> EqBand {
+        EqBand {
+            freq,
+            gain,
+            q,
+            filter_type: FilterType::Peaking,
+        }
+    }
+
+    #[test]
+    fn eq_values_inside_the_ranges_pass_and_outside_or_non_finite_fail() {
+        assert!(band(1000.0, 6.0, 1.0).validate().is_ok());
+        assert!(
+            band(20.0, -24.0, 0.0).validate().is_ok(),
+            "q 0 is the default"
+        );
+        for bad in [
+            band(1000.0, 120.0, 1.0),
+            band(30_000.0, 0.0, 1.0),
+            band(5.0, 0.0, 1.0),
+            band(1000.0, 0.0, -1.0),
+            band(1000.0, 0.0, 50.0),
+            band(f32::INFINITY, 0.0, 1.0),
+            band(1000.0, f32::NAN, 1.0),
+        ] {
+            assert!(bad.validate().is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn an_eq_config_names_the_band_that_is_wrong_and_limits_the_count() {
+        let mut config = EqConfig {
+            enabled: true,
+            bands: vec![band(1000.0, 0.0, 1.0), band(1000.0, 99.0, 1.0)],
+            preset: None,
+            preamp_db: 0.0,
+        };
+        assert!(config.validate().unwrap_err().starts_with("band 1:"));
+        config.bands = vec![band(1000.0, 0.0, 1.0); MAX_EQ_BANDS + 1];
+        assert!(config.validate().is_err());
+        config.bands.truncate(MAX_EQ_BANDS);
+        assert!(config.validate().is_ok());
+    }
+
     #[test]
     fn volume_curve_boundaries() {
         assert_eq!(perceptual_volume(0), 0.0);
@@ -279,7 +415,7 @@ mod tests {
     fn eq_config_default() {
         let config = EqConfig::default();
         assert!(!config.enabled);
-        assert!(config.bands.is_empty());
+        assert_eq!(config.bands, Vec::<EqBand>::new());
         assert_eq!(config.preset, Some("flat".into()));
     }
 

@@ -148,7 +148,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }) as player::VolumeReport
         });
-        let mixer = std::sync::Arc::new(player::Mixer::from_cli(&mixer_raw, volume, report));
+        let mixer = std::sync::Arc::new(player::Mixer::from_cli(&mixer_raw, &soundcard, volume, report));
 
         // Audio output: cpal callback reads from Stream directly
         let player_stream = std::sync::Arc::clone(&client.stream);

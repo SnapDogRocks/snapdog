@@ -18,7 +18,7 @@ use snapdog_common::RepeatMode;
 /// Embedded `SnapDog` icon PNG (1024×1024) used as placeholder when no cover art is available.
 const PLACEHOLDER_COVER: &[u8] = include_bytes!("../../../../assets/snapdog-icon-placeholder.png");
 
-/// Volume value: absolute (e.g. `75`) or relative (e.g. `"+5"`, `"-3"`).
+/// Volume value: absolute (`75` or `"75"`) or relative (a string with a sign, `"+5"` or `"-3"`).
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub enum VolumeValue {
@@ -27,14 +27,40 @@ pub enum VolumeValue {
 }
 
 impl VolumeValue {
+    /// The step of a relative value (a string with a sign), `None` for an absolute one.
+    ///
+    /// # Errors
+    ///
+    /// A string that is not a number.
+    pub fn relative_step(&self) -> Result<Option<i32>, &'static str> {
+        match self {
+            Self::Absolute(_) => Ok(None),
+            Self::Relative(s) => {
+                let s = s.trim();
+                if !s.starts_with(['+', '-']) {
+                    return Ok(None);
+                }
+                s.parse()
+                    .map(Some)
+                    .map_err(|_| "Invalid volume (use e.g. 45, \"45\", \"+5\" or \"-3\")")
+            }
+        }
+    }
+
     pub fn resolve(&self, current: i32) -> Result<i32, &'static str> {
         let v = match self {
             Self::Absolute(v) => *v,
             Self::Relative(s) => {
-                let delta: i32 = s
+                let s = s.trim();
+                let n: i32 = s
                     .parse()
-                    .map_err(|_| "Invalid relative volume (use e.g. \"+5\" or \"-3\")")?;
-                current + delta
+                    .map_err(|_| "Invalid volume (use e.g. 45, \"45\", \"+5\" or \"-3\")")?;
+                // Only a leading sign makes a string relative. A bare number is absolute.
+                if s.starts_with(['+', '-']) {
+                    current.saturating_add(n)
+                } else {
+                    n
+                }
             }
         };
         Ok(v.clamp(0, 100))
@@ -148,16 +174,44 @@ async fn read_zone(state: &SharedState, idx: usize) -> Option<state::ZoneState> 
     state.store.read().await.zones.get(&idx).cloned()
 }
 
+impl ZoneInfo {
+    /// The answer for one zone: configuration and runtime state, with the defaults of a zone
+    /// that has no state yet.
+    fn new(cfg: &crate::config::ZoneConfig, zs: Option<&state::ZoneState>) -> Self {
+        Self {
+            index: cfg.index,
+            name: cfg.name.clone(),
+            icon: cfg.icon.clone(),
+            volume: zs.map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
+            muted: zs.is_some_and(|s| s.muted),
+            playback: zs.map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
+            source: zs.map_or_else(|| "idle".into(), |s| s.source.to_string()),
+            shuffle: zs.is_some_and(|s| s.shuffle),
+            repeat: zs.map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
+            presence: zs.is_some_and(|s| s.presence),
+            presence_enabled: zs.is_none_or(|s| s.presence_enabled),
+            presence_timer_active: zs.is_some_and(|s| s.auto_off_active),
+        }
+    }
+}
+
 const fn zone_not_found() -> ApiError {
     ApiError::NotFound("zone")
 }
 
-fn zone_exists(state: &SharedState, idx: usize) -> Result<(), ApiError> {
-    state
-        .zone_commands
-        .contains_key(&idx)
-        .then_some(())
+/// The configuration of zone `idx`, or 404. The configuration is the one source of which
+/// zones exist: the store, the command senders and the EQ store are all built from it.
+pub(super) fn zone_config(
+    state: &SharedState,
+    idx: usize,
+) -> Result<&crate::config::ZoneConfig, ApiError> {
+    idx.checked_sub(1)
+        .and_then(|i| state.config.zones.get(i))
         .ok_or_else(zone_not_found)
+}
+
+fn zone_exists(state: &SharedState, idx: usize) -> Result<(), ApiError> {
+    zone_config(state, idx).map(drop)
 }
 
 async fn send_cmd(state: &SharedState, idx: usize, cmd: ZoneCommand) -> Result<(), ApiError> {
@@ -168,6 +222,21 @@ async fn send_cmd(state: &SharedState, idx: usize, cmd: ZoneCommand) -> Result<(
         .send(cmd)
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))
+}
+
+/// Send a command whose index the zone checks, and turn a missing index into a 404.
+async fn send_checked(
+    state: &SharedState,
+    idx: usize,
+    cmd: ZoneCommand,
+    missing: &'static str,
+) -> Result<(), ApiError> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    send_cmd(state, idx, ZoneCommand::Checked(Box::new(cmd), tx)).await?;
+    match rx.await {
+        Ok(false) => Err(ApiError::NotFound(missing)),
+        _ => Ok(()),
+    }
 }
 
 fn require_http_url(url: &str) -> Result<(), ApiError> {
@@ -217,23 +286,7 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ZoneInfo>> {
             .config
             .zones
             .iter()
-            .map(|z| {
-                let zs = store.zones.get(&z.index);
-                ZoneInfo {
-                    index: z.index,
-                    name: z.name.clone(),
-                    icon: z.icon.clone(),
-                    volume: zs.map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
-                    muted: zs.is_some_and(|s| s.muted),
-                    playback: zs.map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
-                    source: zs.map_or_else(|| "idle".into(), |s| s.source.to_string()),
-                    shuffle: zs.is_some_and(|s| s.shuffle),
-                    repeat: zs.map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
-                    presence: zs.is_some_and(|s| s.presence),
-                    presence_enabled: zs.is_none_or(|s| s.presence_enabled),
-                    presence_timer_active: zs.is_some_and(|s| s.auto_off_active),
-                }
-            })
+            .map(|z| ZoneInfo::new(z, store.zones.get(&z.index)))
             .collect(),
     )
 }
@@ -254,33 +307,9 @@ async fn get_all(State(state): State<SharedState>) -> Json<Vec<ZoneInfo>> {
     tag = "zones"
 )]
 async fn get_zone(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl IntoResponse {
-    let cfg = idx
-        .checked_sub(1)
-        .and_then(|i| state.config.zones.get(i))
-        .ok_or(zone_not_found())?;
+    let cfg = zone_config(&state, idx)?;
     let zs = state.store.read().await.zones.get(&idx).cloned();
-    Ok::<_, ApiError>(Json(ZoneInfo {
-        index: cfg.index,
-        name: cfg.name.clone(),
-        icon: cfg.icon.clone(),
-        volume: zs
-            .as_ref()
-            .map_or(crate::state::DEFAULT_VOLUME, |s| s.volume),
-        muted: zs.as_ref().is_some_and(|s| s.muted),
-        playback: zs
-            .as_ref()
-            .map_or_else(|| "stopped".into(), |s| s.playback.to_string()),
-        source: zs
-            .as_ref()
-            .map_or_else(|| "idle".into(), |s| s.source.to_string()),
-        shuffle: zs.as_ref().is_some_and(|s| s.shuffle),
-        repeat: zs
-            .as_ref()
-            .map_or(snapdog_common::RepeatMode::Off, |s| s.repeat),
-        presence: zs.as_ref().is_some_and(|s| s.presence),
-        presence_enabled: zs.as_ref().is_none_or(|s| s.presence_enabled),
-        presence_timer_active: zs.as_ref().is_some_and(|s| s.auto_off_active),
-    }))
+    Ok::<_, ApiError>(Json(ZoneInfo::new(cfg, zs.as_ref())))
 }
 
 // ── Volume ────────────────────────────────────────────────────
@@ -309,7 +338,7 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
 
 /// Set zone volume level
 ///
-/// Updates the volume level of the specified zone. Supports absolute or relative values (e.g. "+5", "-5", or "45").
+/// Updates the volume level of the specified zone. A number or an unsigned string ("45") sets the level, a string with a sign ("+5", "-5") changes it by that amount.
 #[utoipa::path(
     put,
     path = "/api/v1/zones/{zone_index}/volume",
@@ -320,7 +349,8 @@ async fn get_volume(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     responses(
         (status = 200, description = "Updated zone volume", body = i32),
         (status = 400, description = "Invalid volume value", body = ErrorBody),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -335,7 +365,13 @@ async fn set_volume(
     let volume = value
         .resolve(current)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    send_cmd(&state, idx, ZoneCommand::SetVolume(volume)).await?;
+    // A relative step is applied in the zone task, in order with other volume commands, so two
+    // quick steps add up instead of both resolving against the same volume.
+    let cmd = value
+        .relative_step()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?
+        .map_or(ZoneCommand::SetVolume(volume), ZoneCommand::AdjustVolume);
+    send_cmd(&state, idx, cmd).await?;
     Ok::<_, ApiError>(Json(volume))
 }
 
@@ -373,7 +409,8 @@ async fn get_mute(State(state): State<SharedState>, Path(idx): Path<usize>) -> i
     request_body = bool,
     responses(
         (status = 200, description = "Updated mute status"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -396,7 +433,8 @@ async fn set_mute(
     ),
     responses(
         (status = 200, description = "Mute toggled successfully"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -420,7 +458,8 @@ async fn toggle_mute(
     ),
     responses(
         (status = 200, description = "Playback resumed"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -439,7 +478,8 @@ async fn play(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl 
     ),
     responses(
         (status = 200, description = "Playback paused"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -458,7 +498,8 @@ async fn pause(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl
     ),
     responses(
         (status = 200, description = "Playback stopped"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -477,7 +518,8 @@ async fn stop(State(state): State<SharedState>, Path(idx): Path<usize>) -> impl 
     ),
     responses(
         (status = 200, description = "Skipped to next track"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -496,7 +538,8 @@ async fn next_track(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     ),
     responses(
         (status = 200, description = "Skipped to previous track"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -574,7 +617,8 @@ async fn get_zone_playlist_by_id(
     request_body = String,
     responses(
         (status = 200, description = "Playlist changed successfully"),
-        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -601,7 +645,8 @@ async fn set_zone_playlist_by_id(
     request_body = usize,
     responses(
         (status = 200, description = "Playlist changed successfully"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -610,7 +655,7 @@ async fn set_playlist(
     Path(idx): Path<usize>,
     Json(v): Json<usize>,
 ) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::SetPlaylist(v, 0)).await
+    send_checked(&state, idx, ZoneCommand::SetPlaylist(v, 0), "playlist").await
 }
 
 /// Switch to next playlist
@@ -624,7 +669,8 @@ async fn set_playlist(
     ),
     responses(
         (status = 200, description = "Switched to next playlist"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -646,7 +692,8 @@ async fn next_playlist(
     ),
     responses(
         (status = 200, description = "Switched to previous playlist"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -694,7 +741,8 @@ async fn get_shuffle(
     request_body = bool,
     responses(
         (status = 200, description = "Shuffle status updated"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -717,7 +765,8 @@ async fn set_shuffle(
     ),
     responses(
         (status = 200, description = "Shuffle status toggled"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -762,7 +811,8 @@ async fn get_repeat(State(state): State<SharedState>, Path(idx): Path<usize>) ->
     request_body = RepeatMode,
     responses(
         (status = 200, description = "Repeat mode updated"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -785,7 +835,8 @@ async fn set_repeat(
     ),
     responses(
         (status = 200, description = "Repeat mode toggled"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1069,8 +1120,9 @@ async fn get_track_position(
     request_body = SeekPayload,
     responses(
         (status = 200, description = "Seek command processed"),
-        (status = 400, description = "Invalid payload (both or neither field provided)", body = ErrorBody),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 400, description = "Invalid payload (both or neither field provided, or out of range)", body = ErrorBody),
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1080,6 +1132,18 @@ async fn seek_position(
     Json(body): Json<SeekPayload>,
 ) -> impl IntoResponse {
     let cmd = match (body.position_ms, body.offset_ms) {
+        (Some(pos), None) if !(0..=snapdog_common::MAX_SEEK_MS).contains(&pos) => {
+            return Err(ApiError::BadRequest(format!(
+                "position_ms must be between 0 and {}",
+                snapdog_common::MAX_SEEK_MS
+            )));
+        }
+        (None, Some(offset)) if offset.abs() > snapdog_common::MAX_SEEK_MS => {
+            return Err(ApiError::BadRequest(format!(
+                "offset_ms must be between -{0} and {0}",
+                snapdog_common::MAX_SEEK_MS
+            )));
+        }
         (Some(pos), None) => ZoneCommand::Seek(pos),
         (None, Some(offset)) => ZoneCommand::SeekRelative(offset),
         _ => {
@@ -1139,7 +1203,8 @@ async fn get_track_progress(
     request_body = f64,
     responses(
         (status = 200, description = "Seek command processed"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1190,7 +1255,9 @@ async fn get_track_playing(
     request_body = i32,
     responses(
         (status = 200, description = "Track play command sent"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 400, description = "Negative track index", body = ErrorBody),
+        (status = 404, description = "Zone not found, no active playlist, or no such track", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1199,7 +1266,9 @@ async fn play_track(
     Path(idx): Path<usize>,
     Json(v): Json<i32>,
 ) -> impl IntoResponse {
-    send_cmd(&state, idx, ZoneCommand::SetTrack(v as usize)).await
+    let track = usize::try_from(v)
+        .map_err(|_| ApiError::BadRequest("track index must be non-negative".into()))?;
+    send_checked(&state, idx, ZoneCommand::SetTrack(track), "track").await
 }
 
 /// Play arbitrary audio stream URL
@@ -1215,7 +1284,8 @@ async fn play_track(
     responses(
         (status = 200, description = "URL playback started"),
         (status = 400, description = "Invalid URL schema (must be http or https)", body = ErrorBody),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1230,12 +1300,6 @@ async fn play_url(
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct PlaylistPayload {
-    /// Unified playlist index.
-    ///
-    /// Deprecated. Use `index`. Removed with SnapDog 1.0, which breaks compatibility of `/api/v1` for clients that still read it.
-    #[schema(deprecated)]
-    #[allow(clippy::doc_markdown)]
-    id: Option<usize>,
     /// Unified playlist index (0-based).
     index: Option<usize>,
     #[serde(default)]
@@ -1243,15 +1307,11 @@ pub struct PlaylistPayload {
 }
 
 impl PlaylistPayload {
-    /// The playlist index from `index` or the deprecated `id`. Both must agree if both are set.
+    /// The playlist index. A body without `index` (for example one that still sends only the
+    /// `id` removed in 1.0) is refused with a message that names the field.
     fn index(&self) -> Result<usize, ApiError> {
-        match (self.index, self.id) {
-            (Some(i), Some(d)) if i != d => Err(ApiError::BadRequest(
-                "`index` and `id` differ, send `index` only".into(),
-            )),
-            (Some(i), _) | (None, Some(i)) => Ok(i),
-            (None, None) => Err(ApiError::BadRequest("`index` is required".into())),
-        }
+        self.index
+            .ok_or_else(|| ApiError::BadRequest("`index` is required".into()))
     }
 }
 
@@ -1277,7 +1337,9 @@ pub struct PlaylistByIdPayload {
     request_body = PlaylistPayload,
     responses(
         (status = 200, description = "Playlist playback triggered"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 400, description = "Neither or both of `index` and `playlist_id`, or an invalid index", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1287,7 +1349,13 @@ async fn play_subsonic_playlist(
     Json(v): Json<PlaylistPayload>,
 ) -> impl IntoResponse {
     let index = v.index()?;
-    send_cmd(&state, idx, ZoneCommand::PlayPlaylist(index, v.track)).await
+    send_checked(
+        &state,
+        idx,
+        ZoneCommand::PlayPlaylist(index, v.track),
+        "playlist",
+    )
+    .await
 }
 
 /// Play playlist by `playlist_id`
@@ -1304,7 +1372,8 @@ async fn play_subsonic_playlist(
     request_body = PlaylistByIdPayload,
     responses(
         (status = 200, description = "Playlist playback triggered"),
-        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1336,7 +1405,9 @@ async fn play_playlist_by_id(
     request_body = i32,
     responses(
         (status = 200, description = "Playlist track playback started"),
-        (status = 404, description = "Zone or playlist not found", body = ErrorBody)
+        (status = 404, description = "Zone or playlist not found", body = ErrorBody),
+        (status = 400, description = "Invalid playlist or track index", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1347,7 +1418,13 @@ async fn play_playlist_track(
 ) -> impl IntoResponse {
     let track = usize::try_from(v)
         .map_err(|_| ApiError::BadRequest("track index must be non-negative".into()))?;
-    send_cmd(&state, zone, ZoneCommand::PlayPlaylist(playlist, track)).await
+    send_checked(
+        &state,
+        zone,
+        ZoneCommand::PlayPlaylist(playlist, track),
+        "playlist",
+    )
+    .await
 }
 
 /// Play Subsonic track by ID
@@ -1362,7 +1439,8 @@ async fn play_playlist_track(
     ),
     responses(
         (status = 200, description = "Subsonic track playback started"),
-        (status = 404, description = "Zone or track not found", body = ErrorBody)
+        (status = 404, description = "Zone or track not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1387,7 +1465,8 @@ async fn play_subsonic_track(
     ),
     responses(
         (status = 200, description = "Album playback started"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1641,7 +1720,8 @@ async fn get_presence(
     request_body = bool,
     responses(
         (status = 200, description = "Presence status updated successfully"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1690,7 +1770,8 @@ async fn get_presence_enabled(
     request_body = bool,
     responses(
         (status = 200, description = "Presence sensor status updated"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1739,7 +1820,8 @@ async fn get_presence_timeout(
     request_body = u16,
     responses(
         (status = 200, description = "Presence timeout updated"),
-        (status = 404, description = "Zone not found", body = ErrorBody)
+        (status = 404, description = "Zone not found", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the zone task", body = ErrorBody)
     ),
     tag = "zones"
 )]
@@ -1809,6 +1891,30 @@ pub struct ZoneTrackMetadata {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn volume_value_unsigned_string_is_absolute_and_signed_string_is_relative() {
+        let abs = |v: VolumeValue| v.resolve(30).unwrap();
+        assert_eq!(abs(VolumeValue::Absolute(45)), 45);
+        assert_eq!(abs(VolumeValue::Relative("45".into())), 45);
+        assert_eq!(abs(VolumeValue::Relative("+5".into())), 35);
+        assert_eq!(abs(VolumeValue::Relative("-5".into())), 25);
+        assert_eq!(abs(VolumeValue::Relative("-100".into())), 0);
+    }
+
+    #[test]
+    fn volume_value_overflow_saturates_and_garbage_is_rejected() {
+        assert_eq!(
+            VolumeValue::Relative("+2147483647".into()).resolve(30),
+            Ok(100)
+        );
+        assert_eq!(
+            VolumeValue::Relative("-2147483648".into()).resolve(30),
+            Ok(0)
+        );
+        assert!(VolumeValue::Relative("loud".into()).resolve(30).is_err());
+        assert!(VolumeValue::Relative(String::new()).resolve(30).is_err());
+    }
+
     use super::*;
 
     #[test]
@@ -1849,32 +1955,27 @@ mod tests {
 
     #[test]
     fn playlist_payload_defaults_to_first_track() {
-        let req: PlaylistPayload = serde_json::from_str(r#"{"id":2}"#).unwrap();
+        let req: PlaylistPayload = serde_json::from_str(r#"{"index":2}"#).unwrap();
         assert_eq!(req.index().unwrap(), 2);
         assert_eq!(req.track, 0);
     }
 
     #[test]
     fn playlist_payload_accepts_start_track() {
-        let req: PlaylistPayload = serde_json::from_str(r#"{"id":2,"track":7}"#).unwrap();
+        let req: PlaylistPayload = serde_json::from_str(r#"{"index":2,"track":7}"#).unwrap();
         assert_eq!(req.index().unwrap(), 2);
         assert_eq!(req.track, 7);
     }
 
-    /// MED-M1-A2a: `index`, the deprecated `id`, both equal work, both different and neither fail.
+    /// Version 1.0 removed `id`: only `index` counts. A client that still sends `id` next to
+    /// `index` is not affected, one that sends only `id` gets a 400 that names `index`.
     #[test]
-    fn playlist_payload_index_and_deprecated_id() {
+    fn playlist_payload_takes_index_and_ignores_a_removed_id() {
         let parse = |s: &str| serde_json::from_str::<PlaylistPayload>(s).unwrap().index();
         assert_eq!(parse(r#"{"index":3}"#).unwrap(), 3);
-        assert_eq!(parse(r#"{"id":3}"#).unwrap(), 3);
-        assert_eq!(parse(r#"{"id":3,"index":3}"#).unwrap(), 3);
-        assert!(matches!(
-            parse(r#"{"id":3,"index":4}"#),
-            Err(ApiError::BadRequest(_))
-        ));
-        assert!(matches!(
-            parse(r#"{"track":1}"#),
-            Err(ApiError::BadRequest(_))
-        ));
+        assert_eq!(parse(r#"{"id":9,"index":3}"#).unwrap(), 3);
+        for body in [r#"{"id":3}"#, r#"{"track":1}"#] {
+            assert!(matches!(parse(body), Err(ApiError::BadRequest(m)) if m.contains("index")));
+        }
     }
 }

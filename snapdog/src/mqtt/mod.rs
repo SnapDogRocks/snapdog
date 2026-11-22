@@ -62,6 +62,8 @@ pub struct MqttRuntime {
     pub snap_tx: mpsc::Sender<SnapcastCmd>,
     /// Notification stream (`ZoneChanged`, `ClientStateChanged`, ...) as JSON.
     pub notifications: broadcast::Receiver<Arc<str>>,
+    /// Sender of the same stream, for the changes MQTT makes itself (client zone moves).
+    pub notify: broadcast::Sender<Arc<str>>,
     /// Who `SnapDog` says it is in the Home Assistant discovery message.
     pub server: ServerInfo,
 }
@@ -131,6 +133,7 @@ impl MqttBridge {
             runtime.zone_commands,
             runtime.state.clone(),
             runtime.snap_tx,
+            runtime.notify,
         );
         let session = Session {
             publisher: publisher.clone(),
@@ -330,7 +333,7 @@ mod tests {
             .await
             .unwrap();
         assert!(bridge.wait_connected(Duration::from_secs(5)).await);
-        // One CONNECT, 16 subscription filters, `online` and the state of 2 zones
+        // One CONNECT, one subscription filter per command route, `online` and the state of 2 zones
         // and 1 client (plus the clearing of legacy topics).
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while tokio::time::Instant::now() < deadline
@@ -479,8 +482,18 @@ mod tests {
             .count()
     }
 
-    fn volume_changed() -> Arc<str> {
-        serde_json::json!({"type": "zone_volume_changed", "zone": 1, "volume": 20, "muted": false})
+    /// Change the volume of zone 1 in the store and announce it. The state is published
+    /// only when it differs from the last one, so the store has to change too.
+    async fn volume_changed(ends: &crate::mqtt::test_support::RuntimeEnds) -> Arc<str> {
+        let volume = {
+            let mut store = ends.store.write().await;
+            let zone = store.zones.get_mut(&1).unwrap();
+            zone.volume = (zone.volume + 7) % 100;
+            let volume = zone.volume;
+            drop(store);
+            volume
+        };
+        serde_json::json!({"type": "zone_volume_changed", "zone": 1, "volume": volume, "muted": false})
             .to_string()
             .into()
     }
@@ -508,7 +521,7 @@ mod tests {
             1
         );
         // State still flows.
-        ends.notify_tx.send(volume_changed()).unwrap();
+        ends.notify_tx.send(volume_changed(&ends).await).unwrap();
         wait_for(&broker, |_| zone_state_publishes(&broker) > before).await;
         assert!(
             zone_state_publishes(&broker) > before,
@@ -557,7 +570,7 @@ mod tests {
         );
         // And it keeps working: a notification becomes a state message.
         let after = zone_state_publishes(&broker);
-        ends.notify_tx.send(volume_changed()).unwrap();
+        ends.notify_tx.send(volume_changed(&ends).await).unwrap();
         wait_for(&broker, |_| zone_state_publishes(&broker) > after).await;
         assert!(
             zone_state_publishes(&broker) > after,

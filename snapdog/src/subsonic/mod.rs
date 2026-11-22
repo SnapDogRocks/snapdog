@@ -56,6 +56,16 @@ impl PlaylistCache {
         self.fetch(client).await
     }
 
+    /// The number of playlists in the cached list, of any age, without a request. `None`
+    /// before the first read.
+    pub async fn cached_len(&self) -> Option<usize> {
+        self.inner
+            .read()
+            .await
+            .as_ref()
+            .map(|(_, entries)| entries.len())
+    }
+
     /// The playlists, read from `client` now, whatever the age of the cached list.
     pub async fn fetch(&self, client: Option<&SubsonicClient>) -> Vec<PlaylistEntry> {
         let fetched = match client {
@@ -101,6 +111,9 @@ fn refreshed_cache(
     fetched: Result<Option<Vec<PlaylistEntry>>>,
     now: std::time::Instant,
 ) -> (std::time::Instant, Vec<PlaylistEntry>) {
+    // The periodic playlist refresh is the Subsonic health check: a failed fetch raises the
+    // fault, the next successful one clears it.
+    crate::health::report(crate::health::FaultSource::Subsonic, fetched.is_ok());
     match fetched {
         Ok(entries) => (now, entries.unwrap_or_default()),
         Err(e) => {
@@ -142,7 +155,8 @@ pub struct Page {
     pub offset: usize,
 }
 
-/// Subsonic API client.
+/// Subsonic API client. Cloning is cheap and shares the connection pool.
+#[derive(Clone)]
 pub struct SubsonicClient {
     base_url: String,
     username: String,
@@ -197,8 +211,12 @@ impl SubsonicClient {
     /// Returns an error if the API request fails.
     pub async fn get_playlists(&self) -> Result<Vec<PlaylistEntry>> {
         let resp: SubsonicResponse<PlaylistsWrapper> = self.get("getPlaylists", &[]).await?;
+        // Subsonic reports errors (wrong credentials included) as HTTP 200 with
+        // `status: "failed"`: that must not read as an empty list, or the playlist cache
+        // replaces the last good list with it.
         Ok(resp
             .subsonic_response
+            .ok_or_failure("getPlaylists")?
             .playlists
             .map(|p| p.playlist)
             .unwrap_or_default())
@@ -213,8 +231,27 @@ impl SubsonicClient {
         let resp: SubsonicResponse<PlaylistWrapper> =
             self.get("getPlaylist", &[("id", id)]).await?;
         resp.subsonic_response
+            .ok_or_failure("getPlaylist")?
             .playlist
             .context("Playlist not found")
+    }
+
+    /// Get one track's metadata (`getSong`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails, the server reports a failure or the track
+    /// is not found.
+    pub async fn get_song(&self, id: &str) -> Result<Track> {
+        let resp: SubsonicResponse<()> = self.get("getSong", &[("id", id)]).await?;
+        let inner = resp.subsonic_response;
+        if inner.status != "ok" {
+            anyhow::bail!(
+                "getSong failed: {}",
+                inner.error.map(|e| e.message).unwrap_or_default()
+            );
+        }
+        inner.song.context("Track not found")
     }
 
     /// Get an album with its tracks, shaped like a playlist so the player can queue it.
@@ -224,7 +261,11 @@ impl SubsonicClient {
     /// Returns an error if the API request fails or the album is not found.
     pub async fn get_album(&self, id: &str) -> Result<Playlist> {
         let resp: SubsonicResponse<PlaylistWrapper> = self.get("getAlbum", &[("id", id)]).await?;
-        let album = resp.subsonic_response.album.context("Album not found")?;
+        let album = resp
+            .subsonic_response
+            .ok_or_failure("getAlbum")?
+            .album
+            .context("Album not found")?;
         Ok(Playlist {
             id: album.id,
             name: album.name,
@@ -280,14 +321,7 @@ impl SubsonicClient {
     /// which is returned as a [`SubsonicFailure`].
     async fn write(&self, method: &str, params: &[(&str, &str)]) -> Result<Option<Playlist>> {
         let resp: SubsonicResponse<PlaylistWrapper> = self.get(method, params).await?;
-        let inner = resp.subsonic_response;
-        if inner.status == "ok" {
-            return Ok(inner.playlist);
-        }
-        let (code, message) = inner
-            .error
-            .map_or_else(|| (0, format!("{method} failed")), |e| (e.code, e.message));
-        Err(SubsonicFailure { code, message }.into())
+        Ok(resp.subsonic_response.ok_or_failure(method)?.playlist)
     }
 
     /// Create a playlist. Returns it when the server answers with it (Subsonic 1.14 and later).
@@ -462,24 +496,9 @@ async fn read_response_bytes_limited(
     limit: u64,
     label: &str,
 ) -> Result<Vec<u8>> {
-    use futures_util::StreamExt;
-
-    if let Some(len) = response.content_length()
-        && len > limit
-    {
-        anyhow::bail!("{label} body is too large: {len} bytes > {limit} bytes");
-    }
-    let mut stream = response.bytes_stream();
-    let mut body = bytes::BytesMut::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.with_context(|| format!("Failed to read {label} body"))?;
-        let next_len = body.len() as u64 + chunk.len() as u64;
-        if next_len > limit {
-            anyhow::bail!("{label} body exceeded {limit} bytes");
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body.to_vec())
+    crate::audio::read_response_bytes_limited(response, limit, label)
+        .await
+        .map(|body| body.to_vec())
 }
 
 // ── Subsonic API response types ───────────────────────────────
@@ -488,6 +507,19 @@ async fn read_response_bytes_limited(
 #[serde(rename_all = "kebab-case")]
 struct SubsonicResponse<T> {
     subsonic_response: SubsonicInner<T>,
+}
+
+impl<T> SubsonicInner<T> {
+    /// The response if its status is `ok`, else the server's error as [`SubsonicFailure`].
+    fn ok_or_failure(self, method: &str) -> Result<Self> {
+        if self.status == "ok" {
+            return Ok(self);
+        }
+        let (code, message) = self
+            .error
+            .map_or_else(|| (0, format!("{method} failed")), |e| (e.code, e.message));
+        Err(SubsonicFailure { code, message }.into())
+    }
 }
 
 #[derive(Deserialize)]
@@ -505,6 +537,8 @@ struct SubsonicInner<T> {
     search_result3: Option<SearchResult>,
     #[serde(default)]
     album: Option<AlbumWithSongs>,
+    #[serde(default)]
+    song: Option<Track>,
 }
 
 /// An album as `getAlbum` returns it.
@@ -641,6 +675,22 @@ pub struct Track {
     pub cover_art: Option<String>,
     /// Track number within the album.
     pub track: Option<u32>,
+}
+
+impl Track {
+    /// A track known only by its id, for when its metadata cannot be read.
+    #[must_use]
+    pub fn untitled(id: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            title: String::new(),
+            artist: None,
+            album: None,
+            duration: 0,
+            cover_art: None,
+            track: None,
+        }
+    }
 }
 
 #[cfg(test)]

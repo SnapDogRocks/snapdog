@@ -19,6 +19,12 @@ import type {
 
 export type { EqBand, EqConfig } from "./types";
 
+/** A preset from `GET /eq/presets`. */
+export interface EqPreset {
+  name: string;
+  bands: EqBand[];
+}
+
 import { getApiKey, clearApiKey } from "./auth";
 
 const BASE = "";
@@ -27,9 +33,30 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Machine-readable class from the server's `ErrorBody`, when the body was one. */
+    public error: string | null = null,
   ) {
     super(message);
   }
+}
+
+/**
+ * The error of a failed response: the server's `ErrorBody` message when the body is one,
+ * otherwise method, path and status.
+ */
+export async function errorFromResponse(res: Response, method: string, path: string): Promise<ApiError> {
+  check401(res);
+  const fallback = `${method} ${path}: ${res.status}`;
+  try {
+    const body = (await res.json()) as unknown;
+    if (body !== null && typeof body === "object" && "message" in body && typeof body.message === "string" && body.message) {
+      const error = "error" in body && typeof body.error === "string" ? body.error : null;
+      return new ApiError(res.status, body.message, error);
+    }
+  } catch {
+    // Not JSON (plain text 401, proxy error page): keep the status line.
+  }
+  return new ApiError(res.status, fallback);
 }
 
 function authHeaders(): Record<string, string> {
@@ -46,58 +73,35 @@ function check401(res: Response) {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
-  if (!res.ok) { check401(res); throw new ApiError(res.status, `GET ${path}: ${res.status}`); }
-  return (await res.json()) as T;
-}
+type Method = "GET" | "PUT" | "POST";
 
-async function putJson<T>(path: string, body: unknown): Promise<T> {
+/** One request with the API key; a failed response throws its `ApiError`. */
+async function request(method: Method, path: string, body?: unknown): Promise<Response> {
   const res = await fetch(`${BASE}${path}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) { check401(res); throw new ApiError(res.status, `PUT ${path}: ${res.status}`); }
-  const text = await res.text();
-  if (!text) throw new ApiError(res.status, `PUT ${path}: expected JSON response but got empty body`);
-  return JSON.parse(text) as T;
-}
-
-async function putVoid(path: string, body: unknown): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) { check401(res); throw new ApiError(res.status, `PUT ${path}: ${res.status}`); }
-}
-
-async function postJson<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
+    ...(method === "GET" ? {} : { method }),
     headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
-  if (!res.ok) { check401(res); throw new ApiError(res.status, `POST ${path}: ${res.status}`); }
+  if (!res.ok) throw await errorFromResponse(res, method, path);
+  return res;
+}
+
+/** The JSON body of a successful response; an empty body is an error. */
+async function json<T>(res: Response, method: Method, path: string): Promise<T> {
   const text = await res.text();
-  if (!text) throw new ApiError(res.status, `POST ${path}: expected JSON response but got empty body`);
+  if (!text) throw new ApiError(res.status, `${method} ${path}: expected JSON response but got empty body`);
   return JSON.parse(text) as T;
 }
 
-async function postVoid(path: string, body?: unknown): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  if (!res.ok) { check401(res); throw new ApiError(res.status, `POST ${path}: ${res.status}`); }
-}
+const get = async <T>(path: string): Promise<T> => json<T>(await request("GET", path), "GET", path);
+const putJson = async <T>(path: string, body: unknown): Promise<T> => json<T>(await request("PUT", path, body), "PUT", path);
+const putVoid = async (path: string, body: unknown): Promise<void> => { await request("PUT", path, body); };
+const postJson = async <T>(path: string, body?: unknown): Promise<T> => json<T>(await request("POST", path, body), "POST", path);
+const postVoid = async (path: string, body?: unknown): Promise<void> => { await request("POST", path, body); };
 
 /** Fetch a binary endpoint with auth and trigger a browser download. */
 async function downloadFile(path: string, filename: string): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
-  if (!res.ok) { check401(res); throw new ApiError(res.status, `GET ${path}: ${res.status}`); }
+  const res = await request("GET", path);
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");
   a.href = url;
@@ -261,6 +265,8 @@ export const eq = {
   set: (zoneId: number, config: EqConfig) => putJson<EqConfig>(`${Z}/${zoneId}/eq`, config),
   setBand: (zoneId: number, idx: number, band: EqBand) => putJson<EqConfig>(`${Z}/${zoneId}/eq/${idx}`, band),
   applyPreset: (zoneId: number, name: string) => postJson<EqConfig>(`${Z}/${zoneId}/eq/preset`, name),
+  /** Every preset the server accepts, in its order. */
+  presets: () => get<EqPreset[]>("/api/v1/eq/presets"),
 };
 
 export const clientEq = {

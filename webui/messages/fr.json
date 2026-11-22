@@ -4,7 +4,9 @@
     "skipToContent": "Aller au contenu",
     "connected": "Connecté",
     "disconnected": "Déconnecté",
-    "language": "Langue"
+    "language": "Langue",
+    "legacyDeprecated": "Cette interface est obsolète et sera supprimée dans une prochaine version.",
+    "legacySwitch": "Ouvrir l’interface actuelle"
   },
   "transport": {
     "play": "Lecture",
@@ -41,7 +43,8 @@
     "error": "Une erreur est survenue",
     "retry": "Réessayer",
     "presenceDetected": "Présence détectée",
-    "presenceTimerActive": "Minuterie d'arrêt automatique active"
+    "presenceTimerActive": "Minuterie d'arrêt automatique active",
+    "coverAlt": "Pochette de {title}"
   },
   "client": {
     "clients": "{count, plural, one {# client} other {# clients}}",
@@ -59,16 +62,45 @@
     "close": "Fermer l'égaliseur",
     "toggle": "EQ activé/désactivé",
     "presets": "Presets EQ",
-    "preset": "Presets",
-    "enabled": "Activé",
     "addBand": "+ Ajouter une bande",
-    "removeBand": "Supprimer la bande",
     "filterType": "Type de filtre bande {n}",
-    "frequency": "Fréquence",
-    "gain": "Gain",
-    "qFactor": "Facteur Q",
     "curve": "Courbe de réponse en fréquence",
-    "loading": "Chargement de l’égaliseur…"
+    "loading": "Chargement de l’égaliseur…",
+    "off": "Désactivé",
+    "on": "Activé",
+    "spinorama": "Base de données d’enceintes",
+    "custom": "Personnalisé",
+    "speakerToggle": "Correction d’enceinte",
+    "tabEq": "Égaliseur",
+    "tabSpeaker": "Enceinte",
+    "speakerCurve": "Courbe de correction de l’enceinte",
+    "speakersLoading": "Chargement des enceintes…",
+    "clearSpeaker": "Retirer",
+    "searchSpeakers": "Rechercher des enceintes…",
+    "noSpeakers": "Aucune enceinte trouvée",
+    "bandFrequency": "Fréquence de la bande {n}",
+    "bandGain": "Gain de la bande {n}",
+    "bandQ": "Facteur Q de la bande {n}",
+    "removeBandN": "Supprimer la bande {n}",
+    "filter": {
+      "low_shelf": "Plateau grave",
+      "high_shelf": "Plateau aigu",
+      "peaking": "En cloche",
+      "low_pass": "Passe-bas",
+      "high_pass": "Passe-haut"
+    },
+    "presetName": {
+      "flat": "Neutre",
+      "bass_boost": "Basses renforcées",
+      "treble_boost": "Aigus renforcés",
+      "vocal": "Voix",
+      "rock": "Rock",
+      "jazz": "Jazz",
+      "classical": "Classique",
+      "electronic": "Électronique",
+      "loudness": "Loudness",
+      "late_night": "Mode nuit"
+    }
   },
   "playlist": {
     "title": "Playlists",
@@ -145,7 +177,22 @@
     "updateCheck": "Vérifier",
     "updateApply": "Mettre à jour",
     "knxTitle": "KNX",
-    "programmingMode": "Mode programmation"
+    "programmingMode": "Mode programmation",
+    "updateState": {
+      "current": "À jour",
+      "idle": "À jour",
+      "available": "Mise à jour disponible",
+      "checking": "Vérification…",
+      "preparing": "Version en préparation",
+      "updating": "Mise à jour…",
+      "verifying": "Vérification de la signature…",
+      "deploying": "Installation…",
+      "waiting_for_health": "En attente du serveur…",
+      "rolling_back": "Retour arrière…",
+      "rolled_back": "Version précédente restaurée",
+      "failed": "Échec de la mise à jour",
+      "error": "Erreur"
+    }
   },
   "connect": {
     "title": "Connecter",

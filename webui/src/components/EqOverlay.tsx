@@ -1,44 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useEqPresets } from "@/hooks/useEqPresets";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
 import { api, type EqBand, type EqConfig } from "@/lib/api";
 import { logApiError } from "@/lib/log-api-error";
 import { computeResponse } from "@/lib/eq-response";
-import {
-  FILTER_TYPES,
-  MAX_EQ_BANDS,
-  FREQ_MIN_HZ,
-  FREQ_MAX_HZ,
-  GAIN_MIN_DB,
-  GAIN_MAX_DB,
-  GAIN_STEP_DB,
-  Q_MIN,
-  Q_MAX,
-  Q_STEP,
-  InteractiveEQCurve,
-  FrequencyResponseCurve
-} from "./EqCurve";
-
-const PRESETS = ['flat', 'bass_boost', 'treble_boost', 'vocal', 'rock', 'jazz', 'classical', 'electronic', 'loudness', 'late_night'] as const;
+import { createLatestSender, type LatestSender } from "@/lib/latest-sender";
+import { subscribeEqChanges, type EqTarget } from "@/lib/eq-events";
+import { MAX_EQ_BANDS, FrequencyResponseCurve } from "./EqCurve";
+import { BandEditor } from "./eq/BandEditor";
+import { SegmentedChoice } from "./eq/SegmentedChoice";
 
 const MAX_SPEAKER_RESULTS = 50;
 
-const PRESET_LABELS: Record<string, string> = {
-  flat: 'Flat',
-  bass_boost: 'Bass Boost',
-  treble_boost: 'Treble Boost',
-  vocal: 'Vocal',
-  rock: 'Rock',
-  jazz: 'Jazz',
-  classical: 'Classical',
-  electronic: 'Electronic',
-  loudness: 'Loudness',
-  late_night: 'Late Night',
-};
 
 interface EqOverlayProps {
   zoneId?: number;
@@ -48,7 +25,6 @@ interface EqOverlayProps {
   onClose: (enabled: boolean) => void;
 }
 
-const DEFAULT_BAND: EqBand = { freq: 1000, gain: 0, q: 1.0, type: "peaking" };
 
 type Tab = "eq" | "speaker";
 
@@ -65,13 +41,15 @@ function requireZoneId(zoneId: number | undefined): number {
 export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: EqOverlayProps) {
   const t = useTranslations("eq");
   const tZone = useTranslations("zone");
+  const presets = useEqPresets();
+  // A preset without a translated name shows its raw name.
+  const presetLabel = (name: string) => (t.has(`presetName.${name}`) ? t(`presetName.${name}`) : name);
   const [tab, setTab] = useState<Tab>("eq");
   const [config, setConfig] = useState<EqConfig>({ enabled: initialEnabled ?? false, bands: [], preset: "flat" });
   const configRef = useRef(config);
   const mountedRef = useRef(false);
   const openerRef = useRef<HTMLElement | null>(null);
   const [abBypass, setAbBypass] = useState(false);
-  const [selectedBand, setSelectedBand] = useState<number | null>(null);
   const [speakerMode, setSpeakerMode] = useState<"off" | "spinorama" | "custom">("off");
   const [speakerAbBypass, setSpeakerAbBypass] = useState(false);
   const targetKey = clientId != null ? `client:${clientId}` : `zone:${zoneId ?? "missing"}`;
@@ -109,11 +87,41 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
   const loading = loadState.target !== targetKey || loadState.status === "loading";
   const loadError = !loading && loadState.status === "error";
 
+  const abBypassRef = useRef(abBypass);
+  useEffect(() => { abBypassRef.current = abBypass; }, [abBypass]);
+
+  // One request at a time, latest wins: a drag does not flood the server, requests cannot
+  // overtake each other, and a failed one restores what the server holds.
+  const restoreFromServer = useCallback((error: unknown) => {
+    logApiError(error);
+    eqApi.get().then((server) => {
+      if (!mountedRef.current) return;
+      configRef.current = server;
+      setConfig(server);
+      setAbBypass(false);
+    }).catch(logApiError);
+  }, [eqApi]);
+  // Created in an effect: it is only used from handlers and effects, never during render.
+  const eqSenderRef = useRef<LatestSender<EqConfig> | null>(null);
+  useEffect(() => {
+    eqSenderRef.current = createLatestSender((c: EqConfig) => eqApi.set(c), { onError: restoreFromServer });
+  }, [eqApi, restoreFromServer]);
+
   // Push to server
   const pushConfig = useCallback(
-    (c: EqConfig) => { eqApi.set(c).catch(logApiError); },
-    [eqApi],
+    (c: EqConfig) => { eqSenderRef.current?.push(c); },
+    [],
   );
+
+  // A change from another controller updates the dialog, unless a local edit is on its way.
+  const eqTarget: EqTarget = clientId != null ? `client:${clientId}` : `zone:${zoneId ?? 0}`;
+  useEffect(() => subscribeEqChanges(eqTarget, (server) => {
+    if (eqSenderRef.current?.busy()) return;
+    // During A/B the server holds the EQ switched off on purpose; the dialog keeps `enabled`.
+    const next = abBypassRef.current ? { ...server, enabled: configRef.current.enabled } : server;
+    configRef.current = next;
+    setConfig(next);
+  }), [eqTarget]);
 
   const update = useCallback(
     (patch: Partial<EqConfig>) => {
@@ -128,6 +136,9 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
   const updateBand = useCallback(
     (idx: number, patch: Partial<EqBand>) => {
       const current = configRef.current;
+      const band = current.bands[idx];
+      // A pointer move or slider step that does not change the rounded values sends nothing.
+      if (!band || (Object.keys(patch) as (keyof EqBand)[]).every((k) => patch[k] === band[k])) return;
       const bands = current.bands.map((b, i) => (i === idx ? { ...b, ...patch } : b));
       const next = { ...current, bands, preset: null };
       configRef.current = next;
@@ -136,12 +147,6 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
     },
     [pushConfig],
   );
-
-  const addBand = () => {
-    const current = configRef.current;
-    if (current.bands.length >= MAX_EQ_BANDS) return;
-    update({ bands: [...current.bands, { ...DEFAULT_BAND }] });
-  };
 
   const removeBand = (idx: number) => {
     update({ bands: configRef.current.bands.filter((_, i) => i !== idx) });
@@ -156,6 +161,7 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
   };
 
   const toggleEnabled = (on: boolean) => {
+    setAbBypass(false);
     if (on) {
       eqApi.get().then((c) => {
         if (!mountedRef.current) return;
@@ -167,25 +173,22 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
     } else {
       const next = { ...configRef.current, enabled: false };
       configRef.current = next;
-      eqApi.set(next).catch(logApiError);
+      pushConfig(next);
       setConfig(next);
     }
   };
 
+  // The bypass is its own state: the server gets the EQ switched off while it lasts, the
+  // config in the dialog keeps `enabled`, so the editor and the A/B button stay usable.
   const toggleAB = () => {
     const next = !abBypass;
     setAbBypass(next);
-    const nextConfig = { ...configRef.current, enabled: !next };
-    configRef.current = nextConfig;
-    setConfig(nextConfig);
-    pushConfig(nextConfig);
+    pushConfig({ ...configRef.current, enabled: configRef.current.enabled && !next });
   };
 
   const handleClose = () => {
     if (abBypass && loadState.target === targetKey && loadState.status === "ready") {
-      const nextConfig = { ...configRef.current, enabled: true };
-      configRef.current = nextConfig;
-      pushConfig(nextConfig);
+      pushConfig(configRef.current);
     }
     const enabled = loadState.target === targetKey && loadState.status === "ready"
       ? configRef.current.enabled
@@ -222,17 +225,24 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
           <div className="flex items-center gap-3">
             <DialogPrimitive.Title className="text-lg font-semibold">{t("title", { zone: label })}</DialogPrimitive.Title>
             {!loading && !loadError && tab === "eq" && (
-              <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("toggle")}>
-                <button role="radio" aria-checked={!config.enabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${!config.enabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { toggleEnabled(false); }}>Off</button>
-                <button role="radio" aria-checked={config.enabled} className={`px-3 py-1 text-xs rounded-md transition-colors ${config.enabled ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { toggleEnabled(true); }}>On</button>
-              </div>
+              <SegmentedChoice
+                label={t("toggle")}
+                options={[{ value: "off", label: t("off") }, { value: "on", label: t("on") }]}
+                value={config.enabled ? "on" : "off"}
+                onChange={(v) => { toggleEnabled(v === "on"); }}
+              />
             )}
             {tab === "speaker" && (
-              <div className="inline-flex rounded-lg bg-muted p-0.5" role="radiogroup" aria-label={t("toggle")}>
-                <button role="radio" aria-checked={speakerMode === "off"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "off" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("off"); }}>Off</button>
-                <button role="radio" aria-checked={speakerMode === "spinorama"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "spinorama" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("spinorama"); }}>Spinorama</button>
-                <button role="radio" aria-checked={speakerMode === "custom"} className={`px-3 py-1 text-xs rounded-md transition-colors ${speakerMode === "custom" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerMode("custom"); }}>Custom</button>
-              </div>
+              <SegmentedChoice
+                label={t("speakerToggle")}
+                options={[
+                  { value: "off", label: t("off") },
+                  { value: "spinorama", label: t("spinorama") },
+                  { value: "custom", label: t("custom") },
+                ]}
+                value={speakerMode}
+                onChange={(mode) => { setSpeakerAbBypass(false); setSpeakerMode(mode); }}
+              />
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -254,8 +264,8 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
 
         {showTabs && (
           <div className="inline-flex rounded-lg bg-muted p-0.5 w-full" role="tablist">
-            <button role="tab" aria-selected={tab === "eq"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "eq" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setTab("eq"); }}>EQ</button>
-            <button role="tab" aria-selected={tab === "speaker"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "speaker" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setTab("speaker"); }}>Speaker</button>
+            <button role="tab" aria-selected={tab === "eq"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "eq" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setSpeakerAbBypass(false); setTab("eq"); }}>{t("tabEq")}</button>
+            <button role="tab" aria-selected={tab === "speaker"} className={`flex-1 px-4 py-1.5 text-sm rounded-md transition-colors ${tab === "speaker" ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground'}`} onClick={() => { setTab("speaker"); }}>{t("tabSpeaker")}</button>
           </div>
         )}
 
@@ -267,59 +277,37 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
             <Button variant="outline" size="sm" onClick={retryLoad}>{tZone("retry")}</Button>
           </div>
         ) : tab === "speaker" && showTabs ? (
-          <SpeakerTab clientId={clientId} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} />
+          <SpeakerTab clientId={clientId} mode={speakerMode} setMode={setSpeakerMode} abBypass={speakerAbBypass} setAbBypass={setSpeakerAbBypass} />
         ) : (
         <>
           <>
             {config.enabled ? (
               <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
-                <InteractiveEQCurve
+                <BandEditor
                   bands={config.bands}
                   response={response}
-                  selectedBand={selectedBand}
-                  onSelectBand={setSelectedBand}
-                  onBandChange={(idx, patch) => { updateBand(idx, patch); }}
-	                  onRemoveBand={(idx) => { removeBand(idx); }}
-	                  onAddBand={(freq, gain) => {
-	                    if (config.bands.length >= MAX_EQ_BANDS) return;
-	                    const bands = [...config.bands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
-	                    update({ bands });
-	                    setSelectedBand(bands.length - 1);
-                  }}
+                  curveLabel={t("curve")}
+                  onBandChange={updateBand}
+                  onRemoveBand={removeBand}
+                  onAddBand={(band) => { update({ bands: [...configRef.current.bands, band] }); }}
                 />
-                <div className="flex gap-1.5 overflow-x-auto scrollbar-none py-1 -mx-1 px-1" role="radiogroup" aria-label={t("presets")}>
-                  {PRESETS.map((p) => (
+                {/* Presets are actions: applying one replaces the bands, none stays "checked". */}
+                <div className="flex gap-1.5 overflow-x-auto scrollbar-none py-1 -mx-1 px-1" role="group" aria-label={t("presets")}>
+                  {presets.map((p) => (
                     <button
                       key={p}
+                      type="button"
                       onClick={() => { applyPreset(p); }}
-                      role="radio"
-                      aria-checked={config.preset === p}
                       className={`shrink-0 px-3 py-1 text-xs rounded-full transition-colors ${
                         config.preset === p
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted hover:bg-muted/80 text-foreground'
                       }`}
                     >
-                      {PRESET_LABELS[p] ?? p}
+                      {presetLabel(p)}
                     </button>
                   ))}
                 </div>
-                <div className="space-y-3">
-                  {config.bands.map((band, idx) => (
-                    <BandRow
-                      key={idx}
-                      band={band}
-                      index={idx}
-                      onChange={(patch) => { updateBand(idx, patch); }}
-                      onRemove={() => { removeBand(idx); }}
-                    />
-                  ))}
-                </div>
-                {config.bands.length < MAX_EQ_BANDS && (
-                  <Button variant="ghost" size="sm" onClick={addBand} className="w-full">
-                    {t("addBand")}
-                  </Button>
-                )}
               </div>
             ) : (
               <FrequencyResponseCurve response={[]} curveLabel={t("curve")} />
@@ -335,7 +323,17 @@ export function EqOverlay({ zoneId, clientId, label, initialEnabled, onClose }: 
 
 // ── Speaker Tab ───────────────────────────────────────────────
 
-function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; mode: "off" | "spinorama" | "custom"; setMode: (v: "off" | "spinorama" | "custom") => void; abBypass: boolean }) {
+type SpeakerMode = "off" | "spinorama" | "custom";
+
+interface SpeakerTabProps {
+  clientId: number;
+  mode: SpeakerMode;
+  setMode: React.Dispatch<React.SetStateAction<SpeakerMode>>;
+  abBypass: boolean;
+  setAbBypass: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+function SpeakerTab({ clientId, mode, setMode, abBypass, setAbBypass }: SpeakerTabProps) {
   const t = useTranslations("eq");
   const tZone = useTranslations("zone");
   const [search, setSearch] = useState("");
@@ -346,20 +344,62 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
   const [loadError, setLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [customBands, setCustomBands] = useState<EqBand[]>([]);
-  const [customSelected, setCustomSelected] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(MAX_SPEAKER_RESULTS);
   const abBypassRef = useRef(false);
-  const appliedNameRef = useRef<string | null>(null);
+  const currentConfigRef = useRef<EqConfig>(null);
+  const prevAbBypass = useRef(abBypass);
 
   useEffect(() => { abBypassRef.current = abBypass; }, [abBypass]);
-  useEffect(() => { appliedNameRef.current = appliedName; }, [appliedName]);
+  useEffect(() => { currentConfigRef.current = currentConfig; }, [currentConfig]);
 
-  // Restore speaker EQ on unmount if A/B was active
-  useEffect(() => () => {
-    if (abBypassRef.current && appliedNameRef.current) {
-      api.speakers.apply(clientId, appliedNameRef.current).catch(logApiError);
-    }
+  // The A/B bypass sends the same correction switched off, so it is never lost: not when the
+  // dialog closes, not on a tab switch and not when the page is reloaded while bypassed.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Custom bands and the A/B bypass go through one sender: one request at a time, latest wins,
+  // and a failed request restores the correction the server holds.
+  const restoreFromServer = useCallback((error: unknown) => {
+    logApiError(error);
+    api.speakers.get(clientId).then((server) => {
+      if (!mountedRef.current) return;
+      setCurrentConfig(server);
+      const name = server.preset?.startsWith("spinorama:") ? server.preset.slice("spinorama:".length) : null;
+      if (!name) setCustomBands(limitEqBands(server.bands));
+    }).catch(logApiError);
   }, [clientId]);
+  // Created in an effect: it is only used from handlers and effects, never during render.
+  const customSenderRef = useRef<LatestSender<EqConfig> | null>(null);
+  useEffect(() => {
+    customSenderRef.current = createLatestSender(
+      (c: EqConfig) => api.speakers.applyCustom(clientId, c),
+      { onError: restoreFromServer },
+    );
+  }, [clientId, restoreFromServer]);
+
+  const sendBypass = useCallback((bypassed: boolean) => {
+    const config = currentConfigRef.current;
+    if (!config || config.bands.length === 0) return;
+    customSenderRef.current?.push({ ...config, enabled: !bypassed });
+  }, []);
+
+  // A change from another controller updates the tab, unless a local edit is on its way or
+  // the correction is bypassed here on purpose.
+  useEffect(() => subscribeEqChanges(`speaker:${clientId}`, (server) => {
+    if (customSenderRef.current?.busy() || abBypassRef.current) return;
+    setCurrentConfig(server);
+    const name = server.preset?.startsWith("spinorama:") ? server.preset.slice("spinorama:".length) : null;
+    setAppliedName(name);
+    if (!name) setCustomBands(limitEqBands(server.bands));
+  }), [clientId]);
+
+  // End the bypass when the tab goes away (tab switch or closing the dialog).
+  useEffect(() => () => {
+    if (abBypassRef.current) sendBypass(false);
+  }, [sendBypass]);
 
   useEffect(() => {
     let active = true;
@@ -374,7 +414,13 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
       setAppliedName(name);
       setCustomBands(name ? [] : limitEqBands(config.bands));
       setVisibleCount(MAX_SPEAKER_RESULTS);
-      if (config.enabled || name != null) setMode(name ? "spinorama" : "custom");
+      // A correction that is switched off but still has bands was left bypassed.
+      const bypassed = !config.enabled && config.bands.length > 0;
+      if (config.enabled || name != null || bypassed) setMode(name ? "spinorama" : "custom");
+      if (bypassed) {
+        prevAbBypass.current = true;
+        setAbBypass(true);
+      }
       setLoading(false);
     }).catch((e: unknown) => {
       if (!active) return;
@@ -383,7 +429,7 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
       setLoading(false);
     });
     return () => { active = false; };
-  }, [clientId, loadAttempt, setMode]);
+  }, [clientId, loadAttempt, setMode, setAbBypass]);
 
   const retryLoad = () => {
     setLoading(true);
@@ -424,8 +470,8 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
     const limitedBands = limitEqBands(bands);
     const eq: EqConfig = { enabled: limitedBands.length > 0, bands: limitedBands, preset: null };
     setCurrentConfig(eq);
-    api.speakers.applyCustom(clientId, eq).catch(logApiError);
-  }, [clientId]);
+    customSenderRef.current?.push(eq);
+  }, []);
 
   const toggleEnabled = useCallback((on: boolean) => {
     if (!on) {
@@ -451,23 +497,18 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
   }, [mode, toggleEnabled]);
 
   // React to A/B bypass changes from parent
-  const prevAbBypass = useRef(abBypass);
   useEffect(() => {
     if (prevAbBypass.current === abBypass) return;
     prevAbBypass.current = abBypass;
-    if (abBypass) {
-      api.speakers.apply(clientId, null).catch(logApiError);
-    } else if (appliedName) {
-      api.speakers.apply(clientId, appliedName).catch(logApiError);
-    }
-  }, [abBypass, clientId, appliedName]);
+    sendBypass(abBypass);
+  }, [abBypass, sendBypass]);
 
   const response = useMemo(
     () => (currentConfig?.bands.length ? computeResponse(currentConfig.bands) : []),
     [currentConfig],
   );
 
-  if (loading) return <div className="text-sm text-muted-foreground py-8 text-center">Loading speakers…</div>;
+  if (loading) return <div className="text-sm text-muted-foreground py-8 text-center" role="status">{t("speakersLoading")}</div>;
   if (loadError) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground" role="alert">
@@ -480,14 +521,13 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
   return (
     <div className="space-y-5">
       {mode === "off" ? (
-        <FrequencyResponseCurve response={[]} curveLabel="Speaker correction curve" />
+        <FrequencyResponseCurve response={[]} curveLabel={t("speakerCurve")} />
       ) : mode === "custom" ? (
         <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
-          <InteractiveEQCurve
+          <BandEditor
             bands={customBands}
             response={computeResponse(customBands)}
-            selectedBand={customSelected}
-            onSelectBand={setCustomSelected}
+            curveLabel={t("speakerCurve")}
             onBandChange={(idx, patch) => {
               const next = customBands.map((b, i) => i === idx ? { ...b, ...patch } : b);
               setCustomBands(next);
@@ -496,62 +536,25 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
             onRemoveBand={(idx) => {
               const next = customBands.filter((_, i) => i !== idx);
               setCustomBands(next);
-              setCustomSelected(null);
               pushCustom(next);
-	            }}
-	            onAddBand={(freq, gain) => {
-	              if (customBands.length >= MAX_EQ_BANDS) return;
-	              const next = [...customBands, { ...DEFAULT_BAND, freq: Math.round(freq), gain: Math.round(gain * 2) / 2 }];
-	              setCustomBands(next);
-	              setCustomSelected(next.length - 1);
-	              pushCustom(next);
+            }}
+            onAddBand={(band) => {
+              const next = [...customBands, band];
+              setCustomBands(next);
+              pushCustom(next);
             }}
           />
-          <div className="space-y-3">
-            {customBands.map((band, idx) => (
-              <BandRow
-                key={idx}
-                band={band}
-                index={idx}
-                onChange={(patch) => {
-                  const next = customBands.map((b, i) => i === idx ? { ...b, ...patch } : b);
-                  setCustomBands(next);
-                  pushCustom(next);
-                }}
-                onRemove={() => {
-                  const next = customBands.filter((_, i) => i !== idx);
-                  setCustomBands(next);
-                  if (customSelected === idx) setCustomSelected(null);
-                  pushCustom(next);
-                }}
-              />
-            ))}
-          </div>
-          {customBands.length < MAX_EQ_BANDS && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                const next = [...customBands, { ...DEFAULT_BAND }];
-                setCustomBands(next);
-                pushCustom(next);
-              }}
-              className="w-full"
-            >
-              + {t("addBand")}
-            </Button>
-          )}
         </div>
       ) : (
         <div className={`space-y-5 ${abBypass ? 'opacity-50 pointer-events-none' : ''} transition-opacity duration-150`}>
         {/* Correction curve */}
-        <FrequencyResponseCurve response={response} curveLabel="Speaker correction curve" />
+        <FrequencyResponseCurve response={response} curveLabel={t("speakerCurve")} />
 
       {/* Applied speaker + clear */}
       {appliedName && (
         <div className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2">
           <span className="text-sm font-medium truncate">{appliedName}</span>
-          <Button variant="ghost" size="sm" onClick={clearSpeaker} className="text-xs shrink-0">Clear</Button>
+          <Button variant="ghost" size="sm" onClick={clearSpeaker} className="text-xs shrink-0">{t("clearSpeaker")}</Button>
         </div>
       )}
 
@@ -563,15 +566,15 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
           setSearch(e.target.value);
           setVisibleCount(MAX_SPEAKER_RESULTS);
         }}
-        placeholder="Search speakers…"
+        placeholder={t("searchSpeakers")}
         className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-        aria-label="Search speakers"
+        aria-label={t("searchSpeakers")}
       />
 
       {/* Results list */}
       <div className="max-h-48 overflow-y-auto rounded-lg border border-border divide-y divide-border" onScroll={handleScroll}>
         {visibleSpeakers.length === 0 ? (
-          <div className="px-3 py-4 text-sm text-muted-foreground text-center">No speakers found</div>
+          <div className="px-3 py-4 text-sm text-muted-foreground text-center">{t("noSpeakers")}</div>
         ) : (
           visibleSpeakers.map((name) => (
             <button
@@ -586,85 +589,6 @@ function SpeakerTab({ clientId, mode, setMode, abBypass }: { clientId: number; m
       </div>
       </div>
       )}
-    </div>
-  );
-}
-
-// ── Band Row ──────────────────────────────────────────────────
-
-function BandRow({
-  band,
-  index,
-  onChange,
-  onRemove,
-}: {
-  band: EqBand;
-  index: number;
-  onChange: (patch: Partial<EqBand>) => void;
-  onRemove: () => void;
-}) {
-  const t = useTranslations("eq");
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="w-5 text-muted-foreground text-xs">{index + 1}</span>
-      <select
-        value={band.type}
-        onChange={(e) => { onChange({ type: e.target.value as EqBand["type"] }); }}
-        className="bg-muted border border-border rounded px-1.5 py-1 text-xs w-20"
-        aria-label={t("filterType", { n: index + 1 })}
-      >
-        {FILTER_TYPES.map((t) => (
-          <option key={t} value={t}>{t.replace("_", " ")}</option>
-        ))}
-      </select>
-      <div className="flex-1 space-y-0.5">
-        <div className="flex items-center gap-2">
-          <span className="w-8 text-xs text-muted-foreground">Hz</span>
-          <Slider
-            value={[Math.log10(band.freq)]}
-            min={Math.log10(FREQ_MIN_HZ)}
-            max={Math.log10(FREQ_MAX_HZ)}
-            step={0.01}
-            onValueChange={([v]) => { if (v !== undefined) onChange({ freq: Math.round(Math.pow(10, v)) }); }}
-            getAriaValueText={(value) => {
-              const frequency = Math.round(Math.pow(10, value));
-              return frequency >= 1000 ? `${(frequency / 1000).toFixed(1)} kHz` : `${frequency} Hz`;
-            }}
-            className="flex-1"
-            aria-label={t("frequency")}
-          />
-          <span className="w-12 text-xs tabular-nums text-right">{band.freq >= 1000 ? `${(band.freq / 1000).toFixed(1)}k` : band.freq}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-8 text-xs text-muted-foreground">dB</span>
-          <Slider
-            value={[band.gain]}
-            min={GAIN_MIN_DB}
-            max={GAIN_MAX_DB}
-            step={GAIN_STEP_DB}
-            onValueChange={([v]) => { if (v !== undefined) onChange({ gain: v }); }}
-            getAriaValueText={(value) => `${value.toFixed(1)} dB`}
-            className="flex-1"
-            aria-label={t("gain")}
-          />
-          <span className="w-12 text-xs tabular-nums text-right">{band.gain > 0 ? "+" : ""}{band.gain.toFixed(1)}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-8 text-xs text-muted-foreground">Q</span>
-          <Slider
-            value={[band.q]}
-            min={Q_MIN}
-            max={Q_MAX}
-            step={Q_STEP}
-            onValueChange={([v]) => { if (v !== undefined) onChange({ q: Math.round(v * 10) / 10 }); }}
-            getAriaValueText={(value) => value.toFixed(1)}
-            className="flex-1"
-            aria-label={t("qFactor")}
-          />
-          <span className="w-12 text-xs tabular-nums text-right">{band.q.toFixed(1)}</span>
-        </div>
-      </div>
-      <Button variant="ghost" size="sm" onClick={onRemove} className="text-muted-foreground px-1" aria-label={t("removeBand")}>✕</Button>
     </div>
   );
 }

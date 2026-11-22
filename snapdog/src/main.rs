@@ -58,8 +58,9 @@ struct Cli {
     #[arg(short, long)]
     port: Option<u16>,
 
-    /// HTTP bind address (default: ::, dual-stack IPv4+IPv6). Use 0.0.0.0 for IPv4 only.
-    /// Several addresses, separated by commas, listen on each of them.
+    /// HTTP bind address, `loopback` or interface name like `eth0`, as `[http].bind`
+    /// (default: ::, dual-stack IPv4+IPv6). Use 0.0.0.0 for IPv4 only.
+    /// Several entries, separated by commas, listen on each of them.
     #[arg(short, long, value_delimiter = ',')]
     bind: Vec<String>,
 
@@ -71,9 +72,9 @@ struct Cli {
     #[arg(long)]
     tls_key: Option<std::path::PathBuf>,
 
-    /// Snapcast stream codec, overrides [snapcast].codec: pcm, flac, f32lz4, f32lz4e
-    #[arg(long)]
-    codec: Option<String>,
+    /// Snapcast stream codec, overrides [snapcast].codec
+    #[arg(long, value_enum)]
+    codec: Option<config::AudioCodec>,
 
     /// Sample rate
     #[arg(long)]
@@ -92,9 +93,9 @@ struct Cli {
     #[arg(long)]
     name: Option<String>,
 
-    /// Log level: trace, debug, info, warn, error
-    #[arg(short, long)]
-    log_level: Option<String>,
+    /// Log level
+    #[arg(short, long, value_enum)]
+    log_level: Option<config::LogLevel>,
 
     /// Run as a Windows service (Windows only)
     #[cfg(target_os = "windows")]
@@ -125,22 +126,47 @@ const SNAPCAST_CMD_CHANNEL_SIZE: usize = 64;
 const SNAPSERVER_STARTUP_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 /// State file names (relative to `config.system.state_dir`).
 const STATE_FILE: &str = "zones.json";
-/// Individual address of a KNX device started with `--knx-device` and no `--knx-address`.
-const DEFAULT_KNX_DEVICE_ADDRESS: &str = "15.15.255";
 const EQ_FILE: &str = "eq.json";
 
 /// Coalesces rapid volume changes per client within a time window.
 struct VolumeCoalescer {
     pending: std::collections::HashMap<String, (i32, tokio::time::Instant)>,
+    /// Volumes sent recently, with the time they went out. Snapcast reports them back a moment
+    /// later, and a relative step in between must build on them, not on the old state.
+    recent: std::collections::HashMap<String, (i32, tokio::time::Instant)>,
     window: std::time::Duration,
 }
+
+/// How long a sent volume counts as the current one for relative steps.
+const RECENT_VOLUME_MS: u64 = 1000;
 
 impl VolumeCoalescer {
     fn new(window: std::time::Duration) -> Self {
         Self {
             pending: std::collections::HashMap::new(),
+            recent: std::collections::HashMap::new(),
             window,
         }
+    }
+
+    /// The volume a client is about to get or got a moment ago, if any.
+    fn latest(&self, client_id: &str) -> Option<i32> {
+        if let Some((volume, _)) = self.pending.get(client_id) {
+            return Some(*volume);
+        }
+        self.recent
+            .get(client_id)
+            .filter(|(_, sent)| sent.elapsed() < std::time::Duration::from_millis(RECENT_VOLUME_MS))
+            .map(|(volume, _)| *volume)
+    }
+
+    /// The absolute volume for a relative step: built on a volume still in flight, so quick
+    /// relative steps add up, else on `stored`.
+    fn adjusted(&self, client_id: &str, stored: i32, delta: i32) -> i32 {
+        self.latest(client_id)
+            .unwrap_or(stored)
+            .saturating_add(delta)
+            .clamp(0, 100)
     }
 
     fn push(&mut self, client_id: String, volume: i32) {
@@ -158,8 +184,9 @@ impl VolumeCoalescer {
             .filter(|(_, (_, deadline))| now >= *deadline)
             .map(|(id, (vol, _))| (id.clone(), *vol))
             .collect();
-        for (id, _) in &expired {
+        for (id, volume) in &expired {
             self.pending.remove(id);
+            self.recent.insert(id.clone(), (*volume, now));
         }
         expired
     }
@@ -167,6 +194,14 @@ impl VolumeCoalescer {
     fn next_deadline(&self) -> Option<tokio::time::Instant> {
         self.pending.values().map(|(_, d)| *d).min()
     }
+}
+
+/// A zone reconcile in process mode, which the main loop carries out itself.
+const fn is_process_reconcile(cmd: &player::SnapcastCmd) -> bool {
+    cfg!(all(
+        feature = "snapcast-process",
+        not(feature = "snapcast-embedded")
+    )) && matches!(cmd, player::SnapcastCmd::ReconcileZones)
 }
 
 #[cfg(target_os = "windows")]
@@ -216,99 +251,31 @@ pub async fn run_app() -> Result<()> {
         std::process::exit(1);
     }
 
-    let mut app_config = if let Some(ref config_path) = cli.config {
-        config::load(config_path)?
-    } else {
-        // --knx-device without --config: an ETS-programmed device provides its
-        // config from persisted parameter memory; otherwise built-in defaults
-        // (RFC KEA-0004 boot-time apply).
-        config::load_raw_no_validate(knx::ets_device_config(cli.knx_address.as_deref()))?
+    // The command line is applied to the raw configuration before validation and bind
+    // resolution, so a flag behaves like the same key in the file.
+    let overrides = config::Overrides {
+        knx_device: cli.knx_device.then(|| {
+            cli.knx_address
+                .clone()
+                .unwrap_or_else(|| config::DEFAULT_KNX_DEVICE_ADDRESS.into())
+        }),
+        knx_prog_mode: cli.knx_prog_mode,
+        knx_sync_system_clock: cli.knx_sync_system_clock,
+        webui: cli
+            .webui
+            .map(|choice| selected_webui(config::WebUi::default(), Some(choice))),
+        port: cli.port,
+        bind: cli.bind.clone(),
+        tls_cert: cli.tls_cert.clone(),
+        tls_key: cli.tls_key.clone(),
+        codec: cli.codec,
+        sample_rate: cli.sample_rate,
+        bit_depth: cli.bit_depth,
+        streaming_port: cli.streaming_port,
+        name: cli.name.clone(),
+        log_level: cli.log_level,
     };
-
-    // --knx-device enables device mode
-    if cli.knx_device {
-        let knx = app_config.knx.get_or_insert_default();
-        knx.role = config::KnxRole::Device;
-        let address = cli
-            .knx_address
-            .clone()
-            .unwrap_or_else(|| DEFAULT_KNX_DEVICE_ADDRESS.into());
-        if let Some(configured) = knx.individual_address.as_ref()
-            && *configured != address
-        {
-            let message = format!(
-                "--knx-device replaces [knx].individual_address = {configured} from the \
-                 configuration file with {address}. Pass --knx-address {configured} to keep the \
-                 file's address."
-            );
-            app_config.warn(message);
-        }
-        let knx = app_config.knx.get_or_insert_default();
-        knx.individual_address = Some(address);
-    }
-
-    // --knx-prog-mode: set flag for BAU task to activate on start
-    if cli.knx_prog_mode
-        && let Some(ref mut knx) = app_config.knx
-    {
-        knx.start_prog_mode = true;
-    }
-
-    // --knx-sync-system-clock: allow the KNX Time GO to set the OS clock
-    if cli.knx_sync_system_clock {
-        app_config.knx.get_or_insert_default().sync_system_clock = true;
-    }
-
-    // CLI overrides
-    app_config.http.webui = selected_webui(app_config.http.webui, cli.webui);
-    if let Some(port) = cli.port {
-        app_config.http.port = port;
-    }
-    if !cli.bind.is_empty() {
-        app_config.http.bind.clone_from(&cli.bind);
-    }
-    if let Some(ref cert) = cli.tls_cert {
-        app_config.http.tls_cert = Some(cert.clone());
-    }
-    if let Some(ref key) = cli.tls_key {
-        app_config.http.tls_key = Some(key.clone());
-    }
-    if let Some(ref codec) = cli.codec {
-        app_config.snapcast.codec = match codec.as_str() {
-            "pcm" => config::AudioCodec::Pcm,
-            "flac" => config::AudioCodec::Flac,
-            "f32lz4" => config::AudioCodec::F32lz4,
-            "f32lz4e" => config::AudioCodec::F32lz4e,
-            other => anyhow::bail!("Unknown codec '{other}' — use pcm, flac, f32lz4, or f32lz4e"),
-        };
-    }
-    if let Some(rate) = cli.sample_rate {
-        app_config.audio.sample_rate = rate;
-    }
-    if let Some(bits) = cli.bit_depth {
-        app_config.audio.bit_depth = bits;
-    }
-    if let Some(port) = cli.streaming_port {
-        app_config.snapcast.streaming_port = port;
-    }
-    if let Some(ref s) = cli.name {
-        app_config.name = s.clone();
-    }
-    if let Some(ref level) = cli.log_level {
-        app_config.system.log_level = match level.as_str() {
-            "trace" => config::LogLevel::Trace,
-            "debug" => config::LogLevel::Debug,
-            "info" => config::LogLevel::Info,
-            "warn" => config::LogLevel::Warn,
-            "error" => config::LogLevel::Error,
-            other => anyhow::bail!(
-                "Unknown log level '{other}' — use trace, debug, info, warn, or error"
-            ),
-        };
-    }
-
-    // The command-line overrides above bypass file validation: check them too.
-    config::validate(&mut app_config)?;
+    let mut app_config = config::load_with_overrides(cli.config.as_deref(), &overrides)?;
 
     // Validate TLS configuration
     match (&app_config.http.tls_cert, &app_config.http.tls_key) {
@@ -517,6 +484,8 @@ pub async fn run_app() -> Result<()> {
         start_receivers: true,
         #[cfg(feature = "test-harness")]
         test_pcm_rx: std::sync::Mutex::new(std::collections::HashMap::new()),
+        #[cfg(feature = "test-harness")]
+        test_airplay_rx: std::sync::Mutex::new(std::collections::HashMap::new()),
     })
     .await?;
 
@@ -536,11 +505,10 @@ pub async fn run_app() -> Result<()> {
     let mut knx_device_control: Option<knx::DeviceControlHandle> = None;
     let mut knx_bridge: Option<knx::KnxBridge> = None;
     if config.knx.is_some() {
-        let knx_notifications = notify_tx.subscribe();
         match knx::start(
             &config,
             store.clone(),
-            knx_notifications,
+            notify_tx.clone(),
             zone_commands.clone(),
             snap_cmd_tx.clone(),
         )
@@ -606,17 +574,18 @@ pub async fn run_app() -> Result<()> {
         }
         match mqtt::MqttBridge::start(
             mqtt_config,
-            &config.http.base_url,
+            &config.http.base_url(),
             mqtt::MqttRuntime {
                 zone_commands: zone_commands.clone(),
                 state: store.clone(),
                 snap_tx: snap_cmd_tx.clone(),
                 notifications: notify_tx.subscribe(),
+                notify: notify_tx.clone(),
                 server: mqtt::ServerInfo {
                     id: server_id.clone(),
                     stable_id: server_identity.persisted,
                     name: config.name.clone(),
-                    base_url: config.http.base_url.clone(),
+                    base_url: config.http.base_url(),
                 },
             },
         )
@@ -660,23 +629,10 @@ pub async fn run_app() -> Result<()> {
         if tls_enabled {
             txt.insert("tls".into(), "true".into());
         }
-        // Determine the effective base_url for mDNS advertisement:
-        // - If explicitly configured (not the localhost default): use it
-        // - If bind address is not wildcard: derive from bind address
-        // - If TLS is enabled with wildcard bind: advertise https scheme
-        let scheme = if tls_enabled { "https" } else { "http" };
-        let default_base = format!("http://localhost:{}", config.http.port);
-        let effective_base_url = if config.http.base_url != default_base {
-            Some(config.http.base_url.clone())
-        } else if let Some(host) = config.http.single_specific_bind() {
-            Some(format!("{scheme}://{host}:{}", config.http.port))
-        } else if tls_enabled {
-            Some(format!("https://localhost:{}", config.http.port))
-        } else {
-            None
-        };
-        if let Some(ref url) = effective_base_url {
-            txt.insert("base_url".into(), url.clone());
+        // Only a URL another host can use: the configured one, or one derived from a single
+        // specific bind address. Never a localhost default.
+        if let Some(url) = config.http.advertised_base_url() {
+            txt.insert("base_url".into(), url);
         }
         let snapcast_port = config
             .mdns
@@ -712,7 +668,7 @@ pub async fn run_app() -> Result<()> {
     // ── D-Bus MPRIS2 ──────────────────────────────────────────
     #[cfg(all(feature = "dbus", target_os = "linux"))]
     let _dbus = if config.dbus.enabled {
-        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone()).await {
+        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone(), &store).await {
             Ok(conns) => {
                 tracing::info!(zones = conns.len(), "MPRIS2 D-Bus interfaces registered");
                 Some(conns)
@@ -738,7 +694,9 @@ pub async fn run_app() -> Result<()> {
         tokio::spawn(async move {
             let mut last_cover_hash: std::collections::HashMap<usize, String> =
                 std::collections::HashMap::new();
-            while let Ok(json) = meta_rx.recv().await {
+            while let Some(json) =
+                api::ws::recv_skipping_lag(&mut meta_rx, "metadata forwarder").await
+            {
                 let Ok(notif) = serde_json::from_str::<api::ws::Notification>(&json) else {
                     continue;
                 };
@@ -746,74 +704,80 @@ pub async fn run_app() -> Result<()> {
                     api::ws::Notification::ZoneChanged { zone, .. } => *zone,
                     _ => continue,
                 };
-                let s = meta_store.read().await;
-                let Some(zone) = s.zones.get(&zone_index) else {
-                    continue;
+                // Copy what is needed out of the store and release the guard before any
+                // await on the backend: a stalled client must not hold the store lock.
+                let (payload, targets) = {
+                    let s = meta_store.read().await;
+                    let Some(zone) = s.zones.get(&zone_index) else {
+                        continue;
+                    };
+                    let metadata = snapdog_common::TrackMetadata {
+                        playback: zone.playback.to_string(),
+                        source: zone.source.to_string(),
+                        shuffle: zone.shuffle,
+                        repeat: zone.repeat,
+                        title: zone
+                            .track
+                            .as_ref()
+                            .map_or_else(String::new, |t| t.title.clone()),
+                        artist: zone
+                            .track
+                            .as_ref()
+                            .map_or_else(String::new, |t| t.artist.clone()),
+                        album: zone
+                            .track
+                            .as_ref()
+                            .map_or_else(String::new, |t| t.album.clone()),
+                        album_artist: zone.track.as_ref().and_then(|t| t.album_artist.clone()),
+                        genre: zone.track.as_ref().and_then(|t| t.genre.clone()),
+                        year: zone.track.as_ref().and_then(|t| t.year),
+                        track_number: zone.track.as_ref().and_then(|t| t.track_number),
+                        disc_number: zone.track.as_ref().and_then(|t| t.disc_number),
+                        duration_ms: zone.track.as_ref().map_or(0, |t| t.duration_ms),
+                        position_ms: zone.track.as_ref().map_or(0, |t| t.position_ms),
+                        seekable: zone.track.as_ref().is_some_and(|t| t.seekable),
+                        cover_url: zone.cover_url.clone(),
+                        bitrate_kbps: zone.track.as_ref().and_then(|t| t.bitrate_kbps),
+                        content_type: zone.track.as_ref().and_then(|t| t.content_type.clone()),
+                        track_index: zone.playlist_track_index,
+                        track_count: zone.playlist_track_count,
+                        playlist: zone.playlist_index,
+                        playlist_name: zone.playlist_name.clone(),
+                        playlist_total: zone.playlist_total,
+                        can_playlist_next: zone
+                            .playlist_index
+                            .zip(zone.playlist_total)
+                            .is_some_and(|(p, t)| p + 1 < t),
+                        can_playlist_prev: zone.playlist_index.is_some_and(|p| p > 0),
+                        can_next: zone
+                            .playlist_track_count
+                            .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
+                        can_prev: zone.playlist_track_index.is_some_and(|i| i > 0),
+                        volume: zone.volume,
+                        muted: zone.muted,
+                    };
+                    let Ok(payload) = serde_json::to_vec(&metadata) else {
+                        continue;
+                    };
+                    let targets: Vec<String> = s
+                        .clients
+                        .values()
+                        .filter(|c| c.is_snapdog && c.zone_index == zone_index)
+                        .filter_map(|c| c.snapcast_id.clone())
+                        .collect();
+                    drop(s);
+                    (payload, targets)
                 };
-                let metadata = snapdog_common::TrackMetadata {
-                    playback: zone.playback.to_string(),
-                    source: zone.source.to_string(),
-                    shuffle: zone.shuffle,
-                    repeat: zone.repeat,
-                    title: zone
-                        .track
-                        .as_ref()
-                        .map_or_else(String::new, |t| t.title.clone()),
-                    artist: zone
-                        .track
-                        .as_ref()
-                        .map_or_else(String::new, |t| t.artist.clone()),
-                    album: zone
-                        .track
-                        .as_ref()
-                        .map_or_else(String::new, |t| t.album.clone()),
-                    album_artist: zone.track.as_ref().and_then(|t| t.album_artist.clone()),
-                    genre: zone.track.as_ref().and_then(|t| t.genre.clone()),
-                    year: zone.track.as_ref().and_then(|t| t.year),
-                    track_number: zone.track.as_ref().and_then(|t| t.track_number),
-                    disc_number: zone.track.as_ref().and_then(|t| t.disc_number),
-                    duration_ms: zone.track.as_ref().map_or(0, |t| t.duration_ms),
-                    position_ms: zone.track.as_ref().map_or(0, |t| t.position_ms),
-                    seekable: zone.track.as_ref().is_some_and(|t| t.seekable),
-                    cover_url: zone.cover_url.clone(),
-                    bitrate_kbps: zone.track.as_ref().and_then(|t| t.bitrate_kbps),
-                    content_type: zone.track.as_ref().and_then(|t| t.content_type.clone()),
-                    track_index: zone.playlist_track_index,
-                    track_count: zone.playlist_track_count,
-                    playlist: zone.playlist_index,
-                    playlist_name: zone.playlist_name.clone(),
-                    playlist_total: zone.playlist_total,
-                    can_playlist_next: zone
-                        .playlist_index
-                        .zip(zone.playlist_total)
-                        .is_some_and(|(p, t)| p + 1 < t),
-                    can_playlist_prev: zone.playlist_index.is_some_and(|p| p > 0),
-                    can_next: zone
-                        .playlist_track_count
-                        .is_some_and(|c| zone.playlist_track_index.is_some_and(|i| i + 1 < c)),
-                    can_prev: zone.playlist_track_index.is_some_and(|i| i > 0),
-                    volume: zone.volume,
-                    muted: zone.muted,
-                };
-                let Ok(payload) = serde_json::to_vec(&metadata) else {
-                    continue;
-                };
-                // Send to all snapdog clients in this zone
-                for client in s.clients.values() {
-                    if client.is_snapdog
-                        && client.zone_index == zone_index
-                        && let Some(ref snap_id) = client.snapcast_id
-                    {
-                        let _ = meta_backend
-                            .execute(player::SnapcastCmd::Client {
-                                client_id: snap_id.clone(),
-                                action: player::ClientAction::SendCustom {
-                                    type_id: snapdog_common::MSG_TYPE_TRACK_METADATA,
-                                    payload: payload.clone(),
-                                },
-                            })
-                            .await;
-                    }
+                for snap_id in &targets {
+                    let _ = meta_backend
+                        .execute(player::SnapcastCmd::Client {
+                            client_id: snap_id.clone(),
+                            action: player::ClientAction::SendCustom {
+                                type_id: snapdog_common::MSG_TYPE_TRACK_METADATA,
+                                payload: payload.clone(),
+                            },
+                        })
+                        .await;
                 }
                 // Send cover art (Type 15) if changed
                 let cover_cache = meta_covers.read().await;
@@ -832,21 +796,16 @@ pub async fn run_app() -> Result<()> {
                         .map(|e| e.bytes.clone())
                         .unwrap_or_default();
                     drop(cover_cache);
-                    for client in s.clients.values() {
-                        if client.is_snapdog
-                            && client.zone_index == zone_index
-                            && let Some(ref snap_id) = client.snapcast_id
-                        {
-                            let _ = meta_backend
-                                .execute(player::SnapcastCmd::Client {
-                                    client_id: snap_id.clone(),
-                                    action: player::ClientAction::SendCustom {
-                                        type_id: snapdog_common::MSG_TYPE_COVER_ART,
-                                        payload: cover_payload.clone(),
-                                    },
-                                })
-                                .await;
-                        }
+                    for snap_id in &targets {
+                        let _ = meta_backend
+                            .execute(player::SnapcastCmd::Client {
+                                client_id: snap_id.clone(),
+                                action: player::ClientAction::SendCustom {
+                                    type_id: snapdog_common::MSG_TYPE_COVER_ART,
+                                    payload: cover_payload.clone(),
+                                },
+                            })
+                            .await;
                     }
                 }
             }
@@ -859,6 +818,16 @@ pub async fn run_app() -> Result<()> {
     // Fuse the API fatal receiver so it can be safely polled inside the loop
     // without moving out of a non-Copy type on every iteration.
     let mut api_fatal_rx = Some(api_fatal_rx);
+
+    // Signal streams live as long as the loop. Creating them inside the select arm re-registers
+    // them on every iteration, so a signal that arrives while another arm runs is lost.
+    #[cfg(unix)]
+    let mut signals = ShutdownSignals::new()?;
+    #[cfg(not(unix))]
+    let mut ctrl_c = std::pin::pin!(tokio::signal::ctrl_c());
+    // Exit status of the process: non-zero after a fatal error so that a service manager
+    // with `Restart=on-failure` starts the server again.
+    let mut exit_code = 0;
 
     loop {
         let sleep = async {
@@ -873,12 +842,12 @@ pub async fn run_app() -> Result<()> {
             Some(cmd) = snap_cmd_rx.recv() => {
                 // Convert relative volume adjustments to absolute
                 let cmd = if let player::SnapcastCmd::Client { ref client_id, action: player::ClientAction::AdjustVolume(delta) } = cmd {
-                    let current = store.read().await.clients.values()
+                    let stored = store.read().await.clients.values()
                         .find(|c| c.snapcast_id.as_deref() == Some(client_id))
                         .map_or(state::DEFAULT_VOLUME, |c| c.base_volume);
                     player::SnapcastCmd::Client {
                         client_id: client_id.clone(),
-                        action: player::ClientAction::Volume((current + delta).clamp(0, 100)),
+                        action: player::ClientAction::Volume(coalescer.adjusted(client_id, stored, delta)),
                     }
                 } else {
                     cmd
@@ -886,6 +855,11 @@ pub async fn run_app() -> Result<()> {
                 // Coalesce client volume commands
                 if let player::SnapcastCmd::Client { ref client_id, action: player::ClientAction::Volume(v) } = cmd {
                     coalescer.push(client_id.clone(), v);
+                } else if is_process_reconcile(&cmd) {
+                    // The process backend has no group logic of its own: regroup the clients
+                    // through the Snapcast JSON-RPC client and re-announce them.
+                    #[cfg(all(feature = "snapcast-process", not(feature = "snapcast-embedded")))]
+                    snapcast::reconcile_zone_groups(process_backend.client(), &config, &store, &notify_tx).await;
                 } else if let Err(e) = cmd_backend.execute(cmd).await {
                     tracing::warn!(error = %e, "Snapcast command failed");
                 }
@@ -923,21 +897,21 @@ pub async fn run_app() -> Result<()> {
                 std::future::pending::<Option<anyhow::Error>>().await
             } => {
                 tracing::error!(error = %e, "API server failed — shutting down");
+                exit_code = 1;
                 break;
             }
             // Shutdown signals
             () = async {
-                let sigint = tokio::signal::ctrl_c();
                 #[cfg(unix)]
-                let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
-
-                #[cfg(unix)]
-                tokio::select! {
-                    _ = sigint => { tracing::info!("Received Ctrl-C, shutting down gracefully..."); }
-                    _ = sigterm.recv() => { tracing::info!("Received SIGTERM, shutting down gracefully..."); }
-                };
+                {
+                    let name = signals.recv().await;
+                    tracing::info!(signal = name, "Shutting down gracefully...");
+                }
                 #[cfg(not(unix))]
-                let _ = sigint.await;
+                {
+                    let _ = (&mut ctrl_c).await;
+                    tracing::info!("Received Ctrl-C, shutting down gracefully...");
+                }
             } => {
                 break;
             }
@@ -957,7 +931,7 @@ pub async fn run_app() -> Result<()> {
 
     // Spawn a dedicated thread for the forced-exit safety net.
     // This survives the tokio runtime shutdown and handles second signals.
-    std::thread::spawn(|| {
+    std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -981,7 +955,7 @@ pub async fn run_app() -> Result<()> {
                 }
                 () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
                     tracing::warn!("Graceful shutdown timed out, forcing exit");
-                    std::process::exit(0);
+                    std::process::exit(exit_code);
                 }
             };
             #[cfg(not(unix))]
@@ -992,7 +966,7 @@ pub async fn run_app() -> Result<()> {
                 }
                 _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
                     tracing::warn!("Graceful shutdown timed out, forcing exit");
-                    std::process::exit(0);
+                    std::process::exit(exit_code);
                 }
             };
         });
@@ -1012,7 +986,7 @@ pub async fn run_app() -> Result<()> {
     tracing::info!("SnapDog server terminated");
     // `exit` skips destructors: flush the log file explicitly.
     drop(log_guard);
-    std::process::exit(0);
+    std::process::exit(exit_code);
 }
 
 /// RAII guard for the `SnapDog` server's mDNS advertisement.
@@ -1096,6 +1070,96 @@ fn is_docker() -> bool {
     std::path::Path::new("/.dockerenv").exists()
         || std::fs::read_to_string("/proc/1/cgroup")
             .is_ok_and(|s| s.contains("docker") || s.contains("containerd"))
+}
+
+/// SIGINT and SIGTERM, registered once for the whole run.
+///
+/// Registering a listener inside a select arm drops it whenever another arm runs, and a signal
+/// that arrives in that moment is lost. These streams keep a signal until it is read.
+#[cfg(unix)]
+struct ShutdownSignals {
+    sigint: tokio::signal::unix::Signal,
+    sigterm: tokio::signal::unix::Signal,
+}
+
+#[cfg(unix)]
+impl ShutdownSignals {
+    fn new() -> std::io::Result<Self> {
+        use tokio::signal::unix::{SignalKind, signal};
+        Ok(Self {
+            sigint: signal(SignalKind::interrupt())?,
+            sigterm: signal(SignalKind::terminate())?,
+        })
+    }
+
+    /// Wait for the next shutdown signal and name it.
+    async fn recv(&mut self) -> &'static str {
+        tokio::select! {
+            _ = self.sigint.recv() => "SIGINT",
+            _ = self.sigterm.recv() => "SIGTERM",
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod signal_tests {
+    use super::ShutdownSignals;
+
+    /// #501: a SIGTERM that arrives while the main loop is busy in another arm is kept and
+    /// read once the loop waits again.
+    #[tokio::test]
+    async fn a_signal_sent_while_nobody_waits_is_not_lost() {
+        let mut signals = ShutdownSignals::new().unwrap();
+        let status = std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        // The loop is busy elsewhere for a while.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let name = tokio::time::timeout(std::time::Duration::from_secs(2), signals.recv())
+            .await
+            .expect("the signal is kept until it is read");
+        assert_eq!(name, "SIGTERM");
+    }
+}
+
+#[cfg(test)]
+mod coalescer_tests {
+    use super::VolumeCoalescer;
+
+    /// #497: two relative steps within the coalescing window add up, and a step right after
+    /// an absolute volume that is not flushed yet builds on that volume.
+    #[tokio::test(start_paused = true)]
+    async fn relative_steps_build_on_the_pending_volume() {
+        let mut c = VolumeCoalescer::new(std::time::Duration::from_millis(50));
+        let stored = 40;
+        let v = c.adjusted("a", stored, 5);
+        c.push("a".into(), v);
+        let v = c.adjusted("a", stored, 5);
+        c.push("a".into(), v);
+        assert_eq!(v, 50, "+5 and +5 within the window give +10");
+
+        c.push("b".into(), 80);
+        assert_eq!(
+            c.adjusted("b", stored, -10),
+            70,
+            "builds on the unflushed 80"
+        );
+
+        tokio::time::advance(std::time::Duration::from_millis(60)).await;
+        assert_eq!(c.flush_expired().len(), 2);
+        assert_eq!(
+            c.adjusted("a", stored, 1),
+            51,
+            "a volume sent a moment ago still counts"
+        );
+        assert_eq!(
+            c.adjusted("c", stored, 1),
+            41,
+            "without one, the stored volume"
+        );
+    }
 }
 
 #[cfg(test)]

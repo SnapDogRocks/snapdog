@@ -80,18 +80,22 @@ impl KnxRole {
     }
 }
 
-/// Audio codec for Snapcast streaming.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+/// Audio codec for Snapcast streaming. The same names in the file and on the command line.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioCodec {
     /// Uncompressed PCM (WAV header passthrough).
+    #[value(name = "pcm")]
     Pcm,
     /// FLAC lossless compression.
     #[default]
+    #[value(name = "flac")]
     Flac,
     /// Raw f32 with LZ4 compression.
+    #[value(name = "f32lz4")]
     F32lz4,
     /// Raw f32 with LZ4 compression + encryption.
+    #[value(name = "f32lz4e")]
     F32lz4e,
 }
 
@@ -125,20 +129,25 @@ impl std::fmt::Display for AudioCodec {
     }
 }
 
-/// Tracing log level.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+/// Tracing log level. The same names in the file and on the command line.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum LogLevel {
     /// Most verbose.
+    #[value(name = "trace")]
     Trace,
     /// Debug messages.
+    #[value(name = "debug")]
     Debug,
     /// Normal operation.
     #[default]
+    #[value(name = "info")]
     Info,
     /// Warnings only.
+    #[value(name = "warn")]
     Warn,
     /// Errors only.
+    #[value(name = "error")]
     Error,
 }
 
@@ -268,10 +277,6 @@ impl Default for SystemConfig {
     }
 }
 
-fn default_base_url() -> String {
-    "http://localhost:5555".into()
-}
-
 fn default_state_dir() -> String {
     // Running as systemd service → /var/lib/snapdog
     if std::env::var("INVOCATION_ID").is_ok() {
@@ -371,7 +376,7 @@ impl GroupVolumeMode {
 // ── Presence ───────────────────────────────────────────────────
 
 /// Presence-triggered playback source.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresenceSource {
     /// Play a radio station by index (0-based).
     Radio(usize),
@@ -449,7 +454,8 @@ pub const fn default_auto_off_delay() -> u16 {
     DEFAULT_AUTO_OFF_DELAY
 }
 
-/// Parse a HH:MM time string into minutes since midnight.
+/// Parse a HH:MM time string into minutes since midnight. `24:00` is the end of the day
+/// (1440), so a schedule ending at midnight covers 23:59; it is only useful as `to`.
 ///
 /// # Errors
 ///
@@ -463,7 +469,10 @@ pub fn parse_time(s: &str) -> anyhow::Result<u16> {
     let m: u16 = parts[1]
         .parse()
         .map_err(|_| anyhow::anyhow!("invalid minute in '{s}'"))?;
-    anyhow::ensure!(h <= 23, "hour must be 0-23, got {h} in '{s}'");
+    if (h, m) == (24, 0) {
+        return Ok(24 * 60);
+    }
+    anyhow::ensure!(h <= 23, "hour must be 0-23 (or 24:00), got {h} in '{s}'");
     anyhow::ensure!(m <= 59, "minute must be 0-59, got {m} in '{s}'");
     Ok(h * 60 + m)
 }
@@ -486,37 +495,41 @@ pub struct AudioConfig {
     pub source_conflict: SourceConflict,
     /// Fade duration in milliseconds when a client switches zones.
     /// Set to 0 to disable. Only applies to `SnapDog` clients. Max: 1000ms.
-    #[serde(
-        default = "default_zone_switch_fade_ms",
-        deserialize_with = "deserialize_fade_ms"
-    )]
+    #[serde(default = "default_zone_switch_fade_ms")]
     pub zone_switch_fade_ms: u16,
     /// Fade duration in milliseconds when switching audio sources within a zone
     /// (e.g., radio → subsonic). Set to 0 to disable. Max: 1000ms.
-    #[serde(
-        default = "default_zone_switch_fade_ms",
-        deserialize_with = "deserialize_fade_ms"
-    )]
+    #[serde(default = "default_zone_switch_fade_ms")]
     pub source_switch_fade_ms: u16,
 }
 
 /// Maximum fade duration in milliseconds.
-const MAX_FADE_MS: u16 = 1000;
+pub const MAX_FADE_MS: u16 = 1000;
 
 const fn default_zone_switch_fade_ms() -> u16 {
     snapdog_common::DEFAULT_FADE_MS
 }
 
-fn deserialize_fade_ms<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u16, D::Error> {
-    let v = u16::deserialize(deserializer)?;
-    if v > MAX_FADE_MS {
-        tracing::warn!(
-            value = v,
-            max = MAX_FADE_MS,
-            "Fade duration exceeds maximum, clamping"
-        );
+impl AudioConfig {
+    /// Clamp the fade durations to [`MAX_FADE_MS`]. Returns a notice per clamped value; the
+    /// load runs before logging is set up, so these go into the configuration notices,
+    /// which the log and `--check-config` show.
+    pub(crate) fn clamp_fades(&mut self) -> Vec<String> {
+        let mut notices = Vec::new();
+        for (key, value) in [
+            ("zone_switch_fade_ms", &mut self.zone_switch_fade_ms),
+            ("source_switch_fade_ms", &mut self.source_switch_fade_ms),
+        ] {
+            if *value > MAX_FADE_MS {
+                notices.push(format!(
+                    "[audio].{key} = {value} is above the maximum of {MAX_FADE_MS} ms, using \
+                     {MAX_FADE_MS}"
+                ));
+                *value = MAX_FADE_MS;
+            }
+        }
+        notices
     }
-    Ok(v.min(MAX_FADE_MS))
 }
 
 /// Source conflict resolution policy.
@@ -588,14 +601,25 @@ where
         OneOrMany::One(one) => vec![one],
         OneOrMany::Many(many) => many,
     };
+    resolve_http_bind(&entries).map_err(serde::de::Error::custom)
+}
+
+/// Turn `[http].bind` entries (addresses, `loopback`, interface names) into addresses.
+///
+/// The same for the file key and for `--bind`. An entry that is neither is kept as written
+/// and fails when the listener binds it.
+///
+/// # Errors
+///
+/// Returns the message of an interface name that resolves to no usable address.
+pub fn resolve_http_bind(entries: &[String]) -> Result<Vec<String>, String> {
     let mut bind = Vec::with_capacity(entries.len());
     for entry in entries {
-        if super::interfaces::is_address_or_known_name(&entry) {
-            let addrs =
-                super::interfaces::resolve_here(&entry).map_err(serde::de::Error::custom)?;
+        if super::interfaces::is_address_or_known_name(entry) {
+            let addrs = super::interfaces::resolve_here(entry)?;
             bind.extend(addrs.iter().map(ToString::to_string));
         } else {
-            bind.push(entry);
+            bind.push(entry.clone());
         }
     }
     Ok(bind)
@@ -668,9 +692,10 @@ pub struct HttpConfig {
     #[serde(default, deserialize_with = "http_bind_list")]
     pub bind: Vec<String>,
     /// External base URL (e.g., `http://192.168.2.20:5555` or `https://music.example.com`).
-    /// Used for absolute URLs in API responses. Defaults to `http://localhost:<port>`.
-    #[serde(default = "default_base_url")]
-    pub base_url: String,
+    /// Used for absolute URLs (MQTT cover art, mDNS). Unset: derived after all overrides
+    /// from the final port, the bind address and TLS, see [`HttpConfig::base_url`].
+    #[serde(default)]
+    pub base_url: Option<String>,
     /// TLS certificate path (PEM fullchain). If set with `tls_key`, enables HTTPS.
     #[serde(default)]
     pub tls_cert: Option<std::path::PathBuf>,
@@ -723,13 +748,50 @@ impl HttpConfig {
     }
 }
 
+impl HttpConfig {
+    /// `https` when a TLS certificate is configured, else `http`.
+    const fn scheme(&self) -> &'static str {
+        if self.tls_cert.is_some() {
+            "https"
+        } else {
+            "http"
+        }
+    }
+
+    /// The base URL another host can reach the server at, when one is known: the configured
+    /// `base_url` unchanged, or one derived from a single specific bind address with the
+    /// final port and scheme. `None` for a wildcard or several bind addresses; clients then
+    /// use the mDNS host name and port. This is what the mDNS `base_url` record carries.
+    #[must_use]
+    pub fn advertised_base_url(&self) -> Option<String> {
+        if let Some(url) = &self.base_url {
+            return Some(url.clone());
+        }
+        let host = self.single_specific_bind()?;
+        let host = if host.parse::<std::net::Ipv6Addr>().is_ok() {
+            format!("[{host}]")
+        } else {
+            host
+        };
+        Some(format!("{}://{host}:{}", self.scheme(), self.port))
+    }
+
+    /// The base URL for absolute links (MQTT cover art, receiver covers): the advertised one,
+    /// or `<scheme>://localhost:<port>` with the final port as a last resort.
+    #[must_use]
+    pub fn base_url(&self) -> String {
+        self.advertised_base_url()
+            .unwrap_or_else(|| format!("{}://localhost:{}", self.scheme(), self.port))
+    }
+}
+
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
             port: default_http_port(),
             webui: WebUi::default(),
             bind: Vec::new(),
-            base_url: default_base_url(),
+            base_url: None,
             tls_cert: None,
             tls_key: None,
             api_keys: vec![],
@@ -891,8 +953,8 @@ pub enum AirplayMode {
 /// `AirPlay` receiver settings (shared across all zones).
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct AirplayConfig {
-    /// Optional password for `AirPlay` connections.
-    pub password: Option<String>,
+    /// Optional password for `AirPlay` connections. Kept out of debug output.
+    pub password: Option<SecretString>,
     /// `AirPlay` protocol mode: `"airplay1"` or `"airplay2"` (default). Only
     /// takes effect in builds with the `ap2` feature; other builds always speak
     /// `AirPlay` 1.
@@ -923,7 +985,7 @@ pub struct SpotifyConfig {
     /// TCP port of the Zeroconf (Spotify Connect) HTTP server. Default: 7100, above the `AirPlay` ports (7001 and up, one per zone).
     ///
     /// A fixed port keeps firewall rules and monitoring stable. Zone `n` listens on
-    /// `port + n`. `0` picks a random port at every start (not firewall-friendly).
+    /// `port + n - 1`, so zone 1 uses `port` itself. `0` picks a random port at every start (not firewall-friendly).
     #[serde(default = "default_spotify_port")]
     pub port: u16,
     /// Zeroconf announcement backend: `"libmdns"` (default), `"avahi"` or `"dns-sd"`.
@@ -1113,6 +1175,37 @@ pub struct KnxConfig {
     pub sync_system_clock: bool,
 }
 
+impl KnxConfig {
+    /// The device-level group address keys, in declaration order.
+    pub const GROUP_ADDRESS_KEYS: [&'static str; 6] = [
+        "server_online",
+        "all_stop",
+        "all_mute",
+        "all_mute_status",
+        "system_fault",
+        "knx_time",
+    ];
+
+    /// Every device-level key with its configured group address, like
+    /// `ZoneKnxAddresses::group_addresses`.
+    #[must_use]
+    pub fn group_addresses(&self) -> Vec<(&'static str, Option<&str>)> {
+        let values = [
+            &self.server_online,
+            &self.all_stop,
+            &self.all_mute,
+            &self.all_mute_status,
+            &self.system_fault,
+            &self.knx_time,
+        ];
+        Self::GROUP_ADDRESS_KEYS
+            .into_iter()
+            .zip(values)
+            .map(|(key, ga)| (key, ga.as_deref()))
+            .collect()
+    }
+}
+
 /// Default heartbeat interval (minutes) for the global "server online" send.
 const fn default_heartbeat_minutes() -> u16 {
     5
@@ -1169,104 +1262,146 @@ pub struct RawZoneConfig {
     pub seek_interval_secs: Option<u8>,
     /// Presence-triggered playback configuration.
     pub presence: Option<PresenceConfig>,
+    /// Zone volume set at every server start (0 to 100). Without it the zone keeps the volume it
+    /// had before the restart.
+    pub default_volume: Option<i32>,
+    /// Highest zone volume, whatever sets it (0 to 100, default 100).
+    #[serde(default = "default_max_volume")]
+    pub max_volume: i32,
+    /// Whether the zone offers an `AirPlay` receiver (default `true`).
+    #[serde(default = "default_true")]
+    pub airplay: bool,
+    /// Whether the zone offers a Spotify Connect receiver (default `true`).
+    #[serde(default = "default_true")]
+    pub spotify: bool,
 }
 
-/// KNX group addresses for zone control (all optional, explicit config only).
-///
-/// Each field is a KNX group address string (e.g. "1/2/3") mapped to a zone function.
-#[derive(Debug, Default, Deserialize)]
-pub struct RawZoneKnxConfig {
-    /// Play command.
-    pub play: Option<String>,
-    /// Pause command.
-    pub pause: Option<String>,
-    /// Stop command.
-    pub stop: Option<String>,
-    /// Next track command.
-    pub track_next: Option<String>,
-    /// Previous track command.
-    pub track_previous: Option<String>,
-    /// Playback status feedback.
-    pub control_status: Option<String>,
-    /// Volume set (DPT 5.001 scaling).
-    pub volume: Option<String>,
-    /// Volume status feedback.
-    pub volume_status: Option<String>,
-    /// Relative volume dimming (DPT 3.007).
-    pub volume_dim: Option<String>,
-    /// Mute command.
-    pub mute: Option<String>,
-    /// Mute status feedback.
-    pub mute_status: Option<String>,
-    /// Mute toggle command.
-    pub mute_toggle: Option<String>,
-    /// Track title status feedback (DPT 16.001).
-    pub track_title_status: Option<String>,
-    /// Track artist status feedback (DPT 16.001).
-    pub track_artist_status: Option<String>,
-    /// Track album status feedback (DPT 16.001).
-    pub track_album_status: Option<String>,
-    /// Track progress status feedback (percentage).
-    pub track_progress_status: Option<String>,
-    /// Track playing status feedback (boolean).
-    pub track_playing_status: Option<String>,
-    /// Single-track repeat command.
-    pub track_repeat: Option<String>,
-    /// Single-track repeat status feedback.
-    pub track_repeat_status: Option<String>,
-    /// Single-track repeat toggle command.
-    pub track_repeat_toggle: Option<String>,
-    /// Playlist selection command (index).
-    pub playlist: Option<String>,
-    /// Playlist selection status feedback.
-    pub playlist_status: Option<String>,
-    /// Next playlist command.
-    pub playlist_next: Option<String>,
-    /// Previous playlist command.
-    pub playlist_previous: Option<String>,
-    /// Playlist step command (DPT 1.007, 1 = next, 0 = previous).
-    pub playlist_step: Option<String>,
-    /// Playlist step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
-    pub playlist_step_updown: Option<String>,
-    /// Active playlist name status feedback (DPT 16.001).
-    pub playlist_name_status: Option<String>,
-    /// Track selection command (DPT 5.010, number in the active playlist, 1 is the first).
-    pub track_number: Option<String>,
-    /// Track number status feedback (DPT 5.010, 0 when no track is playing).
-    pub track_number_status: Option<String>,
-    /// Play/pause command (DPT 1.001, 1 = play, 0 = pause).
-    pub play_pause: Option<String>,
-    /// Track step command (DPT 1.007, 1 = next, 0 = previous).
-    pub track_step: Option<String>,
-    /// Track step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
-    pub track_step_updown: Option<String>,
-    /// Seek to a position of the track (DPT 5.001, percent of the duration).
-    pub track_position: Option<String>,
-    /// Seek step (DPT 1.007, 1 = forward, 0 = back by the zone's seek interval).
-    pub track_seek: Option<String>,
-    /// Seek step for an up/down rocker (DPT 1.008, 1 = down = forward, 0 = up = back).
-    pub track_seek_updown: Option<String>,
-    /// Shuffle command.
-    pub shuffle: Option<String>,
-    /// Shuffle status feedback.
-    pub shuffle_status: Option<String>,
-    /// Shuffle toggle command.
-    pub shuffle_toggle: Option<String>,
-    /// Playlist repeat command.
-    pub repeat: Option<String>,
-    /// Playlist repeat status feedback.
-    pub repeat_status: Option<String>,
-    /// Playlist repeat toggle command.
-    pub repeat_toggle: Option<String>,
-    /// Presence command (DPT 1.018 Occupancy).
-    pub presence: Option<String>,
-    /// Presence enable/disable (DPT 1.001).
-    pub presence_enable: Option<String>,
-    /// Presence enable status feedback.
-    pub presence_enable_status: Option<String>,
-    /// Presence auto-off timer active status (DPT 1.001).
-    pub presence_timer_status: Option<String>,
+/// Define a set of KNX group address keys once: the struct (every key an optional group
+/// address string, read from the file and used as resolved) and the list of all keys with
+/// their values, which validation walks. A key added here cannot be left out of either.
+macro_rules! knx_group_addresses {
+    (
+        $(#[$meta:meta])*
+        pub struct $name:ident {
+            $( $(#[$field_meta:meta])* $field:ident, )*
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Default, Deserialize)]
+        pub struct $name {
+            $( $(#[$field_meta])* pub $field: Option<String>, )*
+        }
+
+        impl $name {
+            /// Every key with its configured group address, in declaration order.
+            #[must_use]
+            pub fn group_addresses(&self) -> Vec<(&'static str, Option<&str>)> {
+                vec![$( (stringify!($field), self.$field.as_deref()), )*]
+            }
+        }
+    };
 }
+
+knx_group_addresses! {
+    /// KNX group addresses for zone control (all optional, explicit config only).
+    ///
+    /// Each field is a KNX group address string (e.g. "1/2/3") mapped to a zone function.
+    pub struct ZoneKnxAddresses {
+        /// Play command.
+        play,
+        /// Pause command.
+        pause,
+        /// Stop command.
+        stop,
+        /// Next track command.
+        track_next,
+        /// Previous track command.
+        track_previous,
+        /// Playback status feedback.
+        control_status,
+        /// Volume set (DPT 5.001 scaling).
+        volume,
+        /// Volume status feedback.
+        volume_status,
+        /// Relative volume dimming (DPT 3.007).
+        volume_dim,
+        /// Mute command.
+        mute,
+        /// Mute status feedback.
+        mute_status,
+        /// Mute toggle command.
+        mute_toggle,
+        /// Track title status feedback (DPT 16.001).
+        track_title_status,
+        /// Track artist status feedback (DPT 16.001).
+        track_artist_status,
+        /// Track album status feedback (DPT 16.001).
+        track_album_status,
+        /// Track progress status feedback (percentage).
+        track_progress_status,
+        /// Track playing status feedback (boolean).
+        track_playing_status,
+        /// Single-track repeat command.
+        track_repeat,
+        /// Single-track repeat status feedback.
+        track_repeat_status,
+        /// Single-track repeat toggle command.
+        track_repeat_toggle,
+        /// Playlist selection command (index).
+        playlist,
+        /// Playlist selection status feedback.
+        playlist_status,
+        /// Next playlist command.
+        playlist_next,
+        /// Previous playlist command.
+        playlist_previous,
+        /// Playlist step command (DPT 1.007, 1 = next, 0 = previous).
+        playlist_step,
+        /// Playlist step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
+        playlist_step_updown,
+        /// Active playlist name status feedback (DPT 16.001).
+        playlist_name_status,
+        /// Track selection command (DPT 5.010, number in the active playlist, 1 is the first).
+        track_number,
+        /// Track number status feedback (DPT 5.010, 0 when no track is playing).
+        track_number_status,
+        /// Play/pause command (DPT 1.001, 1 = play, 0 = pause).
+        play_pause,
+        /// Track step command (DPT 1.007, 1 = next, 0 = previous).
+        track_step,
+        /// Track step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
+        track_step_updown,
+        /// Seek to a position of the track (DPT 5.001, percent of the duration).
+        track_position,
+        /// Seek step (DPT 1.007, 1 = forward, 0 = back by the zone's seek interval).
+        track_seek,
+        /// Seek step for an up/down rocker (DPT 1.008, 1 = down = forward, 0 = up = back).
+        track_seek_updown,
+        /// Shuffle command.
+        shuffle,
+        /// Shuffle status feedback.
+        shuffle_status,
+        /// Shuffle toggle command.
+        shuffle_toggle,
+        /// Playlist repeat command.
+        repeat,
+        /// Playlist repeat status feedback.
+        repeat_status,
+        /// Playlist repeat toggle command.
+        repeat_toggle,
+        /// Presence command (DPT 1.018 Occupancy).
+        presence,
+        /// Presence enable/disable (DPT 1.001).
+        presence_enable,
+        /// Presence enable status feedback.
+        presence_enable_status,
+        /// Presence auto-off timer active status (DPT 1.001).
+        presence_timer_status,
+    }
+}
+
+/// The raw form of [`ZoneKnxAddresses`]: the file and the resolved configuration use one struct.
+pub type RawZoneKnxConfig = ZoneKnxAddresses;
 
 /// Client (speaker) definition as written in TOML.
 #[derive(Debug, Deserialize)]
@@ -1294,34 +1429,38 @@ pub struct RawClientConfig {
     pub knx: RawClientKnxConfig,
 }
 
-/// KNX group addresses for client control (all optional, explicit config only).
-///
-/// Each field is a KNX group address string (e.g. "1/2/3") mapped to a client function.
-#[derive(Debug, Default, Deserialize)]
-pub struct RawClientKnxConfig {
-    /// Volume set (DPT 5.001 scaling).
-    pub volume: Option<String>,
-    /// Volume status feedback.
-    pub volume_status: Option<String>,
-    /// Relative volume dimming (DPT 3.007).
-    pub volume_dim: Option<String>,
-    /// Mute command.
-    pub mute: Option<String>,
-    /// Mute status feedback.
-    pub mute_status: Option<String>,
-    /// Mute toggle command.
-    pub mute_toggle: Option<String>,
-    /// Latency set (milliseconds).
-    pub latency: Option<String>,
-    /// Latency status feedback.
-    pub latency_status: Option<String>,
-    /// Zone assignment command.
-    pub zone: Option<String>,
-    /// Zone assignment status feedback.
-    pub zone_status: Option<String>,
-    /// Connection status feedback.
-    pub connected_status: Option<String>,
+knx_group_addresses! {
+    /// KNX group addresses for client control (all optional, explicit config only).
+    ///
+    /// Each field is a KNX group address string (e.g. "1/2/3") mapped to a client function.
+    pub struct ClientKnxAddresses {
+        /// Volume set (DPT 5.001 scaling).
+        volume,
+        /// Volume status feedback.
+        volume_status,
+        /// Relative volume dimming (DPT 3.007).
+        volume_dim,
+        /// Mute command.
+        mute,
+        /// Mute status feedback.
+        mute_status,
+        /// Mute toggle command.
+        mute_toggle,
+        /// Latency set (milliseconds).
+        latency,
+        /// Latency status feedback.
+        latency_status,
+        /// Zone assignment command.
+        zone,
+        /// Zone assignment status feedback.
+        zone_status,
+        /// Connection status feedback.
+        connected_status,
+    }
 }
+
+/// The raw form of [`ClientKnxAddresses`]: the file and the resolved configuration use one struct.
+pub type RawClientKnxConfig = ClientKnxAddresses;
 
 /// Radio station definition.
 #[derive(Debug, Deserialize)]
@@ -1543,6 +1682,15 @@ impl AppConfig {
     }
 }
 
+/// A MAC address in its one internal form: trimmed and lowercase.
+///
+/// Applied where a MAC enters the system (the configuration, a client hello, a Snapcast
+/// status), so the allowlist, the event handler and the store compare the same value.
+#[must_use]
+pub fn normalize_mac(mac: &str) -> String {
+    mac.trim().to_ascii_lowercase()
+}
+
 /// `playlist_id` of the radio list. `SnapDog` itself provides it, from `[[radio]]`.
 pub const RADIO_PLAYLIST_ID: &str = "snapdog:radio";
 /// Prefix of the `playlist_id` of a Subsonic playlist.
@@ -1581,103 +1729,14 @@ pub struct ZoneConfig {
     pub seek_interval_secs: u8,
     /// Presence-triggered playback configuration.
     pub presence: Option<PresenceConfig>,
-}
-
-/// Resolved KNX group addresses for a zone (all optional, explicit config only).
-///
-/// Same fields as [`RawZoneKnxConfig`] after address validation.
-#[derive(Debug, Clone)]
-pub struct ZoneKnxAddresses {
-    /// Play command.
-    pub play: Option<String>,
-    /// Pause command.
-    pub pause: Option<String>,
-    /// Stop command.
-    pub stop: Option<String>,
-    /// Next track command.
-    pub track_next: Option<String>,
-    /// Previous track command.
-    pub track_previous: Option<String>,
-    /// Playback status feedback.
-    pub control_status: Option<String>,
-    /// Volume set (DPT 5.001 scaling).
-    pub volume: Option<String>,
-    /// Volume status feedback.
-    pub volume_status: Option<String>,
-    /// Relative volume dimming (DPT 3.007).
-    pub volume_dim: Option<String>,
-    /// Mute command.
-    pub mute: Option<String>,
-    /// Mute status feedback.
-    pub mute_status: Option<String>,
-    /// Mute toggle command.
-    pub mute_toggle: Option<String>,
-    /// Track title status feedback (DPT 16.001).
-    pub track_title_status: Option<String>,
-    /// Track artist status feedback (DPT 16.001).
-    pub track_artist_status: Option<String>,
-    /// Track album status feedback (DPT 16.001).
-    pub track_album_status: Option<String>,
-    /// Track progress status feedback (percentage).
-    pub track_progress_status: Option<String>,
-    /// Track playing status feedback (boolean).
-    pub track_playing_status: Option<String>,
-    /// Single-track repeat command.
-    pub track_repeat: Option<String>,
-    /// Single-track repeat status feedback.
-    pub track_repeat_status: Option<String>,
-    /// Single-track repeat toggle command.
-    pub track_repeat_toggle: Option<String>,
-    /// Playlist selection command (index).
-    pub playlist: Option<String>,
-    /// Playlist selection status feedback.
-    pub playlist_status: Option<String>,
-    /// Next playlist command.
-    pub playlist_next: Option<String>,
-    /// Previous playlist command.
-    pub playlist_previous: Option<String>,
-    /// Playlist step command (DPT 1.007, 1 = next, 0 = previous).
-    pub playlist_step: Option<String>,
-    /// Playlist step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
-    pub playlist_step_updown: Option<String>,
-    /// Active playlist name status feedback (DPT 16.001).
-    pub playlist_name_status: Option<String>,
-    /// Track selection command (DPT 5.010, number in the active playlist, 1 is the first).
-    pub track_number: Option<String>,
-    /// Track number status feedback (DPT 5.010, 0 when no track is playing).
-    pub track_number_status: Option<String>,
-    /// Play/pause command (DPT 1.001, 1 = play, 0 = pause).
-    pub play_pause: Option<String>,
-    /// Track step command (DPT 1.007, 1 = next, 0 = previous).
-    pub track_step: Option<String>,
-    /// Track step command for an up/down rocker (DPT 1.008, 1 = down = next, 0 = up = previous).
-    pub track_step_updown: Option<String>,
-    /// Seek to a position of the track (DPT 5.001, percent of the duration).
-    pub track_position: Option<String>,
-    /// Seek step (DPT 1.007, 1 = forward, 0 = back by the zone's seek interval).
-    pub track_seek: Option<String>,
-    /// Seek step for an up/down rocker (DPT 1.008, 1 = down = forward, 0 = up = back).
-    pub track_seek_updown: Option<String>,
-    /// Shuffle command.
-    pub shuffle: Option<String>,
-    /// Shuffle status feedback.
-    pub shuffle_status: Option<String>,
-    /// Shuffle toggle command.
-    pub shuffle_toggle: Option<String>,
-    /// Playlist repeat command.
-    pub repeat: Option<String>,
-    /// Playlist repeat status feedback.
-    pub repeat_status: Option<String>,
-    /// Playlist repeat toggle command.
-    pub repeat_toggle: Option<String>,
-    /// Presence command.
-    pub presence: Option<String>,
-    /// Presence enable/disable.
-    pub presence_enable: Option<String>,
-    /// Presence enable status feedback.
-    pub presence_enable_status: Option<String>,
-    /// Presence auto-off timer active status.
-    pub presence_timer_status: Option<String>,
+    /// Zone volume set at every server start, within `max_volume`.
+    pub default_volume: Option<i32>,
+    /// Highest zone volume, whatever sets it (0 to 100).
+    pub max_volume: i32,
+    /// Whether the zone offers an `AirPlay` receiver.
+    pub airplay: bool,
+    /// Whether the zone offers a Spotify Connect receiver.
+    pub spotify: bool,
 }
 
 /// Resolved client configuration.
@@ -1701,35 +1760,6 @@ pub struct ClientConfig {
     pub default_latency: i32,
     /// KNX group addresses.
     pub knx: ClientKnxAddresses,
-}
-
-/// Resolved KNX group addresses for a client (all optional, explicit config only).
-///
-/// Same fields as [`RawClientKnxConfig`] after address validation.
-#[derive(Debug, Clone)]
-pub struct ClientKnxAddresses {
-    /// Volume set (DPT 5.001 scaling).
-    pub volume: Option<String>,
-    /// Volume status feedback.
-    pub volume_status: Option<String>,
-    /// Relative volume dimming (DPT 3.007).
-    pub volume_dim: Option<String>,
-    /// Mute command.
-    pub mute: Option<String>,
-    /// Mute status feedback.
-    pub mute_status: Option<String>,
-    /// Mute toggle command.
-    pub mute_toggle: Option<String>,
-    /// Latency set (milliseconds).
-    pub latency: Option<String>,
-    /// Latency status feedback.
-    pub latency_status: Option<String>,
-    /// Zone assignment command.
-    pub zone: Option<String>,
-    /// Zone assignment status feedback.
-    pub zone_status: Option<String>,
-    /// Connection status feedback.
-    pub connected_status: Option<String>,
 }
 
 /// Resolved radio station configuration.
@@ -1796,7 +1826,7 @@ pub const fn default_max_volume() -> i32 {
 /// Default initial client volume (50%).
 #[must_use]
 pub const fn default_volume() -> i32 {
-    50
+    crate::state::DEFAULT_VOLUME
 }
 /// Serde default returning `true`.
 #[must_use]
@@ -1842,5 +1872,75 @@ mod webui_config_tests {
     fn unknown_webui_choice_is_rejected() {
         let error = toml::from_str::<HttpConfig>("webui = 'future'").unwrap_err();
         assert!(error.to_string().contains("future"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod base_url_tests {
+    use super::HttpConfig;
+
+    fn http(toml: &str) -> HttpConfig {
+        toml::from_str(toml).unwrap()
+    }
+
+    #[test]
+    fn the_default_port_on_a_wildcard_advertises_nothing() {
+        let c = http("");
+        assert_eq!(c.advertised_base_url(), None);
+        assert_eq!(c.base_url(), "http://localhost:5555");
+    }
+
+    #[test]
+    fn a_changed_port_is_followed_and_never_advertised_as_5555() {
+        let mut c = http("port = 8080");
+        assert_eq!(c.advertised_base_url(), None);
+        assert_eq!(c.base_url(), "http://localhost:8080");
+        // A port set later, as `--port` and `SNAPDOG_HTTP_PORT` do, is followed as well.
+        c.port = 9000;
+        assert_eq!(c.base_url(), "http://localhost:9000");
+    }
+
+    #[test]
+    fn a_single_specific_bind_is_advertised_with_the_final_port() {
+        let c = http("port = 8080\nbind = '192.168.1.10'");
+        assert_eq!(
+            c.advertised_base_url().as_deref(),
+            Some("http://192.168.1.10:8080")
+        );
+        let v6 = http("bind = 'fd00::10'");
+        assert_eq!(
+            v6.advertised_base_url().as_deref(),
+            Some("http://[fd00::10]:5555")
+        );
+        // A wildcard or a list is not a single address.
+        assert_eq!(http("bind = '::'").advertised_base_url(), None);
+        assert_eq!(
+            http("bind = ['192.168.1.10', '127.0.0.1']").advertised_base_url(),
+            None
+        );
+    }
+
+    #[test]
+    fn tls_switches_the_scheme() {
+        let c = http("bind = '192.168.1.10'\ntls_cert = 'c.pem'\ntls_key = 'k.pem'");
+        assert_eq!(
+            c.advertised_base_url().as_deref(),
+            Some("https://192.168.1.10:5555")
+        );
+        // On a wildcard the localhost fallback is not something another host can use.
+        let wildcard = http("tls_cert = 'c.pem'\ntls_key = 'k.pem'");
+        assert_eq!(wildcard.advertised_base_url(), None);
+        assert_eq!(wildcard.base_url(), "https://localhost:5555");
+    }
+
+    #[test]
+    fn an_explicit_base_url_is_kept_unchanged_even_when_it_names_localhost() {
+        let c = http("port = 8080\nbase_url = 'http://localhost:8080'");
+        assert_eq!(
+            c.advertised_base_url().as_deref(),
+            Some("http://localhost:8080")
+        );
+        let proxy = http("bind = '192.168.1.10'\nbase_url = 'https://music.example.com'");
+        assert_eq!(proxy.base_url(), "https://music.example.com");
     }
 }
