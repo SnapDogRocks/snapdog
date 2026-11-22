@@ -450,9 +450,9 @@ mod tests {
         let mut reference = ZoneEq::new(48000, 1);
         live.set_config(&config(3.0));
         reference.set_config(&config(3.0));
-        let warmup: Vec<f32> = (0..480).map(|i| (i as f32 * 0.05).sin()).collect();
+        let mut warmup: Vec<f32> = (0..480).map(|i| (i as f32 * 0.05).sin()).collect();
         live.process(&mut warmup.clone());
-        reference.process(&mut warmup.clone());
+        reference.process(&mut warmup);
 
         // Only the second band changes: the first keeps its state.
         live.set_config(&config(-3.0));

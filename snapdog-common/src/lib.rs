@@ -300,7 +300,7 @@ mod tests {
     fn eq_config_default() {
         let config = EqConfig::default();
         assert!(!config.enabled);
-        assert!(config.bands.is_empty());
+        assert_eq!(config.bands, Vec::<EqBand>::new());
         assert_eq!(config.preset, Some("flat".into()));
     }
 
