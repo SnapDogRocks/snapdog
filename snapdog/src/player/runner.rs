@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use super::commands::{ActiveSource, ZoneCommand};
 use super::context::{
     GroupAction, SnapcastCmd, ZoneCommandSender, ZonePlayerContext, setup_zone_group, stop_decode,
-    update_and_notify, update_volume_and_notify,
+    update_and_notify, update_progress_and_notify, update_volume_and_notify,
 };
 
 use super::helpers::{DecodeState, PlaybackCtx, mark_zone_stopped};
@@ -66,7 +66,7 @@ pub async fn spawn_zone_players(
         tokio::spawn(async move {
             let mut cmd_rx = cmd_rx;
             supervise(zone_index, async move || {
-                run(zone_index, &mut cmd_rx, cmd_tx.clone(), ctx.clone()).await
+                run(zone_index, &mut cmd_rx, ctx.clone()).await
             })
             .await;
         });
@@ -75,6 +75,17 @@ pub async fn spawn_zone_players(
     }
 
     Ok(senders)
+}
+
+/// The next command for the zone: a pending follow-up first, then the channel.
+async fn next_command(
+    follow_ups: &mut std::collections::VecDeque<ZoneCommand>,
+    commands: &mut mpsc::Receiver<ZoneCommand>,
+) -> Option<ZoneCommand> {
+    if let Some(cmd) = follow_ups.pop_front() {
+        return Some(cmd);
+    }
+    commands.recv().await
 }
 
 /// Supervise a zone player: run `attempt` to completion, restarting on a returned
@@ -293,7 +304,6 @@ impl ZoneFade {
 async fn run(
     zone_index: usize,
     commands: &mut mpsc::Receiver<ZoneCommand>,
-    self_tx: mpsc::Sender<ZoneCommand>,
     ctx: Arc<ZonePlayerContext>,
 ) -> Result<()> {
     const TIMER_INACTIVE: std::time::Duration = std::time::Duration::from_hours(24);
@@ -568,7 +578,7 @@ async fn run(
                     position_ms,
                     duration_ms,
                 } => {
-                    update_and_notify(store, zone_index, notify, |z| {
+                    update_progress_and_notify(store, zone_index, notify, |z| {
                         if let Some(ref mut t) = z.track {
                             #[allow(clippy::cast_possible_wrap)]
                             {
@@ -620,6 +630,11 @@ async fn run(
         }};
     }
 
+    // Commands a handler derives from another one (seek steps, presence starts). They are
+    // handled before the next command from the channel instead of being sent back into it:
+    // awaiting a send on its own bounded channel could block this task forever (#494).
+    let mut follow_ups: std::collections::VecDeque<ZoneCommand> = std::collections::VecDeque::new();
+
     loop {
         // A receiver that lost the zone since the last iteration (to local playback, Stop,
         // auto-off, the other receiver or the end of its session) is shut out and asked to pause.
@@ -640,7 +655,7 @@ async fn run(
             last_source = source.clone();
         }
         tokio::select! {
-            Some(cmd) = commands.recv() => {
+            Some(cmd) = next_command(&mut follow_ups, commands) => {
                 // A checked command carries a reply channel: answer whether its index exists.
                 let (cmd, mut reply) = match cmd {
                     ZoneCommand::Checked(inner, reply) => (*inner, Some(reply)),
@@ -1098,13 +1113,11 @@ async fn run(
                             .and_then(|z| z.track.as_ref().map(|t| t.duration_ms)).unwrap_or(0);
                         if duration > 0 {
                             let pos_ms = (progress.clamp(0.0, 1.0) * duration as f64) as i64;
-                            let _ = self_tx.send(ZoneCommand::Seek(pos_ms)).await;
+                            follow_ups.push_back(ZoneCommand::Seek(pos_ms));
                         }
                     }
                     ZoneCommand::SeekStep(forward) => {
-                        let _ = self_tx
-                            .send(ZoneCommand::seek_by_interval(zone_config.seek_interval_secs, forward))
-                            .await;
+                        follow_ups.push_back(ZoneCommand::seek_by_interval(zone_config.seek_interval_secs, forward));
                     }
                     ZoneCommand::SeekRelative(offset_ms) => {
                         let (pos, dur) = store.read().await.zones.get(&zone_index)
@@ -1112,7 +1125,7 @@ async fn run(
                             .unwrap_or((0, 0));
                         if dur > 0 {
                             let target = pos.saturating_add(offset_ms).clamp(0, dur);
-                            let _ = self_tx.send(ZoneCommand::Seek(target)).await;
+                            follow_ups.push_back(ZoneCommand::Seek(target));
                         }
                     }
                     ZoneCommand::SetVolume(v) => {
@@ -1194,12 +1207,12 @@ async fn run(
                                     Some(crate::config::PresenceSource::Radio(idx)) => {
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
                                         // Unified index 0 = radio, idx = station within radio
-                                        let _ = self_tx.send(ZoneCommand::PlayPlaylist(0, idx)).await;
+                                        follow_ups.push_back(ZoneCommand::PlayPlaylist(0, idx));
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                     Some(crate::config::PresenceSource::Playlist(ref id)) => {
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
-                                        let _ = self_tx.send(ZoneCommand::PlaySubsonicPlaylist(id.clone(), 0)).await;
+                                        follow_ups.push_back(ZoneCommand::PlaySubsonicPlaylist(id.clone(), 0));
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                     Some(crate::config::PresenceSource::None) => {
@@ -1207,7 +1220,7 @@ async fn run(
                                     }
                                     None => {
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
-                                        let _ = self_tx.send(ZoneCommand::Play).await;
+                                        follow_ups.push_back(ZoneCommand::Play);
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                 }
@@ -1270,7 +1283,7 @@ async fn run(
                         }
                     }
                     Some(audio::PcmMessage::Position(ms)) => {
-                        update_and_notify(store, zone_index, notify, |z| {
+                        update_progress_and_notify(store, zone_index, notify, |z| {
                             if let Some(ref mut t) = z.track { t.position_ms = ms + position_offset_ms; }
                         }).await;
                     }
@@ -1285,7 +1298,7 @@ async fn run(
                                 let buffered_ms = if total > 0 {
                                     (buffered_bytes as f64 / total as f64 * duration as f64) as i64
                                 } else { 0 };
-                                update_and_notify(store, zone_index, notify, |z| {
+                                update_progress_and_notify(store, zone_index, notify, |z| {
                                     z.buffered_ms = Some(buffered_ms);
                                 }).await;
                             }
