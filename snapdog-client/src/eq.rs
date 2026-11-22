@@ -14,6 +14,8 @@ use biquad::{Biquad, Coefficients, DirectForm2Transposed, Hertz, Q_BUTTERWORTH_F
 pub struct ZoneEq {
     bands: Vec<Vec<DirectForm2Transposed<f32>>>,
     enabled: bool,
+    /// Linear preamp gain, 1.0 for none.
+    preamp: f32,
     sample_rate: f32,
     channels: usize,
 }
@@ -23,6 +25,7 @@ impl ZoneEq {
         Self {
             bands: vec![],
             enabled: false,
+            preamp: 1.0,
             sample_rate: sample_rate as f32,
             channels: channels as usize,
         }
@@ -30,6 +33,7 @@ impl ZoneEq {
 
     pub fn set_config(&mut self, config: &EqConfig) {
         self.enabled = config.enabled;
+        self.preamp = config.preamp_gain();
         self.bands = config
             .bands
             .iter()
@@ -39,7 +43,15 @@ impl ZoneEq {
 
     /// Process interleaved f32 samples in-place.
     pub fn process(&mut self, samples: &mut [f32]) {
-        if !self.enabled || self.bands.is_empty() {
+        if !self.enabled {
+            return;
+        }
+        if self.preamp != 1.0 {
+            for s in samples.iter_mut() {
+                *s *= self.preamp;
+            }
+        }
+        if self.bands.is_empty() {
             return;
         }
         let ch = self.channels;

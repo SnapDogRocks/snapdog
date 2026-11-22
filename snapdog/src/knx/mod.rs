@@ -1500,7 +1500,9 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
             Box::leak(Box::new(ClockCommand {
                 program: Box::leak(path.to_string_lossy().into_owned().into_boxed_str()),
-                timeout: std::time::Duration::from_millis(300),
+                // Generous: under a loaded test run even `exit 0` can take longer than 300 ms to
+                // spawn and finish. Only the hanging stand-in ever reaches it.
+                timeout: std::time::Duration::from_secs(3),
             }))
         }
 
@@ -1512,7 +1514,7 @@ mod tests {
                 set_os_clock("12:00:00", slow).await,
                 ClockSyncOutcome::TimedOut
             );
-            assert!(started.elapsed() < std::time::Duration::from_secs(5));
+            assert!(started.elapsed() < std::time::Duration::from_secs(15));
         }
 
         #[tokio::test]

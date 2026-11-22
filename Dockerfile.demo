@@ -1,5 +1,10 @@
+# The demo's equalizer has at most this many bands. Both the web UI build and the mock
+# backend read it from here; the real server allows SERVER_EQ_LIMITS.maxBands.
+ARG DEMO_MAX_EQ_BANDS=5
+
 # ── Stage 1: Build the Web UI ──
 FROM node:25-slim AS frontend-builder
+ARG DEMO_MAX_EQ_BANDS
 WORKDIR /app/webui
 # Pinned to the same version as webui/package.json's "packageManager" field.
 # Installed via plain npm, not corepack — Node 25 dropped corepack from the
@@ -7,13 +12,14 @@ WORKDIR /app/webui
 RUN npm install -g pnpm@11.28.8
 COPY webui/package.json webui/pnpm-lock.yaml webui/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
-# The demo's equalizer has at most five bands. The mock backend enforces the same limit.
-ENV NEXT_PUBLIC_MAX_EQ_BANDS=5
+ENV NEXT_PUBLIC_MAX_EQ_BANDS=${DEMO_MAX_EQ_BANDS}
 COPY webui/ ./
 RUN pnpm run build
 
 # ── Stage 2: Create runtime container ──
 FROM node:25-slim
+ARG DEMO_MAX_EQ_BANDS
+ENV DEMO_MAX_EQ_BANDS=${DEMO_MAX_EQ_BANDS}
 WORKDIR /app
 
 # Install production dependencies for the mock backend, exactly as locked, with

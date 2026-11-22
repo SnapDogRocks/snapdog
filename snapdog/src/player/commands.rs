@@ -91,6 +91,15 @@ pub enum ZoneCommand {
     // ── DSP ───────────────────────────────────────────────────
     /// Apply a new parametric EQ configuration to the zone.
     SetEq(crate::audio::eq::EqConfig),
+    /// Replace one band of the zone's EQ. The zone task merges it into the configuration it
+    /// holds, so quick changes of different bands do not overwrite each other. A band index
+    /// out of range is ignored.
+    SetEqBand {
+        /// 0-based band index.
+        band_index: usize,
+        /// The new band.
+        band: crate::audio::eq::EqBand,
+    },
 }
 
 impl ZoneCommand {
@@ -212,7 +221,10 @@ pub enum ActiveSource {
         track_id: String,
     },
     /// Playing an arbitrary URL.
-    Url,
+    Url {
+        /// The URL, kept so that Play after Pause can start it again.
+        url: String,
+    },
     /// Receiving audio from an `AirPlay` client.
     AirPlay,
     /// Receiving audio from a Spotify Connect client.

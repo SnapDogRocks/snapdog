@@ -141,7 +141,7 @@ fn command_line_overrides_are_validated_like_file_values() {
         &["--streaming-port", "5555"],
     );
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("must not be the same"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("would listen on the same"));
 }
 
 #[test]

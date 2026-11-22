@@ -160,6 +160,15 @@ impl VolumeCoalescer {
             .map(|(volume, _)| *volume)
     }
 
+    /// The absolute volume for a relative step: built on a volume still in flight, so quick
+    /// relative steps add up, else on `stored`.
+    fn adjusted(&self, client_id: &str, stored: i32, delta: i32) -> i32 {
+        self.latest(client_id)
+            .unwrap_or(stored)
+            .saturating_add(delta)
+            .clamp(0, 100)
+    }
+
     fn push(&mut self, client_id: String, volume: i32) {
         self.pending.insert(
             client_id,
@@ -659,7 +668,7 @@ pub async fn run_app() -> Result<()> {
     // ── D-Bus MPRIS2 ──────────────────────────────────────────
     #[cfg(all(feature = "dbus", target_os = "linux"))]
     let _dbus = if config.dbus.enabled {
-        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone()).await {
+        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone(), &store).await {
             Ok(conns) => {
                 tracing::info!(zones = conns.len(), "MPRIS2 D-Bus interfaces registered");
                 Some(conns)
@@ -833,16 +842,12 @@ pub async fn run_app() -> Result<()> {
             Some(cmd) = snap_cmd_rx.recv() => {
                 // Convert relative volume adjustments to absolute
                 let cmd = if let player::SnapcastCmd::Client { ref client_id, action: player::ClientAction::AdjustVolume(delta) } = cmd {
-                    // Build on a volume still in flight, so quick relative steps add up.
-                    let current = match coalescer.latest(client_id) {
-                        Some(v) => v,
-                        None => store.read().await.clients.values()
-                            .find(|c| c.snapcast_id.as_deref() == Some(client_id))
-                            .map_or(state::DEFAULT_VOLUME, |c| c.base_volume),
-                    };
+                    let stored = store.read().await.clients.values()
+                        .find(|c| c.snapcast_id.as_deref() == Some(client_id))
+                        .map_or(state::DEFAULT_VOLUME, |c| c.base_volume);
                     player::SnapcastCmd::Client {
                         client_id: client_id.clone(),
-                        action: player::ClientAction::Volume(current.saturating_add(delta).clamp(0, 100)),
+                        action: player::ClientAction::Volume(coalescer.adjusted(client_id, stored, delta)),
                     }
                 } else {
                     cmd
@@ -1116,6 +1121,44 @@ mod signal_tests {
             .await
             .expect("the signal is kept until it is read");
         assert_eq!(name, "SIGTERM");
+    }
+}
+
+#[cfg(test)]
+mod coalescer_tests {
+    use super::VolumeCoalescer;
+
+    /// #497: two relative steps within the coalescing window add up, and a step right after
+    /// an absolute volume that is not flushed yet builds on that volume.
+    #[tokio::test(start_paused = true)]
+    async fn relative_steps_build_on_the_pending_volume() {
+        let mut c = VolumeCoalescer::new(std::time::Duration::from_millis(50));
+        let stored = 40;
+        let v = c.adjusted("a", stored, 5);
+        c.push("a".into(), v);
+        let v = c.adjusted("a", stored, 5);
+        c.push("a".into(), v);
+        assert_eq!(v, 50, "+5 and +5 within the window give +10");
+
+        c.push("b".into(), 80);
+        assert_eq!(
+            c.adjusted("b", stored, -10),
+            70,
+            "builds on the unflushed 80"
+        );
+
+        tokio::time::advance(std::time::Duration::from_millis(60)).await;
+        assert_eq!(c.flush_expired().len(), 2);
+        assert_eq!(
+            c.adjusted("a", stored, 1),
+            51,
+            "a volume sent a moment ago still counts"
+        );
+        assert_eq!(
+            c.adjusted("c", stored, 1),
+            41,
+            "without one, the stored volume"
+        );
     }
 }
 

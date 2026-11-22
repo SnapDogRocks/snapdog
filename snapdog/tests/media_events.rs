@@ -127,6 +127,38 @@ async fn an_outage_keeps_the_last_good_list_across_a_refresh_run() {
     task.abort();
 }
 
+/// #498: Subsonic reports errors (wrong credentials included) as HTTP 200 with
+/// `status: "failed"`. Such an answer is a failed read and keeps the last good list.
+#[tokio::test]
+async fn a_failed_status_keeps_the_last_good_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/rest/getPlaylists"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(playlists(&[("1", "A", 3)])))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/rest/getPlaylists"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "subsonic-response": {
+                "status": "failed",
+                "version": "1.16.1",
+                "error": { "code": 40, "message": "Wrong username or password" }
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let app = common::app_with_subsonic(&server.uri(), 1);
+    let task = tokio::spawn(snapdog::api::run_playlist_refresh(app.state.clone()));
+    tokio::time::sleep(Duration::from_millis(2300)).await;
+    let (s, b) = app.get("/api/v1/media/playlists").await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(b.as_array().map(Vec::len), Some(1), "kept the list: {b}");
+    task.abort();
+}
+
 /// A switched-off refresh (`refresh_secs = 0`) never reads on its own.
 #[tokio::test]
 async fn refresh_secs_zero_turns_the_background_read_off() {

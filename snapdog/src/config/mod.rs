@@ -216,10 +216,19 @@ fn expand_paths(raw: &mut FileConfig, exists: &dyn Fn(&str) -> bool) -> Vec<Stri
     if let Some(subsonic) = raw.subsonic.as_mut() {
         subsonic.cache.path = expand("subsonic.cache].path", &subsonic.cache.path.clone());
     }
-    for (key, slot) in [
+    let mut slots = vec![
         ("http].tls_cert", &mut raw.http.tls_cert),
         ("http].tls_key", &mut raw.http.tls_key),
-    ] {
+    ];
+    if let Some(mqtt) = raw.mqtt.as_mut() {
+        slots.extend([
+            ("mqtt].password_file", &mut mqtt.password_file),
+            ("mqtt].ca_file", &mut mqtt.ca_file),
+            ("mqtt].client_cert", &mut mqtt.client_cert),
+            ("mqtt].client_key", &mut mqtt.client_key),
+        ]);
+    }
+    for (key, slot) in slots {
         if let Some(path) = slot.as_ref().and_then(|p| p.to_str()) {
             *slot = Some(std::path::PathBuf::from(expand(key, path)));
         }
@@ -442,6 +451,54 @@ fn validate_knx_role(knx: &KnxConfig) -> Result<()> {
     Ok(())
 }
 
+/// Values the file sets that the server ignores: an unsupported Spotify bitrate, and a
+/// `[snapcast].default_zone` that names no zone.
+fn ignored_value_notices(raw: &FileConfig) -> (Option<String>, Option<String>) {
+    let bitrate = raw
+        .spotify
+        .as_ref()
+        .filter(|sp| !matches!(sp.bitrate, 96 | 160 | 320))
+        .map(|sp| {
+            format!(
+                "[spotify].bitrate = {} is not supported (96, 160 or 320), using 320",
+                sp.bitrate
+            )
+        });
+    let default_zone = raw
+        .snapcast
+        .default_zone
+        .as_ref()
+        .filter(|name| !raw.zone.iter().any(|z| z.name == **name))
+        .map(|name| {
+            format!(
+                "[snapcast].default_zone = {name:?} names no zone (names are case-sensitive), so \
+                 unknown clients join the first zone"
+            )
+        });
+    (bitrate, default_zone)
+}
+
+/// The `[spotify]` and `[subsonic]` keys that are refused at load.
+fn validate_spotify_and_subsonic(raw: &FileConfig) -> Result<()> {
+    if let Some(sp) = raw.spotify.as_ref().filter(|sp| sp.bind.is_some()) {
+        anyhow::bail!(
+            "[spotify].bind is not supported: Spotify Connect's discovery server listens on all \
+             interfaces (TCP port {}) and cannot be bound to an address. Limit that port in the \
+             firewall instead, and remove the key.",
+            sp.port
+        );
+    }
+
+    if let Some(ref subsonic) = raw.subsonic {
+        let url = url::Url::parse(&subsonic.url).context("Invalid Subsonic URL")?;
+        anyhow::ensure!(
+            matches!(url.scheme(), "http" | "https"),
+            "Subsonic URL must use http or https"
+        );
+    }
+    Ok(())
+}
+
 fn load_raw_inner(
     mut raw: FileConfig,
     skip_zone_validation: bool,
@@ -466,9 +523,12 @@ fn load_raw_inner(
     validate_raw_inputs(&raw)?;
 
     validate_knx_addresses(&raw)?;
+    validate_spotify_and_subsonic(&raw)?;
 
     // Resolving clamps the volume limits, so what the file said has to be reported first.
     let volume_notices = volume_range_notices(&raw.client);
+    let fade_notices = raw.audio.clamp_fades();
+    let (bitrate_notices, default_zone_notices) = ignored_value_notices(&raw);
 
     // `[spotify].name` names the Spotify device of a zone that sets no spotify_name.
     let spotify_naming = convention::SpotifyNaming::new(raw.spotify.as_ref(), raw.zone.len());
@@ -495,23 +555,6 @@ fn load_raw_inner(
     if let Some(ref knx) = raw.knx {
         validate_knx_role(knx)?;
     }
-    if let Some(sp) = raw.spotify.as_ref().filter(|sp| sp.bind.is_some()) {
-        anyhow::bail!(
-            "[spotify].bind is not supported: Spotify Connect's discovery server listens on all \
-             interfaces (TCP port {}) and cannot be bound to an address. Limit that port in the \
-             firewall instead, and remove the key.",
-            sp.port
-        );
-    }
-
-    if let Some(ref subsonic) = raw.subsonic {
-        let url = url::Url::parse(&subsonic.url).context("Invalid Subsonic URL")?;
-        anyhow::ensure!(
-            matches!(url.scheme(), "http" | "https"),
-            "Subsonic URL must use http or https"
-        );
-    }
-
     // ── Presence validation ───────────────────────────────────
     for zone in &zones {
         validate_presence(zone, radios.len())?;
@@ -544,6 +587,9 @@ fn load_raw_inner(
     let duplicates = duplicate_spotify_names(&config.zones).map(|m| (NoticeLevel::Warn, m));
     let load_notices = override_notices
         .into_iter()
+        .chain(fade_notices)
+        .chain(bitrate_notices)
+        .chain(default_zone_notices)
         .chain(volume_notices)
         .chain(path_notices)
         .map(|m| (NoticeLevel::Warn, m))
@@ -791,14 +837,8 @@ pub fn validate(config: &mut AppConfig) -> Result<()> {
          built-in key, which is public and protects nothing"
     );
 
-    // ── Port collision ────────────────────────────────────────
-    if config.http.port == config.snapcast.streaming_port {
-        anyhow::bail!(
-            "http.port ({}) and snapcast.streaming_port ({}) must not be the same",
-            config.http.port,
-            config.snapcast.streaming_port
-        );
-    }
+    // Two services on one port are checked in one place, with their addresses:
+    // `net::listener::check_unique`, at start and in `--check-config`.
 
     notices::collect(config);
     Ok(())
@@ -876,7 +916,7 @@ fn validate_presence(zone: &ZoneConfig, num_radios: usize) -> Result<()> {
         })?;
         anyhow::ensure!(
             from < to,
-            "Zone '{}' presence schedule[{i}]: 'from' ({}) must be before 'to' ({}). For overnight, use two entries.",
+            "Zone '{}' presence schedule[{i}]: 'from' ({}) must be before 'to' ({}). For overnight, use two entries, e.g. 22:00-24:00 and 00:00-06:00.",
             zone.name,
             entry.from,
             entry.to
@@ -1918,9 +1958,12 @@ mod tests {
         let error = validate(&mut config).unwrap_err().to_string();
         assert!(error.contains("Unsupported sample rate"), "{error}");
 
+        // A port collision set after loading is caught where every start checks it: by the
+        // planned listeners (#505), not by `validate`.
         let mut config = load_str("[[zone]]\nname = \"A\"").unwrap();
         config.http.port = config.snapcast.streaming_port;
-        assert!(validate(&mut config).is_err());
+        let planned = crate::net::listener::planned(&config);
+        assert!(crate::net::listener::check_unique(&planned).is_err());
     }
 
     #[test]
@@ -2613,6 +2656,128 @@ mod interface_bind_tests {
         let http: Vec<_> = rows.iter().filter(|r| r.service == "HTTP API").collect();
         assert_eq!(http.len(), 2);
         assert!(http.iter().all(|r| r.via.as_deref() == Some("loopback")));
+    }
+}
+
+#[cfg(test)]
+mod gap_tests {
+    //! #505: values the configuration used to accept and then ignore or misreport.
+    use super::*;
+
+    const ZONES: &str = "[[zone]]\nname = \"Ground Floor\"\n[[zone]]\nname = \"Garden\"\n";
+
+    fn load(toml: &str) -> AppConfig {
+        load_str(&format!("{toml}\n{ZONES}")).unwrap()
+    }
+
+    fn has_notice(config: &AppConfig, needle: &str) -> bool {
+        config.notices.iter().any(|n| n.message.contains(needle))
+    }
+
+    #[test]
+    fn an_unknown_default_zone_is_reported() {
+        let wrong_case = load("[snapcast]\ndefault_zone = \"garden\"\n");
+        assert!(has_notice(
+            &wrong_case,
+            "default_zone = \"garden\" names no zone"
+        ));
+        let known = load("[snapcast]\ndefault_zone = \"Garden\"\n");
+        assert!(!has_notice(&known, "default_zone"));
+    }
+
+    #[test]
+    fn an_unsupported_spotify_bitrate_is_reported() {
+        let c = load("[spotify]\nbitrate = 128\n");
+        assert!(has_notice(&c, "[spotify].bitrate = 128 is not supported"));
+        assert!(!has_notice(&load("[spotify]\nbitrate = 160\n"), "bitrate"));
+    }
+
+    #[test]
+    fn a_fade_above_the_maximum_is_clamped_with_a_notice() {
+        let c = load("[audio]\nzone_switch_fade_ms = 5000\n");
+        assert_eq!(c.audio.zone_switch_fade_ms, MAX_FADE_MS);
+        assert!(has_notice(&c, "[audio].zone_switch_fade_ms = 5000"));
+        assert!(!has_notice(
+            &load("[audio]\nsource_switch_fade_ms = 1000\n"),
+            "fade"
+        ));
+    }
+
+    #[test]
+    fn a_schedule_ending_at_24_00_covers_23_59() {
+        assert_eq!(parse_time("24:00").unwrap(), 1440);
+        assert!(parse_time("24:01").is_err());
+        assert!(parse_time("25:00").is_err());
+        let c = load(
+            "[[zone]]\nname = \"Night\"\n[zone.presence]\n\
+             [[zone.presence.schedule]]\nfrom = \"22:00\"\nto = \"24:00\"\nsource = \"none\"\n\
+             [[zone.presence.schedule]]\nfrom = \"00:00\"\nto = \"06:00\"\nsource = \"none\"\n",
+        );
+        let schedule = &c.zones[0].presence.as_ref().unwrap().schedule;
+        let covers = |minute: u16| {
+            schedule.iter().any(|e| {
+                (parse_time(&e.from).unwrap()..parse_time(&e.to).unwrap()).contains(&minute)
+            })
+        };
+        assert!(covers(23 * 60 + 59));
+        assert!(covers(0));
+        // 24:00 is the end of the day, never a start.
+        assert!(
+            load_str(&format!(
+                "[[zone]]\nname = \"N\"\n[zone.presence]\n[[zone.presence.schedule]]\n\
+                 from = \"24:00\"\nto = \"24:00\"\nsource = \"none\"\n{ZONES}"
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn equal_ports_on_different_addresses_are_allowed() {
+        let c = load(
+            "[http]\nbind = \"127.0.0.1\"\nport = 1780\n\
+             [snapcast]\nstreaming_bind = \"127.0.0.2\"\nstreaming_port = 1780\n",
+        );
+        let planned = crate::net::listener::planned(&c);
+        crate::net::listener::check_unique(&planned).expect("different addresses");
+        let overlapping = load("[http]\nport = 1780\n[snapcast]\nstreaming_port = 1780\n");
+        let planned = crate::net::listener::planned(&overlapping);
+        assert!(crate::net::listener::check_unique(&planned).is_err());
+    }
+
+    #[test]
+    fn tilde_is_expanded_in_the_mqtt_file_keys() {
+        let Some(home) = std::env::var("HOME").ok().filter(|h| !h.is_empty()) else {
+            return;
+        };
+        let mut raw: FileConfig = toml::from_str(
+            "[mqtt]\nbroker = \"mqtts://broker:8883\"\npassword_file = \"~/pw\"\n\
+             ca_file = \"~/ca.pem\"\nclient_cert = \"~/c.pem\"\nclient_key = \"~/k.pem\"\n",
+        )
+        .unwrap();
+        expand_paths(&mut raw, &|_| false);
+        let mqtt = raw.mqtt.unwrap();
+        let home = home.trim_end_matches('/');
+        for (path, name) in [
+            (mqtt.password_file, "pw"),
+            (mqtt.ca_file, "ca.pem"),
+            (mqtt.client_cert, "c.pem"),
+            (mqtt.client_key, "k.pem"),
+        ] {
+            assert_eq!(
+                path.unwrap(),
+                std::path::PathBuf::from(format!("{home}/{name}"))
+            );
+        }
+    }
+
+    #[test]
+    fn the_airplay_password_is_kept_out_of_debug_output() {
+        let c = load("[airplay]\npassword = \"hunter2-airplay\"\n");
+        assert_eq!(
+            c.airplay.password.as_ref().map(SecretString::as_str),
+            Some("hunter2-airplay")
+        );
+        assert!(!format!("{c:?}").contains("hunter2-airplay"));
     }
 }
 

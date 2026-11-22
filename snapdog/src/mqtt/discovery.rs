@@ -337,6 +337,81 @@ impl Discovery {
     }
 }
 
+/// Builds the entities of one zone or client: ids, names, the state topic they all read and
+/// the command topics, so each entity below states only what is particular to it.
+struct Entities<'a> {
+    components: &'a mut serde_json::Map<String, Value>,
+    server_id: &'a str,
+    /// `zone_3` or `client_2`: the prefix of every key and unique id.
+    prefix: String,
+    /// The zone or client name, the start of every entity name.
+    name: &'a str,
+    state_topic: String,
+    /// `<root>/zones/3` or `<root>/clients/2`: command topics are `<this>/<tail>/set`.
+    command_root: String,
+    /// The availability of controls, if they have one of their own.
+    controls_available: Option<Value>,
+}
+
+impl Entities<'_> {
+    fn key(&self, what: &str) -> String {
+        format!("{}_{what}", self.prefix)
+    }
+
+    fn command(&self, tail: &str) -> String {
+        format!("{}/{tail}/set", self.command_root)
+    }
+
+    /// An entity `what` on `platform` reading the state topic, with `extra` on top.
+    fn entity(&mut self, what: &str, platform: &str, extra: Value) {
+        let key = self.key(what);
+        let mut component = json!({
+            "platform": platform,
+            "unique_id": format!("snapdog_{}_{key}", self.server_id),
+            "name": format!("{} {}", self.name, title_case(what)),
+            "state_topic": self.state_topic,
+        });
+        merge(&mut component, extra);
+        self.components.insert(key, component);
+    }
+
+    /// Like [`Self::entity`], for a control: it gets the controls' availability.
+    fn control(&mut self, what: &str, platform: &str, mut extra: Value) {
+        if let Some(available) = &self.controls_available {
+            merge(
+                &mut extra,
+                json!({ "availability": available, "availability_mode": "all" }),
+            );
+        }
+        self.entity(what, platform, extra);
+    }
+
+    /// An ON/OFF switch showing the boolean state key `key`, set over `<command_tail>`.
+    fn switch(&mut self, what: &str, key: &str, command_tail: &str, extra: Value) {
+        let mut body = json!({
+            "value_template": format!("{{{{ 'ON' if value_json.{key} else 'OFF' }}}}"),
+            "state_on": "ON", "state_off": "OFF",
+            "payload_on": "ON", "payload_off": "OFF",
+            "command_topic": self.command(command_tail),
+        });
+        merge(&mut body, extra);
+        self.control(what, "switch", body);
+    }
+
+    /// A button that sends `payload` to `<command_tail>`; it reads no state.
+    fn button(&mut self, what: &str, command_tail: &str, payload: &str) {
+        let key = self.key(what);
+        let component = json!({
+            "platform": "button",
+            "unique_id": format!("snapdog_{}_{key}", self.server_id),
+            "name": format!("{} {}", self.name, title_case(what)),
+            "command_topic": self.command(command_tail),
+            "payload_press": payload,
+        });
+        self.components.insert(key, component);
+    }
+}
+
 /// The entities of zone `n`.
 #[allow(clippy::too_many_lines)] // one table of entities, splitting it would hide the set
 fn zone_components(
@@ -346,87 +421,57 @@ fn zone_components(
     n: usize,
     name: &str,
 ) {
-    let mut add = |id: String, component: Value| {
-        components.insert(id, component);
-    };
-    let uid = |id: &str| format!("snapdog_{}_{id}", server.id);
-    let n = &n;
-    let state_topic = topics.zone_state(*n);
-    let command = |tail: &str| topics.join(&format!("zones/{n}/{tail}/set"));
-    let id = |what: &str| format!("zone_{n}_{what}");
-    let label = |what: &str| format!("{name} {what}");
     // Everything of a zone reads `zones/{n}/state`.
-    let base = |what: &str, platform: &str| {
-        json!({
-            "platform": platform,
-            "unique_id": uid(&id(what)),
-            "name": label(&title_case(what)),
-            "state_topic": state_topic,
-        })
+    let mut e = Entities {
+        components,
+        server_id: &server.id,
+        prefix: format!("zone_{n}"),
+        name,
+        state_topic: topics.zone_state(n),
+        command_root: topics.join(&format!("zones/{n}")),
+        controls_available: None,
     };
 
-    let mut state = base("state", "sensor");
-    merge(
-        &mut state,
+    e.entity(
+        "state",
+        "sensor",
         json!({
             "device_class": "enum",
             "options": ["playing", "paused", "stopped", "idle"],
             "value_template": "{{ value_json.state }}",
         }),
     );
-    add(id("state"), state);
 
-    let mut volume = base("volume", "number");
-    merge(
-        &mut volume,
+    e.control(
+        "volume",
+        "number",
         json!({
             "min": 0, "max": 100, "step": 1, "mode": "slider",
             "unit_of_measurement": "%",
             "value_template": "{{ (value_json.volume_level * 100) | round(0) | int }}",
             // Zone volume takes a fraction up to 1.0 and a percentage above, so
             // `1` would mean 100 %: always send the fraction.
-            "command_topic": command("volume"),
+            "command_topic": e.command("volume"),
             "command_template": "{{ (value | float / 100) | round(2) }}",
         }),
     );
-    add(id("volume"), volume);
 
-    for (what, key) in [("mute", "is_volume_muted"), ("shuffle", "shuffle")] {
-        let mut switch = base(what, "switch");
-        merge(
-            &mut switch,
-            json!({
-                "value_template": format!("{{{{ 'ON' if value_json.{key} else 'OFF' }}}}"),
-                "state_on": "ON", "state_off": "OFF",
-                "payload_on": "ON", "payload_off": "OFF",
-                "command_topic": command(what),
-            }),
-        );
-        add(id(what), switch);
-    }
+    e.switch("mute", "is_volume_muted", "mute", json!({}));
+    e.switch("shuffle", "shuffle", "shuffle", json!({}));
 
-    let mut repeat = base("repeat", "select");
-    merge(
-        &mut repeat,
+    let repeat_command = e.command("repeat");
+    e.control(
+        "repeat",
+        "select",
         json!({
             "options": ["off", "one", "all"],
             "value_template": "{{ value_json.repeat }}",
-            "command_topic": command("repeat"),
+            "command_topic": repeat_command,
         }),
     );
-    add(id("repeat"), repeat);
 
     for what in ["play", "pause", "stop", "next", "previous"] {
-        add(
-            id(what),
-            json!({
-                "platform": "button",
-                "unique_id": uid(&id(what)),
-                "name": label(&title_case(what)),
-                "command_topic": command("control"),
-                "payload_press": what,
-            }),
-        );
+        e.button(what, "control", what);
     }
 
     for (what, key) in [
@@ -434,9 +479,9 @@ fn zone_components(
         ("artist", "media_artist"),
         ("album", "media_album_name"),
     ] {
-        let mut sensor = base(what, "sensor");
-        merge(
-            &mut sensor,
+        e.entity(
+            what,
+            "sensor",
             json!({
                 // A state is at most 255 characters; the tag is empty while idle.
                 "value_template": format!(
@@ -444,12 +489,11 @@ fn zone_components(
                 ),
             }),
         );
-        add(id(what), sensor);
     }
 
-    let mut duration = base("duration", "sensor");
-    merge(
-        &mut duration,
+    e.entity(
+        "duration",
+        "sensor",
         json!({
             "device_class": "duration",
             "unit_of_measurement": "s",
@@ -458,71 +502,63 @@ fn zone_components(
                 "{{ value_json.media_duration if 'media_duration' in value_json else none }}",
         }),
     );
-    add(id("duration"), duration);
 
-    let mut source = base("source", "sensor");
-    merge(
-        &mut source,
+    e.entity(
+        "source",
+        "sensor",
         json!({ "value_template": "{{ value_json.source }}" }),
     );
-    add(id("source"), source);
 
-    let mut playlist = base("playlist", "number");
-    merge(
-        &mut playlist,
+    let playlist_command = e.command("playlist");
+    e.control(
+        "playlist",
+        "number",
         json!({
             "min": 0, "max": super::parse::MAX_PLAYLIST_INDEX, "step": 1, "mode": "box",
             "value_template":
                 "{{ value_json.playlist_index if value_json.playlist_index is not none else none }}",
-            "command_topic": command("playlist"),
+            "command_topic": playlist_command,
             "command_template": "{{ value | int }}",
         }),
     );
-    add(id("playlist"), playlist);
 
-    let mut presence = base("presence", "binary_sensor");
-    merge(
-        &mut presence,
+    e.entity(
+        "presence",
+        "binary_sensor",
         json!({
             "device_class": "occupancy",
             "value_template": "{{ 'ON' if value_json.presence else 'OFF' }}",
             "payload_on": "ON", "payload_off": "OFF",
         }),
     );
-    add(id("presence"), presence);
 
-    let mut presence_enabled = base("presence_enabled", "switch");
-    merge(
-        &mut presence_enabled,
+    e.switch(
+        "presence_enabled",
+        "presence_enabled",
+        "presence/enable",
         json!({
-            "name": label("Presence control"),
+            "name": format!("{name} Presence control"),
             "entity_category": "config",
-            "value_template": "{{ 'ON' if value_json.presence_enabled else 'OFF' }}",
-            "state_on": "ON", "state_off": "OFF",
-            "payload_on": "ON", "payload_off": "OFF",
-            "command_topic": command("presence/enable"),
         }),
     );
-    add(id("presence_enabled"), presence_enabled);
 
-    let mut timeout = base("presence_timeout", "number");
-    merge(
-        &mut timeout,
+    let timeout_command = e.command("presence/timeout");
+    e.control(
+        "presence_timeout",
+        "number",
         json!({
-            "name": label("Presence timeout"),
+            "name": format!("{name} Presence timeout"),
             "entity_category": "config",
             "min": 0, "max": 65535, "step": 1, "mode": "box",
             "unit_of_measurement": "s",
             "value_template": "{{ value_json.auto_off_delay }}",
-            "command_topic": command("presence/timeout"),
+            "command_topic": timeout_command,
             "command_template": "{{ value | int }}",
         }),
     );
-    add(id("presence_timeout"), timeout);
 }
 
 /// The entities of client `n`; `zone_names` are the options of its zone select.
-#[allow(clippy::too_many_lines)] // one table of entities, splitting it would hide the set
 fn client_components(
     components: &mut serde_json::Map<String, Value>,
     topics: &Topics,
@@ -531,99 +567,78 @@ fn client_components(
     name: &str,
     zone_names: &[&str],
 ) {
-    let mut add = |id: String, component: Value| {
-        components.insert(id, component);
-    };
-    let uid = |id: &str| format!("snapdog_{}_{id}", server.id);
-    let n = &n;
-    let status = topics.availability();
-    let state_topic = topics.client_state(*n);
-    let command = |tail: &str| topics.join(&format!("clients/{n}/{tail}/set"));
-    let id = |what: &str| format!("client_{n}_{what}");
-    let label = |what: &str| format!("{name} {what}");
+    let state_topic = topics.client_state(n);
     // A client that is not connected to Snapcast cannot be told anything: its
     // controls follow the server's availability and the client's own.
     let controls_available = json!([
-        { "topic": status, "payload_available": "online", "payload_not_available": "offline" },
+        {
+            "topic": topics.availability(),
+            "payload_available": "online", "payload_not_available": "offline",
+        },
         {
             "topic": state_topic,
             "value_template": "{{ 'online' if value_json.connected else 'offline' }}",
             "payload_available": "online", "payload_not_available": "offline",
         },
     ]);
-    let base = |what: &str, platform: &str| {
-        json!({
-            "platform": platform,
-            "unique_id": uid(&id(what)),
-            "name": label(&title_case(what)),
-            "state_topic": state_topic,
-        })
+    let mut e = Entities {
+        components,
+        server_id: &server.id,
+        prefix: format!("client_{n}"),
+        name,
+        state_topic,
+        command_root: topics.join(&format!("clients/{n}")),
+        controls_available: Some(controls_available),
     };
 
-    let mut volume = base("volume", "number");
-    merge(
-        &mut volume,
+    let volume_command = e.command("volume");
+    e.control(
+        "volume",
+        "number",
         json!({
             "min": 0, "max": 100, "step": 1, "mode": "slider", "unit_of_measurement": "%",
             "value_template": "{{ value_json.volume }}",
-            "command_topic": command("volume"),
+            "command_topic": volume_command,
             "command_template": "{{ value | int }}",
-            "availability": controls_available,
-            "availability_mode": "all",
         }),
     );
-    add(id("volume"), volume);
 
-    let mut mute = base("mute", "switch");
-    merge(
-        &mut mute,
-        json!({
-            "value_template": "{{ 'ON' if value_json.muted else 'OFF' }}",
-            "state_on": "ON", "state_off": "OFF",
-            "payload_on": "ON", "payload_off": "OFF",
-            "command_topic": command("mute"),
-            "availability": controls_available,
-            "availability_mode": "all",
-        }),
-    );
-    add(id("mute"), mute);
+    e.switch("mute", "muted", "mute", json!({}));
 
-    let mut latency = base("latency", "number");
-    merge(
-        &mut latency,
+    let latency_command = e.command("latency");
+    e.control(
+        "latency",
+        "number",
         json!({
             "entity_category": "config",
             "min": -snapdog_common::MAX_LATENCY_MS, "max": snapdog_common::MAX_LATENCY_MS, "step": 1, "mode": "box",
             "unit_of_measurement": "ms",
             "value_template": "{{ value_json.latency }}",
-            "command_topic": command("latency"),
+            "command_topic": latency_command,
             "command_template": "{{ value | int }}",
-            "availability": controls_available,
-            "availability_mode": "all",
         }),
     );
-    add(id("latency"), latency);
 
     // The zone is a number in the state and a name for people: the templates map
     // between the two with the list of zone names (the options).
     let names = serde_json::to_string(&zone_names).expect("a list of strings");
-    let mut zone = base("zone", "select");
-    merge(
-        &mut zone,
+    let zone_command = e.command("zone");
+    e.entity(
+        "zone",
+        "select",
         json!({
             "options": zone_names,
             "value_template": format!(
                 "{{% set zones = {names} %}}{{{{ zones[value_json.zone - 1] if 0 < value_json.zone <= zones | length else none }}}}"
             ),
-            "command_topic": command("zone"),
+            "command_topic": zone_command,
             "command_template": format!("{{{{ {names}.index(value) + 1 }}}}"),
         }),
     );
-    add(id("zone"), zone);
 
-    let mut connected = base("connected", "binary_sensor");
-    merge(
-        &mut connected,
+    e.entity(
+        "connected",
+        "binary_sensor",
         json!({
             "device_class": "connectivity",
             "entity_category": "diagnostic",
@@ -631,7 +646,6 @@ fn client_components(
             "payload_on": "ON", "payload_off": "OFF",
         }),
     );
-    add(id("connected"), connected);
 }
 
 #[cfg(test)]

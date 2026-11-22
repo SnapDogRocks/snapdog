@@ -431,6 +431,47 @@ async fn a_mono_source_reaches_the_backend_as_stereo_frames() {
     assert_eq!(call.len, 960, "480 mono frames become 480 stereo frames");
 }
 
+/// #519: two band changes sent without waiting are merged in the zone task, so neither is lost.
+#[tokio::test]
+async fn two_quick_band_changes_of_a_zone_both_survive() {
+    let mut h = spawn_zone_harness(test_config()).await;
+    let band = |gain: f64| -> snapdog::audio::eq::EqBand {
+        serde_json::from_value(serde_json::json!(
+            {"freq": 1000.0, "gain": gain, "q": 1.0, "type": "peaking"}
+        ))
+        .unwrap()
+    };
+    let config: snapdog::audio::eq::EqConfig = serde_json::from_value(serde_json::json!({
+        "enabled": true,
+        "bands": [
+            {"freq": 1000.0, "gain": 0.0, "q": 1.0, "type": "peaking"},
+            {"freq": 1000.0, "gain": 0.0, "q": 1.0, "type": "peaking"}
+        ]
+    }))
+    .unwrap();
+    let tx = h.senders[&1].clone();
+    tx.send(ZoneCommand::SetEq(config)).await.unwrap();
+    tx.send(ZoneCommand::SetEqBand {
+        band_index: 0,
+        band: band(3.0),
+    })
+    .await
+    .unwrap();
+    tx.send(ZoneCommand::SetEqBand {
+        band_index: 1,
+        band: band(-4.0),
+    })
+    .await
+    .unwrap();
+    let event = h
+        .await_notification(|v| v["type"] == "zone_eq_changed" && v["bands"][1]["gain"] == -4.0)
+        .await;
+    assert_eq!(
+        event["bands"][0]["gain"], 3.0,
+        "the first change is still there"
+    );
+}
+
 /// #494: seek steps and presence starts derive follow-up commands. With the command channel
 /// full and more senders waiting, those follow-ups must not be sent back into the same
 /// channel (the zone would wait on itself forever); the zone keeps processing everything.
@@ -524,4 +565,227 @@ async fn zone_volume_never_exceeds_max_volume() {
         })
         .await;
     assert_eq!(n["volume"], 60, "AdjustVolume stops at max_volume");
+}
+
+// ── #497: resume a URL and a single Subsonic track, presence hands over to the user ──
+
+mod resume_and_presence {
+    use super::*;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// A stream that never delivers within a test: the zone stays in Playing until paused.
+    fn stalled_stream() -> ResponseTemplate {
+        ResponseTemplate::new(200)
+            .insert_header("content-type", "audio/mpeg")
+            .set_body_bytes(vec![0u8; 16])
+            .set_delay(Duration::from_secs(60))
+    }
+
+    async fn requests_to(server: &MockServer, p: &str) -> usize {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.method.as_str() == "GET" && r.url.path() == p)
+            .count()
+    }
+
+    async fn until(what: &str, mut done: impl AsyncFnMut() -> bool) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !done().await {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
+    }
+
+    async fn playback(h: &common::ZoneHarness) -> PlaybackState {
+        h.store.read().await.zones[&1].playback.clone()
+    }
+
+    #[tokio::test]
+    async fn play_after_pause_resumes_a_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/live"))
+            .respond_with(stalled_stream())
+            .mount(&server)
+            .await;
+        let h = spawn_zone_harness(test_config()).await;
+        let tx = &h.senders[&1];
+
+        tx.send(ZoneCommand::PlayUrl(format!("{}/live", server.uri())))
+            .await
+            .unwrap();
+        until("the first request", async || {
+            requests_to(&server, "/live").await >= 1
+        })
+        .await;
+        tx.send(ZoneCommand::Pause).await.unwrap();
+        until("the pause", async || {
+            playback(&h).await == PlaybackState::Paused
+        })
+        .await;
+
+        let before = requests_to(&server, "/live").await;
+        tx.send(ZoneCommand::Play).await.unwrap();
+        until("the URL to be requested again", async || {
+            requests_to(&server, "/live").await > before
+        })
+        .await;
+        let z = h.store.read().await.zones[&1].clone();
+        assert_eq!(
+            (z.playback, z.source),
+            (PlaybackState::Playing, SourceType::Url)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_single_subsonic_track_has_a_track_entry_and_resumes() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/rest/getSong"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "subsonic-response": {
+                    "status": "ok",
+                    "version": "1.16.1",
+                    "song": { "id": "t1", "title": "Blue", "artist": "Band", "duration": 200 }
+                }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/rest/stream"))
+            .respond_with(stalled_stream())
+            .mount(&server)
+            .await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config();
+        cfg.subsonic = Some(snapdog::config::SubsonicConfig {
+            url: server.uri(),
+            username: "u".into(),
+            password: "p".to_owned().into(),
+            format: snapdog::config::SubsonicFormat::default(),
+            tls_skip_verify: false,
+            cache: snapdog::config::SubsonicCacheConfig {
+                path: cache_dir.path().to_string_lossy().into_owned(),
+                max_size_mb: 16,
+            },
+            refresh_secs: 0,
+            playlist_write: false,
+        });
+        let h = spawn_zone_harness(cfg).await;
+        let tx = &h.senders[&1];
+
+        tx.send(ZoneCommand::PlaySubsonicTrack("t1".into()))
+            .await
+            .unwrap();
+        until("the track entry", async || {
+            h.store.read().await.zones[&1]
+                .track
+                .as_ref()
+                .is_some_and(|t| t.title == "Blue")
+        })
+        .await;
+        let z = h.store.read().await.zones[&1].clone();
+        assert_eq!(z.source, SourceType::SubsonicTrack);
+        assert_eq!(z.track.as_ref().unwrap().artist, "Band");
+
+        tx.send(ZoneCommand::Pause).await.unwrap();
+        until("the pause", async || {
+            playback(&h).await == PlaybackState::Paused
+        })
+        .await;
+        let streams = requests_to(&server, "/rest/stream").await;
+        tx.send(ZoneCommand::Play).await.unwrap();
+        until("the track to be streamed again", async || {
+            requests_to(&server, "/rest/stream").await > streams
+        })
+        .await;
+        let z = h.store.read().await.zones[&1].clone();
+        assert_eq!(z.playback, PlaybackState::Playing);
+        assert_eq!(z.source, SourceType::SubsonicTrack);
+        assert_eq!(z.track.map(|t| t.title).as_deref(), Some("Blue"));
+    }
+
+    /// Seed presence-started playback with an armed auto-off of `delay` seconds.
+    async fn presence_playing(h: &mut common::ZoneHarness, delay: u16) {
+        {
+            let mut s = h.store.write().await;
+            let z = s.zones.get_mut(&1).unwrap();
+            z.presence_enabled = true;
+            z.presence_source = true;
+            z.playback = PlaybackState::Playing;
+            z.auto_off_delay = delay;
+            drop(s);
+        }
+        h.senders[&1]
+            .send(ZoneCommand::SetPresence(true))
+            .await
+            .unwrap();
+        h.await_notification(|v| {
+            v["type"] == "zone_presence_changed" && v["zone"] == 1 && v["timer_active"] == true
+        })
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn auto_off_leaves_playback_the_user_took_over() {
+        let mut h = spawn_zone_harness(test_config()).await;
+        presence_playing(&mut h, 10).await;
+
+        // A user Pause takes the playback over from presence.
+        h.senders[&1].send(ZoneCommand::Pause).await.unwrap();
+        h.await_notification(|v| {
+            v["type"] == "zone_presence_changed" && v["zone"] == 1 && v["timer_active"] == false
+        })
+        .await;
+        assert!(!h.store.read().await.zones[&1].presence_source);
+
+        tokio::time::advance(Duration::from_secs(30)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            playback(&h).await,
+            PlaybackState::Paused,
+            "the auto-off timer does not stop what the user owns"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn after_a_user_stop_presence_starts_again_only_once_the_room_was_empty() {
+        let mut h = spawn_zone_harness(test_config()).await;
+        presence_playing(&mut h, 10).await;
+        let tx = h.senders[&1].clone();
+
+        tx.send(ZoneCommand::Stop).await.unwrap();
+        until("the stop", async || {
+            playback(&h).await == PlaybackState::Stopped
+        })
+        .await;
+
+        // Still occupied: a trigger starts nothing.
+        tx.send(ZoneCommand::SetPresence(true)).await.unwrap();
+        h.await_notification(|v| {
+            v["type"] == "zone_presence_changed" && v["zone"] == 1 && v["presence"] == true
+        })
+        .await;
+        assert!(!h.store.read().await.zones[&1].presence_source);
+        assert_eq!(playback(&h).await, PlaybackState::Stopped);
+
+        // The room was empty once: the next trigger starts presence playback again.
+        tx.send(ZoneCommand::SetPresence(false)).await.unwrap();
+        h.await_notification(|v| {
+            v["type"] == "zone_presence_changed" && v["zone"] == 1 && v["presence"] == false
+        })
+        .await;
+        tx.send(ZoneCommand::SetPresence(true)).await.unwrap();
+        until("presence to start playback", async || {
+            h.store.read().await.zones[&1].presence_source
+        })
+        .await;
+    }
 }

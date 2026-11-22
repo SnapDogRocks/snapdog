@@ -17,6 +17,16 @@ The changelog lists every change, this page lists the ones you have to act on or
   "Zone" and "Zone Status" to one address sends two telegrams per change.
 - In client mode a read of a zone's **Playlist Name** address is answered.
 
+## REST: a client that is not connected answers 409
+
+`PUT /clients/{n}/volume`, `PUT /clients/{n}/mute`, `POST /clients/{n}/mute/toggle` and
+`PUT /clients/{n}/latency` answered 404 for a client that is configured but has not connected
+since the server started. They now answer **409 Conflict** (`"error": "conflict"`); 404 means
+an unknown client index only. EQ and speaker correction of such a client are stored and
+answered with 200, and reach the client when it connects (before, they were stored and then
+answered with 404). `PUT /clients/99/name` for an unknown client answers 404 instead of 200.
+A mutating route whose command cannot be handed to the server answers 500 instead of 200.
+
 ## MQTT: the zone position has its own topic
 
 `zones/<n>/state` no longer contains `media_position` and is only published when it changes,
@@ -24,6 +34,14 @@ instead of once per second during playback. An automation that read the position
 state reads `zones/<n>/position` (whole seconds, not retained) instead. The Home Assistant
 entities created by discovery are not affected. Steady playback also no longer rewrites the
 state file every five seconds.
+
+## Legacy web interface deprecated
+
+The legacy interface (`/legacy`, `webui = "legacy"`, `--webui legacy`) is deprecated as of
+0.37.0 and will be removed in the release after the next one. It shows a notice, and the server
+logs a warning at start when it is served at `/`. Use the current interface; it covers every
+function of the legacy one. After the removal, `webui = "legacy"` and `--webui legacy` serve the
+current interface.
 
 ## `base_url` follows the HTTP port when it is not set
 
