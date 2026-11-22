@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Component, useRef, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
+import Link from "next/link";
 import { useAppStore, type ZoneState } from "@/stores/useAppStore";
 import { useAppSession } from "@/hooks/useAppSession";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -196,7 +197,7 @@ export function LegacyApp() {
       {/* Deprecated since 0.37.0, removed in a later release (docs/upgrading.md). */}
       <p role="note" className="fixed bottom-3 left-1/2 z-50 -translate-x-1/2 rounded-full border border-border bg-card/95 px-4 py-1.5 text-xs shadow-lg backdrop-blur">
         {t("app.legacyDeprecated")}{" "}
-        <a href="/" className="font-medium text-primary-ink underline-offset-2 hover:underline">{t("app.legacySwitch")}</a>
+        <Link href="/" className="font-medium text-primary-ink underline-offset-2 hover:underline">{t("app.legacySwitch")}</Link>
       </p>
       {/* ── Sidebar / Rail ──────────────────────────────────
            Visible at md–xl. Hidden at xl+, where the horizontal

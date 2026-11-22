@@ -73,58 +73,35 @@ function check401(res: Response) {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
-  if (!res.ok) throw await errorFromResponse(res, "GET", path);
-  return (await res.json()) as T;
-}
+type Method = "GET" | "PUT" | "POST";
 
-async function putJson<T>(path: string, body: unknown): Promise<T> {
+/** One request with the API key; a failed response throws its `ApiError`. */
+async function request(method: Method, path: string, body?: unknown): Promise<Response> {
   const res = await fetch(`${BASE}${path}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw await errorFromResponse(res, "PUT", path);
-  const text = await res.text();
-  if (!text) throw new ApiError(res.status, `PUT ${path}: expected JSON response but got empty body`);
-  return JSON.parse(text) as T;
-}
-
-async function putVoid(path: string, body: unknown): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw await errorFromResponse(res, "PUT", path);
-}
-
-async function postJson<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
+    ...(method === "GET" ? {} : { method }),
     headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
-  if (!res.ok) throw await errorFromResponse(res, "POST", path);
+  if (!res.ok) throw await errorFromResponse(res, method, path);
+  return res;
+}
+
+/** The JSON body of a successful response; an empty body is an error. */
+async function json<T>(res: Response, method: Method, path: string): Promise<T> {
   const text = await res.text();
-  if (!text) throw new ApiError(res.status, `POST ${path}: expected JSON response but got empty body`);
+  if (!text) throw new ApiError(res.status, `${method} ${path}: expected JSON response but got empty body`);
   return JSON.parse(text) as T;
 }
 
-async function postVoid(path: string, body?: unknown): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  if (!res.ok) throw await errorFromResponse(res, "POST", path);
-}
+const get = async <T>(path: string): Promise<T> => json<T>(await request("GET", path), "GET", path);
+const putJson = async <T>(path: string, body: unknown): Promise<T> => json<T>(await request("PUT", path, body), "PUT", path);
+const putVoid = async (path: string, body: unknown): Promise<void> => { await request("PUT", path, body); };
+const postJson = async <T>(path: string, body?: unknown): Promise<T> => json<T>(await request("POST", path, body), "POST", path);
+const postVoid = async (path: string, body?: unknown): Promise<void> => { await request("POST", path, body); };
 
 /** Fetch a binary endpoint with auth and trigger a browser download. */
 async function downloadFile(path: string, filename: string): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
-  if (!res.ok) throw await errorFromResponse(res, "GET", path);
+  const res = await request("GET", path);
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");
   a.href = url;
