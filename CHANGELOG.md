@@ -7,6 +7,12 @@
 
 * **api:** remove the deprecated playlist id and zone_changed.playlist ([#565](https://github.com/SnapDogRocks/snapdog/issues/565))
 
+### Security
+
+* **subsonic:** Subsonic credentials no longer appear in error responses (502 body) and in the log. If your log was shared or collected centrally, change the Subsonic password. ([406a64d](https://github.com/SnapDogRocks/snapdog/commit/406a64d7d3c267e45cacfaf28c233425fae10aac))
+* **api:** requests and WebSocket handshakes from another origin are refused, also when no API key is set ([GHSA-5gx3-m7m5-j2c2](https://github.com/SnapDogRocks/snapdog/security/advisories/GHSA-5gx3-m7m5-j2c2), [cdeb424](https://github.com/SnapDogRocks/snapdog/commit/cdeb4246f54e24ae1ca5dc302b0e93be69fa59b5))
+* **api:** an empty or blank API key is refused, and the key stays out of request logs and share links ([GHSA-q7p8-v83g-hrxr](https://github.com/SnapDogRocks/snapdog/security/advisories/GHSA-q7p8-v83g-hrxr), [7ac6135](https://github.com/SnapDogRocks/snapdog/commit/7ac6135cceb8f7ad6c7c8a229f40e0aa995fa2ba))
+
 ### Features
 
 * **api:** remove the deprecated playlist id and zone_changed.playlist ([#565](https://github.com/SnapDogRocks/snapdog/issues/565)) ([21a160a](https://github.com/SnapDogRocks/snapdog/commit/21a160a46d29cc4d31846a8b5a0781abdabbf00e))
