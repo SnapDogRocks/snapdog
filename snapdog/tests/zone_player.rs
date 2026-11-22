@@ -269,6 +269,35 @@ async fn injected_pcm_reaches_backend_send_audio() {
     assert_eq!(call.channels, 2);
 }
 
+// ── Checked commands: the zone answers whether the index exists ──
+
+async fn checked(h: &common::ZoneHarness, zone: usize, cmd: ZoneCommand) -> bool {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    h.senders[&zone]
+        .send(ZoneCommand::Checked(Box::new(cmd), tx))
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), rx)
+        .await
+        .expect("the zone answers")
+        .unwrap_or(true)
+}
+
+#[tokio::test]
+async fn an_unknown_playlist_index_is_refused_and_not_clamped() {
+    let h = spawn_zone_harness(test_config()).await;
+    // test_config has no radio and no Subsonic: no playlist exists at all.
+    assert!(!checked(&h, 1, ZoneCommand::SetPlaylist(99, 0)).await);
+    assert!(!checked(&h, 1, ZoneCommand::PlayPlaylist(0, 0)).await);
+    assert_eq!(h.store.read().await.zones[&1].playlist_index, None);
+}
+
+#[tokio::test]
+async fn a_track_index_without_an_active_playlist_is_refused() {
+    let h = spawn_zone_harness(test_config()).await;
+    assert!(!checked(&h, 1, ZoneCommand::SetTrack(0)).await);
+}
+
 // ── A2: the last action wins between a receiver and local control ──
 
 #[cfg(feature = "test-harness")]
