@@ -142,7 +142,8 @@ pub struct Page {
     pub offset: usize,
 }
 
-/// Subsonic API client.
+/// Subsonic API client. Cloning is cheap and shares the connection pool.
+#[derive(Clone)]
 pub struct SubsonicClient {
     base_url: String,
     username: String,
@@ -215,6 +216,24 @@ impl SubsonicClient {
         resp.subsonic_response
             .playlist
             .context("Playlist not found")
+    }
+
+    /// Get one track's metadata (`getSong`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails, the server reports a failure or the track
+    /// is not found.
+    pub async fn get_song(&self, id: &str) -> Result<Track> {
+        let resp: SubsonicResponse<()> = self.get("getSong", &[("id", id)]).await?;
+        let inner = resp.subsonic_response;
+        if inner.status != "ok" {
+            anyhow::bail!(
+                "getSong failed: {}",
+                inner.error.map(|e| e.message).unwrap_or_default()
+            );
+        }
+        inner.song.context("Track not found")
     }
 
     /// Get an album with its tracks, shaped like a playlist so the player can queue it.
@@ -505,6 +524,8 @@ struct SubsonicInner<T> {
     search_result3: Option<SearchResult>,
     #[serde(default)]
     album: Option<AlbumWithSongs>,
+    #[serde(default)]
+    song: Option<Track>,
 }
 
 /// An album as `getAlbum` returns it.
@@ -641,6 +662,22 @@ pub struct Track {
     pub cover_art: Option<String>,
     /// Track number within the album.
     pub track: Option<u32>,
+}
+
+impl Track {
+    /// A track known only by its id, for when its metadata cannot be read.
+    #[must_use]
+    pub fn untitled(id: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            title: String::new(),
+            artist: None,
+            album: None,
+            duration: 0,
+            cover_art: None,
+            track: None,
+        }
+    }
 }
 
 #[cfg(test)]

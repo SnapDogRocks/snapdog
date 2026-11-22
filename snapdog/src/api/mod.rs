@@ -71,6 +71,21 @@ pub struct AppState {
     pub playlist_cache: Arc<crate::subsonic::PlaylistCache>,
     /// Spinorama speaker profile database.
     pub speaker_db: crate::spinorama::SpeakerDb,
+    /// The Subsonic client of the API routes, built once so requests share its connection
+    /// pool. `None` without `[subsonic]`.
+    pub subsonic: Option<crate::subsonic::SubsonicClient>,
+    /// The HTTP client for the container updater sidecar.
+    pub updater_http: reqwest::Client,
+}
+
+/// The HTTP client for the container updater sidecar: a short total timeout, it answers
+/// from the same host.
+#[must_use]
+pub fn updater_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default()
 }
 
 /// Thread-safe shared reference to [`AppState`].
@@ -220,6 +235,10 @@ pub async fn serve_on<S: BuildHasher>(
     playlist_cache: Arc<crate::subsonic::PlaylistCache>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
+    let subsonic = config
+        .subsonic
+        .as_ref()
+        .map(crate::subsonic::SubsonicClient::new);
     let state = Arc::new(AppState {
         config,
         store,
@@ -231,6 +250,8 @@ pub async fn serve_on<S: BuildHasher>(
         knx_device_control,
         playlist_cache,
         speaker_db: crate::spinorama::SpeakerDb::new(),
+        subsonic,
+        updater_http: updater_http_client(),
     });
 
     let app = build_router(&state);

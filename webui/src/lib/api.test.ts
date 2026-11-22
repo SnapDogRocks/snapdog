@@ -38,3 +38,27 @@ describe("API authentication failures", () => {
     expect(reloadMock).not.toHaveBeenCalled();
   });
 });
+
+describe("API error bodies", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("uses the server's message for an ErrorBody", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: "read_only", message: "Programming mode is switched off on this server" }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    )));
+    const error = await api.knx.setProgrammingMode(true).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 403,
+      error: "read_only",
+      message: "Programming mode is switched off on this server",
+    });
+  });
+
+  it("falls back to method, path and status for a body that is not JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("Bad Gateway", { status: 502 })));
+    const error = await api.eq.presets().catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 502, error: null, message: "GET /api/v1/eq/presets: 502" });
+  });
+});

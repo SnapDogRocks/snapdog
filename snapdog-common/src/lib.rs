@@ -215,11 +215,17 @@ pub enum FilterType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EqBand {
+    // The schema bounds repeat `EQ_FREQ_RANGE_HZ`, `EQ_GAIN_RANGE_DB` and `EQ_Q_RANGE`
+    // (attributes take literals); a test in `snapdog` checks that they agree.
     /// Center frequency in Hz.
+    #[cfg_attr(feature = "openapi", schema(minimum = 10.0, maximum = 20000.0))]
     pub freq: f32,
     /// Gain in dB (positive = boost, negative = cut). Ignored for low/high pass.
+    #[cfg_attr(feature = "openapi", schema(minimum = -24.0, maximum = 24.0))]
     pub gain: f32,
-    /// Q factor controlling bandwidth. Higher values = narrower band.
+    /// Q factor controlling bandwidth. Higher values = narrower band. 0 selects the
+    /// Butterworth default.
+    #[cfg_attr(feature = "openapi", schema(minimum = 0.0, maximum = 20.0))]
     pub q: f32,
     /// Filter type (low shelf, high shelf, peaking, low pass, high pass).
     #[serde(rename = "type")]
@@ -232,7 +238,8 @@ pub struct EqBand {
 pub struct EqConfig {
     /// Whether the EQ is active. When `false`, audio passes through unmodified.
     pub enabled: bool,
-    /// Ordered list of biquad filter bands applied in series.
+    /// Ordered list of biquad filter bands applied in series, at most `MAX_EQ_BANDS`.
+    #[cfg_attr(feature = "openapi", schema(max_items = 10))]
     pub bands: Vec<EqBand>,
     /// Name of the preset this config was loaded from, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -264,15 +271,26 @@ impl EqBand {
 }
 
 impl EqConfig {
+    /// Check only the number of bands, for configurations whose band values are taken as
+    /// they come (speaker database profiles).
+    ///
+    /// # Errors
+    ///
+    /// A message when there are more than [`MAX_EQ_BANDS`] bands.
+    pub fn validate_band_count(&self) -> Result<(), String> {
+        if self.bands.len() > MAX_EQ_BANDS {
+            return Err(format!("at most {MAX_EQ_BANDS} EQ bands"));
+        }
+        Ok(())
+    }
+
     /// Check the band count and every band.
     ///
     /// # Errors
     ///
     /// A message naming the band and the value that is out of range.
     pub fn validate(&self) -> Result<(), String> {
-        if self.bands.len() > MAX_EQ_BANDS {
-            return Err(format!("at most {MAX_EQ_BANDS} EQ bands"));
-        }
+        self.validate_band_count()?;
         for (i, band) in self.bands.iter().enumerate() {
             band.validate().map_err(|e| format!("band {i}: {e}"))?;
         }
