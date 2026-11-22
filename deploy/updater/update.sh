@@ -244,21 +244,52 @@ wait_for_readiness() {
   return 1
 }
 
+# The first line of a compose error, for the status. The log keeps all of it.
+first_line() {
+  local text="$1"
+  printf '%s' "${text%%$'\n'*}"
+}
+
 deploy_with_rollback() {
-  local candidate="$1" old_id rollback_ref
+  local candidate="$1" old_id rollback_ref compose_error running_id unchanged
+  unchanged="update not applied, the running release is unchanged"
   old_id="$(docker inspect --format '{{.Image}}' "$TARGET_CONTAINER")"
   rollback_ref="${IMAGE_REPOSITORY}:rollback"
-  docker image tag "$old_id" "$rollback_ref"
 
+  # Load the stack file the way the deployment will, before anything is touched.
+  # Relative paths resolve against HOST_STACK_DIR, which need not exist inside this
+  # container (an `env_file: ./.env` breaks here, see docs/docker-updates.md).
+  if ! compose_error="$(SNAPDOG_IMAGE="$candidate" compose_stack config --quiet 2>&1)"; then
+    log "docker compose cannot load the stack file: $compose_error"
+    set_phase "failed" \
+      "${unchanged}: the stack file cannot be read by the updater: $(first_line "$compose_error")" \
+      "deploying"
+    die "the stack file cannot be read by the updater; nothing was deployed"
+    return 1
+  fi
+
+  docker image tag "$old_id" "$rollback_ref"
   set_phase "deploying" "$candidate"
   log "deploying $candidate"
-  if compose_deploy "$candidate" && wait_for_readiness true; then
-    if persist_server_image "$candidate"; then
-      log "deployment healthy: $candidate"
-      set_phase "done" "$candidate"
-      return 0
+  if compose_deploy "$candidate"; then
+    if wait_for_readiness true; then
+      if persist_server_image "$candidate"; then
+        log "deployment healthy: $candidate"
+        set_phase "done" "$candidate"
+        return 0
+      fi
+      log "deployment healthy but image pin persistence failed; rolling back"
     fi
-    log "deployment healthy but image pin persistence failed; rolling back"
+  else
+    # Compose failed before it replaced the container (image, network, config):
+    # the old release still runs, so there is nothing to roll back.
+    running_id="$(docker inspect --format '{{if .State.Running}}{{.Image}}{{end}}' \
+      "$TARGET_CONTAINER" 2>/dev/null || true)"
+    if [[ -n "$running_id" && "$running_id" == "$old_id" ]]; then
+      set_phase "failed" "${unchanged}: docker compose could not start $candidate" "deploying"
+      die "docker compose could not start $candidate; the running release is unchanged"
+      return 1
+    fi
   fi
 
   log "deployment failed; rolling back to $old_id"
@@ -266,6 +297,9 @@ deploy_with_rollback() {
   if ! compose_deploy "$rollback_ref" || ! wait_for_readiness false; then
     set_phase "failed" "automatic rollback failed; operator intervention required" "rolling-back"
     die "automatic rollback failed; operator intervention required"
+    # `die` only logs. Without this return the next lines would overwrite the
+    # failure with "rolled back" (#483).
+    return 1
   fi
   set_phase "failed" "rolled back because the new release did not become ready"
   die "deployment rolled back because the new release did not become ready"

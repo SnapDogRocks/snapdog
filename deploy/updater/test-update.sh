@@ -206,3 +206,72 @@ if ! env PROGRESS_FILE=/proc/nonexistent/progress.json UPDATE_SH="$update_sh" \
 fi
 
 printf 'phase journal assertions passed\n'
+
+# ── Deployment outcome reporting (#483) ───────────────────────────────
+# Each case runs in its own process: update.sh's settings are readonly once sourced.
+# `config_rc`/`up_rc` drive the fake `docker compose`; `running` is the image the
+# target container runs after a failed `up` (empty: the container is gone).
+deploy_probe() {
+  local config_rc="$1" up_rc="$2" running="$3" progress="${test_directory}/state/deploy-$4.json"
+  local rollback_ready="${5:-false}"
+  : >"$PROBE_LOG"
+  # shellcheck disable=SC2016
+  env UPDATE_ONCE=true COMPOSE_FILE="$COMPOSE_FILE" SNAPDOG_ENV_FILE="$SNAPDOG_ENV_FILE" \
+    HOST_STACK_DIR="$test_directory" ENV_BACKUP_FILE="$ENV_BACKUP_FILE" \
+    PROGRESS_FILE="$progress" READINESS_TIMEOUT_SECONDS=30 \
+    CONFIG_RC="$config_rc" UP_RC="$up_rc" RUNNING="$running" ROLLBACK_READY="$rollback_ready" \
+    PROBE_LOG="$PROBE_LOG" UPDATE_SH="$update_sh" \
+    bash -c '
+      source "$UPDATE_SH"
+      # The new release never becomes ready; the old one does if ROLLBACK_READY.
+      wait_for_readiness() { [[ "${1:-true}" == false && "$ROLLBACK_READY" == true ]]; }
+      docker() {
+        case "$1" in
+          inspect)
+            if [[ "$*" == *State.Running* ]]; then printf "%s\n" "$RUNNING"; else printf "old-id\n"; fi ;;
+          image) return 0 ;;
+          compose)
+            if [[ "$*" == *" config "* || "$*" == *" config" ]]; then
+              printf "compose config\n" >>"$PROBE_LOG"
+              [[ "$CONFIG_RC" == 0 ]] || { printf "env file /volume1/docker/snapdog/.env not found\nsecond line\n" >&2; return 1; }
+            else
+              printf "compose up %s\n" "$*" >>"$PROBE_LOG"
+              return "$UP_RC"
+            fi ;;
+        esac
+      }
+      if deploy_with_rollback ghcr.io/snapdogrocks/snapdog:v1.8.2; then exit 1; fi
+    ' >/dev/null 2>&1
+}
+
+# The rollback fails too: the status ends on "rollback failed", never on "rolled back".
+deploy_probe 0 1 "" rollback-failed
+progress="${test_directory}/state/deploy-rollback-failed.json"
+assert jq -e '.phase == "failed" and .detail == "automatic rollback failed; operator intervention required"' "$progress" >/dev/null
+assert jq -e '.failedPhase == "rolling-back" and .rollbackAttempted == true' "$progress" >/dev/null
+assert test "$(grep -c '^compose up' "$PROBE_LOG")" = 2
+
+# A stack file the updater cannot load: no `up` at all, and the status says so.
+deploy_probe 1 0 "" unreadable-stack
+progress="${test_directory}/state/deploy-unreadable-stack.json"
+if grep -q '^compose up' "$PROBE_LOG"; then
+  printf 'FAILED: the updater deployed although it could not load the stack file\n' >&2
+  exit 1
+fi
+assert jq -e '.phase == "failed" and .rollbackAttempted == false' "$progress" >/dev/null
+assert jq -e '.detail | contains("the running release is unchanged") and contains("stack file") and contains("/volume1/docker/snapdog/.env") and (contains("second line") | not)' "$progress" >/dev/null
+
+# `up` fails while the old container keeps running: nothing to roll back.
+deploy_probe 0 1 old-id up-failed-unchanged
+progress="${test_directory}/state/deploy-up-failed-unchanged.json"
+assert test "$(grep -c '^compose up' "$PROBE_LOG")" = 1
+assert jq -e '.phase == "failed" and .failedPhase == "deploying" and .rollbackAttempted == false' "$progress" >/dev/null
+assert jq -e '.detail | contains("the running release is unchanged")' "$progress" >/dev/null
+
+# The new release starts but never becomes ready, the rollback works: reported as rolled back.
+deploy_probe 0 0 "" not-ready true
+progress="${test_directory}/state/deploy-not-ready.json"
+assert jq -e '.phase == "failed" and .detail == "rolled back because the new release did not become ready"' "$progress" >/dev/null
+assert jq -e '.failedPhase == "deploying" and .rollbackAttempted == true' "$progress" >/dev/null
+
+printf 'deployment outcome assertions passed\n'
