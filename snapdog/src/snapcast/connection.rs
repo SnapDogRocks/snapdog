@@ -229,8 +229,8 @@ async fn reconnect(
     tokio::io::Lines<BufReader<tokio::net::tcp::OwnedReadHalf>>,
     tokio::net::tcp::OwnedWriteHalf,
 )> {
-    // Snapcast link is down → raise the KNX "System Fault" health flag.
-    crate::knx::SYSTEM_HEALTHY.store(false, std::sync::atomic::Ordering::Relaxed);
+    // Snapcast link is down → raise the KNX "System Fault".
+    crate::health::report(crate::health::FaultSource::Snapcast, false);
     for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
         let delay = std::time::Duration::from_secs(attempt.min(MAX_RECONNECT_DELAY_SECS));
         tracing::info!(
@@ -244,7 +244,7 @@ async fn reconnect(
             Ok(stream) => {
                 let (reader, writer) = stream.into_split();
                 let lines = BufReader::new(reader).lines();
-                crate::knx::SYSTEM_HEALTHY.store(true, std::sync::atomic::Ordering::Relaxed);
+                crate::health::report(crate::health::FaultSource::Snapcast, true);
                 return Some((lines, writer));
             }
             Err(e) => {

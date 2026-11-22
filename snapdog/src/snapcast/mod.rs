@@ -336,8 +336,11 @@ mod process_impl {
         // Prefer connected entries when the same MAC appears multiple times
         for group in &status.server.groups {
             for snap_client in &group.clients {
-                let mac = snap_client.host.mac.to_lowercase();
-                if let Some(client) = s.clients.values_mut().find(|c| c.mac.to_lowercase() == mac)
+                let mac = crate::config::normalize_mac(&snap_client.host.mac);
+                if let Some(client) = s
+                    .clients
+                    .values_mut()
+                    .find(|c| crate::config::normalize_mac(&c.mac) == mac)
                     && (!client.connected || snap_client.connected)
                 {
                     client.snapcast_id = Some(snap_client.id.clone());
@@ -355,14 +358,16 @@ mod process_impl {
             .iter()
             .flat_map(|g| &g.clients)
             .filter(|c| c.connected)
-            .map(|c| c.host.mac.to_lowercase())
+            .map(|c| crate::config::normalize_mac(&c.host.mac))
             .collect();
         let stale_ids: Vec<String> = status
             .server
             .groups
             .iter()
             .flat_map(|g| &g.clients)
-            .filter(|c| !c.connected && connected_macs.contains(&c.host.mac.to_lowercase()))
+            .filter(|c| {
+                !c.connected && connected_macs.contains(&crate::config::normalize_mac(&c.host.mac))
+            })
             .map(|c| c.id.clone())
             .collect();
         for c in s.clients.values() {
@@ -508,7 +513,7 @@ mod process_impl {
             .groups
             .iter()
             .flat_map(|g| &g.clients)
-            .map(|c| (c.host.mac.to_lowercase(), c.id.clone()))
+            .map(|c| (crate::config::normalize_mac(&c.host.mac), c.id.clone()))
             .collect()
     }
 
@@ -548,14 +553,14 @@ mod process_impl {
                 id: _,
                 client: snap_client,
             } => {
-                let mac = snap_client.host.mac.to_lowercase();
+                let mac = crate::config::normalize_mac(&snap_client.host.mac);
                 let snap_id = snap_client.id.clone();
 
                 let mut s = store.write().await;
                 if let Some((&idx, client)) = s
                     .clients
                     .iter_mut()
-                    .find(|(_, c)| c.mac.to_lowercase() == mac)
+                    .find(|(_, c)| crate::config::normalize_mac(&c.mac) == mac)
                 {
                     client.connected = true;
                     client.snapcast_id = Some(snap_id.clone());
@@ -748,7 +753,7 @@ mod process_impl {
             .clients
             .iter()
             .filter(|c| c.zone_index == zone_index)
-            .map(|c| c.mac.to_lowercase())
+            .map(|c| crate::config::normalize_mac(&c.mac))
             .collect();
 
         let snap_client_ids: Vec<String> = zone_macs
@@ -759,7 +764,7 @@ mod process_impl {
                     .groups
                     .iter()
                     .flat_map(|g| &g.clients)
-                    .find(|c| c.host.mac.to_lowercase() == *mac)
+                    .find(|c| crate::config::normalize_mac(&c.host.mac) == *mac)
                     .map(|c| c.id.clone())
             })
             .collect();
