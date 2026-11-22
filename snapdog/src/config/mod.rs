@@ -2590,7 +2590,10 @@ mod gap_tests {
     #[test]
     fn an_unknown_default_zone_is_reported() {
         let wrong_case = load("[snapcast]\ndefault_zone = \"garden\"\n");
-        assert!(has_notice(&wrong_case, "default_zone = \"garden\" names no zone"));
+        assert!(has_notice(
+            &wrong_case,
+            "default_zone = \"garden\" names no zone"
+        ));
         let known = load("[snapcast]\ndefault_zone = \"Garden\"\n");
         assert!(!has_notice(&known, "default_zone"));
     }
@@ -2607,7 +2610,10 @@ mod gap_tests {
         let c = load("[audio]\nzone_switch_fade_ms = 5000\n");
         assert_eq!(c.audio.zone_switch_fade_ms, MAX_FADE_MS);
         assert!(has_notice(&c, "[audio].zone_switch_fade_ms = 5000"));
-        assert!(!has_notice(&load("[audio]\nsource_switch_fade_ms = 1000\n"), "fade"));
+        assert!(!has_notice(
+            &load("[audio]\nsource_switch_fade_ms = 1000\n"),
+            "fade"
+        ));
     }
 
     #[test]
@@ -2670,7 +2676,10 @@ mod gap_tests {
             (mqtt.client_cert, "c.pem"),
             (mqtt.client_key, "k.pem"),
         ] {
-            assert_eq!(path.unwrap(), std::path::PathBuf::from(format!("{home}/{name}")));
+            assert_eq!(
+                path.unwrap(),
+                std::path::PathBuf::from(format!("{home}/{name}"))
+            );
         }
     }
 
