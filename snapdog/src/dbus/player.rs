@@ -93,11 +93,7 @@ impl PlayerInterface {
             m.insert("xesam:album".into(), Variant::new(s.album.clone()));
         }
         if let Some(ref url) = s.cover_url {
-            let art_url = if url.starts_with("http") {
-                url.clone()
-            } else {
-                format!("{}{url}", self.art_base)
-            };
+            let art_url = crate::state::cover::absolute_cover_url(&self.art_base, url);
             m.insert("mpris:artUrl".into(), Variant::new(art_url));
         }
         if s.duration_ms > 0 {

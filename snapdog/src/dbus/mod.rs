@@ -69,13 +69,9 @@ mod mpris {
     ) -> Result<Vec<zbus::Connection>> {
         let use_system = std::env::var("DBUS_SESSION_BUS_ADDRESS").is_err();
 
-        let art_base = {
-            let host = config
-                .http
-                .single_specific_bind()
-                .unwrap_or_else(|| "localhost".to_owned());
-            format!("http://{host}:{}", config.http.port)
-        };
+        // The same base as MQTT cover URLs: `[http].base_url`, or the one derived from the port,
+        // a single bind address and TLS.
+        let art_base = config.http.base_url();
 
         let mut connections = Vec::with_capacity(config.zones.len());
 

@@ -101,11 +101,7 @@ pub fn zone_state_payload(base_url: &str, zone: &state::ZoneState) -> serde_json
     }
 
     if let Some(ref cover_url) = zone.cover_url {
-        let absolute = if cover_url.starts_with('/') {
-            format!("{base_url}{cover_url}")
-        } else {
-            cover_url.clone()
-        };
+        let absolute = crate::state::cover::absolute_cover_url(base_url, cover_url);
         if json_size(&absolute) <= MAX_URL_BYTES {
             payload["media_image_url"] = serde_json::json!(absolute);
         }

@@ -454,7 +454,7 @@ Topics, all below `base_topic` (`{n}` is the 1-based position of the `[[zone]]` 
 
 - `status`: `online` / `offline`, retained. `offline` is the last will, and is also published on a clean shutdown.
 - `zones/{n}/state`, `clients/{n}/state`: retained JSON.
-- `zones/{n}/{volume,mute,control,shuffle,repeat,position,track,playlist}/set`, `zones/{n}/presence/{,enable/,timeout/}set`, `clients/{n}/{volume,mute,latency,zone}/set`: commands. `volume` takes `0.0..1.0` or `0..100` (so `1` is 100 %); booleans take `true`/`false`, `on`/`off`, `1`/`0`. A retained command is ignored.
+- `zones/{n}/…/set` and `clients/{n}/…/set`: commands. The full list of command topics and their payloads is in [docs/mqtt.md](docs/mqtt.md#topics). A retained command is ignored.
 
 After a reconnect SnapDog subscribes again and republishes availability and state. Commands are rate limited per zone and client.
 
