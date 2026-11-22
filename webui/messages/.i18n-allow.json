@@ -3,6 +3,7 @@
   "about.licenseValue",
   "about.modelValue",
   "about.sourceValue",
+  "about.updateState.error",
   "app.title",
   "client.clients",
   "eq.gain",

@@ -193,6 +193,11 @@ export function LegacyApp() {
         {t("app.skipToContent")}
       </a>
       <ConnectionStatus retryIn={retryIn} /><ApiFeedback />
+      {/* Deprecated since 0.37.0, removed in a later release (docs/upgrading.md). */}
+      <p role="note" className="fixed bottom-3 left-1/2 z-50 -translate-x-1/2 rounded-full border border-border bg-card/95 px-4 py-1.5 text-xs shadow-lg backdrop-blur">
+        {t("app.legacyDeprecated")}{" "}
+        <a href="/" className="font-medium text-primary-ink underline-offset-2 hover:underline">{t("app.legacySwitch")}</a>
+      </p>
       {/* ── Sidebar / Rail ──────────────────────────────────
            Visible at md–xl. Hidden at xl+, where the horizontal
            zone carousel below is the primary navigation instead. */}

@@ -4,7 +4,9 @@
     "skipToContent": "Przejdź do treści",
     "connected": "Połączono",
     "disconnected": "Rozłączono",
-    "language": "Język"
+    "language": "Język",
+    "legacyDeprecated": "Ten interfejs jest przestarzały i zostanie usunięty w przyszłej wersji.",
+    "legacySwitch": "Otwórz aktualny interfejs"
   },
   "transport": {
     "play": "Odtwórz",
@@ -41,7 +43,8 @@
     "error": "Coś poszło nie tak",
     "retry": "Spróbuj ponownie",
     "presenceDetected": "Wykryto obecność",
-    "presenceTimerActive": "Aktywny licznik automatycznego wyłączania przy obecności"
+    "presenceTimerActive": "Aktywny licznik automatycznego wyłączania przy obecności",
+    "coverAlt": "Okładka: {title}"
   },
   "client": {
     "clients": "{count, plural, one {# klient} few {# klienty} many {# klientów} other {# klienta}}",
@@ -145,7 +148,22 @@
     "updateCheck": "Sprawdź",
     "updateApply": "Aktualizuj",
     "knxTitle": "KNX",
-    "programmingMode": "Tryb programowania"
+    "programmingMode": "Tryb programowania",
+    "updateState": {
+      "current": "Aktualne",
+      "idle": "Aktualne",
+      "available": "Dostępna aktualizacja",
+      "checking": "Sprawdzanie…",
+      "preparing": "Wersja jest przygotowywana",
+      "updating": "Aktualizowanie…",
+      "verifying": "Weryfikowanie…",
+      "deploying": "Instalowanie…",
+      "waiting_for_health": "Oczekiwanie na serwer…",
+      "rolling_back": "Przywracanie…",
+      "rolled_back": "Przywrócono",
+      "failed": "Aktualizacja nie powiodła się",
+      "error": "Błąd"
+    }
   },
   "connect": {
     "title": "Połącz",

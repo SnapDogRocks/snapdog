@@ -359,6 +359,12 @@ pub fn build_router(state: &SharedState) -> Router {
     }
 
     let webui_mode = state.config.http.webui;
+    if webui_mode == crate::config::WebUi::Legacy {
+        tracing::warn!(
+            "The legacy web interface is deprecated and will be removed in a later release; \
+             `webui = \"legacy\"` and `--webui legacy` will then serve the current interface"
+        );
+    }
     let app = Router::new()
         .merge(health::router(state.clone()))
         .merge(protected)

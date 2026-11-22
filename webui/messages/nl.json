@@ -4,7 +4,9 @@
     "skipToContent": "Ga naar inhoud",
     "connected": "Verbonden",
     "disconnected": "Niet verbonden",
-    "language": "Taal"
+    "language": "Taal",
+    "legacyDeprecated": "Deze interface is verouderd en wordt in een toekomstige versie verwijderd.",
+    "legacySwitch": "Huidige interface openen"
   },
   "transport": {
     "play": "Afspelen",
@@ -41,7 +43,8 @@
     "error": "Er is iets misgegaan",
     "retry": "Opnieuw proberen",
     "presenceDetected": "Aanwezigheid gedetecteerd",
-    "presenceTimerActive": "Automatische uitschakeltimer actief"
+    "presenceTimerActive": "Automatische uitschakeltimer actief",
+    "coverAlt": "Hoes van {title}"
   },
   "client": {
     "clients": "{count, plural, one {# client} other {# clients}}",
@@ -145,7 +148,22 @@
     "updateCheck": "Controleren",
     "updateApply": "Bijwerken",
     "knxTitle": "KNX",
-    "programmingMode": "Programmeermodus"
+    "programmingMode": "Programmeermodus",
+    "updateState": {
+      "current": "Up-to-date",
+      "idle": "Up-to-date",
+      "available": "Update beschikbaar",
+      "checking": "Controleren…",
+      "preparing": "Versie wordt voorbereid",
+      "updating": "Bijwerken…",
+      "verifying": "Verifiëren…",
+      "deploying": "Installeren…",
+      "waiting_for_health": "Wachten op de server…",
+      "rolling_back": "Terugdraaien…",
+      "rolled_back": "Teruggedraaid",
+      "failed": "Update mislukt",
+      "error": "Fout"
+    }
   },
   "connect": {
     "title": "Verbinden",

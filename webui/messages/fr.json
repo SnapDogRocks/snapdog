@@ -4,7 +4,9 @@
     "skipToContent": "Aller au contenu",
     "connected": "Connecté",
     "disconnected": "Déconnecté",
-    "language": "Langue"
+    "language": "Langue",
+    "legacyDeprecated": "Cette interface est obsolète et sera supprimée dans une prochaine version.",
+    "legacySwitch": "Ouvrir l’interface actuelle"
   },
   "transport": {
     "play": "Lecture",
@@ -41,7 +43,8 @@
     "error": "Une erreur est survenue",
     "retry": "Réessayer",
     "presenceDetected": "Présence détectée",
-    "presenceTimerActive": "Minuterie d'arrêt automatique active"
+    "presenceTimerActive": "Minuterie d'arrêt automatique active",
+    "coverAlt": "Pochette de {title}"
   },
   "client": {
     "clients": "{count, plural, one {# client} other {# clients}}",
@@ -145,7 +148,22 @@
     "updateCheck": "Vérifier",
     "updateApply": "Mettre à jour",
     "knxTitle": "KNX",
-    "programmingMode": "Mode programmation"
+    "programmingMode": "Mode programmation",
+    "updateState": {
+      "current": "À jour",
+      "idle": "À jour",
+      "available": "Mise à jour disponible",
+      "checking": "Vérification…",
+      "preparing": "Version en préparation",
+      "updating": "Mise à jour…",
+      "verifying": "Vérification de la signature…",
+      "deploying": "Installation…",
+      "waiting_for_health": "En attente du serveur…",
+      "rolling_back": "Retour arrière…",
+      "rolled_back": "Version précédente restaurée",
+      "failed": "Échec de la mise à jour",
+      "error": "Erreur"
+    }
   },
   "connect": {
     "title": "Connecter",

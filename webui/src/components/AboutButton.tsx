@@ -42,6 +42,11 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
   const [updateBusy, setUpdateBusy] = useState(false);
   const trapRef = useFocusTrap<HTMLDivElement>();
   const t = useTranslations("about");
+  // The updater reports its state as a token; a state this interface does not know shows as is.
+  const updateStateLabel = (state: string) => {
+    const key = `updateState.${state.replaceAll("-", "_")}`;
+    return t.has(key) ? t(key) : state;
+  };
 
   useEffect(() => {
     api.system
@@ -167,7 +172,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-3 pr-8">
           <img
             src="/assets/snapdog-icon.svg"
-            alt="SnapDog Logo"
+            alt=""
             className="size-12 shrink-0 opacity-95 animate-pulse-slow"
           />
           <div className="min-w-0 flex-1">
@@ -192,7 +197,7 @@ function AboutOverlay({ onClose }: { onClose: () => void }) {
             <div className="flex min-w-0 flex-col">
               <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/65">{t("updateTitle")}</span>
               <span className="truncate text-xs font-semibold">
-                {update.progress?.phase ?? update.state}
+                {updateStateLabel(update.progress?.phase ?? update.state)}
                 {update.availableVersion ? ` · ${update.availableVersion}` : ""}
               </span>
               {update.lastError && <span className="truncate text-[10px] text-destructive">{update.lastError}</span>}
