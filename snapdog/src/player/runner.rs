@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use super::commands::{ActiveSource, ZoneCommand};
 use super::context::{
     GroupAction, SnapcastCmd, ZoneCommandSender, ZonePlayerContext, setup_zone_group, stop_decode,
-    update_and_notify, update_volume_and_notify,
+    update_and_notify, update_progress_and_notify, update_volume_and_notify,
 };
 
 use super::helpers::{DecodeState, PlaybackCtx, mark_zone_stopped};
@@ -541,7 +541,7 @@ async fn run(
                     position_ms,
                     duration_ms,
                 } => {
-                    update_and_notify(store, zone_index, notify, |z| {
+                    update_progress_and_notify(store, zone_index, notify, |z| {
                         if let Some(ref mut t) = z.track {
                             #[allow(clippy::cast_possible_wrap)]
                             {
@@ -1251,7 +1251,7 @@ async fn run(
                         }
                     }
                     Some(audio::PcmMessage::Position(ms)) => {
-                        update_and_notify(store, zone_index, notify, |z| {
+                        update_progress_and_notify(store, zone_index, notify, |z| {
                             if let Some(ref mut t) = z.track { t.position_ms = ms + position_offset_ms; }
                         }).await;
                     }
@@ -1266,7 +1266,7 @@ async fn run(
                                 let buffered_ms = if total > 0 {
                                     (buffered_bytes as f64 / total as f64 * duration as f64) as i64
                                 } else { 0 };
-                                update_and_notify(store, zone_index, notify, |z| {
+                                update_progress_and_notify(store, zone_index, notify, |z| {
                                     z.buffered_ms = Some(buffered_ms);
                                 }).await;
                             }
