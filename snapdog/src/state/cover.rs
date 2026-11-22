@@ -394,9 +394,48 @@ fn ico_to_png(data: &[u8]) -> Option<(Vec<u8>, String)> {
     Some((buf.into_inner(), "image/png".into()))
 }
 
+/// A cover as an absolute URL for MQTT and MPRIS.
+///
+/// A value that already has a scheme (`https://…`, `data:…`) stays unchanged, anything else
+/// becomes a path below `base_url`, with exactly one slash between them
+/// (`/api/v1/zones/1/cover` and `covers/x.png` alike).
+#[must_use]
+pub fn absolute_cover_url(base_url: &str, url: &str) -> String {
+    if url::Url::parse(url).is_ok() {
+        return url.to_owned();
+    }
+    format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        url.trim_start_matches('/')
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cover_becomes_one_absolute_url() {
+        let base = "https://audio.example";
+        assert_eq!(
+            absolute_cover_url(base, "https://cdn.example/a.png"),
+            "https://cdn.example/a.png"
+        );
+        assert_eq!(
+            absolute_cover_url(base, "data:image/png;base64,AAAA"),
+            "data:image/png;base64,AAAA"
+        );
+        assert_eq!(
+            absolute_cover_url(base, "/api/v1/zones/1/cover?h=1"),
+            "https://audio.example/api/v1/zones/1/cover?h=1"
+        );
+        assert_eq!(
+            absolute_cover_url("http://host:5555/", "covers/x.png"),
+            "http://host:5555/covers/x.png",
+            "a path without a leading slash still gets one"
+        );
+    }
 
     #[test]
     fn detects_jpeg() {

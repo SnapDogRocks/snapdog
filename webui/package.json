@@ -17,6 +17,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "i18n:check": "node scripts/check-i18n.mjs",
+    "eq-limits:generate": "node scripts/gen-eq-limits.mjs",
+    "eq-limits:check": "node scripts/gen-eq-limits.mjs --check",
     "ws:generate": "node scripts/gen-ws-events.mjs",
     "ws:check": "node scripts/gen-ws-events.mjs --check"
   },

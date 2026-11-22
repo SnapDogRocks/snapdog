@@ -130,7 +130,7 @@ impl ReceiverProvider for AirPlayReceiver {
             .max_clients(1);
 
         if let Some(ref pw) = self.config.password {
-            builder = builder.password(pw);
+            builder = builder.password(pw.as_str());
         }
 
         #[cfg(feature = "ap2")]

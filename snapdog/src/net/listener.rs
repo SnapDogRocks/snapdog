@@ -107,7 +107,7 @@ pub fn bind_tcp(
     backend: &str,
     addr: SocketAddr,
 ) -> io::Result<std::net::TcpListener> {
-    let listener = std::net::TcpListener::bind(addr)?;
+    let listener = tcp_listener(addr)?;
     listener.set_nonblocking(true)?;
     register(Listener {
         service: service.to_owned(),
@@ -128,7 +128,7 @@ pub fn bind_tcp(
     reason = "this module is the one place that binds"
 )]
 pub fn bind_udp(service: &str, backend: &str, addr: SocketAddr) -> io::Result<std::net::UdpSocket> {
-    let socket = std::net::UdpSocket::bind(addr)?;
+    let socket = udp_socket(addr)?;
     socket.set_nonblocking(true)?;
     register(Listener {
         service: service.to_owned(),
@@ -150,7 +150,42 @@ pub fn bind_udp(service: &str, backend: &str, addr: SocketAddr) -> io::Result<st
     reason = "this module is the one place that binds"
 )]
 pub fn probe_tcp(addr: SocketAddr) -> io::Result<()> {
-    std::net::TcpListener::bind(addr).map(drop)
+    tcp_listener(addr).map(drop)
+}
+
+/// The IPv6 wildcard `::`, which the configuration and the logs treat as "all interfaces".
+const fn is_ipv6_wildcard(addr: SocketAddr) -> bool {
+    addr.is_ipv6() && addr.ip().is_unspecified()
+}
+
+/// A socket for `addr`. On `::` it also accepts IPv4 (`IPV6_V6ONLY` off): the operating
+/// system default differs (on by default on Windows, and on Linux with
+/// `net.ipv6.bindv6only=1`), and without this a server on "all interfaces" would answer
+/// over IPv6 only.
+fn socket_for(addr: SocketAddr, kind: socket2::Type) -> io::Result<socket2::Socket> {
+    let socket = socket2::Socket::new(socket2::Domain::for_address(addr), kind, None)?;
+    if is_ipv6_wildcard(addr) {
+        socket.set_only_v6(false)?;
+    }
+    // What `std` does for a listener on Unix: a restarted server can bind again at once.
+    #[cfg(unix)]
+    if kind == socket2::Type::STREAM {
+        socket.set_reuse_address(true)?;
+    }
+    socket.bind(&addr.into())?;
+    Ok(socket)
+}
+
+/// A TCP listener on `addr`, dual stack on `::` (see [`socket_for`]).
+fn tcp_listener(addr: SocketAddr) -> io::Result<std::net::TcpListener> {
+    let socket = socket_for(addr, socket2::Type::STREAM)?;
+    socket.listen(1024)?;
+    Ok(socket.into())
+}
+
+/// A UDP socket on `addr`, dual stack on `::` (see [`socket_for`]).
+fn udp_socket(addr: SocketAddr) -> io::Result<std::net::UdpSocket> {
+    Ok(socket_for(addr, socket2::Type::DGRAM)?.into())
 }
 
 /// Best effort: whether `ip` is certainly not assigned to any network interface of this host.
@@ -546,6 +581,31 @@ pub fn format_table(rows: &[Row]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `::` means all interfaces, IPv4 included, on every supported target.
+    #[test]
+    fn a_listener_on_the_ipv6_wildcard_accepts_ipv4() {
+        let listener = tcp_listener("[::]:0".parse().unwrap()).expect("bind ::");
+        let port = listener.local_addr().unwrap().port();
+        let client = std::net::TcpStream::connect(("127.0.0.1", port)).expect("IPv4 connect");
+        let (_peer, from) = listener.accept().expect("accept");
+        assert!(from.ip().to_canonical().is_ipv4(), "{from}");
+        drop(client);
+    }
+
+    #[test]
+    fn a_udp_socket_on_the_ipv6_wildcard_receives_ipv4() {
+        let socket = udp_socket("[::]:0".parse().unwrap()).expect("bind ::");
+        let port = socket.local_addr().unwrap().port();
+        let sender = udp_socket("127.0.0.1:0".parse().unwrap()).unwrap();
+        sender.send_to(b"hi", ("127.0.0.1", port)).unwrap();
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut buf = [0u8; 4];
+        let (n, _) = socket.recv_from(&mut buf).expect("IPv4 datagram");
+        assert_eq!(&buf[..n], b"hi");
+    }
 
     fn tcp(service: &str, addr: &str) -> Listener {
         Listener {

@@ -105,12 +105,11 @@ pub fn router(state: SharedState) -> Router {
         .with_state(state)
 }
 
+/// The shared Subsonic client of the API (cloning shares its connection pool).
 fn subsonic(state: &SharedState) -> Result<SubsonicClient, ApiError> {
     state
-        .config
         .subsonic
-        .as_ref()
-        .map(SubsonicClient::new)
+        .clone()
         .ok_or(ApiError::ServiceUnavailable("subsonic"))
 }
 
@@ -238,25 +237,48 @@ async fn all_playlists(state: &SharedState) -> Vec<PlaylistInfo> {
     result
 }
 
-/// Resolve a unified playlist index using the shared config logic.
-async fn resolve_playlist(state: &SharedState, index: usize) -> Result<ResolvedPlaylist, ApiError> {
-    let playlists = cached_playlists(state).await;
-    state
-        .config
-        .resolve_playlist_index(index, playlists.len())
-        .ok_or(ApiError::NotFound("resource"))
+/// Where the next search page starts: `None` after a page that was not full. Saturating, so
+/// a client sending the largest offset gets an answer instead of an overflow.
+fn next_offset(page_full: bool, offset: usize, limit: usize) -> Option<usize> {
+    page_full.then(|| offset.saturating_add(limit))
 }
 
-/// Resolve index and return the Subsonic playlist ID (or `NOT_FOUND` for radio/out-of-range).
-async fn resolve_subsonic_id(state: &SharedState, index: usize) -> Result<String, ApiError> {
+/// A unified playlist index resolved against one read of the playlist list.
+enum PlaylistAt {
+    Radio,
+    Subsonic(PlaylistEntry),
+}
+
+/// Resolve `index` with a single read of the cached list, so the answer cannot mix two
+/// versions of the list.
+async fn playlist_at(state: &SharedState, index: usize) -> Result<PlaylistAt, ApiError> {
     let playlists = cached_playlists(state).await;
     match state.config.resolve_playlist_index(index, playlists.len()) {
+        Some(ResolvedPlaylist::Radio) => Ok(PlaylistAt::Radio),
         Some(ResolvedPlaylist::Subsonic(sub_idx)) => playlists
-            .get(sub_idx)
-            .map(|p| p.id.clone())
+            .into_iter()
+            .nth(sub_idx)
+            .map(PlaylistAt::Subsonic)
             .ok_or(ApiError::NotFound("resource")),
-        _ => Err(ApiError::NotFound("resource")),
+        None => Err(ApiError::NotFound("resource")),
     }
+}
+
+/// A cover addressed by a playlist or track index. The index moves when the list changes,
+/// so a browser keeps it briefly; covers addressed by id keep [`CACHE_CONTROL_1DAY`].
+const CACHE_CONTROL_BY_INDEX: &str = "public, max-age=60";
+
+/// The answer of every cover route: the image with its type and cache lifetime.
+type CoverResponse = ([(axum::http::header::HeaderName, String); 2], Vec<u8>);
+
+fn cover_response(mime: impl Into<String>, bytes: Vec<u8>, cache_control: &str) -> CoverResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, mime.into()),
+            (axum::http::header::CACHE_CONTROL, cache_control.to_owned()),
+        ],
+        bytes,
+    )
 }
 
 /// Query of `GET /media/search`.
@@ -428,7 +450,7 @@ async fn search(
     }
     Ok(Json(SearchResponse {
         items,
-        next_offset: page_full.then_some(offset + limit),
+        next_offset: next_offset(page_full, offset, limit),
     }))
 }
 
@@ -519,23 +541,14 @@ fn track_item(t: crate::subsonic::Track) -> SearchItem {
 async fn get_cover(
     State(state): State<SharedState>,
     Path(cover_id): Path<String>,
-) -> Result<([(axum::http::header::HeaderName, String); 2], Vec<u8>), ApiError> {
+) -> Result<CoverResponse, ApiError> {
     let sub = subsonic(&state)?;
     let bytes = sub
         .get_cover_art(&cover_id)
         .await
         .map_err(|_| ApiError::NotFound("resource"))?;
     let mime = crate::state::cover::detect_mime(&bytes);
-    Ok((
-        [
-            (axum::http::header::CONTENT_TYPE, mime.to_string()),
-            (
-                axum::http::header::CACHE_CONTROL,
-                CACHE_CONTROL_1DAY.to_string(),
-            ),
-        ],
-        bytes,
-    ))
+    Ok(cover_response(mime, bytes, CACHE_CONTROL_1DAY))
 }
 
 /// Body of `POST /media/playlists`.
@@ -587,7 +600,7 @@ fn writable(state: &SharedState, playlist_id: Option<&str>) -> Result<SubsonicCl
             "writing playlists is off, set [subsonic].playlist_write = true".into(),
         ));
     }
-    Ok(SubsonicClient::new(config))
+    subsonic(state)
 }
 
 /// The Subsonic id inside a `playlist_id` (404 for anything that is not a Subsonic playlist).
@@ -863,15 +876,15 @@ async fn get_playlist(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
 ) -> Result<Json<PlaylistDetails>, ApiError> {
-    match resolve_playlist(&state, index).await? {
-        ResolvedPlaylist::Radio => Ok(Json(PlaylistDetails {
+    match playlist_at(&state, index).await? {
+        PlaylistAt::Radio => Ok(Json(PlaylistDetails {
             index,
             playlist_id: RADIO_PLAYLIST_ID.into(),
             name: "Radio".into(),
             tracks: state.config.radios.len(),
         })),
-        ResolvedPlaylist::Subsonic(_) => {
-            let id = resolve_subsonic_id(&state, index).await?;
+        PlaylistAt::Subsonic(entry) => {
+            let id = entry.id;
             let sub = subsonic(&state)?;
             match sub.get_playlist(&id).await {
                 Ok(playlist) => Ok(Json(PlaylistDetails {
@@ -907,43 +920,21 @@ async fn get_playlist(
 async fn get_playlist_cover(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
-) -> impl IntoResponse {
-    match resolve_playlist(&state, index).await? {
-        ResolvedPlaylist::Radio => Ok((
-            [
-                (axum::http::header::CONTENT_TYPE, "image/png".to_string()),
-                (
-                    axum::http::header::CACHE_CONTROL,
-                    CACHE_CONTROL_1DAY.to_string(),
-                ),
-            ],
+) -> Result<CoverResponse, ApiError> {
+    match playlist_at(&state, index).await? {
+        PlaylistAt::Radio => Ok(cover_response(
+            "image/png",
             include_bytes!("../../../../assets/radio-cover.png").to_vec(),
+            CACHE_CONTROL_1DAY,
         )),
-        ResolvedPlaylist::Subsonic(_) => {
-            let id = resolve_subsonic_id(&state, index).await?;
-            let sub = subsonic(&state)?;
-            let playlists = cached_playlists(&state).await;
-            let cover_id = playlists
-                .iter()
-                .find(|p| p.id == id)
-                .and_then(|p| p.cover_art.clone())
-                .ok_or(ApiError::NotFound("resource"))?;
-            sub.get_cover_art(&cover_id).await.map_or_else(
-                |_| Err(ApiError::NotFound("resource")),
-                |bytes| {
-                    let mime = crate::state::cover::detect_mime(&bytes);
-                    Ok((
-                        [
-                            (axum::http::header::CONTENT_TYPE, mime.to_string()),
-                            (
-                                axum::http::header::CACHE_CONTROL,
-                                CACHE_CONTROL_1DAY.to_string(),
-                            ),
-                        ],
-                        bytes,
-                    ))
-                },
-            )
+        PlaylistAt::Subsonic(playlist) => {
+            let cover_id = playlist.cover_art.ok_or(ApiError::NotFound("resource"))?;
+            let bytes = subsonic(&state)?
+                .get_cover_art(&cover_id)
+                .await
+                .map_err(|_| ApiError::NotFound("resource"))?;
+            let mime = crate::state::cover::detect_mime(&bytes);
+            Ok(cover_response(mime, bytes, CACHE_CONTROL_BY_INDEX))
         }
     }
 }
@@ -977,33 +968,53 @@ async fn get_playlist_tracks(
     Ok(paged(tracks, &paging))
 }
 
+impl MediaTrackInfo {
+    /// Station `i` of the radio list at unified playlist `playlist`.
+    fn radio(playlist: usize, i: usize, radio: &crate::config::RadioConfig) -> Self {
+        Self {
+            id: format!("radio_{i}"),
+            title: radio.name.clone(),
+            artist: "Radio".into(),
+            album: String::new(),
+            duration: 0,
+            track: i + 1,
+            cover_art: Some(format!("{MEDIA_PATH}/{playlist}/tracks/{i}/cover")),
+        }
+    }
+
+    /// Track `i` of the Subsonic playlist at unified playlist `playlist`.
+    fn subsonic(playlist: usize, i: usize, t: &crate::subsonic::Track) -> Self {
+        Self {
+            id: t.id.clone(),
+            title: t.title.clone(),
+            artist: t.artist.clone().unwrap_or_default(),
+            album: t.album.clone().unwrap_or_default(),
+            duration: t.duration,
+            track: t.track.map_or(i + 1, |v| v as usize),
+            cover_art: t
+                .cover_art
+                .as_ref()
+                .map(|_| format!("{MEDIA_PATH}/{playlist}/tracks/{i}/cover")),
+        }
+    }
+}
+
 async fn tracks_json(
     State(state): State<SharedState>,
     Path(index): Path<usize>,
 ) -> Result<Json<Vec<MediaTrackInfo>>, ApiError> {
-    match resolve_playlist(&state, index).await? {
-        ResolvedPlaylist::Radio => Ok(Json(
+    match playlist_at(&state, index).await? {
+        PlaylistAt::Radio => Ok(Json(
             state
                 .config
                 .radios
                 .iter()
                 .enumerate()
-                .map(|(i, r)| {
-                    let cover = format!("{MEDIA_PATH}/{index}/tracks/{i}/cover");
-                    MediaTrackInfo {
-                        id: format!("radio_{i}"),
-                        title: r.name.clone(),
-                        artist: "Radio".into(),
-                        album: String::new(),
-                        duration: 0,
-                        track: i + 1,
-                        cover_art: Some(cover),
-                    }
-                })
+                .map(|(i, r)| MediaTrackInfo::radio(index, i, r))
                 .collect::<Vec<_>>(),
         )),
-        ResolvedPlaylist::Subsonic(_) => {
-            let id = resolve_subsonic_id(&state, index).await?;
+        PlaylistAt::Subsonic(entry) => {
+            let id = entry.id;
             let sub = subsonic(&state)?;
             match sub.get_playlist(&id).await {
                 Ok(playlist) => Ok(Json(
@@ -1011,21 +1022,7 @@ async fn tracks_json(
                         .entry
                         .iter()
                         .enumerate()
-                        .map(|(i, t)| {
-                            let cover = t
-                                .cover_art
-                                .as_ref()
-                                .map(|_| format!("{MEDIA_PATH}/{index}/tracks/{i}/cover"));
-                            MediaTrackInfo {
-                                id: t.id.clone(),
-                                title: t.title.clone(),
-                                artist: t.artist.clone().unwrap_or_default(),
-                                album: t.album.clone().unwrap_or_default(),
-                                duration: t.duration,
-                                track: t.track.map_or(i + 1, |v| v as usize),
-                                cover_art: cover,
-                            }
-                        })
+                        .map(|(i, t)| MediaTrackInfo::subsonic(index, i, t))
                         .collect::<Vec<_>>(),
                 )),
                 Err(e) => {
@@ -1058,46 +1055,23 @@ async fn get_playlist_track(
     State(state): State<SharedState>,
     Path((index, track_index)): Path<(usize, usize)>,
 ) -> impl IntoResponse {
-    match resolve_playlist(&state, index).await? {
-        ResolvedPlaylist::Radio => state
+    match playlist_at(&state, index).await? {
+        PlaylistAt::Radio => state
             .config
             .radios
             .get(track_index)
-            .map(|r| {
-                let cover = format!("{MEDIA_PATH}/{index}/tracks/{track_index}/cover");
-                Json(MediaTrackInfo {
-                    id: format!("radio_{track_index}"),
-                    title: r.name.clone(),
-                    artist: "Radio".into(),
-                    album: String::new(),
-                    duration: 0,
-                    track: track_index + 1,
-                    cover_art: Some(cover),
-                })
-            })
+            .map(|r| Json(MediaTrackInfo::radio(index, track_index, r)))
             .ok_or(ApiError::NotFound("resource")),
-        ResolvedPlaylist::Subsonic(_) => {
-            let id = resolve_subsonic_id(&state, index).await?;
+        PlaylistAt::Subsonic(entry) => {
+            let id = entry.id;
             let sub = subsonic(&state)?;
             match sub.get_playlist(&id).await {
-                Ok(playlist) => playlist.entry.get(track_index).map_or(
-                    Err(ApiError::NotFound("resource")),
-                    |t| {
-                        let cover = t
-                            .cover_art
-                            .as_ref()
-                            .map(|_| format!("{MEDIA_PATH}/{index}/tracks/{track_index}/cover"));
-                        Ok(Json(MediaTrackInfo {
-                            id: t.id.clone(),
-                            title: t.title.clone(),
-                            artist: t.artist.clone().unwrap_or_default(),
-                            album: t.album.clone().unwrap_or_default(),
-                            duration: t.duration,
-                            track: t.track.map_or(track_index + 1, |v| v as usize),
-                            cover_art: cover,
-                        }))
-                    },
-                ),
+                Ok(playlist) => playlist
+                    .entry
+                    .get(track_index)
+                    .map_or(Err(ApiError::NotFound("resource")), |t| {
+                        Ok(Json(MediaTrackInfo::subsonic(index, track_index, t)))
+                    }),
                 Err(_) => Err(ApiError::BadGateway("upstream request failed".into())),
             }
         }
@@ -1123,9 +1097,11 @@ async fn get_playlist_track(
 async fn get_track_cover_art(
     State(state): State<SharedState>,
     Path((index, track_index)): Path<(usize, usize)>,
-) -> Result<([(axum::http::header::HeaderName, String); 2], Vec<u8>), ApiError> {
-    match resolve_playlist(&state, index).await? {
-        ResolvedPlaylist::Radio => {
+) -> Result<CoverResponse, ApiError> {
+    match playlist_at(&state, index).await? {
+        PlaylistAt::Radio => {
+            // A station is addressed by its place in the configuration, which only a
+            // restart changes: the long lifetime is safe.
             let radio = state
                 .config
                 .radios
@@ -1134,15 +1110,10 @@ async fn get_track_cover_art(
 
             // Try cache first (keyed by station URL)
             if let Some(entry) = state.covers.read().await.get_static(&radio.url) {
-                return Ok((
-                    [
-                        (axum::http::header::CONTENT_TYPE, entry.mime.clone()),
-                        (
-                            axum::http::header::CACHE_CONTROL,
-                            CACHE_CONTROL_1DAY.to_string(),
-                        ),
-                    ],
+                return Ok(cover_response(
+                    entry.mime.clone(),
                     entry.bytes.clone(),
+                    CACHE_CONTROL_1DAY,
                 ));
             }
 
@@ -1161,22 +1132,12 @@ async fn get_track_cover_art(
                 .await
                 .set_static(&radio.url, bytes.clone(), mime.clone());
 
-            Ok((
-                [
-                    (axum::http::header::CONTENT_TYPE, mime),
-                    (
-                        axum::http::header::CACHE_CONTROL,
-                        CACHE_CONTROL_1DAY.to_string(),
-                    ),
-                ],
-                bytes,
-            ))
+            Ok(cover_response(mime, bytes, CACHE_CONTROL_1DAY))
         }
-        ResolvedPlaylist::Subsonic(_) => {
-            let id = resolve_subsonic_id(&state, index).await?;
+        PlaylistAt::Subsonic(entry) => {
             let sub = subsonic(&state)?;
             let playlist = sub
-                .get_playlist(&id)
+                .get_playlist(&entry.id)
                 .await
                 .map_err(|e| ApiError::BadGateway(e.to_string()))?;
             let track = playlist
@@ -1192,16 +1153,7 @@ async fn get_track_cover_art(
                 .await
                 .map_err(|e| ApiError::BadGateway(e.to_string()))?;
             let mime = crate::state::cover::detect_mime(&bytes);
-            Ok((
-                [
-                    (axum::http::header::CONTENT_TYPE, mime.to_string()),
-                    (
-                        axum::http::header::CACHE_CONTROL,
-                        CACHE_CONTROL_1DAY.to_string(),
-                    ),
-                ],
-                bytes,
-            ))
+            Ok(cover_response(mime, bytes, CACHE_CONTROL_BY_INDEX))
         }
     }
 }
@@ -1209,6 +1161,13 @@ async fn get_track_cover_art(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_next_search_page_saturates_instead_of_overflowing() {
+        assert_eq!(next_offset(true, usize::MAX, 20), Some(usize::MAX));
+        assert_eq!(next_offset(true, 40, 20), Some(60));
+        assert_eq!(next_offset(false, 40, 20), None);
+    }
 
     #[test]
     fn cover_path_percent_encodes_everything_but_unreserved_characters() {

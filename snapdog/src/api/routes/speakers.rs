@@ -4,7 +4,6 @@
 //! Speaker correction endpoints: /api/v1/speakers and /api/v1/clients/{id}/speaker
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -12,7 +11,6 @@ use axum::{Json, Router};
 use crate::api::SharedState;
 use crate::api::error::{ApiError, ErrorBody};
 use crate::audio::eq::EqConfig;
-use crate::player::{ClientAction, SnapcastCmd};
 
 /// Router for `/api/v1/speakers`.
 pub fn speakers_router(state: SharedState) -> Router {
@@ -40,20 +38,33 @@ pub fn client_speaker_router(state: SharedState) -> Router {
     path = "/api/v1/speakers",
     responses(
         (status = 200, description = "List of speaker profiles", body = Vec<String>),
-        (status = 503, description = "Speaker database unavailable")
+        (status = 503, description = "Speaker database unavailable", body = ErrorBody)
     ),
     tag = "speakers"
 )]
-async fn list(State(state): State<SharedState>) -> Result<Json<Vec<String>>, StatusCode> {
+async fn list(State(state): State<SharedState>) -> Result<Json<Vec<String>>, ApiError> {
     state
         .speaker_db
         .list_speakers()
         .await
         .map(Json)
         .map_err(|e| {
-            tracing::warn!(error = %e, "Failed to fetch speaker list");
-            StatusCode::SERVICE_UNAVAILABLE
+            tracing::warn!(error = %format!("{e:#}"), "Failed to fetch speaker list");
+            ApiError::ServiceUnavailable("speaker database")
         })
+}
+
+/// 404 for a profile the database does not have, 502 when the database could not be read
+/// (network outage, timeout, an unexpected answer).
+fn profile_error(name: &str, e: &anyhow::Error) -> ApiError {
+    if e.downcast_ref::<crate::spinorama::ProfileNotFound>()
+        .is_some()
+    {
+        ApiError::NotFound("speaker")
+    } else {
+        tracing::warn!(speaker = %name, error = %format!("{e:#}"), "Speaker database request failed");
+        ApiError::BadGateway("the speaker database could not be read".into())
+    }
 }
 
 /// Get speaker correction profile
@@ -67,23 +78,21 @@ async fn list(State(state): State<SharedState>) -> Result<Json<Vec<String>>, Sta
     ),
     responses(
         (status = 200, description = "Speaker PEQ profile bands", body = EqConfig),
-        (status = 404, description = "Speaker profile not found")
+        (status = 404, description = "Speaker profile not found", body = ErrorBody),
+        (status = 502, description = "The speaker database could not be read", body = ErrorBody)
     ),
     tag = "speakers"
 )]
 async fn get_profile(
     State(state): State<SharedState>,
     Path(name): Path<String>,
-) -> Result<Json<EqConfig>, StatusCode> {
+) -> Result<Json<EqConfig>, ApiError> {
     state
         .speaker_db
         .get_profile(&name)
         .await
         .map(Json)
-        .map_err(|e| {
-            tracing::warn!(speaker = %name, error = %e, "Failed to fetch speaker profile");
-            StatusCode::NOT_FOUND
-        })
+        .map_err(|e| profile_error(&name, &e))
 }
 
 /// Apply speaker correction profile
@@ -100,7 +109,9 @@ async fn get_profile(
         (status = 200, description = "Applied speaker correction configuration", body = EqConfig),
         (status = 400, description = "Invalid request payload (e.g., mutually exclusive options, validation failed)", body = ErrorBody),
         (status = 404, description = "Client or speaker profile not found", body = ErrorBody),
-        (status = 422, description = "Client does not support speaker correction (not a SnapDog client)", body = ErrorBody)
+        (status = 422, description = "Client does not support speaker correction (not a SnapDog client)", body = ErrorBody),
+        (status = 500, description = "The command could not be handed to the server task", body = ErrorBody),
+        (status = 502, description = "The speaker database could not be read", body = ErrorBody)
     ),
     tag = "speakers"
 )]
@@ -117,21 +128,19 @@ async fn apply_speaker(
     }
 
     let config = if let Some(ref name) = body.speaker {
-        state.speaker_db.get_profile(name).await.map_err(|e| {
-            tracing::warn!(speaker = %name, error = %e, "Speaker profile not found");
-            ApiError::NotFound("speaker")
-        })?
+        state
+            .speaker_db
+            .get_profile(name)
+            .await
+            .map_err(|e| profile_error(name, &e))?
     } else {
         body.custom.unwrap_or_default()
     };
     // Profiles from the speaker database are taken as they come, a custom correction is checked.
     if body.speaker.is_none() {
         config.validate().map_err(ApiError::BadRequest)?;
-    } else if config.bands.len() > snapdog_common::MAX_EQ_BANDS {
-        return Err(ApiError::BadRequest(format!(
-            "at most {} EQ bands",
-            snapdog_common::MAX_EQ_BANDS
-        )));
+    } else {
+        config.validate_band_count().map_err(ApiError::BadRequest)?;
     }
 
     state
@@ -183,26 +192,15 @@ pub struct ApplySpeakerRequest {
 }
 
 async fn require_snapdog(state: &SharedState, idx: usize) -> Result<(), ApiError> {
-    if idx == 0 || idx > state.config.clients.len() {
-        return Err(ApiError::NotFound("client"));
-    }
-    let store = state.store.read().await;
-    match store.clients.get(&idx) {
-        Some(c) if c.is_snapdog => Ok(()),
-        Some(_) => Err(ApiError::Unprocessable(
-            "Client does not support speaker correction (not a SnapDog client)".into(),
-        )),
-        None => Err(ApiError::NotFound("client")),
-    }
+    super::clients::require_snapdog(state, idx, "speaker correction").await
 }
 
+/// Announce the stored correction and send it to the client if it is connected.
 async fn send_speaker_eq(
     state: &SharedState,
     idx: usize,
     config: &EqConfig,
 ) -> Result<(), ApiError> {
-    // The store is already written, so the event tells what is stored even when the client
-    // is not connected and cannot be sent to.
     crate::api::ws::broadcast_notification(
         &state.notifications,
         &crate::api::ws::Notification::ClientSpeakerChanged {
@@ -210,24 +208,68 @@ async fn send_speaker_eq(
             config: config.clone(),
         },
     );
-    let client_id = state
-        .store
-        .read()
-        .await
-        .clients
-        .get(&idx)
-        .and_then(|c| c.snapcast_id.clone())
-        .ok_or(ApiError::NotFound("client"))?;
-    let payload = serde_json::to_vec(config).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let _ = state
-        .snap_tx
-        .send(SnapcastCmd::Client {
-            client_id,
-            action: ClientAction::SendCustom {
-                type_id: snapdog_common::MSG_TYPE_SPEAKER_EQ,
-                payload,
-            },
-        })
-        .await;
-    Ok(())
+    super::clients::send_setting_if_connected(
+        state,
+        idx,
+        snapdog_common::MSG_TYPE_SPEAKER_EQ,
+        config,
+    )
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    /// A server that accepts connections and never answers.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "test-only loopback server, not a service listener"
+    )]
+    async fn silent_server() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            // Keep every connection open without answering.
+            let mut held = Vec::new();
+            while let Ok((sock, _)) = listener.accept().await {
+                held.push(sock);
+            }
+            drop(held);
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn a_stalled_speaker_database_is_a_bad_gateway_after_the_timeout() {
+        let base = silent_server().await;
+        let db = crate::spinorama::SpeakerDb::with_endpoints(
+            &base,
+            &format!("{base}/index"),
+            std::time::Duration::from_millis(200),
+        );
+        let started = std::time::Instant::now();
+        let error = db.get_profile("Some Speaker").await.unwrap_err();
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        let response = profile_error("Some Speaker", &error).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn a_profile_the_database_does_not_have_is_not_found() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(wiremock::ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        let db = crate::spinorama::SpeakerDb::with_endpoints(
+            &server.uri(),
+            &format!("{}/index", server.uri()),
+            std::time::Duration::from_secs(5),
+        );
+        let error = db.get_profile("Nope").await.unwrap_err();
+        let response = profile_error("Nope", &error).into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
 }

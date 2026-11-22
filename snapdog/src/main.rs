@@ -72,9 +72,9 @@ struct Cli {
     #[arg(long)]
     tls_key: Option<std::path::PathBuf>,
 
-    /// Snapcast stream codec, overrides [snapcast].codec: pcm, flac, f32lz4, f32lz4e
-    #[arg(long)]
-    codec: Option<String>,
+    /// Snapcast stream codec, overrides [snapcast].codec
+    #[arg(long, value_enum)]
+    codec: Option<config::AudioCodec>,
 
     /// Sample rate
     #[arg(long)]
@@ -93,9 +93,9 @@ struct Cli {
     #[arg(long)]
     name: Option<String>,
 
-    /// Log level: trace, debug, info, warn, error
-    #[arg(short, long)]
-    log_level: Option<String>,
+    /// Log level
+    #[arg(short, long, value_enum)]
+    log_level: Option<config::LogLevel>,
 
     /// Run as a Windows service (Windows only)
     #[cfg(target_os = "windows")]
@@ -158,6 +158,15 @@ impl VolumeCoalescer {
             .get(client_id)
             .filter(|(_, sent)| sent.elapsed() < std::time::Duration::from_millis(RECENT_VOLUME_MS))
             .map(|(volume, _)| *volume)
+    }
+
+    /// The absolute volume for a relative step: built on a volume still in flight, so quick
+    /// relative steps add up, else on `stored`.
+    fn adjusted(&self, client_id: &str, stored: i32, delta: i32) -> i32 {
+        self.latest(client_id)
+            .unwrap_or(stored)
+            .saturating_add(delta)
+            .clamp(0, 100)
     }
 
     fn push(&mut self, client_id: String, volume: i32) {
@@ -242,33 +251,6 @@ pub async fn run_app() -> Result<()> {
         std::process::exit(1);
     }
 
-    let codec = cli
-        .codec
-        .as_deref()
-        .map(|codec| match codec {
-            "pcm" => Ok(config::AudioCodec::Pcm),
-            "flac" => Ok(config::AudioCodec::Flac),
-            "f32lz4" => Ok(config::AudioCodec::F32lz4),
-            "f32lz4e" => Ok(config::AudioCodec::F32lz4e),
-            other => Err(anyhow::anyhow!(
-                "Unknown codec '{other}' — use pcm, flac, f32lz4, or f32lz4e"
-            )),
-        })
-        .transpose()?;
-    let log_level = cli
-        .log_level
-        .as_deref()
-        .map(|level| match level {
-            "trace" => Ok(config::LogLevel::Trace),
-            "debug" => Ok(config::LogLevel::Debug),
-            "info" => Ok(config::LogLevel::Info),
-            "warn" => Ok(config::LogLevel::Warn),
-            "error" => Ok(config::LogLevel::Error),
-            other => Err(anyhow::anyhow!(
-                "Unknown log level '{other}' — use trace, debug, info, warn, or error"
-            )),
-        })
-        .transpose()?;
     // The command line is applied to the raw configuration before validation and bind
     // resolution, so a flag behaves like the same key in the file.
     let overrides = config::Overrides {
@@ -286,12 +268,12 @@ pub async fn run_app() -> Result<()> {
         bind: cli.bind.clone(),
         tls_cert: cli.tls_cert.clone(),
         tls_key: cli.tls_key.clone(),
-        codec,
+        codec: cli.codec,
         sample_rate: cli.sample_rate,
         bit_depth: cli.bit_depth,
         streaming_port: cli.streaming_port,
         name: cli.name.clone(),
-        log_level,
+        log_level: cli.log_level,
     };
     let mut app_config = config::load_with_overrides(cli.config.as_deref(), &overrides)?;
 
@@ -686,7 +668,7 @@ pub async fn run_app() -> Result<()> {
     // ── D-Bus MPRIS2 ──────────────────────────────────────────
     #[cfg(all(feature = "dbus", target_os = "linux"))]
     let _dbus = if config.dbus.enabled {
-        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone()).await {
+        match dbus::start_mpris(&config, &zone_commands, notify_tx.clone(), &store).await {
             Ok(conns) => {
                 tracing::info!(zones = conns.len(), "MPRIS2 D-Bus interfaces registered");
                 Some(conns)
@@ -860,16 +842,12 @@ pub async fn run_app() -> Result<()> {
             Some(cmd) = snap_cmd_rx.recv() => {
                 // Convert relative volume adjustments to absolute
                 let cmd = if let player::SnapcastCmd::Client { ref client_id, action: player::ClientAction::AdjustVolume(delta) } = cmd {
-                    // Build on a volume still in flight, so quick relative steps add up.
-                    let current = match coalescer.latest(client_id) {
-                        Some(v) => v,
-                        None => store.read().await.clients.values()
-                            .find(|c| c.snapcast_id.as_deref() == Some(client_id))
-                            .map_or(state::DEFAULT_VOLUME, |c| c.base_volume),
-                    };
+                    let stored = store.read().await.clients.values()
+                        .find(|c| c.snapcast_id.as_deref() == Some(client_id))
+                        .map_or(state::DEFAULT_VOLUME, |c| c.base_volume);
                     player::SnapcastCmd::Client {
                         client_id: client_id.clone(),
-                        action: player::ClientAction::Volume(current.saturating_add(delta).clamp(0, 100)),
+                        action: player::ClientAction::Volume(coalescer.adjusted(client_id, stored, delta)),
                     }
                 } else {
                     cmd
@@ -1143,6 +1121,44 @@ mod signal_tests {
             .await
             .expect("the signal is kept until it is read");
         assert_eq!(name, "SIGTERM");
+    }
+}
+
+#[cfg(test)]
+mod coalescer_tests {
+    use super::VolumeCoalescer;
+
+    /// #497: two relative steps within the coalescing window add up, and a step right after
+    /// an absolute volume that is not flushed yet builds on that volume.
+    #[tokio::test(start_paused = true)]
+    async fn relative_steps_build_on_the_pending_volume() {
+        let mut c = VolumeCoalescer::new(std::time::Duration::from_millis(50));
+        let stored = 40;
+        let v = c.adjusted("a", stored, 5);
+        c.push("a".into(), v);
+        let v = c.adjusted("a", stored, 5);
+        c.push("a".into(), v);
+        assert_eq!(v, 50, "+5 and +5 within the window give +10");
+
+        c.push("b".into(), 80);
+        assert_eq!(
+            c.adjusted("b", stored, -10),
+            70,
+            "builds on the unflushed 80"
+        );
+
+        tokio::time::advance(std::time::Duration::from_millis(60)).await;
+        assert_eq!(c.flush_expired().len(), 2);
+        assert_eq!(
+            c.adjusted("a", stored, 1),
+            51,
+            "a volume sent a moment ago still counts"
+        );
+        assert_eq!(
+            c.adjusted("c", stored, 1),
+            41,
+            "without one, the stored volume"
+        );
     }
 }
 

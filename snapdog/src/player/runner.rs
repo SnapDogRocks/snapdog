@@ -56,17 +56,26 @@ pub async fn spawn_zone_players(
     let mut senders = HashMap::new();
     let ctx = Arc::new(ctx);
 
+    // One track cache for all zones (if Subsonic is configured): one index over the shared
+    // directory, one size limit, and one download per track at a time (#495).
+    let track_cache = ctx.config.subsonic.as_ref().and_then(|s| {
+        crate::audio::cache::TrackCache::new(&s.cache)
+            .map_err(|e| tracing::warn!(error = %e, "Failed to initialize track cache"))
+            .ok()
+    });
+
     for zone in &ctx.config.zones {
         let (cmd_tx, cmd_rx) = mpsc::channel(ZONE_CMD_CHANNEL_SIZE); // zone command backlog
-        senders.insert(zone.index, cmd_tx.clone());
+        senders.insert(zone.index, cmd_tx);
 
         let ctx = ctx.clone();
+        let track_cache = track_cache.clone();
         let zone_index = zone.index;
 
         tokio::spawn(async move {
             let mut cmd_rx = cmd_rx;
             supervise(zone_index, async move || {
-                run(zone_index, &mut cmd_rx, ctx.clone()).await
+                run(zone_index, &mut cmd_rx, ctx.clone(), track_cache.clone()).await
             })
             .await;
         });
@@ -75,6 +84,28 @@ pub async fn spawn_zone_players(
     }
 
     Ok(senders)
+}
+
+/// Commands that start, change or stop playback. Sent by the user, they end a presence session.
+const fn is_user_playback_command(cmd: &ZoneCommand) -> bool {
+    matches!(
+        cmd,
+        ZoneCommand::Play
+            | ZoneCommand::Pause
+            | ZoneCommand::Stop
+            | ZoneCommand::PlayUrl(_)
+            | ZoneCommand::PlaySubsonicTrack(_)
+            | ZoneCommand::PlaySubsonicPlaylist(..)
+            | ZoneCommand::PlayPlaylist(..)
+            | ZoneCommand::PlayPlaylistById(..)
+            | ZoneCommand::SetPlaylist(..)
+            | ZoneCommand::SetPlaylistById(..)
+            | ZoneCommand::SetTrack(_)
+            | ZoneCommand::Next
+            | ZoneCommand::Previous
+            | ZoneCommand::NextPlaylist
+            | ZoneCommand::PreviousPlaylist
+    )
 }
 
 /// The next command for the zone: a pending follow-up first, then the channel.
@@ -173,23 +204,21 @@ async fn fade_transition(
     if let Some(rx) = decode_rx.as_mut() {
         let deadline =
             tokio::time::Instant::now() + std::time::Duration::from_millis(u64::from(fade_ms));
-        loop {
-            let timeout = tokio::time::timeout_at(deadline, rx.recv());
-            match timeout.await {
-                Ok(Some(audio::PcmMessage::Audio(samples))) => {
-                    let mut samples = resampler.process_or_passthrough(samples);
-                    zone_eq.process(&mut samples);
-                    fade.process(&mut samples, channels);
-                    let _ = backend
-                        .send_audio(zone_index, &samples, sample_rate, channels)
-                        .await;
-                    if fade.remaining == 0 {
-                        break;
-                    }
-                }
-                _ => break, // Timeout or channel closed
-            }
-        }
+        drain_with_fade_out(
+            rx,
+            &mut fade,
+            deadline,
+            |samples| {
+                let mut samples = resampler.process_or_passthrough(samples);
+                zone_eq.process(&mut samples);
+                samples
+            },
+            backend,
+            zone_index,
+            sample_rate,
+            channels,
+        )
+        .await;
     }
 
     stop_decode(current_decode, decode_rx).await;
@@ -199,6 +228,38 @@ async fn fade_transition(
     let mut fade_in = ZoneFade::new(fade_ms, sample_rate);
     fade_in.start_fade_in();
     *zone_fade = Some(fade_in);
+}
+
+/// Play the old stream out under a fade-out until the fade completes, `deadline` passes or the
+/// stream ends. Non-audio messages (`Position`, `BufferProgress`, `Format`) are skipped: they
+/// arrive between audio chunks and must not end the fade early, which would cut the stream.
+#[allow(clippy::too_many_arguments)]
+async fn drain_with_fade_out(
+    rx: &mut mpsc::Receiver<audio::PcmMessage>,
+    fade: &mut ZoneFade,
+    deadline: tokio::time::Instant,
+    mut prepare: impl FnMut(Vec<f32>) -> Vec<f32>,
+    backend: &dyn crate::snapcast::backend::SnapcastBackend,
+    zone_index: usize,
+    sample_rate: u32,
+    channels: u16,
+) {
+    loop {
+        match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Some(audio::PcmMessage::Audio(samples))) => {
+                let mut samples = prepare(samples);
+                let done = fade.process(&mut samples, channels);
+                let _ = backend
+                    .send_audio(zone_index, &samples, sample_rate, channels)
+                    .await;
+                if done {
+                    break;
+                }
+            }
+            Ok(Some(_)) => {}           // not audio: keep draining
+            Ok(None) | Err(_) => break, // stream ended or deadline passed
+        }
+    }
 }
 
 /// Check if a receiver (AirPlay/Spotify) is active and the source conflict
@@ -237,20 +298,27 @@ impl ZoneFade {
     }
 
     /// Apply gain ramp to samples. Returns true when fade is complete.
+    ///
+    /// After a completed fade-out every further sample is silent, so the rest of the buffer
+    /// that holds the end of the fade does not play at full gain. After a completed fade-in
+    /// the rest of the buffer is left as it is.
     fn process(&mut self, samples: &mut [f32], channels: u16) -> bool {
-        if self.total == 0 || self.remaining == 0 {
+        if self.total == 0 {
             return true;
         }
-        let ch = channels as usize;
-        for frame in samples.chunks_exact_mut(ch) {
-            let gain = snapdog_common::fade_gain(self.remaining, self.total, self.fading_out);
+        let ch = usize::from(channels.max(1));
+        for frame in samples.chunks_mut(ch) {
+            let gain = if self.remaining > 0 {
+                snapdog_common::fade_gain(self.remaining, self.total, self.fading_out)
+            } else if self.fading_out {
+                0.0
+            } else {
+                break;
+            };
             for sample in frame.iter_mut() {
                 *sample *= gain;
             }
             self.remaining = self.remaining.saturating_sub(1);
-            if self.remaining == 0 {
-                break;
-            }
         }
         self.remaining == 0
     }
@@ -268,6 +336,7 @@ async fn run(
     zone_index: usize,
     commands: &mut mpsc::Receiver<ZoneCommand>,
     ctx: Arc<ZonePlayerContext>,
+    track_cache: Option<crate::audio::cache::TrackCache>,
 ) -> Result<()> {
     const TIMER_INACTIVE: std::time::Duration = std::time::Duration::from_hours(24);
 
@@ -291,13 +360,6 @@ async fn run(
 
     // Subsonic client (if configured)
     let subsonic = config.subsonic.as_ref().map(SubsonicClient::new);
-
-    // Track cache (if subsonic + cache enabled)
-    let track_cache = config.subsonic.as_ref().and_then(|s| {
-        crate::audio::cache::TrackCache::new(&s.cache)
-            .map_err(|e| tracing::warn!(error = %e, "Failed to initialize track cache"))
-            .ok()
-    });
 
     // AirPlay: F32 audio channel + event channel + receiver instance
     let (airplay_audio_tx, mut airplay_audio_rx) =
@@ -607,6 +669,11 @@ async fn run(
     // handled before the next command from the channel instead of being sent back into it:
     // awaiting a send on its own bounded channel could block this task forever (#494).
     let mut follow_ups: std::collections::VecDeque<ZoneCommand> = std::collections::VecDeque::new();
+    // The next playback command was queued by a presence trigger, not by the user.
+    let mut presence_derived = false;
+    // A user Stop ends presence playback until the room was empty once: a `false` telegram,
+    // or no trigger for the auto-off delay (pulse-only detectors never send `false`).
+    let mut presence_blocked = false;
 
     loop {
         // A receiver that lost the zone since the last iteration (to local playback, Stop,
@@ -639,6 +706,27 @@ async fn run(
                         let _ = r.send(ok);
                     }
                 };
+                if is_user_playback_command(&cmd) && !std::mem::take(&mut presence_derived) {
+                    // The user takes over: presence no longer owns this playback, so its
+                    // auto-off timer must not stop what the user starts now.
+                    let (owned, enabled) = store.read().await.zones.get(&zone_index)
+                        .map_or((false, false), |z| (z.presence_source, z.presence_enabled));
+                    if owned || auto_off_armed {
+                        auto_off_armed = false;
+                        update_and_notify(store, zone_index, notify, |z| { z.presence_source = false; z.auto_off_active = false; }).await;
+                        notify_presence(store, zone_index, notify).await;
+                        tracing::info!(zone = zone_index, "Presence: playback handed over to the user");
+                    }
+                    if matches!(cmd, ZoneCommand::Stop) && enabled {
+                        presence_blocked = true;
+                        let delay = store.read().await.zones.get(&zone_index).map_or(crate::config::DEFAULT_AUTO_OFF_DELAY, |z| z.auto_off_delay);
+                        auto_off_timer.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(u64::from(delay)));
+                        auto_off_armed = true;
+                        tracing::info!(zone = zone_index, "Presence: starts suspended until the room was empty");
+                    } else {
+                        presence_blocked = false;
+                    }
+                }
                 match cmd {
                     ZoneCommand::Checked(..) => answer(false), // a checked command is never nested
                     ZoneCommand::PlaySubsonicPlaylist(playlist_id, track_idx) => {
@@ -705,8 +793,22 @@ async fn run(
                                     tracing::error!(error = %e, "Subsonic track decode failed");
                                 }
                             }));
+                            // The zone needs a track entry for position updates and for resuming
+                            // at the paused position; without metadata it still gets one.
+                            let info = match sub.get_song(&track_id).await {
+                                Ok(song) => subsonic_track_info(&song),
+                                Err(e) => {
+                                    tracing::warn!(zone = zone_index, error = %e, "Could not read the track metadata");
+                                    subsonic_track_info(&crate::subsonic::Track::untitled(&track_id))
+                                }
+                            };
                             source = ActiveSource::SubsonicTrack { track_id };
-                            update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::SubsonicTrack; }).await;
+                            update_and_notify(store, zone_index, notify, |z| {
+                                z.playback = PlaybackState::Playing;
+                                z.source = SourceType::SubsonicTrack;
+                                z.track = Some(info.clone());
+                                if let Some(t) = z.track.as_mut() { t.position_ms = 0; t.source = SourceType::SubsonicTrack; }
+                            }).await;
                         }
                     }
                     ZoneCommand::PlayUrl(url) => {
@@ -722,7 +824,7 @@ async fn run(
                         current_decode = Some(tokio::spawn(async move {
                             if let Err(e) = audio::decode_http_stream(u, tx, ac, None).await { tracing::error!(error = %e, "URL decode failed"); }
                         }));
-                        source = ActiveSource::Url;
+                        source = ActiveSource::Url { url };
                         update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::Url; }).await;
                     }
                     ZoneCommand::SetTrack(track_idx) => {
@@ -834,6 +936,17 @@ async fn run(
                                     update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; }).await;
                                 }
                             }
+                        } else if let ActiveSource::Url { url } = &source {
+                            // A URL stream has no position to resume at: start it again.
+                            let u = url.clone();
+                            reset_playback(&mut current_decode, &mut decode_rx, &mut position_offset_ms).await;
+                            let (tx, rx) = audio::pcm_channel(PCM_DECODE_CHANNEL_SIZE);
+                            decode_rx = Some(rx);
+                            let ac = audio_config.clone();
+                            current_decode = Some(tokio::spawn(async move {
+                                if let Err(e) = audio::decode_http_stream(u, tx, ac, None).await { tracing::error!(error = %e, "URL decode failed"); }
+                            }));
+                            update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::Url; }).await;
                         } else if matches!(source, ActiveSource::Radio { .. } | ActiveSource::Idle) {
                             // Resume or start radio
                             let z_state = store.read().await;
@@ -1161,6 +1274,24 @@ async fn run(
                         });
                         tracing::debug!(zone = zone_index, "EQ updated");
                     }
+                    ZoneCommand::SetEqBand { band_index, band } => {
+                        let current = ctx.eq_store.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(zone_index);
+                        let merged = (band_index < current.bands.len()).then(|| {
+                            let mut config = current;
+                            config.bands[band_index] = band;
+                            config.preset = None;
+                            config
+                        });
+                        if let Some(ref config) = merged {
+                            zone_eq.set_config(config);
+                            ctx.eq_store.lock().unwrap_or_else(std::sync::PoisonError::into_inner).set(zone_index, config.clone());
+                            crate::api::ws::broadcast_notification(notify, &crate::api::ws::Notification::ZoneEqChanged {
+                                zone: zone_index,
+                                config: config.clone(),
+                            });
+                            tracing::debug!(zone = zone_index, band = band_index, "EQ band updated");
+                        }
+                    }
                     ZoneCommand::SetPresence(present) => {
                         // Retriggerable model: every presence trigger (`true`) starts playback
                         // if idle and (re)arms the auto-off timer to `now + delay`. Playback runs
@@ -1171,6 +1302,12 @@ async fn run(
                         let enabled = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_enabled);
                         if !enabled {
                             update_and_notify(store, zone_index, notify, |z| z.presence = present).await;
+                        } else if present && presence_blocked {
+                            // After a user Stop: keep the room "occupied" (re-arm), start nothing.
+                            let delay = store.read().await.zones.get(&zone_index).map_or(crate::config::DEFAULT_AUTO_OFF_DELAY, |z| z.auto_off_delay);
+                            auto_off_timer.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(u64::from(delay)));
+                            auto_off_armed = true;
+                            update_and_notify(store, zone_index, notify, |z| z.presence = true).await;
                         } else if present {
                             let is_idle = store.read().await.zones.get(&zone_index).is_some_and(|z| z.playback == crate::state::PlaybackState::Stopped);
                             if is_idle {
@@ -1181,11 +1318,13 @@ async fn run(
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
                                         // Unified index 0 = radio, idx = station within radio
                                         follow_ups.push_back(ZoneCommand::PlayPlaylist(0, idx));
+                                        presence_derived = true;
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                     Some(crate::config::PresenceSource::Playlist(ref id)) => {
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
                                         follow_ups.push_back(ZoneCommand::PlaySubsonicPlaylist(id.clone(), 0));
+                                        presence_derived = true;
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                     Some(crate::config::PresenceSource::None) => {
@@ -1194,6 +1333,7 @@ async fn run(
                                     None => {
                                         update_and_notify(store, zone_index, notify, |z| z.presence_source = true).await;
                                         follow_ups.push_back(ZoneCommand::Play);
+                                        presence_derived = true;
                                         tracing::info!(zone = zone_index, "Presence: playback started");
                                     }
                                 }
@@ -1212,7 +1352,12 @@ async fn run(
                                 update_and_notify(store, zone_index, notify, |z| z.presence = true).await;
                             }
                         } else {
-                            // No-motion telegram: display only. The timer from the last trigger runs on.
+                            // No-motion telegram: display only. The timer from the last trigger
+                            // runs on. It does mean the room is empty, which lifts a user Stop.
+                            if presence_blocked {
+                                presence_blocked = false;
+                                auto_off_armed = false;
+                            }
                             update_and_notify(store, zone_index, notify, |z| z.presence = false).await;
                         }
                         notify_presence(store, zone_index, notify).await;
@@ -1246,15 +1391,10 @@ async fn run(
                         let samples = audio::channels::map_channels(samples, source_channels, config.audio.channels);
                         let mut samples = resampler.process_or_passthrough(samples);
                         zone_eq.process(&mut samples);
+                        // Only a fade-in is ever pending here; fade-outs run in `fade_transition`.
                         if let Some(ref mut fade) = zone_fade
                             && fade.process(&mut samples, config.audio.channels) {
-                                if fade.fading_out {
-                                    // Fade-out complete — don't send silence, wait for new stream
-                                    zone_fade = None;
-                                } else {
-                                    // Fade-in complete
-                                    zone_fade = None;
-                                }
+                                zone_fade = None;
                             }
                         if let Err(e) = backend.send_audio(zone_index, &samples, config.audio.sample_rate, config.audio.channels).await {
                             tracing::error!(zone = zone_index, error = %e, "Audio send failed");
@@ -1325,6 +1465,11 @@ async fn run(
             // Auto-off timer expired
             () = &mut auto_off_timer, if auto_off_armed => {
                 auto_off_armed = false;
+                if std::mem::take(&mut presence_blocked) {
+                    // No trigger for the whole delay after a user Stop: the room was empty,
+                    // presence may start playback again. Nothing to stop.
+                    continue;
+                }
                 // Retrigger model: the timer only fires when no trigger arrived for the whole
                 // delay, so presence-initiated playback stops regardless of the last display flag.
                 let should_stop = store.read().await.zones.get(&zone_index).is_some_and(|z| z.presence_source);
@@ -1404,6 +1549,36 @@ fn resolve_presence_source(
 #[cfg(test)]
 mod fade_tests {
     use super::ZoneFade;
+    use crate::snapcast::backend::{BoxFuture, SnapcastBackend};
+
+    /// Records the audio it is sent.
+    #[derive(Default)]
+    struct Recorder(std::sync::Mutex<Vec<f32>>);
+
+    impl SnapcastBackend for Recorder {
+        fn send_audio(
+            &self,
+            _: usize,
+            samples: &[f32],
+            _: u32,
+            _: u16,
+        ) -> BoxFuture<'_, anyhow::Result<()>> {
+            self.0.lock().unwrap().extend_from_slice(samples);
+            Box::pin(async { Ok(()) })
+        }
+        fn execute(&self, _: crate::player::SnapcastCmd) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn stop(&self) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn get_status(&self) -> BoxFuture<'_, anyhow::Result<serde_json::Value>> {
+            Box::pin(async { Ok(serde_json::Value::Null) })
+        }
+        fn delete_client(&self, _: &str) -> BoxFuture<'_, anyhow::Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
 
     #[test]
     fn fade_out_stereo() {
@@ -1414,6 +1589,63 @@ mod fade_tests {
         // First frame should be near 1.0, last frame should be near 0.0
         assert!(buf[0] > 0.9);
         assert!(buf[198] < 0.02);
+    }
+
+    #[test]
+    fn fade_out_silences_the_rest_of_a_longer_buffer() {
+        let mut fade = ZoneFade::new(100, 1000); // 100 frames
+        let mut buf = vec![1.0f32; 600]; // 300 frames * 2 channels
+        assert!(fade.process(&mut buf, 2));
+        assert!(buf[0] > 0.9);
+        assert!(
+            buf[200..].iter().all(|&s| s == 0.0),
+            "no burst after the fade end"
+        );
+        // A further buffer after the completed fade-out is silent too.
+        let mut next = vec![1.0f32; 10];
+        assert!(fade.process(&mut next, 2));
+        assert!(next.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn fade_in_leaves_the_rest_of_a_longer_buffer() {
+        let mut fade = ZoneFade::new(100, 1000);
+        fade.start_fade_in();
+        let mut buf = vec![1.0f32; 600];
+        assert!(fade.process(&mut buf, 2));
+        assert!(buf[200..].iter().all(|&s| s == 1.0));
+    }
+
+    #[tokio::test]
+    async fn the_fade_out_runs_through_position_and_progress_messages() {
+        use crate::audio::PcmMessage;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        // 100 frames of fade at 1 kHz, mono; audio in chunks of 30 frames with progress
+        // and position messages in between, the way a caching stream sends them.
+        for i in 0..6 {
+            tx.send(PcmMessage::Audio(vec![1.0; 30])).await.unwrap();
+            tx.send(PcmMessage::BufferProgress {
+                buffered_bytes: i,
+                total_bytes: None,
+            })
+            .await
+            .unwrap();
+            tx.send(PcmMessage::Position(i64::from(i as u8)))
+                .await
+                .unwrap();
+        }
+        let mut fade = ZoneFade::new(100, 1000);
+        let backend = Recorder::default();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        super::drain_with_fade_out(&mut rx, &mut fade, deadline, |s| s, &backend, 1, 1000, 1).await;
+        let played = backend.0.lock().unwrap().clone();
+        assert_eq!(fade.remaining, 0, "the fade completed");
+        assert_eq!(
+            played.len(),
+            120,
+            "four chunks: the fade ends in the fourth"
+        );
+        assert!(played[100..].iter().all(|&s| s == 0.0));
     }
 
     #[test]
@@ -1466,7 +1698,7 @@ mod conflict_tests {
     fn non_receiver_sources_always_allow_local_playback() {
         for src in [
             ActiveSource::Idle,
-            ActiveSource::Url,
+            ActiveSource::Url { url: String::new() },
             ActiveSource::Radio { index: 0 },
         ] {
             assert!(may_start_local_playback(

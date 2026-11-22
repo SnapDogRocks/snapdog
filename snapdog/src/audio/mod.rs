@@ -419,30 +419,28 @@ async fn decode_http_stream_cached_impl(
 
     tracing::info!(content_type = %content_type, "Cached stream connected");
 
-    // Create writer with correct content_type from HTTP response
-    let mut cache_writer = cache
-        .start_download(track_id, &content_type, content_length)
-        .context("Failed to start cache download")?;
+    // Create writer with correct content_type from HTTP response. Without a writer (the
+    // cache cannot be written, or another download of this track is running) the track is
+    // streamed without caching: the cache must never stop playback.
+    let mut cache_writer = match cache.start_download(track_id, &content_type, content_length) {
+        Ok(Some(writer)) => Some(writer),
+        Ok(None) => {
+            tracing::debug!(
+                track_id,
+                "Track is already being cached, streaming without cache"
+            );
+            None
+        }
+        Err(e) => {
+            tracing::warn!(track_id, error = %e, "Track cache not writable, streaming without cache");
+            None
+        }
+    };
 
     // MP4/M4A: buffer entirely, write to cache, then decode
     let needs_seek = content_type.contains("mp4") || content_type.contains("m4a");
     if needs_seek {
-        let bytes =
-            read_response_bytes_limited(response, MAX_SEEKABLE_AUDIO_BYTES, "cached stream")
-                .await?;
-        cache_writer.write(&bytes)?;
-        let _ = tx
-            .send(PcmMessage::BufferProgress {
-                buffered_bytes: bytes.len() as u64,
-                total_bytes: Some(bytes.len() as u64),
-            })
-            .await;
-        let path = cache_writer.complete()?;
-        let ct = content_type.clone();
-        tokio::task::spawn_blocking(move || decode_cached_file_impl(&path, &ct, None, &tx))
-            .await
-            .context("Decoder task panicked")??;
-        return Ok(());
+        return decode_buffered_with_cache(response, cache_writer, &content_type, tx).await;
     }
 
     // Streaming path: pipe to decoder + tee to cache
@@ -455,23 +453,23 @@ async fn decode_http_stream_cached_impl(
         use futures_util::StreamExt;
         use tokio::io::AsyncWriteExt;
         let mut stream = response.bytes_stream();
-        let mut write_failed = false;
+        let mut downloaded = 0u64;
         while let Some(chunk) = stream.next().await {
             let bytes = chunk.with_context(|| format!("Stream read error for {url_clone}"))?;
-            // Tee to cache (abort on first failure)
-            if !write_failed {
-                if let Err(e) = cache_writer.write(&bytes) {
-                    tracing::warn!(error = %e, "Cache write failed, aborting cache");
-                    write_failed = true;
-                } else {
-                    let _ = progress_tx
-                        .send(PcmMessage::BufferProgress {
-                            buffered_bytes: cache_writer.bytes_written(),
-                            total_bytes,
-                        })
-                        .await;
-                }
+            downloaded += bytes.len() as u64;
+            // Tee to cache; the first failure drops the writer, which removes its file.
+            if let Some(writer) = cache_writer.as_mut()
+                && let Err(e) = writer.write(&bytes)
+            {
+                tracing::warn!(error = %e, "Cache write failed, aborting cache");
+                cache_writer = None;
             }
+            let _ = progress_tx
+                .send(PcmMessage::BufferProgress {
+                    buffered_bytes: downloaded,
+                    total_bytes,
+                })
+                .await;
             // Write to decode pipe
             if pipe_tx.write_all(&bytes).await.is_err() {
                 return Ok::<_, anyhow::Error>(());
@@ -481,10 +479,11 @@ async fn decode_http_stream_cached_impl(
             .shutdown()
             .await
             .context("Failed to close cached HTTP decode pipe")?;
-        if !write_failed && let Err(e) = cache_writer.complete() {
+        if let Some(writer) = cache_writer
+            && let Err(e) = writer.complete()
+        {
             tracing::warn!(error = %e, "Failed to finalize cache entry");
         }
-        // If write_failed, Drop will clean up the partial file
         Ok::<_, anyhow::Error>(())
     });
 
@@ -505,6 +504,43 @@ async fn decode_http_stream_cached_impl(
         }
     }
 
+    Ok(())
+}
+
+/// Seek-only containers (MP4/M4A): buffer the whole response, cache it if a writer is
+/// available, then decode from the cached file or, without a cache, from memory.
+async fn decode_buffered_with_cache(
+    response: reqwest::Response,
+    cache_writer: Option<cache::CacheWriter>,
+    content_type: &str,
+    tx: PcmSender,
+) -> Result<()> {
+    let bytes =
+        read_response_bytes_limited(response, MAX_SEEKABLE_AUDIO_BYTES, "cached stream").await?;
+    let _ = tx
+        .send(PcmMessage::BufferProgress {
+            buffered_bytes: bytes.len() as u64,
+            total_bytes: Some(bytes.len() as u64),
+        })
+        .await;
+    let cached = cache_writer.and_then(|mut writer| {
+        writer
+            .write(&bytes)
+            .and_then(|()| writer.complete())
+            .inspect_err(|e| tracing::warn!(error = %e, "Cache write failed, decoding from memory"))
+            .ok()
+    });
+    let ct = content_type.to_owned();
+    if let Some(path) = cached {
+        tokio::task::spawn_blocking(move || decode_cached_file_impl(&path, &ct, None, &tx))
+            .await
+            .context("Decoder task panicked")??;
+    } else {
+        let cursor = std::io::Cursor::new(bytes);
+        tokio::task::spawn_blocking(move || decode_to_pcm(cursor, &ct, &tx))
+            .await
+            .context("Decoder task panicked")??;
+    }
     Ok(())
 }
 
@@ -643,6 +679,7 @@ async fn decode_hls_stream(
                 }
             }
 
+            prune_seen_segments(&mut seen, &segments);
             first_fetch = false;
             if !is_live {
                 tracing::debug!("HLS VOD playlist complete");
@@ -1090,43 +1127,82 @@ fn is_http_url(url: &str) -> bool {
     url::Url::parse(url).is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.host().is_some())
 }
 
+/// Forget segments that are no longer in the playlist. A live playlist slides forward, and a
+/// segment that left it does not come back, so `seen` stays as small as the playlist.
+fn prune_seen_segments(
+    seen: &mut std::collections::HashSet<String>,
+    segments: &[(String, Option<String>)],
+) {
+    seen.retain(|url| segments.iter().any(|(s, _)| s == url));
+}
+
 /// Extract the highest bitrate variant URL from an HLS master playlist.
 fn resolve_hls_master(base: &url::Url, body: &str) -> Option<String> {
-    let mut best_bandwidth: u64 = 0;
-    let mut best_url: Option<String> = None;
-    let mut next_is_url = false;
+    let mut best: Option<(u64, String)> = None;
+    // Bandwidth of the variant whose URI comes next (0 when the tag has none).
+    let mut pending: Option<u64> = None;
 
     for line in body.lines() {
         let line = line.trim();
-        if line.starts_with("#EXT-X-STREAM-INF") {
-            // Parse BANDWIDTH=nnn from the tag
-            if let Some(bw_str) = line.split(',').find_map(|attr| {
-                let attr = attr.trim();
-                attr.strip_prefix("BANDWIDTH=")
-                    .or_else(|| attr.strip_prefix("#EXT-X-STREAM-INF:BANDWIDTH="))
-            }) && let Ok(bw) = bw_str.trim().parse::<u64>()
-                && bw > best_bandwidth
-            {
-                best_bandwidth = bw;
-                next_is_url = true;
-                continue;
+        if let Some(attrs) = line.strip_prefix("#EXT-X-STREAM-INF:") {
+            let bandwidth = attrs
+                .split(',')
+                .find_map(|attr| attr.trim().strip_prefix("BANDWIDTH="))
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .unwrap_or(0);
+            pending = Some(bandwidth);
+        } else if let Some(bandwidth) = pending
+            && !line.is_empty()
+            && !line.starts_with('#')
+        {
+            if best.as_ref().is_none_or(|(b, _)| bandwidth > *b) {
+                best = Some((bandwidth, resolve_relative(base, line)));
             }
-            next_is_url = true;
-        } else if next_is_url && !line.is_empty() && !line.starts_with('#') {
-            if best_bandwidth > 0 || best_url.is_none() {
-                best_url = Some(resolve_relative(base, line));
-            }
-            next_is_url = false;
-            best_bandwidth = 0; // Reset so we only update on higher bandwidth
+            pending = None;
         }
     }
 
-    best_url
+    best.map(|(_, url)| url)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hls_master_picks_the_highest_bandwidth_in_any_order() {
+        let base = url::Url::parse("https://radio.example/live/master.m3u8").unwrap();
+        let descending = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=256000,CODECS=\"mp4a.40.2\"\nhigh.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=64000\nlow.m3u8\n";
+        let ascending = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=64000\nlow.m3u8\n#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=1,BANDWIDTH=256000\nhigh.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=128000\nmid.m3u8\n";
+        for body in [descending, ascending] {
+            assert_eq!(
+                resolve_hls_master(&base, body).as_deref(),
+                Some("https://radio.example/live/high.m3u8"),
+                "{body}"
+            );
+        }
+        let no_bandwidth = "#EXTM3U\n#EXT-X-STREAM-INF:CODECS=\"mp4a\"\nonly.m3u8\n";
+        assert_eq!(
+            resolve_hls_master(&base, no_bandwidth).as_deref(),
+            Some("https://radio.example/live/only.m3u8")
+        );
+    }
+
+    #[test]
+    fn the_seen_set_stays_bounded_on_a_long_live_playlist() {
+        let mut seen = std::collections::HashSet::new();
+        for refresh in 0..10_000u32 {
+            // A sliding window of six segments, one new per refresh.
+            let segments: Vec<(String, Option<String>)> = (refresh..refresh + 6)
+                .map(|n| (format!("https://radio.example/seg{n}.aac"), None))
+                .collect();
+            for (url, _) in &segments {
+                seen.insert(url.clone());
+            }
+            prune_seen_segments(&mut seen, &segments);
+        }
+        assert_eq!(seen.len(), 6);
+    }
     use std::io::Write;
 
     /// A server that sends the headers and a few body bytes, then stalls with the connection
@@ -1227,6 +1303,95 @@ mod tests {
             &tx,
         );
         assert!(result.is_err(), "Nonexistent file should return error");
+    }
+
+    /// A mono 16-bit WAV with `samples` silent samples.
+    fn wav_bytes(samples: u32) -> Vec<u8> {
+        let data_size = samples * 2;
+        let mut v = Vec::new();
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&(36 + data_size).to_le_bytes());
+        v.extend_from_slice(b"WAVEfmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes());
+        v.extend_from_slice(&44_100u32.to_le_bytes());
+        v.extend_from_slice(&88_200u32.to_le_bytes());
+        v.extend_from_slice(&2u16.to_le_bytes());
+        v.extend_from_slice(&16u16.to_le_bytes());
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&data_size.to_le_bytes());
+        v.resize(v.len() + data_size as usize, 0);
+        v
+    }
+
+    async fn play_cached(cache: &cache::TrackCache, url: String) -> (Result<()>, bool) {
+        let (tx, mut rx) = mpsc::channel(1024);
+        let result = decode_http_stream_cached(url, tx, cache, "track").await;
+        let mut got_audio = false;
+        while let Ok(msg) = rx.try_recv() {
+            got_audio |= matches!(msg, PcmMessage::Audio(_));
+        }
+        (result, got_audio)
+    }
+
+    /// #495: a cache that cannot be written must not stop playback.
+    #[tokio::test]
+    async fn a_track_plays_when_the_cache_cannot_be_written() {
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "audio/wav")
+                    .set_body_bytes(wav_bytes(4410)),
+            )
+            .mount(&server)
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+        let cache = cache::TrackCache::new(&crate::config::SubsonicCacheConfig {
+            path: cache_dir.to_string_lossy().into_owned(),
+            max_size_mb: 100,
+        })
+        .unwrap();
+        std::fs::remove_dir_all(&cache_dir).unwrap(); // the cache became unwritable
+
+        let (result, got_audio) = play_cached(&cache, format!("{}/t.wav", server.uri())).await;
+        assert!(result.is_ok(), "{result:?}");
+        assert!(got_audio, "the track is streamed without the cache");
+        assert!(!cache.is_complete("track"));
+    }
+
+    /// #495: the normal path still caches the complete track.
+    #[tokio::test]
+    async fn a_streamed_track_is_cached_complete() {
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+        let server = MockServer::start().await;
+        let body = wav_bytes(4410);
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "audio/wav")
+                    .set_body_bytes(body.clone()),
+            )
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let cache = cache::TrackCache::new(&crate::config::SubsonicCacheConfig {
+            path: dir.path().to_string_lossy().into_owned(),
+            max_size_mb: 100,
+        })
+        .unwrap();
+        let (result, got_audio) = play_cached(&cache, format!("{}/t.wav", server.uri())).await;
+        assert!(result.is_ok() && got_audio, "{result:?}");
+        match cache.get("track") {
+            cache::CacheEntry::Complete { path, .. } => {
+                assert_eq!(std::fs::read(path).unwrap(), body);
+            }
+            _ => panic!("expected a complete entry"),
+        }
     }
 
     #[test]
