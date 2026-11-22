@@ -294,7 +294,7 @@ async fn run(
         crate::receiver::audio_channel(RECEIVER_AUDIO_CHANNEL_SIZE);
     let (airplay_event_tx, mut airplay_event_rx) =
         mpsc::channel::<crate::receiver::ReceiverEvent>(RECEIVER_EVENT_CHANNEL_SIZE);
-    let mut _airplay_receiver = if ctx.start_receivers {
+    let mut _airplay_receiver = if ctx.start_receivers && zone_config.airplay {
         let ap_config = crate::config::AirplayConfig {
             password: config.airplay.password.clone(),
             mode: config.airplay.mode,
@@ -339,8 +339,10 @@ async fn run(
         let (audio_tx, audio_rx) = crate::receiver::audio_channel(RECEIVER_AUDIO_CHANNEL_SIZE);
         let (event_tx, event_rx) =
             mpsc::channel::<crate::receiver::ReceiverEvent>(RECEIVER_EVENT_CHANNEL_SIZE);
-        let receiver = if let Some(sp_config) =
-            config.spotify.as_ref().filter(|_| ctx.start_receivers)
+        let receiver = if let Some(sp_config) = config
+            .spotify
+            .as_ref()
+            .filter(|_| ctx.start_receivers && zone_config.spotify)
         {
             let mut sp = crate::receiver::spotify::SpotifyReceiver::new(
                 crate::config::SpotifyConfig {
@@ -516,7 +518,8 @@ async fn run(
                     let hash = cache.get(zone_index).map(|e| e.hash.clone());
                     drop(cache);
                     if let Some(h) = hash {
-                        let base = config.http.base_url.trim_end_matches('/');
+                        let base = config.http.base_url();
+                        let base = base.trim_end_matches('/');
                         let url = format!("{base}/api/v1/zones/{zone_index}/cover?h={h}");
                         update_and_notify(store, zone_index, notify, |z| {
                             z.cover_url = Some(url.clone());
@@ -540,6 +543,7 @@ async fn run(
                     .await;
                 }
                 ReceiverEvent::Volume { percent } => {
+                    let percent = percent.clamp(0, zone_config.max_volume);
                     update_and_notify(store, zone_index, notify, |z| z.volume = percent).await;
                     let gid = store
                         .read()
@@ -600,7 +604,18 @@ async fn run(
         }
         tokio::select! {
             Some(cmd) = commands.recv() => {
+                // A checked command carries a reply channel: answer whether its index exists.
+                let (cmd, mut reply) = match cmd {
+                    ZoneCommand::Checked(inner, reply) => (*inner, Some(reply)),
+                    other => (other, None),
+                };
+                let mut answer = |ok: bool| {
+                    if let Some(r) = reply.take() {
+                        let _ = r.send(ok);
+                    }
+                };
                 match cmd {
+                    ZoneCommand::Checked(..) => answer(false), // a checked command is never nested
                     ZoneCommand::PlaySubsonicPlaylist(playlist_id, track_idx) => {
                         if !may_start_local_playback(&source, config.audio.source_conflict, receiver_paused) {
                             tracing::info!(zone = zone_index, "Playback blocked: receiver has priority");
@@ -686,6 +701,15 @@ async fn run(
                         update_and_notify(store, zone_index, notify, |z| { z.playback = PlaybackState::Playing; z.source = SourceType::Url; }).await;
                     }
                     ZoneCommand::SetTrack(track_idx) => {
+                        let exists = match source {
+                            ActiveSource::Radio { .. } => track_idx < config.radios.len(),
+                            ActiveSource::SubsonicPlaylist { track_count, .. } => track_idx < track_count,
+                            _ => false,
+                        };
+                        answer(exists);
+                        if !exists {
+                            tracing::warn!(zone = zone_index, track = track_idx, "No such track in the active playlist");
+                        }
                         if let ActiveSource::Radio { .. } = source {
                             if track_idx < config.radios.len()
                                 && let Some(radio) = config.radios.get(track_idx) {
@@ -851,8 +875,17 @@ async fn run(
                         let total_count = config.unified_playlist_count(subsonic_playlists.len());
                         if total_count == 0 {
                             tracing::warn!(zone = zone_index, "No playlists available");
+                            answer(false);
                             continue;
                         }
+                        if let ZoneCommand::SetPlaylist(i, _) | ZoneCommand::PlayPlaylist(i, _) = cmd
+                            && i >= total_count
+                        {
+                            tracing::warn!(zone = zone_index, playlist = i, total = total_count, "No such playlist");
+                            answer(false);
+                            continue;
+                        }
+                        answer(true);
 
                         let has_radio = config.has_radio_playlist();
                         let current_unified = match &source {
@@ -867,7 +900,7 @@ async fn run(
                         let (target_unified, start_track) = match cmd {
                             ZoneCommand::NextPlaylist => ((current_unified + 1) % total_count, 0),
                             ZoneCommand::PreviousPlaylist => (if current_unified == 0 { total_count - 1 } else { current_unified - 1 }, 0),
-                            ZoneCommand::SetPlaylist(i, t) | ZoneCommand::PlayPlaylist(i, t) => (i.min(total_count - 1), t),
+                            ZoneCommand::SetPlaylist(i, t) | ZoneCommand::PlayPlaylist(i, t) => (i, t),
                             ZoneCommand::SetPlaylistById(ref id, t) | ZoneCommand::PlayPlaylistById(ref id, t) => {
                                 let ids: Vec<&str> = subsonic_playlists.iter().map(|p| p.id.as_str()).collect();
                                 let Some(i) = config.playlist_index_by_id(id, &ids) else {
@@ -1046,7 +1079,9 @@ async fn run(
                         }
                     }
                     ZoneCommand::SetVolume(v) => {
-                        update_volume_and_notify(store, zone_index, notify, |z| z.volume = v.clamp(0, 100)).await;
+                        // max_volume is a hard limit for every source of a volume.
+                        let v = v.clamp(0, zone_config.max_volume);
+                        update_volume_and_notify(store, zone_index, notify, |z| z.volume = v).await;
                         let gid = store.read().await.zones.get(&zone_index).and_then(|z| z.snapcast_group_id.clone());
                         if let Some(gid) = gid {
                             let _ = ctx.snap_tx.send(SnapcastCmd::Group { group_id: gid, action: GroupAction::Volume(v) }).await;
@@ -1055,7 +1090,7 @@ async fn run(
                     ZoneCommand::AdjustVolume(delta) => {
                         let new_vol = {
                             let s = store.read().await;
-                            s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| z.volume.saturating_add(delta).clamp(0, 100))
+                            s.zones.get(&zone_index).map_or(crate::state::DEFAULT_VOLUME, |z| z.volume.saturating_add(delta).clamp(0, zone_config.max_volume))
                         };
                         update_volume_and_notify(store, zone_index, notify, |z| z.volume = new_vol).await;
                         let gid = store.read().await.zones.get(&zone_index).and_then(|z| z.snapcast_group_id.clone());

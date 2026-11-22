@@ -626,6 +626,17 @@ fn register_types(x: &mut knx_rs_prod::author::AppProgram) {
         .map(|(i, s)| (s.as_str(), (i + 1) as u16))
         .collect();
     pt_enum(x, "ZoneSelect", 8, &zone_choice_pairs);
+    // Volume of a zone at server start: "Last value" (0) keeps the volume from before the restart,
+    // 1..=100 sets it. Same byte and value range as the earlier plain percent parameter.
+    let start_volume: Vec<String> = (1..=100).map(|n| format!("{n} %")).collect();
+    let mut start_volume_pairs: Vec<(&str, u16)> = vec![("Last value", 0)];
+    start_volume_pairs.extend(
+        start_volume
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.as_str(), (i + 1) as u16)),
+    );
+    pt_enum(x, "StartVolume", 8, &start_volume_pairs);
     let zone_counts: Vec<String> = (1..=MAX_ZONES)
         .map(|n| {
             if n == 1 {
@@ -775,9 +786,9 @@ fn register_params(x: &mut knx_rs_prod::author::AppProgram) {
             &p,
             "002",
             "DefVol",
-            "Percent",
-            "Default volume",
-            "50",
+            "StartVolume",
+            "Volume at start",
+            "0",
             mem::ZONE_DEF_VOL + i,
             8,
             &mut spans,

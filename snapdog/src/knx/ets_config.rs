@@ -26,7 +26,7 @@ use crate::config::{
 /// Icon for ETS-derived zones/clients (ETS programs no icon).
 const ETS_ICON: &str = "🎵";
 /// Default KNX individual address when none is given (15.15.255).
-const DEFAULT_IA: &str = "15.15.255";
+const DEFAULT_IA: &str = crate::config::DEFAULT_KNX_DEVICE_ADDRESS;
 
 /// Build the effective `FileConfig` for KNX **device mode** started without a
 /// TOML config.
@@ -226,6 +226,12 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
                     .then(|| PresenceSource::Radio(usize::from(ets.zone_presence_source[i]) - 1)),
                 schedule: Vec::new(),
             }),
+            // 0 is "Last value" (also the 0 % of the older plain percent parameter).
+            default_volume: (ets.zone_default_volume[i] > 0)
+                .then(|| i32::from(ets.zone_default_volume[i].min(100))),
+            max_volume: i32::from(ets.zone_max_volume[i]),
+            airplay: ets.zone_airplay[i],
+            spotify: ets.zone_spotify[i],
         })
         .collect();
     if !zones.is_empty() {
@@ -268,6 +274,29 @@ fn ets_params_to_file_config(ets: &EtsParams, mut base: FileConfig) -> FileConfi
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
+
+    /// #509: the four ETS zone parameters reach the zone configuration.
+    #[test]
+    fn zone_volume_and_receiver_parameters_reach_the_zone() {
+        let mut ets = EtsParams::default();
+        ets.zone_active[0] = true;
+        ets.zone_names[0] = "Kitchen".into();
+        ets.zone_default_volume[0] = 30;
+        ets.zone_max_volume[0] = 70;
+        ets.zone_airplay[0] = false;
+        ets.zone_spotify[0] = true;
+        let cfg = ets_params_to_file_config(&ets, FileConfig::default());
+        let app = crate::config::load_raw_no_validate(cfg).expect("ETS config resolves");
+        let zone = &app.zones[0];
+        assert_eq!((zone.default_volume, zone.max_volume), (Some(30), 70));
+        assert!(!zone.airplay && zone.spotify);
+
+        // 0 is "Last value": no start volume, the restored volume stays.
+        ets.zone_default_volume[0] = 0;
+        let cfg = ets_params_to_file_config(&ets, FileConfig::default());
+        let app = crate::config::load_raw_no_validate(cfg).expect("ETS config resolves");
+        assert_eq!(app.zones[0].default_volume, None);
+    }
 
     #[test]
     fn log_level_byte_map_matches_xtask_enum() {

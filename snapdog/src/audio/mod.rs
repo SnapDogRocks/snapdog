@@ -108,6 +108,42 @@ fn http_client() -> Result<reqwest::Client> {
         .context("Failed to build HTTP client")
 }
 
+/// Time allowed to establish a connection to a remote server.
+pub const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Time a body may go without delivering a byte before the read fails. A stalled server ends
+/// the request instead of holding it open forever.
+pub const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// A client builder for downloads of unknown length (streams, whole tracks): connect and read
+/// timeouts, no total timeout, so a long download that keeps delivering is never cut off.
+pub fn streaming_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .user_agent(crate::USER_AGENT)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
+}
+
+/// A client for downloads of unknown length, see [`streaming_client_builder`].
+///
+/// # Errors
+///
+/// Returns an error if the TLS backend cannot be initialised.
+pub fn streaming_client() -> Result<reqwest::Client> {
+    streaming_client_builder()
+        .build()
+        .context("Failed to build HTTP client")
+}
+
+/// Aborts a spawned task when dropped, so a decode that is itself aborted (source change,
+/// stop) does not leave its download running.
+struct AbortTaskOnDrop(tokio::task::AbortHandle);
+
+impl Drop for AbortTaskOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Retry an async operation with exponential backoff.
 async fn with_retry<F, Fut, T>(label: &str, mut f: F) -> Result<T>
 where
@@ -194,6 +230,22 @@ pub async fn decode_http_stream(
     }
 }
 
+/// Like [`decode_http_stream`], but leaves reporting a failure to the caller: nothing is sent
+/// on `tx` when it fails. For callers that retry (radio reconnect) and send
+/// [`PcmMessage::Error`] only once they give up.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP request or audio decoding fails.
+pub(crate) async fn decode_http_stream_unreported(
+    url: String,
+    tx: PcmSender,
+    audio_config: AudioConfig,
+    icy_meta_tx: Option<tokio::sync::mpsc::Sender<icy::IcyMetadata>>,
+) -> Result<()> {
+    decode_http_stream_impl(url, tx, audio_config, icy_meta_tx).await
+}
+
 async fn decode_http_stream_impl(
     url: String,
     tx: PcmSender,
@@ -215,7 +267,7 @@ async fn decode_http_stream_impl(
     };
 
     // Use ICY-aware client to request metadata
-    let client = icy::icy_client();
+    let client = icy::icy_client()?;
     let response = client
         .get(&url)
         .send()
@@ -288,6 +340,7 @@ async fn decode_http_stream_impl(
     });
 
     // Decode in blocking thread (symphonia is sync + CPU-bound)
+    let _download_guard = AbortTaskOnDrop(http_task.abort_handle());
     let mut decode_task = tokio::task::spawn_blocking(move || {
         let reader = SyncReader(tokio::runtime::Handle::current(), pipe_rx);
         decode_to_pcm(reader, &content_type, &tx)
@@ -347,7 +400,7 @@ async fn decode_http_stream_cached_impl(
     track_id: &str,
 ) -> Result<()> {
     validate_http_url(&url)?;
-    let client = icy::icy_client();
+    let client = icy::icy_client()?;
     let response = client
         .get(&url)
         .send()
@@ -435,6 +488,7 @@ async fn decode_http_stream_cached_impl(
         Ok::<_, anyhow::Error>(())
     });
 
+    let _download_guard = AbortTaskOnDrop(http_task.abort_handle());
     let mut decode_task = tokio::task::spawn_blocking(move || {
         let reader = SyncReader(tokio::runtime::Handle::current(), pipe_rx);
         decode_to_pcm(reader, &content_type, &tx)
@@ -603,6 +657,7 @@ async fn decode_hls_stream(
         Ok::<_, anyhow::Error>(())
     });
 
+    let _download_guard = AbortTaskOnDrop(hls_task.abort_handle());
     let mut decode_task = tokio::task::spawn_blocking(move || {
         let reader = SyncReader(tokio::runtime::Handle::current(), pipe_rx);
         decode_to_pcm(reader, &content_type, &tx)
@@ -1073,6 +1128,58 @@ fn resolve_hls_master(base: &url::Url, body: &str) -> Option<String> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    /// A server that sends the headers and a few body bytes, then stalls with the connection
+    /// open, the way a hung radio server does.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "test-only loopback server, not a service listener"
+    )]
+    async fn stalling_server() -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = sock.read(&mut buf).await;
+            sock.write_all(
+                b"HTTP/1.1 200 OK\r\ncontent-type: audio/mpeg\r\ncontent-length: 100000\r\n\r\nabc",
+            )
+            .await
+            .unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            drop(sock);
+        });
+        format!("http://{addr}/stream")
+    }
+
+    #[tokio::test]
+    async fn a_stalled_stream_fails_with_the_read_timeout() {
+        use futures_util::StreamExt;
+        let url = stalling_server().await;
+        let client = streaming_client_builder()
+            .read_timeout(std::time::Duration::from_millis(200))
+            .build()
+            .unwrap();
+        let response = client.get(&url).send().await.unwrap();
+        let mut body = response.bytes_stream();
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while let Some(chunk) = body.next().await {
+                chunk?;
+            }
+            Ok::<_, reqwest::Error>(())
+        })
+        .await
+        .expect("the read timeout ends the stalled body, not the test timeout");
+        assert!(outcome.is_err_and(|e| e.is_timeout()));
+    }
+
+    #[test]
+    fn the_icy_client_builds_with_timeouts() {
+        // `icy_client` used to fall back to a client without any timeout if building failed.
+        assert!(icy::icy_client().is_ok());
+    }
 
     #[test]
     fn hint_for_content_type_maps_correctly() {

@@ -236,3 +236,26 @@ fn every_image_is_pinned_by_digest() {
         "the image scan found only {checked} references"
     );
 }
+
+const RELEASE_PLEASE_WORKFLOW: &str = include_str!("../../.github/workflows/release-please.yml");
+
+/// #529: a cancelled release-please run can leave a tag and a draft release without a build,
+/// so the workflow must never cancel a running instance, and the safety net that reports such
+/// a draft must stay.
+#[test]
+fn release_please_never_cancels_a_running_instance() {
+    let settings: Vec<&str> = RELEASE_PLEASE_WORKFLOW
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#') && l.starts_with("cancel-in-progress:"))
+        .collect();
+    assert_eq!(
+        settings,
+        ["cancel-in-progress: false"],
+        "release-please.yml must set `cancel-in-progress: false` exactly once"
+    );
+    assert!(
+        RELEASE_PLEASE_WORKFLOW.contains("Check that every draft release has a release build"),
+        "the step that reports a draft release without a build is gone"
+    );
+}
