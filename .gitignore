@@ -2,7 +2,11 @@
 
 # Rust
 target/
-.cargo/
+# Only the shared alias file is tracked. Local overrides such as a [patch] to a sibling
+# checkout belong in $CARGO_HOME/config.toml or in a .cargo/config.toml of a parent
+# directory, which Cargo also reads.
+.cargo/*
+!.cargo/config.toml
 
 # Coverage output (cargo-llvm-cov, IT-T92)
 lcov.info

@@ -93,46 +93,172 @@ fn gen_asyncapi() {
     eprintln!("✅ Generated AsyncAPI document at: {out_path}");
 }
 
-/// Run all CI checks locally (mirrors .github/workflows/ci.yml).
-fn ci() {
-    let checks: &[(&str, &[&str])] = &[
-        ("Formatting", &["cargo", "fmt", "--all", "--check"]),
-        (
-            "Clippy",
-            &["cargo", "clippy", "--all-targets", "--", "-D", "warnings"],
-        ),
-        ("Unit tests", &["cargo", "test", "--workspace"]),
-        (
-            "Integration tests",
-            &[
-                "cargo",
-                "test",
-                "-p",
-                "snapdog",
-                "--no-default-features",
-                "--features",
-                "snapcast-process",
-                "--test",
-                "integration",
-                "--",
-                "--test-threads=1",
-            ],
-        ),
-        ("WebUI build", &["npm", "run", "build"]),
-    ];
+/// The jobs of `.github/workflows/ci.yml` that `xtask ci` runs locally.
+const LOCAL_CI_JOBS: &[&str] = &["rust-core", "webui"];
 
+/// One `run:` step of a CI job.
+#[derive(Debug, PartialEq, Eq)]
+struct CiStep {
+    job: String,
+    name: String,
+    working_directory: Option<String>,
+    script: String,
+}
+
+/// Indentation of a line, in spaces.
+fn indent(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// The `run:` steps of `jobs` in a GitHub workflow, in order. A deliberately small reader
+/// for the shape ci.yml uses (`- name:`, `run:` inline or as a `|` block,
+/// `working-directory:`), so the local run cannot drift from CI: there is one definition.
+fn ci_steps(workflow: &str, jobs: &[&str]) -> Vec<CiStep> {
+    let lines: Vec<&str> = workflow.lines().collect();
+    let mut steps = Vec::new();
+    let mut i = 0;
+    let mut job: Option<String> = None;
+    let mut current: Option<CiStep> = None;
+    let mut step_indent = 0;
+    let flush = |current: &mut Option<CiStep>, steps: &mut Vec<CiStep>| {
+        if let Some(step) = current.take()
+            && !step.script.is_empty()
+        {
+            steps.push(step);
+        }
+    };
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let ind = indent(line);
+        if ind == 2 && trimmed.ends_with(':') && !trimmed.starts_with('#') {
+            flush(&mut current, &mut steps);
+            let name = trimmed.trim_end_matches(':');
+            job = jobs.contains(&name).then(|| name.to_string());
+        } else if let Some(job_name) = &job {
+            if let Some(rest) = trimmed.strip_prefix("- ") {
+                flush(&mut current, &mut steps);
+                step_indent = ind + 2;
+                current = Some(CiStep {
+                    job: job_name.clone(),
+                    name: String::new(),
+                    working_directory: None,
+                    script: String::new(),
+                });
+                // The first key of the step sits on the dash line.
+                i = read_step_key(&lines, i, rest, step_indent, current.as_mut());
+                continue;
+            } else if ind == step_indent && current.is_some() {
+                i = read_step_key(&lines, i, trimmed, step_indent, current.as_mut());
+                continue;
+            }
+        }
+        i += 1;
+    }
+    flush(&mut current, &mut steps);
+    steps
+}
+
+/// Read one `key: value` of a step starting at line `i`; returns the next line to read.
+fn read_step_key(
+    lines: &[&str],
+    i: usize,
+    key_value: &str,
+    step_indent: usize,
+    step: Option<&mut CiStep>,
+) -> usize {
+    let Some(step) = step else { return i + 1 };
+    let Some((key, value)) = key_value.split_once(':') else {
+        return i + 1;
+    };
+    let value = value.trim();
+    match key.trim() {
+        "name" => step.name = value.trim_matches('"').to_string(),
+        "working-directory" => step.working_directory = Some(value.to_string()),
+        "run" if value == "|" => {
+            let mut j = i + 1;
+            let mut block = Vec::new();
+            while j < lines.len() && (lines[j].trim().is_empty() || indent(lines[j]) > step_indent)
+            {
+                block.push(lines[j]);
+                j += 1;
+            }
+            let base = block
+                .iter()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| indent(l))
+                .min()
+                .unwrap_or(0);
+            step.script = block
+                .iter()
+                .map(|l| l.get(base..).unwrap_or("").trim_end())
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim_end()
+                .to_string();
+            return j;
+        }
+        "run" => step.script = value.to_string(),
+        _ => {}
+    }
+    i + 1
+}
+
+/// A step that only prepares a CI runner (system packages, toolchain installation) and has
+/// no local counterpart: the developer's machine is already set up.
+fn is_runner_setup(script: &str) -> bool {
+    script.starts_with("sudo ") || script.starts_with("rustup ")
+}
+
+/// `echo "NAME=value" >> "$GITHUB_ENV"`: an environment variable for the following steps.
+fn github_env_assignment(script: &str) -> Option<(String, String)> {
+    let rest = script.strip_prefix("echo ")?;
+    let (assignment, target) = rest.split_once(">>")?;
+    if target.trim() != "\"$GITHUB_ENV\"" {
+        return None;
+    }
+    let (name, value) = assignment.trim().trim_matches('"').split_once('=')?;
+    Some((name.to_string(), value.to_string()))
+}
+
+/// Run the CI checks locally: the `run:` steps of the `rust-core` and `webui` jobs of
+/// `.github/workflows/ci.yml`, read from that file, so this is the same list CI runs.
+fn ci() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask sits in the workspace");
+    let workflow = std::fs::read_to_string(root.join(".github/workflows/ci.yml"))
+        .expect("failed to read .github/workflows/ci.yml");
+    let mut env: Vec<(String, String)> = Vec::new();
     let mut failed = Vec::new();
-    for (name, args) in checks {
-        eprintln!("\n\x1b[1;34m▶ {name}\x1b[0m");
-        let status = std::process::Command::new(args[0])
-            .args(&args[1..])
-            .current_dir(if *name == "WebUI build" { "webui" } else { "." })
+    for step in ci_steps(&workflow, LOCAL_CI_JOBS) {
+        if is_runner_setup(&step.script) {
+            continue;
+        }
+        if let Some(assignment) = github_env_assignment(&step.script) {
+            env.push(assignment);
+            continue;
+        }
+        let label = if step.name.is_empty() {
+            format!("{}: {}", step.job, step.script)
+        } else {
+            format!("{}: {}", step.job, step.name)
+        };
+        eprintln!("\n\x1b[1;34m▶ {label}\x1b[0m");
+        let dir = step
+            .working_directory
+            .as_deref()
+            .map_or_else(|| root.to_path_buf(), |d| root.join(d));
+        let status = std::process::Command::new("bash")
+            .args(["-euo", "pipefail", "-c", &step.script])
+            .current_dir(dir)
+            .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
             .status();
         match status {
-            Ok(s) if s.success() => eprintln!("\x1b[32m  ✓ {name}\x1b[0m"),
+            Ok(s) if s.success() => eprintln!("\x1b[32m  ✓ {label}\x1b[0m"),
             _ => {
-                eprintln!("\x1b[31m  ✗ {name}\x1b[0m");
-                failed.push(*name);
+                eprintln!("\x1b[31m  ✗ {label}\x1b[0m");
+                failed.push(label);
             }
         }
     }
@@ -141,7 +267,10 @@ fn ci() {
     if failed.is_empty() {
         eprintln!("\x1b[1;32m✓ All CI checks passed\x1b[0m");
     } else {
-        eprintln!("\x1b[1;31m✗ Failed: {}\x1b[0m", failed.join(", "));
+        eprintln!("\x1b[1;31m✗ Failed:\x1b[0m");
+        for label in &failed {
+            eprintln!("  {label}");
+        }
         std::process::exit(1);
     }
 }
@@ -1950,6 +2079,43 @@ fn build_channel_block(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn xtask_ci_runs_the_steps_of_the_ci_jobs() {
+        use super::{LOCAL_CI_JOBS, ci_steps, github_env_assignment, is_runner_setup};
+        let workflow = include_str!("../../.github/workflows/ci.yml");
+        let steps = ci_steps(workflow, LOCAL_CI_JOBS);
+        let scripts: Vec<&str> = steps.iter().map(|s| s.script.as_str()).collect();
+        for expected in [
+            "cargo fmt --all -- --check",
+            "cargo nextest run --workspace --locked",
+            "pnpm install --frozen-lockfile",
+            "pnpm run lint",
+            "pnpm run build",
+        ] {
+            assert!(
+                scripts.contains(&expected),
+                "missing `{expected}` in {scripts:#?}"
+            );
+        }
+        assert!(
+            scripts
+                .iter()
+                .any(|s| s.contains("--test api_docs") && s.contains('\n')),
+            "a multi-line `run: |` block is read as one script"
+        );
+        let lint = steps.iter().find(|s| s.script == "pnpm run lint").unwrap();
+        assert_eq!(lint.working_directory.as_deref(), Some("webui"));
+        assert!(
+            steps
+                .iter()
+                .all(|s| s.job == "rust-core" || s.job == "webui")
+        );
+        // Runner preparation is skipped, environment lines become variables.
+        assert!(steps.iter().any(|s| is_runner_setup(&s.script)));
+        assert!(steps.iter().any(|s| github_env_assignment(&s.script)
+            == Some(("SKIP_WEBUI_BUILD".to_string(), "1".to_string()))));
+    }
     use std::io::Read as _;
 
     /// Runs the same generation the release job does (`generate_xml` →

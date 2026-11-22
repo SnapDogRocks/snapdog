@@ -4,24 +4,27 @@
 
 ## Generate SnapDog.knxprod (XML + signed archive in one step)
 knxprod:
-	cargo run -p xtask -- knx/snapdog.xml
+	cargo xtask knx/snapdog.xml
 
 ## First-time setup: configure git hooks
 setup:
 	lefthook install
 	@echo "✅ Git hooks configured (lefthook)"
 
-## Run all checks (same as CI)
-check: fmt clippy test webui-check
+## Run all checks (same as CI): the steps of the rust-core and webui jobs in
+## .github/workflows/ci.yml, read from that file by `cargo xtask ci`.
+check:
+	cargo xtask ci
 
+## Quick checks for the edit loop (a subset of `check`)
 fmt:
-	cargo fmt -- --check
+	cargo fmt --all -- --check
 
 clippy:
-	cargo clippy -- -D warnings
+	cargo clippy --locked --all-targets -- -D warnings
 
 test:
-	cargo test
+	cargo nextest run --workspace --locked
 
 webui-check:
 	cd webui && pnpm install --frozen-lockfile && pnpm run i18n:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build
@@ -38,4 +41,5 @@ build-all: build-webui knxprod
 dev:
 	docker compose -f docker-compose.dev.yml up -d
 	@echo "✅ Dev infrastructure running"
-	@echo "   Run: cargo run -- --config snapdog.dev.toml"
+	@echo "   Once: cp snapdog.example.toml snapdog.dev.toml (gitignored, then edit)"
+	@echo "   Run:  cargo run -p snapdog -- --config snapdog.dev.toml"
