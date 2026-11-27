@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.37.1](https://github.com/SnapDogRocks/snapdog/compare/v0.37.0...v0.37.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **macos:** keep a client's other keys when it is renamed ([#615](https://github.com/SnapDogRocks/snapdog/issues/615)) ([e89fec7](https://github.com/SnapDogRocks/snapdog/commit/e89fec729a167ca152126c03866702704e0ace50))
+* **updater:** report a failed rollback as failed and refuse an unreadable stack file ([#614](https://github.com/SnapDogRocks/snapdog/issues/614)) ([2002313](https://github.com/SnapDogRocks/snapdog/commit/20023131d508f0deff3378484e1640b2c518c3be))
+
 ## [0.37.0](https://github.com/SnapDogRocks/snapdog/compare/v0.36.0...v0.37.0) (2026-11-22)
 
 
