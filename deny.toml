@@ -9,6 +9,9 @@ all-features = true
 
 [advisories]
 yanked = "deny"
+# Unmaintained crates count anywhere in the graph, not only direct dependencies.
+# cargo-deny 0.22 changed the default to "workspace"; this keeps the old scope.
+unmaintained = "all"
 ignore = [
     # rsa: Marvin Attack timing sidechannel — no patch available.
     # Pulled by: shairplay, librespot-core (via rsa → num-bigint-dig).
