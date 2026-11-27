@@ -139,7 +139,7 @@ jobs:
         run: rustup toolchain install
       - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
-          tool: cargo-deny
+          tool: cargo-deny@0.22.0
       - name: Run cargo-deny (advisories, licences, bans, sources)
         # Same deny.toml as ci.yml's dep-triggered check. This scheduled run
         # catches newly-published advisories against the unchanged Cargo.lock,
