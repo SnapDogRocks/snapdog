@@ -319,11 +319,11 @@ jobs:
           export SNAPDOG_ETS_KEY="$RUNNER_TEMP/ets-key.pem"
           cargo run --locked -p xtask -- knxprod
           rm -f "$RUNNER_TEMP/ets-key.pem"
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
         with:
           cosign-release: v3.1.1
       - name: Generate SBOM
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        uses: anchore/sbom-action@dfcb83b97731532d72be422cbc51ee64adb6fd56 # v0.24.4
         with:
           # `path` scans a directory; .knxprod is a single file, so it needs
           # the action's separate `file` input (found live: `path` here made
@@ -457,11 +457,11 @@ jobs:
             sha256sum "${archive}.tar.gz" > "${archive}.tar.gz.sha256"
             echo "PAYLOAD=${archive}.tar.gz" >> "$GITHUB_ENV"
           fi
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
         with:
           cosign-release: v3.1.1
       - name: Generate SBOM
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        uses: anchore/sbom-action@dfcb83b97731532d72be422cbc51ee64adb6fd56 # v0.24.4
         with:
           # `path` scans a directory; PAYLOAD is a single file, so it needs
           # the action's separate `file` input (see the knxprod job's SBOM
@@ -643,7 +643,7 @@ jobs:
           xcrun stapler staple "$DMG"
           rm AuthKey.p8
           shasum -a 256 "$DMG" > "${DMG}.sha256"
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
         with:
           cosign-release: v3.1.1
       - name: Export the DMG filename for the following steps
@@ -651,7 +651,7 @@ jobs:
           set -euo pipefail
           echo "DMG=SnapDog-Server-${{ needs.meta.outputs.version }}.dmg" >> "$GITHUB_ENV"
       - name: Generate SBOM
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        uses: anchore/sbom-action@dfcb83b97731532d72be422cbc51ee64adb6fd56 # v0.24.4
         with:
           # `path` scans a directory; the DMG is a single file, so it needs
           # the action's separate `file` input (see the knxprod job's SBOM
@@ -787,11 +787,11 @@ jobs:
             deb="$sanitized"
           fi
           echo "PAYLOAD=${deb}" >> "$GITHUB_ENV"
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
         with:
           cosign-release: v3.1.1
       - name: Generate SBOM
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        uses: anchore/sbom-action@dfcb83b97731532d72be422cbc51ee64adb6fd56 # v0.24.4
         with:
           # `path` scans a directory; PAYLOAD is a single file, so it needs
           # the action's separate `file` input (see the knxprod job's SBOM
@@ -877,7 +877,7 @@ jobs:
           find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > ../SHA256SUMS
           mv ../SHA256SUMS .
           sha256sum --check SHA256SUMS
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
         with:
           cosign-release: v3.1.1
       - name: Verify every payload's signature and provenance attestation
@@ -1969,7 +1969,7 @@ jobs:
           # the promote".
           tags="${REPO}:${TAG}"
           { echo 'list<<EOF'; printf '%s\n' "$tags"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
         with:
           cosign-release: v3.1.1
       - name: Build and push multi-arch image (prebuilt binary — no recompile)
@@ -2061,7 +2061,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
         with:
           cosign-release: v3.1.1
       # Exact version only. :latest is moved by promote-images, after the release was
