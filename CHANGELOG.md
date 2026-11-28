@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.2](https://github.com/SnapDogRocks/snapdog/compare/v0.37.1...v0.37.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **docker:** apply Debian security updates in the runtime images ([#625](https://github.com/SnapDogRocks/snapdog/issues/625)) ([8244b83](https://github.com/SnapDogRocks/snapdog/commit/8244b8315e628d1ce4a4c9f6e563c7df81f6bc7f))
+
 ## [0.37.1](https://github.com/SnapDogRocks/snapdog/compare/v0.37.0...v0.37.1) (2026-11-27)
 
 
