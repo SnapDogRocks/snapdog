@@ -4,7 +4,7 @@
 # Renovate should update the readable tag and digest together.
 ARG NODE_IMAGE="node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5"
 ARG RUST_IMAGE="rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea"
-ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc"
+ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e"
 
 # Which stage supplies the snapdog binary at /out/snapdog:
 #   compile  (default) — build from source in this Dockerfile. Used by local
@@ -98,7 +98,9 @@ LABEL org.opencontainers.image.title="SnapDog" \
       org.opencontainers.image.revision="${BUILD_REVISION}" \
       org.opencontainers.image.created="${BUILD_CREATED}"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Pull Debian security updates that the pinned base image does not carry yet.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
       dumb-init \
