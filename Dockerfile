@@ -1,22 +1,20 @@
 # syntax=docker/dockerfile:1.19.0@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
 
-# Base images are pinned to multi-architecture manifest digests. Dependabot or
-# Renovate should update the readable tag and digest together.
-ARG NODE_IMAGE="node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5"
-ARG RUST_IMAGE="rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea"
-ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e"
+# Base images are pinned to multi-architecture manifest digests in the FROM lines
+# themselves. Dependabot reads only literal FROM lines, so an image set through an
+# ARG default would never be updated.
 
 # Which stage supplies the snapdog binary at /out/snapdog:
 #   compile  (default) — build from source in this Dockerfile. Used by local
 #              `docker build .` and the PR `container-images` CI job.
 #   prebuilt           — copy a binary already built by the release `build` job
-#              (compiled once against bookworm glibc, matching RUNTIME_IMAGE) from
+#              (compiled once against bookworm glibc, matching the runtime image) from
 #              the context under bins/<arch>/. The release pipeline sets this so the
 #              image ships the exact same binary as the tarball, with no second compile.
 ARG BIN_STAGE=compile
 
 # ── WebUI build stage (compile path only) ─────────────────────
-FROM ${NODE_IMAGE} AS webui-builder
+FROM node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS webui-builder
 
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /build/webui
@@ -34,7 +32,7 @@ COPY webui/ ./
 RUN pnpm run build && test -f out/index.html
 
 # ── Rust build stage (compile path only) ─────────────────────
-FROM ${RUST_IMAGE} AS compile
+FROM rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS compile
 
 ARG CARGO_RELEASE_LTO=thin
 
@@ -79,7 +77,7 @@ COPY bins/${TARGETARCH}/snapdog /out/snapdog
 FROM ${BIN_STAGE} AS binary
 
 # ── Runtime stage ─────────────────────────────────────────────
-FROM ${RUNTIME_IMAGE} AS runtime
+FROM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e AS runtime
 
 ARG BUILD_VERSION="0.0.0-dev"
 ARG BUILD_REVISION="unknown"

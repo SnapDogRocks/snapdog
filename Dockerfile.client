@@ -1,8 +1,5 @@
 # syntax=docker/dockerfile:1.19.0@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
 
-ARG RUST_IMAGE="rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea"
-ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e"
-
 # Which stage supplies the snapdog-client binary at /out/snapdog-client:
 #   compile  (default) — build from source (local `docker build .`, PR CI).
 #   prebuilt           — copy the binary already built by the release `build` job
@@ -10,7 +7,7 @@ ARG RUNTIME_IMAGE="debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff68363
 ARG BIN_STAGE=compile
 
 # ── Build stage (compile path only) ───────────────────────────
-FROM ${RUST_IMAGE} AS compile
+FROM rust:1.100.0-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS compile
 
 ARG CARGO_RELEASE_LTO=thin
 
@@ -51,7 +48,7 @@ COPY bins/${TARGETARCH}/snapdog-client /out/snapdog-client
 FROM ${BIN_STAGE} AS binary
 
 # ── Runtime stage ─────────────────────────────────────────────
-FROM ${RUNTIME_IMAGE} AS runtime
+FROM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e AS runtime
 
 ARG BUILD_VERSION="0.0.0-dev"
 ARG BUILD_REVISION="unknown"
