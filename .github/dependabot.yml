@@ -124,3 +124,40 @@ updates:
         update-types:
           - minor
           - patch
+
+  # Base images in the Dockerfiles. Dependabot reads only literal FROM lines,
+  # which is why the Dockerfiles must not move images into ARG defaults. A
+  # digest-only update matters as much as a version bump: it carries Debian
+  # and Alpine security fixes into the published images.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /deploy/updater
+      - /devcontainer/*
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:10"
+    target-branch: main
+    commit-message:
+      prefix: fix
+      include: scope
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      docker-images:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # The Rust images follow the rust-toolchain entry above;
+      # .github/scripts/test_rust_toolchain.py fails if they move on their own.
+      - dependency-name: rust
+      # The Node line is chosen together with webui/.nvmrc.
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major

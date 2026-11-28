@@ -1,11 +1,11 @@
-# Same Node line and digest as Dockerfile, webui/.nvmrc and ci.yml.
-ARG NODE_IMAGE="node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5"
+# Same Node line and digest as Dockerfile and webui/.nvmrc. The image stays in the
+# FROM lines because Dependabot does not read ARG defaults.
 # The demo's equalizer has at most this many bands. Both the web UI build and the mock
 # backend read it from here; the real server allows SERVER_EQ_LIMITS.maxBands.
 ARG DEMO_MAX_EQ_BANDS=5
 
 # ── Stage 1: Build the Web UI ──
-FROM ${NODE_IMAGE} AS frontend-builder
+FROM node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS frontend-builder
 ARG DEMO_MAX_EQ_BANDS
 WORKDIR /app/webui
 # Pinned to the same version as webui/package.json's "packageManager" field.
@@ -19,7 +19,7 @@ COPY webui/ ./
 RUN pnpm run build
 
 # ── Stage 2: Create runtime container ──
-FROM ${NODE_IMAGE}
+FROM node:24-bookworm-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
 ARG DEMO_MAX_EQ_BANDS
 ENV DEMO_MAX_EQ_BANDS=${DEMO_MAX_EQ_BANDS}
 WORKDIR /app
